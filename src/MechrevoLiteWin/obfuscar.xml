@@ -1,0 +1,24 @@
+<?xml version='1.0'?>
+<!-- 发布防逆向混淆配置：仅混淆 L-Mechrevo.dll 自身，第三方库不动 -->
+<Obfuscator>
+  <Var name="InPath" value="bin\x64\Release\net10.0-windows10.0.19041.0" />
+  <Var name="ExtraFrameworkFolders" value="C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Ref\10.0.8\ref\net10.0;C:\Program Files\dotnet\packs\Microsoft.WindowsDesktop.App.Ref\10.0.8\ref\net10.0" />
+  <Var name="OutPath" value="obj\obfuscated" />
+  <Var name="KeepPublicApi" value="false" />
+  <Var name="HidePrivateApi" value="true" />
+  <Var name="RenameProperties" value="false" />
+  <Var name="RenameEvents" value="false" />
+  <Var name="RenameFields" value="true" />
+  <Var name="UseUnicodeNames" value="true" />
+  <Var name="HideStrings" value="false" />
+  <Var name="OptimizeMethods" value="true" />
+  <Var name="SuppressIldasm" value="true" />
+  <Var name="ReuseNames" value="true" />
+  <Module file="$(InPath)\L-Mechrevo.dll">
+    <SkipType name="MechrevoLite.Program" />
+    <!-- 资源访问类不混淆：资源容器按类型全名定位，改名会失配导致中文资源回退英文/资源丢失 -->
+    <SkipType name="MechrevoLite.Properties.Strings" />
+    <SkipType name="MechrevoLite.Properties.Resources" />
+    <SkipType name="MechrevoLite.Fans" />
+  </Module>
+</Obfuscator>

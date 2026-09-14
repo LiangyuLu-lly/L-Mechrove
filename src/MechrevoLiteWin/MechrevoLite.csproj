@@ -1,0 +1,137 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!--
+      完整的可空性检查。此前是 annotations：代码里到处写 ? 和 !，但编译器一个 CS86xx 都不报，
+      于是 WindowsIdentity.GetCurrent().User.Value 这类必然崩溃的空引用能无声通过编译。
+      核心硬件层（Hardware/）、Helpers/、Gpu/ 已全部清零；少数继承自 g-helper 的
+      UI 与原生互操作文件在文件头用 `#nullable disable` 显式标注为待迁移，
+      让剩余债务可见且局部化。
+    -->
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>True</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPublishable>True</IsPublishable>
+    <IncludeAllContentForSelfExtract>True</IncludeAllContentForSelfExtract>
+    <PublishReadyToRun>True</PublishReadyToRun>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>MechrevoLite.Program</StartupObject>
+    <ApplicationIcon>favicon.ico</ApplicationIcon>
+    <Platforms>x64</Platforms>
+    <Platform>x64</Platform>
+    <AssemblyName>L-Mechrevo</AssemblyName>
+    <PlatformTarget>x64</PlatformTarget>
+    <ProduceReferenceAssembly>False</ProduceReferenceAssembly>
+    <DebugType>embedded</DebugType>
+    <OutputPath>bin\x64\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>obj\x64\$(Configuration)\</IntermediateOutputPath>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <AssemblyVersion>0.289.0.0</AssemblyVersion>
+    <FileVersion>0.289.0.0</FileVersion>
+    <Version>0.289.0-beta13</Version>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="logs\**" />
+    <EmbeddedResource Remove="logs\**" />
+    <None Remove="logs\**" />
+    <Compile Remove="artifacts\**" />
+    <EmbeddedResource Remove="artifacts\**" />
+    <None Remove="artifacts\**" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Content Include="..\..\LICENSE" Link="LICENSE.txt">
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\THIRD_PARTY_NOTICES.txt" Link="THIRD_PARTY_NOTICES.txt">
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Resources\DefaultCurve_Gaming.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\DefaultCurve_Office.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\DefaultCurve_Turbo.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="favicon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="rgb.cfg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\qrcode1.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\qrcode2.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      FftSharp 曾用于 Helpers/AudioVisualizer.cs 的频谱分析。该类的 Shared 单例
+      在整个代码库里没有任何订阅者（Settings.VisualiseAudio 自身也无调用者），
+      属于 g-helper 的 Slash/AnimeMatrix 音频律动灯效残留，已随类一并删除。
+    -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NvAPIWrapper.Net" Version="0.8.1.101" />
+    <PackageReference Include="System.Management" Version="10.0.10" />
+    <PackageReference Include="TaskScheduler" Version="2.12.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Properties\Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Update="Properties\Strings.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Strings.resx</DependentUpon>
+    </Compile>
+    <Compile Update="Properties\Settings.Designer.cs">
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      PawnIO 内核模块字节码。只有 AMD 的 RyzenSMU.bin 会被加载
+      （Pawn/RyzenSmu.cs -> PawnIOWrapper.LoadModuleFromResource）。
+      同目录下曾有 IntelMSR.bin，但代码里没有任何加载点，是纯死负载，已删除。
+      加入新 .bin 前请先确认存在对应的 Load 调用，否则只会撑大单文件产物。
+    -->
+    <EmbeddedResource Include="Pawn\RyzenSMU.bin">
+      <LogicalName>LMechrevo.RyzenSMU.bin</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+	<Target Name="StopRunningLMechrevo" BeforeTargets="Build" Condition="'$(GITHUB_ACTIONS)'!='true'">
+		<Exec Command="powershell -NoProfile -Command &quot;try { [System.Threading.EventWaitHandle]::OpenExisting('Global\LMechrevoApp-Exit').Set() } catch {}; for ($i = 0; $i -lt 50; $i++) { if (-not (Get-Process -Name 'L-Mechrevo' -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 100 }&quot;" />
+	</Target>
+
+</Project>

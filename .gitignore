@@ -1,0 +1,68 @@
+# ============================================================================
+# L-Mechrevo corresponding-source snapshot repository
+# Track ONLY source code, docs and build inputs. Everything else stays local.
+# ============================================================================
+
+# ---- Build outputs ----
+bin/
+obj/
+dist/
+dist-verify/
+artifacts/
+.build/
+size_analysis/
+
+# ---- Packaged / release artifacts ----
+/release/
+*.exe
+*.msi
+*.msix
+*.zip
+*.7z
+*.nupkg
+*.pdb
+*.dll
+
+# ---- Vendor / third-party extraction trees ----
+official-consoles/
+_decompiled/
+_extracted/
+g-helper-main/
+watercooler-manager-main/
+BetterRGB-*/
+ControlCenter_5.17.*/
+/ControlCenterX_5.56.60.26_Mechrevo/
+
+# ---- Probe / scratch files at repo root ----
+_tools/
+/aquaris_strings.txt
+/aquaris_strings_utf16.txt
+/switch_orig.ps1
+/test_gpu_switch.ps1
+/800
+
+# ---- UI audit screenshots (repo root only; app resources under src/ stay) ----
+/*.png
+/*.jpg
+
+# ---- Local tool state / design audit scratch ----
+.omo/
+.codegraph/
+.playwright-cli/
+.playwright-mcp/
+design-previews/
+
+# ---- Editor / OS cruft ----
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.tmp
+*.bak
+*.log
+logs/
+Thumbs.db
+desktop.ini
+.DS_Store
+*~

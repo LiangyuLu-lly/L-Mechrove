@@ -1,0 +1,407 @@
+﻿{
+    "GeneratedUtc":  "2026-08-25T21:08:57.7572291Z",
+    "Source":  "_decompiled/GCUService/GCUService.decompiled.cs",
+    "Note":  "Bit-level meaning for EC status/control bytes.",
+    "FlagEnums":  [
+                      {
+                          "Enum":  "ByteFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "Bit0",
+                                              "Value":  1,
+                                              "Hex":  "0x1"
+                                          },
+                                          {
+                                              "Member":  "Bit1",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "Bit2",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          },
+                                          {
+                                              "Member":  "Bit3",
+                                              "Value":  8,
+                                              "Hex":  "0x8"
+                                          },
+                                          {
+                                              "Member":  "Bit4",
+                                              "Value":  16,
+                                              "Hex":  "0x10"
+                                          },
+                                          {
+                                              "Member":  "Bit5",
+                                              "Value":  32,
+                                              "Hex":  "0x20"
+                                          },
+                                          {
+                                              "Member":  "Bit6",
+                                              "Value":  64,
+                                              "Hex":  "0x40"
+                                          },
+                                          {
+                                              "Member":  "Bit7",
+                                              "Value":  128,
+                                              "Hex":  "0x80"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "MyFan2SpeedByteFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "Speed00",
+                                              "Value":  0,
+                                              "Hex":  "0x0"
+                                          },
+                                          {
+                                              "Member":  "Speed30",
+                                              "Value":  60,
+                                              "Hex":  "0x3C"
+                                          },
+                                          {
+                                              "Member":  "Speed35",
+                                              "Value":  70,
+                                              "Hex":  "0x46"
+                                          },
+                                          {
+                                              "Member":  "Speed40",
+                                              "Value":  80,
+                                              "Hex":  "0x50"
+                                          },
+                                          {
+                                              "Member":  "Speed45",
+                                              "Value":  90,
+                                              "Hex":  "0x5A"
+                                          },
+                                          {
+                                              "Member":  "Speed50",
+                                              "Value":  100,
+                                              "Hex":  "0x64"
+                                          },
+                                          {
+                                              "Member":  "Speed55",
+                                              "Value":  110,
+                                              "Hex":  "0x6E"
+                                          },
+                                          {
+                                              "Member":  "Speed60",
+                                              "Value":  120,
+                                              "Hex":  "0x78"
+                                          },
+                                          {
+                                              "Member":  "Speed70",
+                                              "Value":  140,
+                                              "Hex":  "0x8C"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "MyFanCTLByteFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "Normal_Mode",
+                                              "Value":  0,
+                                              "Hex":  "0x0"
+                                          },
+                                          {
+                                              "Member":  "Turbo_Mode",
+                                              "Value":  16,
+                                              "Hex":  "0x10"
+                                          },
+                                          {
+                                              "Member":  "FanBoost_Mode",
+                                              "Value":  64,
+                                              "Hex":  "0x40"
+                                          },
+                                          {
+                                              "Member":  "User_Fan_Mode",
+                                              "Value":  128,
+                                              "Hex":  "0x80"
+                                          },
+                                          {
+                                              "Member":  "User_Fan_Level1",
+                                              "Value":  129,
+                                              "Hex":  "0x81"
+                                          },
+                                          {
+                                              "Member":  "User_Fan_Level2",
+                                              "Value":  130,
+                                              "Hex":  "0x82"
+                                          },
+                                          {
+                                              "Member":  "User_Fan_Level3",
+                                              "Value":  131,
+                                              "Hex":  "0x83"
+                                          },
+                                          {
+                                              "Member":  "User_Fan_Level4",
+                                              "Value":  132,
+                                              "Hex":  "0x84"
+                                          },
+                                          {
+                                              "Member":  "User_Fan_Level5",
+                                              "Value":  133,
+                                              "Hex":  "0x85"
+                                          },
+                                          {
+                                              "Member":  "User_Fan_HiMode",
+                                              "Value":  160,
+                                              "Hex":  "0xA0"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "RGBLightbarControlByteFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "AP_Exist",
+                                              "Value":  0,
+                                              "Hex":  "0x0"
+                                          },
+                                          {
+                                              "Member":  "PowerSaveMode",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "S0_Switch",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          },
+                                          {
+                                              "Member":  "S3_Switch",
+                                              "Value":  8,
+                                              "Hex":  "0x8"
+                                          },
+                                          {
+                                              "Member":  "Welcome",
+                                              "Value":  128,
+                                              "Hex":  "0x80"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "RGBLightBarCtrlByteFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "ApExit",
+                                              "Value":  1,
+                                              "Hex":  "0x1"
+                                          },
+                                          {
+                                              "Member":  "PowerSaveMode",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "Switch_S0",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          },
+                                          {
+                                              "Member":  "Switch_S3",
+                                              "Value":  8,
+                                              "Hex":  "0x8"
+                                          },
+                                          {
+                                              "Member":  "LB10NoKey",
+                                              "Value":  16,
+                                              "Hex":  "0x10"
+                                          },
+                                          {
+                                              "Member":  "LB10KeyPress",
+                                              "Value":  32,
+                                              "Hex":  "0x20"
+                                          },
+                                          {
+                                              "Member":  "Switch_Breath_MordenStandby",
+                                              "Value":  64,
+                                              "Hex":  "0x40"
+                                          },
+                                          {
+                                              "Member":  "WelcomeLightMode",
+                                              "Value":  128,
+                                              "Hex":  "0x80"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "StatusByteOneFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "WinLock",
+                                              "Value":  1,
+                                              "Hex":  "0x1"
+                                          },
+                                          {
+                                              "Member":  "BreathLed",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "FanBoost",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          },
+                                          {
+                                              "Member":  "MacroKey",
+                                              "Value":  8,
+                                              "Hex":  "0x8"
+                                          },
+                                          {
+                                              "Member":  "MyBatPowerBat",
+                                              "Value":  16,
+                                              "Hex":  "0x10"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "SupportByteOneFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "AirplaneMode",
+                                              "Value":  1,
+                                              "Hex":  "0x1"
+                                          },
+                                          {
+                                              "Member":  "GPSSwitch",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "OverClock",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          },
+                                          {
+                                              "Member":  "MacroKey",
+                                              "Value":  8,
+                                              "Hex":  "0x8"
+                                          },
+                                          {
+                                              "Member":  "ShortCutKey",
+                                              "Value":  16,
+                                              "Hex":  "0x10"
+                                          },
+                                          {
+                                              "Member":  "WinLockKey",
+                                              "Value":  32,
+                                              "Hex":  "0x20"
+                                          },
+                                          {
+                                              "Member":  "LightBar",
+                                              "Value":  64,
+                                              "Hex":  "0x40"
+                                          },
+                                          {
+                                              "Member":  "FanBoost",
+                                              "Value":  128,
+                                              "Hex":  "0x80"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "SupportByteThreeFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "FullZone",
+                                              "Value":  1,
+                                              "Hex":  "0x1"
+                                          },
+                                          {
+                                              "Member":  "FourZone",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "FourZoneReady",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "SupportByteTwoFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "SilentMode",
+                                              "Value":  1,
+                                              "Hex":  "0x1"
+                                          },
+                                          {
+                                              "Member":  "USBChargerMode",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "RGBKeyBoard",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          },
+                                          {
+                                              "Member":  "MyBat",
+                                              "Value":  64,
+                                              "Hex":  "0x40"
+                                          }
+                                      ]
+                      },
+                      {
+                          "Enum":  "TriggerByteFlag",
+                          "Members":  [
+                                          {
+                                              "Member":  "WinLock_Trigger",
+                                              "Value":  1,
+                                              "Hex":  "0x1"
+                                          },
+                                          {
+                                              "Member":  "LightBar_Trigger",
+                                              "Value":  2,
+                                              "Hex":  "0x2"
+                                          },
+                                          {
+                                              "Member":  "FanBoost_Trigger",
+                                              "Value":  4,
+                                              "Hex":  "0x4"
+                                          },
+                                          {
+                                              "Member":  "SilentMode_Trigger",
+                                              "Value":  8,
+                                              "Hex":  "0x8"
+                                          },
+                                          {
+                                              "Member":  "USBCharger_Trigger",
+                                              "Value":  16,
+                                              "Hex":  "0x10"
+                                          },
+                                          {
+                                              "Member":  "RGBKeybaord_Trigger",
+                                              "Value":  32,
+                                              "Hex":  "0x20"
+                                          },
+                                          {
+                                              "Member":  "RGBLogo_Trigger",
+                                              "Value":  64,
+                                              "Hex":  "0x40"
+                                          },
+                                          {
+                                              "Member":  "RGBKeybaordWelcome_Trigger",
+                                              "Value":  128,
+                                              "Hex":  "0x80"
+                                          },
+                                          {
+                                              "Member":  "E_Shutter_Trigger_Camera_Off",
+                                              "Value":  0,
+                                              "Hex":  "0x0"
+                                          },
+                                          {
+                                              "Member":  "E_Shutter_Trigger_Camera_On",
+                                              "Value":  16,
+                                              "Hex":  "0x10"
+                                          }
+                                      ]
+                      }
+                  ]
+}

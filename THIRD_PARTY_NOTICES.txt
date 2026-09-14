@@ -1,0 +1,64 @@
+[GPLv3 §6(b) WRITTEN OFFER]
+---------------------------------------------------------------------------
+L-Mechrevo contains code derived from G-Helper, licensed under the GNU General
+Public License version 3 only (GPL-3.0-only).
+
+For at least three years from the date you received this software, the
+distributor of L-Mechrevo offers, to anyone who receives a binary copy of
+L-Mechrevo, a complete machine-readable copy of the Corresponding Source for
+the exact version you received. It is provided for no more than the cost of
+physically distributing it (media and shipping), or free of charge by download.
+
+To request it, email liangyulu781@gmail.com and state the exact version of
+L-Mechrevo you received (e.g. the version shown in the app or the release
+archive name).
+
+依据 GPLv3 第 6(b) 条，自您收到本软件之日起至少三年内，任何收到二进制副本的
+人均可获得对应版本的完整、机器可读的对应源码，收费不超过实际分发成本。
+
+L-Mechrevo third-party notices
+==============================
+
+L-Mechrevo contains code derived from G-Helper and is distributed under the
+GNU General Public License version 3 only. See LICENSE and the corresponding
+source tree for the complete terms and source code.
+
+The Bluetooth LE liquid-cooler support in src/MechrevoLiteWin/Hardware/WaterCoolerBle.cs
+is an independent C# implementation. The GATT service/characteristic identifiers and the
+command layout it speaks were learned from the watercooler-manager project
+(https://github.com/, see watercooler-manager-main/ in this tree), which is a Python
+program licensed under the GNU General Public License version 3. No source code was
+copied from it; it is credited here as the protocol reference. L-Mechrevo is itself
+distributed under GPL-3.0-only, so the licenses are compatible either way.
+
+Keyboard RGB portions are adapted from BetterRGB:
+Copyright (c) 2026 TheYamo
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The GCU-only bundle contains AISTONE/Mechrevo service binaries and a Microsoft
+signed UWACPI driver. Those binaries are separate proprietary works, are not
+licensed under L-Mechrevo's GPL license, and must only be redistributed when
+the distributor has permission from the applicable rights holders.
+
+NuGet dependencies retain their own licenses. Their package metadata and
+license files are available in the NuGet packages referenced by
+src/MechrevoLiteWin/MechrevoLite.csproj.

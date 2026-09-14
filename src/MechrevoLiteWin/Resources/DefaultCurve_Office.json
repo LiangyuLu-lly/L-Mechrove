@@ -1,0 +1,203 @@
+{
+  "Activated": false,
+  "Name": "DefaultFanTable_Office",
+  "FanControlRespective": false,
+  "CpuTemp_DefaultMaxLevel": 11,
+  "GpuTemp_DefaultMaxLevel": 11,
+  "CPU": [
+    {
+      "ID": 0,
+      "UpT": 0,
+      "DownT": 46,
+      "Duty": 0
+    },
+    {
+      "ID": 1,
+      "UpT": 48,
+      "DownT": 50,
+      "Duty": 30
+    },
+    {
+      "ID": 2,
+      "UpT": 52,
+      "DownT": 54,
+      "Duty": 35
+    },
+    {
+      "ID": 3,
+      "UpT": 56,
+      "DownT": 58,
+      "Duty": 40
+    },
+    {
+      "ID": 4,
+      "UpT": 60,
+      "DownT": 62,
+      "Duty": 50
+    },
+    {
+      "ID": 5,
+      "UpT": 64,
+      "DownT": 66,
+      "Duty": 55
+    },
+    {
+      "ID": 6,
+      "UpT": 68,
+      "DownT": 70,
+      "Duty": 60
+    },
+    {
+      "ID": 7,
+      "UpT": 72,
+      "DownT": 74,
+      "Duty": 70
+    },
+    {
+      "ID": 8,
+      "UpT": 76,
+      "DownT": 78,
+      "Duty": 80
+    },
+    {
+      "ID": 9,
+      "UpT": 80,
+      "DownT": 82,
+      "Duty": 90
+    },
+    {
+      "ID": 10,
+      "UpT": 85,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 11,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 12,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 13,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 14,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 15,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    }
+  ],
+  "GPU": [
+    {
+      "ID": 0,
+      "UpT": 0,
+      "DownT": 44,
+      "Duty": 0
+    },
+    {
+      "ID": 1,
+      "UpT": 46,
+      "DownT": 48,
+      "Duty": 30
+    },
+    {
+      "ID": 2,
+      "UpT": 50,
+      "DownT": 52,
+      "Duty": 35
+    },
+    {
+      "ID": 3,
+      "UpT": 54,
+      "DownT": 56,
+      "Duty": 40
+    },
+    {
+      "ID": 4,
+      "UpT": 58,
+      "DownT": 60,
+      "Duty": 50
+    },
+    {
+      "ID": 5,
+      "UpT": 62,
+      "DownT": 64,
+      "Duty": 55
+    },
+    {
+      "ID": 6,
+      "UpT": 66,
+      "DownT": 68,
+      "Duty": 60
+    },
+    {
+      "ID": 7,
+      "UpT": 70,
+      "DownT": 72,
+      "Duty": 70
+    },
+    {
+      "ID": 8,
+      "UpT": 74,
+      "DownT": 76,
+      "Duty": 80
+    },
+    {
+      "ID": 9,
+      "UpT": 78,
+      "DownT": 80,
+      "Duty": 90
+    },
+    {
+      "ID": 10,
+      "UpT": 81,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 11,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 12,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 13,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 14,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    },
+    {
+      "ID": 15,
+      "UpT": 255,
+      "DownT": 255,
+      "Duty": 100
+    }
+  ]
+}

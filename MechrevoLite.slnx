@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Probe/Probe.csproj" />
+  </Folder>
+  <Folder Name="/src/MechrevoLiteWin/">
+    <Project Path="src/MechrevoLiteWin/MechrevoLite.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MechrevoLite.Tests/MechrevoLite.Tests.csproj" />
+  </Folder>
+</Solution>

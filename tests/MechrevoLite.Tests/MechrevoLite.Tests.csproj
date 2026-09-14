@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <PlatformTarget>x64</PlatformTarget>
+    <!--
+      把测试日志重定向到测试输出目录，避免写进用户的 %AppData%\MechrevoLite\log.txt。
+      必须走 runsettings 的环境变量：Logger 的路径是另一个程序集里的 static readonly，
+      靠测试程序集的 ModuleInitializer 抢在它初始化之前设置是有竞争的（实测会漂——
+      同一份代码两次运行，一次隔离成功、一次仍写进了生产日志）。
+    -->
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)\xunit.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="artifacts\**" />
+    <EmbeddedResource Remove="artifacts\**" />
+    <None Remove="artifacts\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MechrevoLiteWin\MechrevoLite.csproj" />
+  </ItemGroup>
+
+</Project>

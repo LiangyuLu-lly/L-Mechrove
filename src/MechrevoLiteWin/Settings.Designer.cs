@@ -1,0 +1,1481 @@
+﻿using MechrevoLite.UI;
+
+namespace MechrevoLite
+{
+    partial class SettingsForm
+    {
+        /// <summary>
+        /// Required designer variable.
+        /// </summary>
+        private System.ComponentModel.IContainer components = null;
+
+        /// <summary>
+        /// Clean up any resources being used.
+        /// </summary>
+        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                DisposeRuntimeResources();
+                components?.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        #region Windows Form Designer generated code
+
+        /// <summary>
+        /// Required method for Designer support - do not modify
+        /// the contents of this method with the code editor.
+        /// </summary>
+        private void InitializeComponent()
+        {
+            components = new System.ComponentModel.Container();
+            toolTip = new ToolTip(components);
+            panelBattery = new BufferedPanel();
+            buttonBatteryFull = new RButton();
+            sliderBattery = new RSlider();
+            panelBatteryTitle = new Panel();
+            labelBattery = new Label();
+            pictureBattery = new PictureBox();
+            labelBatteryTitle = new Label();
+            panelFooter = new Panel();
+            tableButtons = new TableLayoutPanel();
+            buttonDonate = new RBadgeButton();
+            buttonQuit = new RButton();
+            buttonUpdates = new RButton();
+            checkStartup = new UI.RCheckBox();
+            panelPerformance = new BufferedPanel();
+            tablePerf = new TableLayoutPanel();
+            buttonSilent = new RButton();
+            buttonBalanced = new RButton();
+            buttonTurbo = new RButton();
+            panelCPUTitle = new Panel();
+            picturePerf = new PictureBox();
+            labelPerf = new Label();
+            labelCPUFan = new Label();
+            panelGPU = new BufferedPanel();
+            labelTipGPU = new Label();
+            tableAMD = new TableLayoutPanel();
+            buttonOverlay = new RButton();
+            tableGPU = new TableLayoutPanel();
+            buttonStopGPU = new RButton();
+            buttonEco = new RButton();
+            buttonStandard = new RButton();
+            buttonOptimized = new RButton();
+            buttonUltimate = new RButton();
+            panelGPUTitle = new Panel();
+            pictureGPU = new PictureBox();
+            labelGPU = new Label();
+            labelGPUFan = new Label();
+            panelScreen = new BufferedPanel();
+            labelTipScreen = new Label();
+            tableScreen = new TableLayoutPanel();
+            buttonScreenAuto = new RButton();
+            button60Hz = new RButton();
+            button120Hz = new RButton();
+            buttonMiniled = new RButton();
+            buttonFHD = new RButton();
+            panelScreenTitle = new Panel();
+            labelMidFan = new Label();
+            pictureScreen = new PictureBox();
+            labelSreen = new Label();
+            panelKeyboard = new BufferedPanel();
+            labelBacklight = new Label();
+            tableLayoutKeyboard = new TableLayoutPanel();
+            buttonKeyboard = new RButton();
+            buttonKeyboardColor = new RColorButton();
+            comboKeyboard = new RComboBox();
+            panelKeyboardTitle = new Panel();
+            buttonFnLock = new RButton();
+            pictureKeyboard = new PictureBox();
+            labelKeyboard = new Label();
+            panelStartup = new BufferedPanel();
+            labelCharge = new Label();
+            panelPeripherals = new BufferedPanel();
+            tableLayoutPeripherals = new TableLayoutPanel();
+            buttonPeripheral3 = new RButton();
+            buttonPeripheral2 = new RButton();
+            buttonPeripheral1 = new RButton();
+            panelVersion = new BufferedPanel();
+            buttonEnergySaver = new RButton();
+            buttonAmdOled = new RButton();
+            buttonArmoury = new RButton();
+            labelVersion = new Label();
+            buttonHDRControl = new RButton();
+            panelBattery.SuspendLayout();
+            panelBatteryTitle.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureBattery).BeginInit();
+            panelFooter.SuspendLayout();
+            tableButtons.SuspendLayout();
+            panelPerformance.SuspendLayout();
+            tablePerf.SuspendLayout();
+            panelCPUTitle.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)picturePerf).BeginInit();
+            panelGPU.SuspendLayout();
+            tableAMD.SuspendLayout();
+            tableGPU.SuspendLayout();
+            panelGPUTitle.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureGPU).BeginInit();
+            panelScreen.SuspendLayout();
+            tableScreen.SuspendLayout();
+            panelScreenTitle.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureScreen).BeginInit();
+            panelKeyboard.SuspendLayout();
+            tableLayoutKeyboard.SuspendLayout();
+            panelKeyboardTitle.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureKeyboard).BeginInit();
+            panelStartup.SuspendLayout();
+            panelPeripherals.SuspendLayout();
+            tableLayoutPeripherals.SuspendLayout();
+            panelVersion.SuspendLayout();
+            SuspendLayout();
+            // 
+            // panelBattery
+            // 
+            panelBattery.AutoSize = true;
+            panelBattery.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelBattery.Controls.Add(buttonBatteryFull);
+            panelBattery.Controls.Add(sliderBattery);
+            panelBattery.Controls.Add(panelBatteryTitle);
+            panelBattery.Dock = DockStyle.Top;
+            panelBattery.Location = new Point(11, 1683);
+            panelBattery.Margin = new Padding(0);
+            panelBattery.Name = "panelBattery";
+            panelBattery.Padding = new Padding(20, 15, 20, 0);
+            panelBattery.Size = new Size(827, 104);
+            panelBattery.TabIndex = 8;
+            // 
+            // buttonBatteryFull
+            // 
+            buttonBatteryFull.Activated = false;
+            buttonBatteryFull.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonBatteryFull.BackColor = SystemColors.ControlLight;
+            buttonBatteryFull.BorderColor = Color.Transparent;
+            buttonBatteryFull.BorderRadius = 2;
+            buttonBatteryFull.FlatAppearance.BorderSize = 0;
+            buttonBatteryFull.FlatStyle = FlatStyle.Flat;
+            buttonBatteryFull.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption, FontStyle.Bold);
+            buttonBatteryFull.ForeColor = SystemColors.ControlDark;
+            buttonBatteryFull.Location = new Point(728, 62);
+            buttonBatteryFull.Borderless = true;
+            buttonBatteryFull.Margin = new Padding(0);
+            buttonBatteryFull.Name = "buttonBatteryFull";
+            buttonBatteryFull.Secondary = true;
+            buttonBatteryFull.Size = new Size(73, 36);
+            buttonBatteryFull.TabIndex = 41;
+            buttonBatteryFull.Text = "100%";
+            buttonBatteryFull.UseVisualStyleBackColor = false;
+            // 
+            // sliderBattery
+            // 
+            sliderBattery.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            sliderBattery.Location = new Point(20, 60);
+            sliderBattery.Margin = new Padding(4);
+            sliderBattery.Maximum = 100;
+            sliderBattery.Minimum = 40;
+            sliderBattery.Name = "sliderBattery";
+            sliderBattery.Size = new Size(707, 40);
+            sliderBattery.TabIndex = 20;
+            sliderBattery.Text = "sliderBattery";
+            sliderBattery.Value = 100;
+            // 
+            // panelBatteryTitle
+            // 
+            panelBatteryTitle.Controls.Add(labelBattery);
+            panelBatteryTitle.Controls.Add(pictureBattery);
+            panelBatteryTitle.Controls.Add(labelBatteryTitle);
+            panelBatteryTitle.Dock = DockStyle.Top;
+            panelBatteryTitle.Location = new Point(20, 15);
+            panelBatteryTitle.Margin = new Padding(4);
+            panelBatteryTitle.Name = "panelBatteryTitle";
+            panelBatteryTitle.Padding = new Padding(0, 0, 0, 4);
+            panelBatteryTitle.Size = new Size(787, 44);
+            panelBatteryTitle.TabIndex = 40;
+            // 
+            // labelBattery
+            // 
+            labelBattery.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            labelBattery.Location = new Point(455, 0);
+            labelBattery.Margin = new Padding(8, 0, 8, 0);
+            labelBattery.Name = "labelBattery";
+            labelBattery.Size = new Size(324, 36);
+            labelBattery.TabIndex = 39;
+            labelBattery.Text = "                ";
+            labelBattery.TextAlign = ContentAlignment.TopRight;
+            // 
+            // pictureBattery
+            // 
+            pictureBattery.BackgroundImageLayout = ImageLayout.Zoom;
+            pictureBattery.Location = new Point(8, 3);
+            pictureBattery.Margin = new Padding(4);
+            pictureBattery.Name = "pictureBattery";
+            pictureBattery.Size = new Size(32, 32);
+            pictureBattery.TabIndex = 38;
+            pictureBattery.TabStop = false;
+            // 
+            // labelBatteryTitle
+            // 
+            labelBatteryTitle.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold);
+            labelBatteryTitle.Location = new Point(43, 0);
+            labelBatteryTitle.Margin = new Padding(8, 0, 8, 0);
+            labelBatteryTitle.Name = "labelBatteryTitle";
+            labelBatteryTitle.Size = new Size(467, 32);
+            labelBatteryTitle.TabIndex = 37;
+            labelBatteryTitle.Text = "Battery Charge Limit";
+            // 
+            // panelFooter
+            // 
+            panelFooter.AutoSize = true;
+            panelFooter.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelFooter.Controls.Add(tableButtons);
+            panelFooter.Dock = DockStyle.Top;
+            panelFooter.Location = new Point(11, 1887);
+            panelFooter.Margin = new Padding(0);
+            panelFooter.Name = "panelFooter";
+            panelFooter.Padding = new Padding(20, 10, 20, 20);
+            panelFooter.Size = new Size(827, 88);
+            panelFooter.TabIndex = 11;
+            // 
+            // tableButtons
+            // 
+            tableButtons.AutoSize = true;
+            tableButtons.ColumnCount = 3;
+            tableButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3333321F));
+            tableButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3333321F));
+            tableButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3333321F));
+            tableButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 27F));
+            tableButtons.Controls.Add(buttonDonate, 0, 0);
+            tableButtons.Controls.Add(buttonQuit, 2, 0);
+            tableButtons.Controls.Add(buttonUpdates, 1, 0);
+            tableButtons.Dock = DockStyle.Top;
+            tableButtons.Location = new Point(20, 10);
+            tableButtons.Margin = new Padding(8, 4, 8, 4);
+            tableButtons.Name = "tableButtons";
+            tableButtons.RowCount = 1;
+            tableButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tableButtons.Size = new Size(787, 58);
+            tableButtons.TabIndex = 25;
+            // 
+            // buttonDonate
+            // 
+            buttonDonate.Activated = false;
+            buttonDonate.BackColor = SystemColors.ControlLight;
+            buttonDonate.Badge = 0;
+            buttonDonate.BorderColor = Color.Transparent;
+            buttonDonate.BorderRadius = 2;
+            buttonDonate.Dock = DockStyle.Top;
+            buttonDonate.FlatStyle = FlatStyle.Flat;
+            buttonDonate.Image = Properties.Resources.icons8_heart_32;
+            buttonDonate.ImageAlign = ContentAlignment.MiddleRight;
+            buttonDonate.Location = new Point(4, 5);
+            buttonDonate.Margin = new Padding(4, 5, 4, 5);
+            buttonDonate.Name = "buttonDonate";
+            buttonDonate.Secondary = true;
+            buttonDonate.Size = new Size(254, 48);
+            buttonDonate.TabIndex = 3;
+            buttonDonate.Text = "&Donate";
+            buttonDonate.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonDonate.UseVisualStyleBackColor = false;
+            // 
+            // buttonQuit
+            // 
+            buttonQuit.Activated = false;
+            buttonQuit.BackColor = SystemColors.ControlLight;
+            buttonQuit.BorderColor = Color.Transparent;
+            buttonQuit.BorderRadius = 2;
+            buttonQuit.Dock = DockStyle.Top;
+            buttonQuit.FlatStyle = FlatStyle.Flat;
+            buttonQuit.Image = Properties.Resources.icons8_quit_32;
+            buttonQuit.Location = new Point(528, 5);
+            buttonQuit.Margin = new Padding(4, 5, 4, 5);
+            buttonQuit.Name = "buttonQuit";
+            buttonQuit.Secondary = true;
+            buttonQuit.Size = new Size(255, 48);
+            buttonQuit.TabIndex = 2;
+            buttonQuit.Text = "&Quit";
+            buttonQuit.TextAlign = ContentAlignment.MiddleRight;
+            buttonQuit.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonQuit.UseVisualStyleBackColor = false;
+            // 
+            // buttonUpdates
+            // 
+            buttonUpdates.Activated = false;
+            buttonUpdates.BackColor = SystemColors.ControlLight;
+            buttonUpdates.BorderColor = Color.Transparent;
+            buttonUpdates.BorderRadius = 2;
+            buttonUpdates.Dock = DockStyle.Top;
+            buttonUpdates.FlatStyle = FlatStyle.Flat;
+            buttonUpdates.Image = Properties.Resources.icons8_software_32_white;
+            buttonUpdates.ImageAlign = ContentAlignment.MiddleRight;
+            buttonUpdates.Location = new Point(266, 5);
+            buttonUpdates.Margin = new Padding(4, 5, 4, 5);
+            buttonUpdates.Name = "buttonUpdates";
+            buttonUpdates.Secondary = true;
+            buttonUpdates.Size = new Size(254, 48);
+            buttonUpdates.TabIndex = 1;
+            buttonUpdates.Text = "&Updates";
+            buttonUpdates.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonUpdates.UseVisualStyleBackColor = false;
+            // 
+            // checkStartup
+            // 
+            checkStartup.AutoSize = true;
+            checkStartup.Dock = DockStyle.Left;
+            checkStartup.Location = new Point(20, 0);
+            checkStartup.Margin = new Padding(11, 5, 11, 5);
+            checkStartup.Name = "checkStartup";
+            checkStartup.Padding = new Padding(10, 0, 0, 0);
+            checkStartup.Size = new Size(216, 50);
+            checkStartup.TabIndex = 21;
+            checkStartup.Text = Properties.Strings.RunOnStartup;
+            checkStartup.UseVisualStyleBackColor = true;
+            // 
+            // panelPerformance
+            // 
+            panelPerformance.AccessibleRole = AccessibleRole.Grouping;
+            panelPerformance.AutoSize = true;
+            panelPerformance.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelPerformance.Controls.Add(tablePerf);
+            panelPerformance.Controls.Add(panelCPUTitle);
+            panelPerformance.Dock = DockStyle.Top;
+            panelPerformance.Location = new Point(11, 11);
+            panelPerformance.Margin = new Padding(0);
+            panelPerformance.Name = "panelPerformance";
+            panelPerformance.Padding = new Padding(20);
+            panelPerformance.Size = new Size(827, 208);
+            panelPerformance.TabIndex = 0;
+            panelPerformance.TabStop = true;
+            // 
+            // tablePerf
+            // 
+            tablePerf.AutoSize = true;
+            tablePerf.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tablePerf.ColumnCount = 5;
+            for (int _c = 0; _c < 5; _c++)
+                tablePerf.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+            tablePerf.Controls.Add(buttonSilent, 0, 0);
+            tablePerf.Controls.Add(buttonBalanced, 1, 0);
+            tablePerf.Controls.Add(buttonTurbo, 2, 0);
+            tablePerf.Dock = DockStyle.Top;
+            tablePerf.Location = new Point(20, 60);
+            tablePerf.Margin = new Padding(8, 4, 8, 4);
+            tablePerf.Name = "tablePerf";
+            tablePerf.RowCount = 1;
+            tablePerf.RowStyles.Add(new RowStyle(SizeType.Absolute, 128F));
+            tablePerf.Size = new Size(787, 128);
+            tablePerf.TabIndex = 29;
+            // 
+            // buttonSilent
+            // 
+            buttonSilent.Activated = false;
+            buttonSilent.BackColor = SystemColors.ControlLightLight;
+            buttonSilent.BackgroundImageLayout = ImageLayout.None;
+            buttonSilent.BorderColor = Color.Transparent;
+            buttonSilent.BorderRadius = 5;
+            buttonSilent.Dock = DockStyle.Fill;
+            buttonSilent.FlatAppearance.BorderSize = 0;
+            buttonSilent.FlatStyle = FlatStyle.Flat;
+            buttonSilent.ForeColor = SystemColors.ControlText;
+            buttonSilent.Image = Properties.Resources.icons8_bicycle_48__1_;
+            buttonSilent.ImageAlign = ContentAlignment.BottomCenter;
+            buttonSilent.Location = new Point(4, 4);
+            buttonSilent.Margin = new Padding(4);
+            buttonSilent.Name = "buttonSilent";
+            buttonSilent.Secondary = false;
+            buttonSilent.Size = new Size(188, 120);
+            buttonSilent.TabIndex = 1;
+            buttonSilent.Text = "&办公";
+            buttonSilent.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonSilent.UseVisualStyleBackColor = false;
+            // 
+            // buttonBalanced
+            // 
+            buttonBalanced.Activated = false;
+            buttonBalanced.BackColor = SystemColors.ControlLightLight;
+            buttonBalanced.BorderColor = Color.Transparent;
+            buttonBalanced.BorderRadius = 5;
+            buttonBalanced.Dock = DockStyle.Fill;
+            buttonBalanced.FlatAppearance.BorderSize = 0;
+            buttonBalanced.FlatStyle = FlatStyle.Flat;
+            buttonBalanced.ForeColor = SystemColors.ControlText;
+            buttonBalanced.Image = Properties.Resources.icons8_fiat_500_48;
+            buttonBalanced.ImageAlign = ContentAlignment.BottomCenter;
+            buttonBalanced.Location = new Point(200, 4);
+            buttonBalanced.Margin = new Padding(4);
+            buttonBalanced.Name = "buttonBalanced";
+            buttonBalanced.Secondary = false;
+            buttonBalanced.Size = new Size(188, 120);
+            buttonBalanced.TabIndex = 1;
+            buttonBalanced.Text = "&游戏";
+            buttonBalanced.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonBalanced.UseVisualStyleBackColor = false;
+            // 
+            // buttonTurbo
+            // 
+            buttonTurbo.Activated = false;
+            buttonTurbo.BackColor = SystemColors.ControlLightLight;
+            buttonTurbo.BorderColor = Color.Transparent;
+            buttonTurbo.BorderRadius = 5;
+            buttonTurbo.Dock = DockStyle.Fill;
+            buttonTurbo.FlatAppearance.BorderSize = 0;
+            buttonTurbo.FlatStyle = FlatStyle.Flat;
+            buttonTurbo.ForeColor = SystemColors.ControlText;
+            buttonTurbo.Image = Properties.Resources.icons8_rocket_48;
+            buttonTurbo.ImageAlign = ContentAlignment.BottomCenter;
+            buttonTurbo.Location = new Point(396, 4);
+            buttonTurbo.Margin = new Padding(4);
+            buttonTurbo.Name = "buttonTurbo";
+            buttonTurbo.Secondary = false;
+            buttonTurbo.Size = new Size(188, 120);
+            buttonTurbo.TabIndex = 2;
+            buttonTurbo.Text = "&极速";
+            buttonTurbo.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonTurbo.UseVisualStyleBackColor = false;
+            //
+            // panelCPUTitle
+            // 
+            panelCPUTitle.Controls.Add(picturePerf);
+            panelCPUTitle.Controls.Add(labelPerf);
+            panelCPUTitle.Controls.Add(labelCPUFan);
+            panelCPUTitle.Dock = DockStyle.Top;
+            panelCPUTitle.Location = new Point(20, 20);
+            panelCPUTitle.Margin = new Padding(4);
+            panelCPUTitle.Name = "panelCPUTitle";
+            panelCPUTitle.Size = new Size(787, 40);
+            panelCPUTitle.TabIndex = 30;
+            // 
+            // picturePerf
+            // 
+            picturePerf.BackgroundImageLayout = ImageLayout.Zoom;
+            picturePerf.InitialImage = null;
+            picturePerf.Location = new Point(8, 0);
+            picturePerf.Margin = new Padding(4);
+            picturePerf.Name = "picturePerf";
+            picturePerf.Size = new Size(32, 32);
+            picturePerf.TabIndex = 35;
+            picturePerf.TabStop = false;
+            // 
+            // labelPerf
+            // 
+            labelPerf.AccessibleRole = AccessibleRole.Caret;
+            labelPerf.AutoSize = true;
+            labelPerf.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold);
+            labelPerf.LiveSetting = System.Windows.Forms.Automation.AutomationLiveSetting.Polite;
+            labelPerf.Location = new Point(40, 0);
+            labelPerf.Margin = new Padding(8, 0, 8, 0);
+            labelPerf.Name = "labelPerf";
+            labelPerf.Size = new Size(234, 32);
+            labelPerf.TabIndex = 0;
+            labelPerf.Text = "Performance Mode";
+            // 
+            // labelCPUFan
+            // 
+            labelCPUFan.AccessibleRole = AccessibleRole.TitleBar;
+            labelCPUFan.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            labelCPUFan.Cursor = Cursors.Hand;
+            labelCPUFan.Location = new Point(387, 0);
+            labelCPUFan.Margin = new Padding(8, 0, 8, 0);
+            labelCPUFan.Name = "labelCPUFan";
+            labelCPUFan.Size = new Size(400, 36);
+            labelCPUFan.TabIndex = 33;
+            labelCPUFan.Text = "      ";
+            labelCPUFan.TextAlign = ContentAlignment.TopRight;
+            // 
+            // panelGPU
+            // 
+            panelGPU.AccessibleRole = AccessibleRole.Grouping;
+            panelGPU.AutoSize = true;
+            panelGPU.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelGPU.Controls.Add(labelTipGPU);
+            panelGPU.Controls.Add(tableAMD);
+            panelGPU.Controls.Add(tableGPU);
+            panelGPU.Controls.Add(panelGPUTitle);
+            panelGPU.Dock = DockStyle.Top;
+            panelGPU.Location = new Point(11, 219);
+            panelGPU.Margin = new Padding(0);
+            panelGPU.Name = "panelGPU";
+            panelGPU.Padding = new Padding(20, 20, 20, 0);
+            panelGPU.Size = new Size(827, 432);
+            panelGPU.TabIndex = 1;
+            panelGPU.TabStop = true;
+            // 
+            // labelTipGPU
+            // 
+            labelTipGPU.Dock = DockStyle.Top;
+            labelTipGPU.ForeColor = SystemColors.GrayText;
+            labelTipGPU.Location = new Point(20, 396);
+            labelTipGPU.Margin = new Padding(4, 0, 4, 0);
+            labelTipGPU.Name = "labelTipGPU";
+            labelTipGPU.Size = new Size(787, 36);
+            labelTipGPU.TabIndex = 20;
+            // 
+            // tableAMD
+            // 
+            tableAMD.AutoSize = true;
+            tableAMD.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tableAMD.ColumnCount = 3;
+            tableAMD.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33F));
+            tableAMD.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33F));
+            tableAMD.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33F));
+            tableAMD.Controls.Add(buttonOverlay, 0, 0);
+            tableAMD.Dock = DockStyle.Top;
+            tableAMD.Location = new Point(20, 316);
+            tableAMD.Margin = new Padding(8, 4, 8, 4);
+            tableAMD.Name = "tableAMD";
+            tableAMD.RowCount = 1;
+            tableAMD.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
+            tableAMD.Size = new Size(787, 80);
+            tableAMD.TabIndex = 24;
+            tableAMD.Visible = false;
+            // 
+            // buttonOverlay
+            // 
+            buttonOverlay.Activated = false;
+            buttonOverlay.BackColor = SystemColors.ControlLightLight;
+            buttonOverlay.BorderColor = Color.Transparent;
+            buttonOverlay.BorderRadius = 5;
+            buttonOverlay.Dock = DockStyle.Fill;
+            buttonOverlay.FlatAppearance.BorderSize = 0;
+            buttonOverlay.FlatStyle = FlatStyle.Flat;
+            buttonOverlay.ForeColor = SystemColors.ControlText;
+            buttonOverlay.Image = Properties.Resources.icons8_heartbeat_32;
+            buttonOverlay.ImageAlign = ContentAlignment.MiddleRight;
+            buttonOverlay.Location = new Point(266, 4);
+            buttonOverlay.Margin = new Padding(4);
+            buttonOverlay.Name = "buttonOverlay";
+            buttonOverlay.Secondary = false;
+            buttonOverlay.Size = new Size(254, 72);
+            buttonOverlay.TabIndex = 12;
+            buttonOverlay.Text = "Overlay";
+            buttonOverlay.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonOverlay.UseVisualStyleBackColor = false;
+            // 
+            // tableGPU
+            // 
+            tableGPU.AutoSize = true;
+            tableGPU.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tableGPU.ColumnCount = 4;
+            tableGPU.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableGPU.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableGPU.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableGPU.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableGPU.Controls.Add(buttonStopGPU, 0, 0);
+            tableGPU.Controls.Add(buttonEco, 0, 0);
+            tableGPU.Controls.Add(buttonStandard, 1, 0);
+            tableGPU.Controls.Add(buttonOptimized, 2, 0);
+            tableGPU.Controls.Add(buttonUltimate, 2, 0);
+            tableGPU.Dock = DockStyle.Top;
+            tableGPU.Location = new Point(20, 60);
+            tableGPU.Margin = new Padding(8, 4, 8, 4);
+            tableGPU.Name = "tableGPU";
+            tableGPU.RowCount = 1;
+            tableGPU.RowStyles.Add(new RowStyle(SizeType.Absolute, 128F));
+            tableGPU.RowStyles.Add(new RowStyle(SizeType.Absolute, 128F));
+            tableGPU.Size = new Size(787, 256);
+            tableGPU.TabIndex = 16;
+            // 
+            // buttonStopGPU
+            // 
+            buttonStopGPU.Activated = false;
+            buttonStopGPU.BackColor = SystemColors.ControlLightLight;
+            buttonStopGPU.BorderColor = Color.Transparent;
+            buttonStopGPU.BorderRadius = 5;
+            buttonStopGPU.CausesValidation = false;
+            buttonStopGPU.Dock = DockStyle.Top;
+            buttonStopGPU.FlatAppearance.BorderSize = 0;
+            buttonStopGPU.FlatStyle = FlatStyle.Flat;
+            buttonStopGPU.ForeColor = SystemColors.ControlText;
+            buttonStopGPU.Image = Properties.Resources.icons8_leaf_48;
+            buttonStopGPU.ImageAlign = ContentAlignment.BottomCenter;
+            buttonStopGPU.Location = new Point(200, 4);
+            buttonStopGPU.Margin = new Padding(4);
+            buttonStopGPU.Name = "buttonStopGPU";
+            buttonStopGPU.Secondary = false;
+            buttonStopGPU.Size = new Size(188, 120);
+            buttonStopGPU.TabIndex = 4;
+            buttonStopGPU.Text = "Stop GPU applications";
+            buttonStopGPU.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonStopGPU.UseVisualStyleBackColor = false;
+            buttonStopGPU.Visible = false;
+            // 
+            // buttonEco
+            // 
+            buttonEco.Activated = false;
+            buttonEco.BackColor = SystemColors.ControlLightLight;
+            buttonEco.BorderColor = Color.Transparent;
+            buttonEco.BorderRadius = 5;
+            buttonEco.CausesValidation = false;
+            buttonEco.Dock = DockStyle.Top;
+            buttonEco.FlatAppearance.BorderSize = 0;
+            buttonEco.FlatStyle = FlatStyle.Flat;
+            buttonEco.ForeColor = SystemColors.ControlText;
+            buttonEco.Image = Properties.Resources.icons8_leaf_48;
+            buttonEco.ImageAlign = ContentAlignment.BottomCenter;
+            buttonEco.Location = new Point(4, 4);
+            buttonEco.Margin = new Padding(4);
+            buttonEco.Name = "buttonEco";
+            buttonEco.Secondary = false;
+            buttonEco.Size = new Size(188, 120);
+            buttonEco.TabIndex = 4;
+            buttonEco.Text = Properties.Strings.EcoMode;
+            buttonEco.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonEco.UseVisualStyleBackColor = false;
+            // 
+            // buttonStandard
+            // 
+            buttonStandard.Activated = false;
+            buttonStandard.BackColor = SystemColors.ControlLightLight;
+            buttonStandard.BorderColor = Color.Transparent;
+            buttonStandard.BorderRadius = 5;
+            buttonStandard.Dock = DockStyle.Top;
+            buttonStandard.FlatAppearance.BorderSize = 0;
+            buttonStandard.FlatStyle = FlatStyle.Flat;
+            buttonStandard.ForeColor = SystemColors.ControlText;
+            buttonStandard.Image = Properties.Resources.icons8_spa_flower_48;
+            buttonStandard.ImageAlign = ContentAlignment.BottomCenter;
+            buttonStandard.Location = new Point(396, 4);
+            buttonStandard.Margin = new Padding(4);
+            buttonStandard.Name = "buttonStandard";
+            buttonStandard.Secondary = false;
+            buttonStandard.Size = new Size(188, 120);
+            buttonStandard.TabIndex = 5;
+            buttonStandard.Text = Properties.Strings.StandardMode;
+            buttonStandard.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonStandard.UseVisualStyleBackColor = false;
+            // 
+            // buttonOptimized
+            // 
+            buttonOptimized.Activated = false;
+            buttonOptimized.BackColor = SystemColors.ControlLightLight;
+            buttonOptimized.BorderColor = Color.Transparent;
+            buttonOptimized.BorderRadius = 5;
+            buttonOptimized.Dock = DockStyle.Top;
+            buttonOptimized.FlatAppearance.BorderSize = 0;
+            buttonOptimized.FlatStyle = FlatStyle.Flat;
+            buttonOptimized.ForeColor = SystemColors.ControlText;
+            buttonOptimized.Image = Properties.Resources.icons8_project_management_48__1_;
+            buttonOptimized.ImageAlign = ContentAlignment.BottomCenter;
+            buttonOptimized.Location = new Point(4, 132);
+            buttonOptimized.Margin = new Padding(4);
+            buttonOptimized.Name = "buttonOptimized";
+            buttonOptimized.Secondary = false;
+            buttonOptimized.Size = new Size(188, 120);
+            buttonOptimized.TabIndex = 7;
+            buttonOptimized.Text = Properties.Strings.Optimized;
+            buttonOptimized.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonOptimized.UseVisualStyleBackColor = false;
+            // 
+            // buttonUltimate
+            // 
+            buttonUltimate.Activated = false;
+            buttonUltimate.BackColor = SystemColors.ControlLightLight;
+            buttonUltimate.BorderColor = Color.Transparent;
+            buttonUltimate.BorderRadius = 5;
+            buttonUltimate.Dock = DockStyle.Top;
+            buttonUltimate.FlatAppearance.BorderSize = 0;
+            buttonUltimate.FlatStyle = FlatStyle.Flat;
+            buttonUltimate.ForeColor = SystemColors.ControlText;
+            buttonUltimate.Image = Properties.Resources.icons8_game_controller_48;
+            buttonUltimate.ImageAlign = ContentAlignment.BottomCenter;
+            buttonUltimate.Location = new Point(592, 4);
+            buttonUltimate.Margin = new Padding(4);
+            buttonUltimate.Name = "buttonUltimate";
+            buttonUltimate.Secondary = false;
+            buttonUltimate.Size = new Size(191, 120);
+            buttonUltimate.TabIndex = 6;
+            buttonUltimate.Text = Properties.Strings.UltimateMode;
+            buttonUltimate.TextImageRelation = TextImageRelation.ImageAboveText;
+            buttonUltimate.UseVisualStyleBackColor = false;
+            // 
+            // panelGPUTitle
+            // 
+            panelGPUTitle.Controls.Add(pictureGPU);
+            panelGPUTitle.Controls.Add(labelGPU);
+            panelGPUTitle.Controls.Add(labelGPUFan);
+            panelGPUTitle.Dock = DockStyle.Top;
+            panelGPUTitle.Location = new Point(20, 20);
+            panelGPUTitle.Margin = new Padding(4);
+            panelGPUTitle.Name = "panelGPUTitle";
+            panelGPUTitle.Size = new Size(787, 40);
+            panelGPUTitle.TabIndex = 21;
+            // 
+            // pictureGPU
+            // 
+            pictureGPU.BackgroundImageLayout = ImageLayout.Zoom;
+            pictureGPU.Location = new Point(8, 0);
+            pictureGPU.Margin = new Padding(4);
+            pictureGPU.Name = "pictureGPU";
+            pictureGPU.Size = new Size(32, 32);
+            pictureGPU.TabIndex = 22;
+            pictureGPU.TabStop = false;
+            // 
+            // labelGPU
+            // 
+            labelGPU.AutoSize = true;
+            labelGPU.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold);
+            labelGPU.Location = new Point(40, 0);
+            labelGPU.Margin = new Padding(8, 0, 8, 0);
+            labelGPU.Name = "labelGPU";
+            labelGPU.Size = new Size(136, 32);
+            labelGPU.TabIndex = 21;
+            labelGPU.Text = "GPU Mode";
+            // 
+            // labelGPUFan
+            // 
+            labelGPUFan.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            labelGPUFan.Location = new Point(387, 0);
+            labelGPUFan.Margin = new Padding(8, 0, 8, 0);
+            labelGPUFan.Name = "labelGPUFan";
+            labelGPUFan.Size = new Size(400, 35);
+            labelGPUFan.TabIndex = 20;
+            labelGPUFan.Text = "         ";
+            labelGPUFan.TextAlign = ContentAlignment.TopRight;
+            // 
+            // panelScreen
+            // 
+            panelScreen.AccessibleRole = AccessibleRole.Grouping;
+            panelScreen.AutoSize = true;
+            panelScreen.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelScreen.Controls.Add(labelTipScreen);
+            panelScreen.Controls.Add(tableScreen);
+            panelScreen.Controls.Add(panelScreenTitle);
+            panelScreen.Dock = DockStyle.Top;
+            panelScreen.Location = new Point(11, 651);
+            panelScreen.Margin = new Padding(0);
+            panelScreen.Name = "panelScreen";
+            panelScreen.Padding = new Padding(20, 11, 20, 0);
+            panelScreen.Size = new Size(827, 187);
+            panelScreen.TabIndex = 2;
+            panelScreen.TabStop = true;
+            // 
+            // labelTipScreen
+            // 
+            labelTipScreen.Dock = DockStyle.Top;
+            labelTipScreen.ForeColor = SystemColors.GrayText;
+            labelTipScreen.Location = new Point(20, 151);
+            labelTipScreen.Margin = new Padding(4, 0, 4, 0);
+            labelTipScreen.Name = "labelTipScreen";
+            labelTipScreen.Size = new Size(787, 36);
+            labelTipScreen.TabIndex = 24;
+            // 
+            // tableScreen
+            // 
+            tableScreen.AutoSize = true;
+            tableScreen.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tableScreen.ColumnCount = 4;
+            tableScreen.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableScreen.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableScreen.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableScreen.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableScreen.Controls.Add(buttonScreenAuto, 0, 0);
+            tableScreen.Controls.Add(button60Hz, 1, 0);
+            tableScreen.Controls.Add(button120Hz, 2, 0);
+            tableScreen.Controls.Add(buttonMiniled, 3, 0);
+            tableScreen.Controls.Add(buttonFHD, 3, 0);
+            tableScreen.Controls.Add(buttonHDRControl, 3, 0);
+            tableScreen.Dock = DockStyle.Top;
+            tableScreen.Location = new Point(20, 51);
+            tableScreen.Margin = new Padding(8, 4, 8, 4);
+            tableScreen.Name = "tableScreen";
+            tableScreen.RowCount = 1;
+            tableScreen.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
+            tableScreen.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+            tableScreen.Size = new Size(787, 100);
+            tableScreen.TabIndex = 23;
+            // 
+            // buttonScreenAuto
+            // 
+            buttonScreenAuto.Activated = false;
+            buttonScreenAuto.BackColor = SystemColors.ControlLightLight;
+            buttonScreenAuto.BorderColor = Color.Transparent;
+            buttonScreenAuto.BorderRadius = 5;
+            buttonScreenAuto.Dock = DockStyle.Fill;
+            buttonScreenAuto.FlatAppearance.BorderSize = 0;
+            buttonScreenAuto.FlatStyle = FlatStyle.Flat;
+            buttonScreenAuto.ForeColor = SystemColors.ControlText;
+            buttonScreenAuto.Location = new Point(4, 4);
+            buttonScreenAuto.Margin = new Padding(4);
+            buttonScreenAuto.Name = "buttonScreenAuto";
+            buttonScreenAuto.Secondary = false;
+            buttonScreenAuto.Size = new Size(188, 72);
+            buttonScreenAuto.TabIndex = 9;
+            buttonScreenAuto.Text = Properties.Strings.AutoMode;
+            buttonScreenAuto.UseVisualStyleBackColor = false;
+            // 
+            // button60Hz
+            // 
+            button60Hz.Activated = false;
+            button60Hz.BackColor = SystemColors.ControlLightLight;
+            button60Hz.BorderColor = Color.Transparent;
+            button60Hz.BorderRadius = 5;
+            button60Hz.CausesValidation = false;
+            button60Hz.Dock = DockStyle.Fill;
+            button60Hz.FlatAppearance.BorderSize = 0;
+            button60Hz.FlatStyle = FlatStyle.Flat;
+            button60Hz.ForeColor = SystemColors.ControlText;
+            button60Hz.Location = new Point(200, 4);
+            button60Hz.Margin = new Padding(4);
+            button60Hz.Name = "button60Hz";
+            button60Hz.Secondary = false;
+            button60Hz.Size = new Size(188, 72);
+            button60Hz.TabIndex = 10;
+            button60Hz.Text = "60Hz";
+            button60Hz.UseVisualStyleBackColor = false;
+            // 
+            // button120Hz
+            // 
+            button120Hz.Activated = false;
+            button120Hz.BackColor = SystemColors.ControlLightLight;
+            button120Hz.BorderColor = Color.Transparent;
+            button120Hz.BorderRadius = 5;
+            button120Hz.Dock = DockStyle.Fill;
+            button120Hz.FlatAppearance.BorderSize = 0;
+            button120Hz.FlatStyle = FlatStyle.Flat;
+            button120Hz.ForeColor = SystemColors.ControlText;
+            button120Hz.Location = new Point(396, 4);
+            button120Hz.Margin = new Padding(4);
+            button120Hz.Name = "button120Hz";
+            button120Hz.Secondary = false;
+            button120Hz.Size = new Size(188, 72);
+            button120Hz.TabIndex = 11;
+            button120Hz.Text = "120Hz + OD";
+            button120Hz.UseVisualStyleBackColor = false;
+            // 
+            // buttonMiniled
+            // 
+            buttonMiniled.Activated = false;
+            buttonMiniled.BackColor = SystemColors.ControlLightLight;
+            buttonMiniled.BorderColor = Color.Transparent;
+            buttonMiniled.BorderRadius = 5;
+            buttonMiniled.CausesValidation = false;
+            buttonMiniled.Dock = DockStyle.Fill;
+            buttonMiniled.FlatAppearance.BorderSize = 0;
+            buttonMiniled.FlatStyle = FlatStyle.Flat;
+            buttonMiniled.ForeColor = SystemColors.ControlText;
+            buttonMiniled.Location = new Point(592, 4);
+            buttonMiniled.Margin = new Padding(4);
+            buttonMiniled.Name = "buttonMiniled";
+            buttonMiniled.Secondary = false;
+            buttonMiniled.Size = new Size(191, 72);
+            buttonMiniled.TabIndex = 12;
+            buttonMiniled.Text = Properties.Strings.Multizone;
+            buttonMiniled.UseVisualStyleBackColor = false;
+            // 
+            // buttonFHD
+            // 
+            buttonFHD.Activated = false;
+            buttonFHD.BackColor = SystemColors.ControlLightLight;
+            buttonFHD.BorderColor = Color.Transparent;
+            buttonFHD.BorderRadius = 5;
+            buttonFHD.CausesValidation = false;
+            buttonFHD.Dock = DockStyle.Fill;
+            buttonFHD.FlatAppearance.BorderSize = 0;
+            buttonFHD.FlatStyle = FlatStyle.Flat;
+            buttonFHD.ForeColor = SystemColors.ControlText;
+            buttonFHD.Location = new Point(4, 84);
+            buttonFHD.Margin = new Padding(4);
+            buttonFHD.Name = "buttonFHD";
+            buttonFHD.Secondary = false;
+            buttonFHD.Size = new Size(188, 12);
+            buttonFHD.TabIndex = 13;
+            buttonFHD.Text = "FHD";
+            buttonFHD.UseVisualStyleBackColor = false;
+            buttonFHD.Visible = false;
+            // 
+            // panelScreenTitle
+            // 
+            panelScreenTitle.Controls.Add(labelMidFan);
+            panelScreenTitle.Controls.Add(pictureScreen);
+            panelScreenTitle.Controls.Add(labelSreen);
+            panelScreenTitle.Dock = DockStyle.Top;
+            panelScreenTitle.Location = new Point(20, 11);
+            panelScreenTitle.Margin = new Padding(4);
+            panelScreenTitle.Name = "panelScreenTitle";
+            panelScreenTitle.Size = new Size(787, 40);
+            panelScreenTitle.TabIndex = 25;
+            // 
+            // labelMidFan
+            // 
+            labelMidFan.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            labelMidFan.Location = new Point(500, 0);
+            labelMidFan.Margin = new Padding(8, 0, 8, 0);
+            labelMidFan.Name = "labelMidFan";
+            labelMidFan.Size = new Size(285, 35);
+            labelMidFan.TabIndex = 28;
+            labelMidFan.Text = "         ";
+            labelMidFan.TextAlign = ContentAlignment.TopRight;
+            // 
+            // pictureScreen
+            // 
+            pictureScreen.BackgroundImageLayout = ImageLayout.Zoom;
+            pictureScreen.Location = new Point(8, 3);
+            pictureScreen.Margin = new Padding(4);
+            pictureScreen.Name = "pictureScreen";
+            pictureScreen.Size = new Size(32, 32);
+            pictureScreen.TabIndex = 27;
+            pictureScreen.TabStop = false;
+            // 
+            // labelSreen
+            // 
+            labelSreen.AutoSize = true;
+            labelSreen.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold);
+            labelSreen.Location = new Point(40, 0);
+            labelSreen.Margin = new Padding(4, 0, 4, 0);
+            labelSreen.Name = "labelSreen";
+            labelSreen.Size = new Size(176, 32);
+            labelSreen.TabIndex = 26;
+            labelSreen.Text = "Laptop Screen";
+            // 
+            // panelKeyboard
+            // 
+            panelKeyboard.AccessibleRole = AccessibleRole.Grouping;
+            panelKeyboard.AutoSize = true;
+            panelKeyboard.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelKeyboard.Controls.Add(labelBacklight);
+            panelKeyboard.Controls.Add(tableLayoutKeyboard);
+            panelKeyboard.Controls.Add(panelKeyboardTitle);
+            panelKeyboard.Dock = DockStyle.Top;
+            panelKeyboard.Location = new Point(11, 1394);
+            panelKeyboard.Margin = new Padding(0);
+            panelKeyboard.Name = "panelKeyboard";
+            panelKeyboard.Padding = new Padding(20, 20, 20, 0);
+            panelKeyboard.Size = new Size(827, 146);
+            panelKeyboard.TabIndex = 6;
+            panelKeyboard.TabStop = true;
+            // 
+            // labelBacklight
+            // 
+            labelBacklight.Cursor = Cursors.Hand;
+            labelBacklight.Dock = DockStyle.Top;
+            labelBacklight.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body);
+            labelBacklight.ForeColor = SystemColors.GrayText;
+            labelBacklight.Location = new Point(20, 112);
+            labelBacklight.Margin = new Padding(4, 0, 4, 0);
+            labelBacklight.Name = "labelBacklight";
+            labelBacklight.Padding = new Padding(4, 0, 4, 0);
+            labelBacklight.Size = new Size(787, 34);
+            labelBacklight.TabIndex = 43;
+            // 
+            // tableLayoutKeyboard
+            // 
+            tableLayoutKeyboard.AutoSize = true;
+            tableLayoutKeyboard.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tableLayoutKeyboard.ColumnCount = 3;
+            tableLayoutKeyboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33F));
+            tableLayoutKeyboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33F));
+            tableLayoutKeyboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33F));
+            tableLayoutKeyboard.Controls.Add(buttonKeyboard, 0, 0);
+            tableLayoutKeyboard.Controls.Add(buttonKeyboardColor, 0, 0);
+            tableLayoutKeyboard.Controls.Add(comboKeyboard, 0, 0);
+            tableLayoutKeyboard.Dock = DockStyle.Top;
+            tableLayoutKeyboard.Location = new Point(20, 60);
+            tableLayoutKeyboard.Margin = new Padding(8, 4, 8, 4);
+            tableLayoutKeyboard.Name = "tableLayoutKeyboard";
+            tableLayoutKeyboard.RowCount = 1;
+            tableLayoutKeyboard.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tableLayoutKeyboard.Size = new Size(787, 52);
+            tableLayoutKeyboard.TabIndex = 39;
+            // 
+            // buttonKeyboard
+            // 
+            buttonKeyboard.Activated = false;
+            buttonKeyboard.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            buttonKeyboard.BackColor = SystemColors.ControlLight;
+            buttonKeyboard.BorderColor = Color.Transparent;
+            buttonKeyboard.BorderRadius = 2;
+            buttonKeyboard.Dock = DockStyle.Top;
+            buttonKeyboard.FlatAppearance.BorderSize = 0;
+            buttonKeyboard.FlatStyle = FlatStyle.Flat;
+            buttonKeyboard.Image = Properties.Resources.icons8_settings_32;
+            buttonKeyboard.ImageAlign = ContentAlignment.MiddleRight;
+            buttonKeyboard.Location = new Point(528, 4);
+            buttonKeyboard.Margin = new Padding(4);
+            buttonKeyboard.Name = "buttonKeyboard";
+            buttonKeyboard.Secondary = true;
+            buttonKeyboard.Size = new Size(255, 48);
+            buttonKeyboard.TabIndex = 37;
+            buttonKeyboard.Text = "&Extra";
+            buttonKeyboard.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonKeyboard.UseVisualStyleBackColor = false;
+            //
+            // buttonKeyboardColor
+            //
+            buttonKeyboardColor.Activated = false;
+            buttonKeyboardColor.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            buttonKeyboardColor.BackColor = SystemColors.ButtonHighlight;
+            buttonKeyboardColor.BorderColor = Color.Transparent;
+            buttonKeyboardColor.BorderRadius = 2;
+            buttonKeyboardColor.Dock = DockStyle.Top;
+            buttonKeyboardColor.FlatStyle = FlatStyle.Flat;
+            buttonKeyboardColor.ForeColor = SystemColors.ControlText;
+            buttonKeyboardColor.Location = new Point(0, 0);
+            buttonKeyboardColor.Margin = new Padding(4);
+            buttonKeyboardColor.Name = "buttonKeyboardColor";
+            buttonKeyboardColor.Secondary = false;
+            buttonKeyboardColor.Size = new Size(254, 48);
+            buttonKeyboardColor.TabIndex = 14;
+            buttonKeyboardColor.Text = Properties.Strings.Color;
+            buttonKeyboardColor.UseVisualStyleBackColor = false;
+            // 
+            // comboKeyboard
+            // 
+            comboKeyboard.BorderColor = UiVisualStyle.Border;
+            comboKeyboard.ButtonColor = UiVisualStyle.SurfaceRaised;
+            comboKeyboard.Dock = DockStyle.Top;
+            comboKeyboard.FlatStyle = FlatStyle.Flat;
+            comboKeyboard.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body);
+            comboKeyboard.FormattingEnabled = true;
+            comboKeyboard.Items.AddRange(new object[] { "Static", "Breathe", "Rainbow", "Strobe" });
+            comboKeyboard.Location = new Point(7, 7);
+            comboKeyboard.Margin = new Padding(7, 7, 7, 4);
+            comboKeyboard.Name = "comboKeyboard";
+            comboKeyboard.Size = new Size(248, 40);
+            comboKeyboard.TabIndex = 13;
+            // 
+            // panelKeyboardTitle
+            // 
+            panelKeyboardTitle.Controls.Add(buttonFnLock);
+            panelKeyboardTitle.Controls.Add(pictureKeyboard);
+            panelKeyboardTitle.Controls.Add(labelKeyboard);
+            panelKeyboardTitle.Dock = DockStyle.Top;
+            panelKeyboardTitle.Location = new Point(20, 20);
+            panelKeyboardTitle.Margin = new Padding(0);
+            panelKeyboardTitle.Name = "panelKeyboardTitle";
+            panelKeyboardTitle.Padding = new Padding(0, 0, 5, 0);
+            panelKeyboardTitle.Size = new Size(787, 40);
+            panelKeyboardTitle.TabIndex = 40;
+            // 
+            // buttonFnLock
+            // 
+            buttonFnLock.Activated = false;
+            buttonFnLock.BackColor = SystemColors.ControlLight;
+            buttonFnLock.BorderColor = Color.Transparent;
+            buttonFnLock.BorderRadius = 2;
+            buttonFnLock.Borderless = true;
+            buttonFnLock.Dock = DockStyle.Right;
+            buttonFnLock.FlatAppearance.BorderSize = 0;
+            buttonFnLock.FlatStyle = FlatStyle.Flat;
+            buttonFnLock.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption, FontStyle.Bold);
+            buttonFnLock.ForeColor = SystemColors.ControlDark;
+            buttonFnLock.Location = new Point(675, 0);
+            buttonFnLock.Margin = new Padding(0);
+            buttonFnLock.Name = "buttonFnLock";
+            buttonFnLock.Secondary = true;
+            buttonFnLock.Size = new Size(107, 40);
+            buttonFnLock.TabIndex = 4;
+            buttonFnLock.Text = "FN-Lock";
+            buttonFnLock.UseVisualStyleBackColor = false;
+            // 
+            // pictureKeyboard
+            // 
+            pictureKeyboard.BackgroundImageLayout = ImageLayout.Zoom;
+            pictureKeyboard.Location = new Point(8, 0);
+            pictureKeyboard.Margin = new Padding(4);
+            pictureKeyboard.Name = "pictureKeyboard";
+            pictureKeyboard.Size = new Size(32, 32);
+            pictureKeyboard.TabIndex = 35;
+            pictureKeyboard.TabStop = false;
+            // 
+            // labelKeyboard
+            // 
+            labelKeyboard.AutoSize = true;
+            labelKeyboard.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold);
+            labelKeyboard.Location = new Point(43, 0);
+            labelKeyboard.Margin = new Padding(4, 0, 4, 0);
+            labelKeyboard.Name = "labelKeyboard";
+            labelKeyboard.Size = new Size(210, 32);
+            labelKeyboard.TabIndex = 34;
+            labelKeyboard.Text = "Laptop Keyboard";
+            // 
+            // panelStartup
+            // 
+            panelStartup.Controls.Add(labelCharge);
+            panelStartup.Controls.Add(checkStartup);
+            panelStartup.Dock = DockStyle.Top;
+            panelStartup.Location = new Point(11, 1787);
+            panelStartup.Margin = new Padding(0);
+            panelStartup.Name = "panelStartup";
+            panelStartup.Padding = new Padding(20, 0, 20, 0);
+            panelStartup.Size = new Size(827, 50);
+            panelStartup.TabIndex = 9;
+            // 
+            // labelCharge
+            // 
+            labelCharge.Cursor = Cursors.Hand;
+            labelCharge.Dock = DockStyle.Right;
+            labelCharge.ForeColor = SystemColors.ControlDark;
+            labelCharge.Location = new Point(442, 0);
+            labelCharge.Margin = new Padding(0);
+            labelCharge.Name = "labelCharge";
+            labelCharge.Size = new Size(365, 50);
+            labelCharge.TabIndex = 40;
+            labelCharge.TextAlign = ContentAlignment.MiddleRight;
+            // 
+            // panelPeripherals
+            // 
+            panelPeripherals.AutoSize = true;
+            panelPeripherals.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelPeripherals.Controls.Add(tableLayoutPeripherals);
+            panelPeripherals.Dock = DockStyle.Top;
+            panelPeripherals.Location = new Point(11, 1540);
+            panelPeripherals.Margin = new Padding(0);
+            panelPeripherals.Name = "panelPeripherals";
+            panelPeripherals.Padding = new Padding(20, 5, 20, 10);
+            panelPeripherals.Size = new Size(827, 143);
+            panelPeripherals.TabIndex = 7;
+            panelPeripherals.Visible = false;
+            // 
+            // tableLayoutPeripherals
+            // 
+            tableLayoutPeripherals.AutoSize = false;
+            tableLayoutPeripherals.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tableLayoutPeripherals.ColumnCount = 3;
+            tableLayoutPeripherals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableLayoutPeripherals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableLayoutPeripherals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableLayoutPeripherals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            tableLayoutPeripherals.Controls.Add(buttonPeripheral3, 0, 0);
+            tableLayoutPeripherals.Controls.Add(buttonPeripheral2, 0, 0);
+            tableLayoutPeripherals.Controls.Add(buttonPeripheral1, 0, 0);
+            tableLayoutPeripherals.Dock = DockStyle.Top;
+            tableLayoutPeripherals.Location = new Point(20, 5);
+            tableLayoutPeripherals.Margin = new Padding(8, 4, 8, 4);
+            tableLayoutPeripherals.Name = "tableLayoutPeripherals";
+            tableLayoutPeripherals.RowCount = 1;
+            tableLayoutPeripherals.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            tableLayoutPeripherals.Size = new Size(787, 128);
+            tableLayoutPeripherals.TabIndex = 43;
+            // 
+            // buttonPeripheral3
+            // 
+            buttonPeripheral3.Activated = false;
+            buttonPeripheral3.BackColor = SystemColors.ControlLightLight;
+            buttonPeripheral3.BorderColor = Color.Transparent;
+            buttonPeripheral3.BorderRadius = 5;
+            buttonPeripheral3.CausesValidation = false;
+            buttonPeripheral3.Dock = DockStyle.Top;
+            buttonPeripheral3.FlatAppearance.BorderSize = 0;
+            buttonPeripheral3.FlatStyle = FlatStyle.Flat;
+            buttonPeripheral3.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption);
+            buttonPeripheral3.ForeColor = SystemColors.ControlText;
+            buttonPeripheral3.Image = Properties.Resources.icons8_maus_48;
+            buttonPeripheral3.ImageAlign = ContentAlignment.MiddleLeft;
+            buttonPeripheral3.Location = new Point(528, 4);
+            buttonPeripheral3.Margin = new Padding(4);
+            buttonPeripheral3.Name = "buttonPeripheral3";
+            buttonPeripheral3.Secondary = true;
+            buttonPeripheral3.Size = new Size(255, 120);
+            buttonPeripheral3.TabIndex = 2;
+            buttonPeripheral3.Text = "Mouse 3";
+            buttonPeripheral3.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonPeripheral3.UseVisualStyleBackColor = false;
+            // 
+            // buttonPeripheral2
+            // 
+            buttonPeripheral2.Activated = false;
+            buttonPeripheral2.BackColor = SystemColors.ControlLightLight;
+            buttonPeripheral2.BorderColor = Color.Transparent;
+            buttonPeripheral2.BorderRadius = 5;
+            buttonPeripheral2.CausesValidation = false;
+            buttonPeripheral2.Dock = DockStyle.Top;
+            buttonPeripheral2.FlatAppearance.BorderSize = 0;
+            buttonPeripheral2.FlatStyle = FlatStyle.Flat;
+            buttonPeripheral2.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption);
+            buttonPeripheral2.ForeColor = SystemColors.ControlText;
+            buttonPeripheral2.Image = Properties.Resources.icons8_maus_48;
+            buttonPeripheral2.ImageAlign = ContentAlignment.MiddleLeft;
+            buttonPeripheral2.Location = new Point(266, 4);
+            buttonPeripheral2.Margin = new Padding(4);
+            buttonPeripheral2.Name = "buttonPeripheral2";
+            buttonPeripheral2.Secondary = true;
+            buttonPeripheral2.Size = new Size(254, 120);
+            buttonPeripheral2.TabIndex = 1;
+            buttonPeripheral2.Text = "Mouse 2";
+            buttonPeripheral2.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonPeripheral2.UseVisualStyleBackColor = false;
+            // 
+            // buttonPeripheral1
+            // 
+            buttonPeripheral1.Activated = false;
+            buttonPeripheral1.BackColor = SystemColors.ControlLightLight;
+            buttonPeripheral1.BorderColor = Color.Transparent;
+            buttonPeripheral1.BorderRadius = 5;
+            buttonPeripheral1.CausesValidation = false;
+            buttonPeripheral1.Dock = DockStyle.Top;
+            buttonPeripheral1.FlatAppearance.BorderSize = 0;
+            buttonPeripheral1.FlatStyle = FlatStyle.Flat;
+            buttonPeripheral1.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption);
+            buttonPeripheral1.ForeColor = SystemColors.ControlText;
+            buttonPeripheral1.Image = Properties.Resources.icons8_maus_48;
+            buttonPeripheral1.ImageAlign = ContentAlignment.MiddleLeft;
+            buttonPeripheral1.Location = new Point(4, 4);
+            buttonPeripheral1.Margin = new Padding(4);
+            buttonPeripheral1.Name = "buttonPeripheral1";
+            buttonPeripheral1.Secondary = true;
+            buttonPeripheral1.Size = new Size(254, 120);
+            buttonPeripheral1.TabIndex = 0;
+            buttonPeripheral1.Text = "Mouse 1";
+            buttonPeripheral1.TextImageRelation = TextImageRelation.ImageBeforeText;
+            buttonPeripheral1.UseVisualStyleBackColor = false;
+            // 
+            // panelVersion
+            // 
+            panelVersion.AutoSize = true;
+            panelVersion.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panelVersion.Controls.Add(buttonEnergySaver);
+            panelVersion.Controls.Add(buttonAmdOled);
+            panelVersion.Controls.Add(buttonArmoury);
+            panelVersion.Controls.Add(labelVersion);
+            panelVersion.Dock = DockStyle.Top;
+            panelVersion.Location = new Point(11, 1837);
+            panelVersion.MinimumSize = new Size(0, 50);
+            panelVersion.CardStyle = true;
+            panelVersion.Name = "panelVersion";
+            panelVersion.Padding = new Padding(20, 5, 24, 5);
+            panelVersion.Size = new Size(827, 50);
+            panelVersion.TabIndex = 10;
+            // 
+            // buttonEnergySaver
+            // 
+            buttonEnergySaver.Activated = false;
+            buttonEnergySaver.BackColor = SystemColors.ControlLight;
+            buttonEnergySaver.BorderColor = Color.Transparent;
+            buttonEnergySaver.BorderRadius = 2;
+            buttonEnergySaver.Dock = DockStyle.Right;
+            buttonEnergySaver.FlatAppearance.BorderSize = 0;
+            buttonEnergySaver.FlatStyle = FlatStyle.Flat;
+            buttonEnergySaver.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption, FontStyle.Bold);
+            buttonEnergySaver.ForeColor = SystemColors.ControlDark;
+            buttonEnergySaver.ImageAlign = ContentAlignment.MiddleLeft;
+            buttonEnergySaver.Location = new Point(640, 5);
+            buttonEnergySaver.Margin = new Padding(0);
+            buttonEnergySaver.Name = "buttonEnergySaver";
+            buttonEnergySaver.Secondary = true;
+            buttonEnergySaver.Size = new Size(163, 40);
+            buttonEnergySaver.TabIndex = 39;
+            buttonEnergySaver.Text = "Energy Saver";
+            buttonEnergySaver.UseVisualStyleBackColor = false;
+            buttonEnergySaver.Visible = false;
+            // 
+            // buttonAmdOled
+            // 
+            buttonAmdOled.Activated = false;
+            buttonAmdOled.BackColor = SystemColors.ControlLight;
+            buttonAmdOled.BorderColor = Color.Transparent;
+            buttonAmdOled.BorderRadius = 2;
+            buttonAmdOled.Dock = DockStyle.Right;
+            buttonAmdOled.FlatAppearance.BorderSize = 0;
+            buttonAmdOled.FlatStyle = FlatStyle.Flat;
+            buttonAmdOled.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption, FontStyle.Bold);
+            buttonAmdOled.ForeColor = SystemColors.ControlDark;
+            buttonAmdOled.ImageAlign = ContentAlignment.MiddleLeft;
+            buttonAmdOled.Location = new Point(640, 5);
+            buttonAmdOled.Margin = new Padding(0);
+            buttonAmdOled.Name = "buttonAmdOled";
+            buttonAmdOled.Secondary = true;
+            buttonAmdOled.Size = new Size(180, 40);
+            buttonAmdOled.TabIndex = 39;
+            buttonAmdOled.Text = "AMD OledSaver";
+            buttonAmdOled.UseVisualStyleBackColor = false;
+            buttonAmdOled.Visible = false;
+            // 
+            // buttonArmoury
+            // 
+            buttonArmoury.Activated = false;
+            buttonArmoury.BackColor = SystemColors.ControlLight;
+            buttonArmoury.BorderColor = Color.Transparent;
+            buttonArmoury.BorderRadius = 2;
+            buttonArmoury.Dock = DockStyle.Right;
+            buttonArmoury.FlatAppearance.BorderSize = 0;
+            buttonArmoury.FlatStyle = FlatStyle.Flat;
+            buttonArmoury.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption, FontStyle.Bold);
+            buttonArmoury.ForeColor = SystemColors.ControlDark;
+            buttonArmoury.ImageAlign = ContentAlignment.MiddleLeft;
+            buttonArmoury.Location = new Point(640, 5);
+            buttonArmoury.Margin = new Padding(0);
+            buttonArmoury.Name = "buttonArmoury";
+            buttonArmoury.Secondary = true;
+            buttonArmoury.Size = new Size(180, 40);
+            buttonArmoury.TabIndex = 40;
+            buttonArmoury.Text = "ArmouryCrate";
+            buttonArmoury.UseVisualStyleBackColor = false;
+            buttonArmoury.Visible = false;            
+            // 
+            // labelVersion
+            // 
+            labelVersion.Cursor = Cursors.Hand;
+            labelVersion.Dock = DockStyle.Left;
+            labelVersion.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Underline);
+            labelVersion.ForeColor = SystemColors.ControlDark;
+            labelVersion.Location = new Point(20, 5);
+            labelVersion.Margin = new Padding(0);
+            labelVersion.Name = "labelVersion";
+            labelVersion.Padding = new Padding(5, 0, 5, 0);
+            labelVersion.Size = new Size(399, 40);
+            labelVersion.TabIndex = 38;
+            labelVersion.Text = "";
+            labelVersion.TextAlign = ContentAlignment.MiddleLeft;
+            // 
+            // buttonHDRControl
+            // 
+            buttonHDRControl.Activated = false;
+            buttonHDRControl.BackColor = SystemColors.ControlLightLight;
+            buttonHDRControl.BorderColor = Color.Transparent;
+            buttonHDRControl.BorderRadius = 5;
+            buttonHDRControl.CausesValidation = false;
+            buttonHDRControl.Dock = DockStyle.Fill;
+            buttonHDRControl.FlatAppearance.BorderSize = 0;
+            buttonHDRControl.FlatStyle = FlatStyle.Flat;
+            buttonHDRControl.ForeColor = SystemColors.ControlText;
+            buttonHDRControl.Location = new Point(200, 84);
+            buttonHDRControl.Margin = new Padding(4);
+            buttonHDRControl.Name = "buttonHDRControl";
+            buttonHDRControl.Secondary = false;
+            buttonHDRControl.Size = new Size(188, 12);
+            buttonHDRControl.TabIndex = 14;
+            buttonHDRControl.Text = "HDR Color Control";
+            buttonHDRControl.UseVisualStyleBackColor = false;
+            buttonHDRControl.Visible = false;
+            // 
+            // SettingsForm
+            // 
+            AutoScaleDimensions = new SizeF(192F, 192F);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            ClientSize = new Size(849, 2075);
+            Controls.Add(panelFooter);
+            Controls.Add(panelVersion);
+            Controls.Add(panelStartup);
+            Controls.Add(panelBattery);
+            Controls.Add(panelGPU);
+            Controls.Add(panelPerformance);
+            Margin = new Padding(8, 4, 8, 4);
+            MaximizeBox = false;
+            MdiChildrenMinimizedAnchorBottom = false;
+            MinimizeBox = false;
+            MinimumSize = new Size(821, 71);
+            Name = "SettingsForm";
+            Padding = new Padding(11);
+            ShowIcon = false;
+            StartPosition = FormStartPosition.CenterScreen;
+            Text = "L-Mechrevo";
+            panelBattery.ResumeLayout(false);
+            panelBatteryTitle.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)pictureBattery).EndInit();
+            panelFooter.ResumeLayout(false);
+            panelFooter.PerformLayout();
+            tableButtons.ResumeLayout(false);
+            panelPerformance.ResumeLayout(false);
+            panelPerformance.PerformLayout();
+            tablePerf.ResumeLayout(false);
+            panelCPUTitle.ResumeLayout(false);
+            panelCPUTitle.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)picturePerf).EndInit();
+            panelGPU.ResumeLayout(false);
+            panelGPU.PerformLayout();
+            tableAMD.ResumeLayout(false);
+            tableGPU.ResumeLayout(false);
+            panelGPUTitle.ResumeLayout(false);
+            panelGPUTitle.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureGPU).EndInit();
+            panelScreen.ResumeLayout(false);
+            panelScreen.PerformLayout();
+            tableScreen.ResumeLayout(false);
+            panelScreenTitle.ResumeLayout(false);
+            panelScreenTitle.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureScreen).EndInit();
+            panelKeyboard.ResumeLayout(false);
+            panelKeyboard.PerformLayout();
+            tableLayoutKeyboard.ResumeLayout(false);
+            tableLayoutKeyboard.PerformLayout();
+            panelKeyboardTitle.ResumeLayout(false);
+            panelKeyboardTitle.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)pictureKeyboard).EndInit();
+            panelStartup.ResumeLayout(false);
+            panelStartup.PerformLayout();
+            panelPeripherals.ResumeLayout(false);
+            panelPeripherals.PerformLayout();
+            tableLayoutPeripherals.ResumeLayout(false);
+            panelVersion.ResumeLayout(false);
+            ResumeLayout(false);
+            PerformLayout();
+        }
+
+        #endregion
+        private Panel panelBattery;
+        private Panel panelFooter;
+        private RButton buttonQuit;
+        private UI.RCheckBox checkStartup;
+        private Panel panelPerformance;
+        private TableLayoutPanel tablePerf;
+        private RButton buttonTurbo;
+        private RButton buttonBalanced;
+        private RButton buttonSilent;
+        private Panel panelGPU;
+        private TableLayoutPanel tableGPU;
+        private RButton buttonUltimate;
+        private RButton buttonStandard;
+        private RButton buttonEco;
+        private Panel panelScreen;
+        private TableLayoutPanel tableScreen;
+        private RButton buttonScreenAuto;
+        private RButton button60Hz;
+        private Panel panelKeyboard;
+        private TableLayoutPanel tableLayoutKeyboard;
+        private RComboBox comboKeyboard;
+        private RButton button120Hz;
+        private RButton buttonOptimized;
+        private Label labelTipGPU;
+        private Label labelTipScreen;
+        private RButton buttonMiniled;
+        private RColorButton buttonKeyboardColor;
+        private RSlider sliderBattery;
+        private Panel panelGPUTitle;
+        private PictureBox pictureGPU;
+        private ToolTip toolTip;
+        private Label labelGPU;
+        private Label labelGPUFan;
+        private Panel panelCPUTitle;
+        private PictureBox picturePerf;
+        private Label labelPerf;
+        private Label labelCPUFan;
+        private Panel panelScreenTitle;
+        private Label labelMidFan;
+        private PictureBox pictureScreen;
+        private Label labelSreen;
+        private Panel panelKeyboardTitle;
+        private PictureBox pictureKeyboard;
+        private Label labelKeyboard;
+        private Panel panelBatteryTitle;
+        private Label labelBattery;
+        private PictureBox pictureBattery;
+        private Label labelBatteryTitle;
+        private Panel panelStartup;
+        private RButton buttonStopGPU;
+        private TableLayoutPanel tableButtons;
+        private Panel panelPeripherals;
+        private TableLayoutPanel tableLayoutPeripherals;
+        private RButton buttonPeripheral2;
+        private RButton buttonPeripheral3;
+        private RButton buttonPeripheral1;
+        private RButton buttonKeyboard;
+        private RButton buttonUpdates;
+        private Label labelCharge;
+        private RButton buttonFnLock;
+        private RButton buttonBatteryFull;
+        private TableLayoutPanel tableAMD;
+        private RButton buttonOverlay;
+        private RButton buttonFHD;
+        private Label labelBacklight;
+        private UI.BufferedPanel panelVersion;
+        private Label labelVersion;
+        private RBadgeButton buttonDonate;
+        private RButton buttonEnergySaver;
+        private RButton buttonAmdOled;
+        private RButton buttonArmoury;
+        private RButton buttonHDRControl;
+    }
+}

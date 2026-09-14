@@ -1,0 +1,717 @@
+﻿{
+    "GeneratedUtc":  "2026-08-25T21:08:57.7572291Z",
+    "Source":  "_decompiled/GCUService/GCUService.decompiled.cs",
+    "ProjectId":  [
+                      {
+                          "Member":  "None",
+                          "Value":  0,
+                          "Hex":  "0x0",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GI",
+                          "Value":  1,
+                          "Hex":  "0x1",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GJ",
+                          "Value":  2,
+                          "Hex":  "0x2",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GK",
+                          "Value":  3,
+                          "Hex":  "0x3",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GICN",
+                          "Value":  4,
+                          "Hex":  "0x4",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GJCN",
+                          "Value":  5,
+                          "Hex":  "0x5",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GK5CN_X",
+                          "Value":  6,
+                          "Hex":  "0x6",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GK7CN_S",
+                          "Value":  7,
+                          "Hex":  "0x7",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GK7CPCS_GK5CQ7Z",
+                          "Value":  8,
+                          "Hex":  "0x8",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PF",
+                          "Value":  9,
+                          "Hex":  "0x9",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GK5CP_4X_5X_6X",
+                          "Value":  10,
+                          "Hex":  "0xA",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "IDP",
+                          "Value":  11,
+                          "Hex":  "0xB",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "IDY_6Y",
+                          "Value":  12,
+                          "Hex":  "0xC",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "IDY_7Y",
+                          "Value":  13,
+                          "Hex":  "0xD",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PF4MU_PF4MN_PF5MU",
+                          "Value":  14,
+                          "Hex":  "0xE",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "CML_Gaming",
+                          "Value":  15,
+                          "Hex":  "0xF",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GK7NXXR",
+                          "Value":  16,
+                          "Hex":  "0x10",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "GM5MU1Y",
+                          "Value":  17,
+                          "Hex":  "0x11",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PH4TRX1",
+                          "Value":  18,
+                          "Hex":  "0x12",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PH4TUX1",
+                          "Value":  19,
+                          "Hex":  "0x13",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PH4TQx1",
+                          "Value":  20,
+                          "Hex":  "0x14",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PH6TRX1",
+                          "Value":  21,
+                          "Hex":  "0x15",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PH6TQxx",
+                          "Value":  22,
+                          "Hex":  "0x16",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PHxAxxx",
+                          "Value":  23,
+                          "Hex":  "0x17",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PHxPxxx",
+                          "Value":  24,
+                          "Hex":  "0x18",
+                          "Family":  null,
+                          "Variant":  null
+                      },
+                      {
+                          "Member":  "PH4ARxx",
+                          "Value":  5889,
+                          "Hex":  "0x1701",
+                          "Family":  "PHxAxxx",
+                          "Variant":  1
+                      },
+                      {
+                          "Member":  "PH4AUxx",
+                          "Value":  5890,
+                          "Hex":  "0x1702",
+                          "Family":  "PHxAxxx",
+                          "Variant":  2
+                      },
+                      {
+                          "Member":  "PH4AXxx",
+                          "Value":  5891,
+                          "Hex":  "0x1703",
+                          "Family":  "PHxAxxx",
+                          "Variant":  3
+                      },
+                      {
+                          "Member":  "PH6AQxx",
+                          "Value":  5892,
+                          "Hex":  "0x1704",
+                          "Family":  "PHxAxxx",
+                          "Variant":  4
+                      },
+                      {
+                          "Member":  "PH6ARxx",
+                          "Value":  5893,
+                          "Hex":  "0x1705",
+                          "Family":  "PHxAxxx",
+                          "Variant":  5
+                      },
+                      {
+                          "Member":  "PH6AGxx",
+                          "Value":  5894,
+                          "Hex":  "0x1706",
+                          "Family":  "PHxAxxx",
+                          "Variant":  6
+                      },
+                      {
+                          "Member":  "PH4AUxf",
+                          "Value":  5895,
+                          "Hex":  "0x1707",
+                          "Family":  "PHxAxxx",
+                          "Variant":  7
+                      },
+                      {
+                          "Member":  "PH4PRxx",
+                          "Value":  6145,
+                          "Hex":  "0x1801",
+                          "Family":  "PHxPxxx",
+                          "Variant":  1
+                      },
+                      {
+                          "Member":  "PH4PUxx",
+                          "Value":  6146,
+                          "Hex":  "0x1802",
+                          "Family":  "PHxPxxx",
+                          "Variant":  2
+                      },
+                      {
+                          "Member":  "PH4PGx1",
+                          "Value":  6147,
+                          "Hex":  "0x1803",
+                          "Family":  "PHxPxxx",
+                          "Variant":  3
+                      },
+                      {
+                          "Member":  "PH4PGx2",
+                          "Value":  6148,
+                          "Hex":  "0x1804",
+                          "Family":  "PHxPxxx",
+                          "Variant":  4
+                      },
+                      {
+                          "Member":  "PH6PRxx",
+                          "Value":  6149,
+                          "Hex":  "0x1805",
+                          "Family":  "PHxPxxx",
+                          "Variant":  5
+                      },
+                      {
+                          "Member":  "PH6PGEx",
+                          "Value":  6150,
+                          "Hex":  "0x1806",
+                          "Family":  "PHxPxxx",
+                          "Variant":  6
+                      },
+                      {
+                          "Member":  "PH6PG0x",
+                          "Value":  6151,
+                          "Hex":  "0x1807",
+                          "Family":  "PHxPxxx",
+                          "Variant":  7
+                      },
+                      {
+                          "Member":  "PH6PG3x",
+                          "Value":  6152,
+                          "Hex":  "0x1808",
+                          "Family":  "PHxPxxx",
+                          "Variant":  8
+                      },
+                      {
+                          "Member":  "PH6PG7x",
+                          "Value":  6153,
+                          "Hex":  "0x1809",
+                          "Family":  "PHxPxxx",
+                          "Variant":  9
+                      },
+                      {
+                          "Member":  "PH4AQE3",
+                          "Value":  6154,
+                          "Hex":  "0x180A",
+                          "Family":  "PHxPxxx",
+                          "Variant":  10
+                      },
+                      {
+                          "Member":  "PH6PG0x150W",
+                          "Value":  6155,
+                          "Hex":  "0x180B",
+                          "Family":  "PHxPxxx",
+                          "Variant":  11
+                      },
+                      {
+                          "Member":  "PH6PG3x150W",
+                          "Value":  6156,
+                          "Hex":  "0x180C",
+                          "Family":  "PHxPxxx",
+                          "Variant":  12
+                      },
+                      {
+                          "Member":  "PH6PG7x150W",
+                          "Value":  6157,
+                          "Hex":  "0x180D",
+                          "Family":  "PHxPxxx",
+                          "Variant":  13
+                      }
+                  ],
+    "BiosProjectId":  [
+                          {
+                              "Member":  "NA",
+                              "Value":  0,
+                              "Hex":  "0x0",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDR",
+                              "Value":  1,
+                              "Hex":  "0x1",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDX",
+                              "Value":  2,
+                              "Hex":  "0x2",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDV",
+                              "Value":  3,
+                              "Hex":  "0x3",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDO",
+                              "Value":  4,
+                              "Hex":  "0x4",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDP",
+                              "Value":  5,
+                              "Hex":  "0x5",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDS",
+                              "Value":  6,
+                              "Hex":  "0x6",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDY",
+                              "Value":  7,
+                              "Hex":  "0x7",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDW",
+                              "Value":  8,
+                              "Hex":  "0x8",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDM",
+                              "Value":  9,
+                              "Hex":  "0x9",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDE",
+                              "Value":  10,
+                              "Hex":  "0xA",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDN",
+                              "Value":  11,
+                              "Hex":  "0xB",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDZ",
+                              "Value":  12,
+                              "Hex":  "0xC",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDXQ",
+                              "Value":  13,
+                              "Hex":  "0xD",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDQ",
+                              "Value":  14,
+                              "Hex":  "0xE",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDO3",
+                              "Value":  15,
+                              "Hex":  "0xF",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID1",
+                              "Value":  16,
+                              "Hex":  "0x10",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID2",
+                              "Value":  17,
+                              "Hex":  "0x11",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID3",
+                              "Value":  18,
+                              "Hex":  "0x12",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDG",
+                              "Value":  19,
+                              "Hex":  "0x13",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDJ",
+                              "Value":  20,
+                              "Hex":  "0x14",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDL",
+                              "Value":  21,
+                              "Hex":  "0x15",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDA",
+                              "Value":  22,
+                              "Hex":  "0x16",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDB",
+                              "Value":  23,
+                              "Hex":  "0x17",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDU",
+                              "Value":  24,
+                              "Hex":  "0x18",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDC",
+                              "Value":  25,
+                              "Hex":  "0x19",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDF",
+                              "Value":  26,
+                              "Hex":  "0x1A",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDK",
+                              "Value":  27,
+                              "Hex":  "0x1B",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID5",
+                              "Value":  28,
+                              "Hex":  "0x1C",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDI",
+                              "Value":  29,
+                              "Hex":  "0x1D",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID55",
+                              "Value":  30,
+                              "Hex":  "0x1E",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID6",
+                              "Value":  31,
+                              "Hex":  "0x1F",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID65",
+                              "Value":  32,
+                              "Hex":  "0x20",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID1New",
+                              "Value":  33,
+                              "Hex":  "0x21",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "ID9",
+                              "Value":  34,
+                              "Hex":  "0x22",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDH",
+                              "Value":  35,
+                              "Hex":  "0x23",
+                              "Explicit":  false
+                          },
+                          {
+                              "Member":  "IDR2",
+                              "Value":  36,
+                              "Hex":  "0x24",
+                              "Explicit":  false
+                          }
+                      ],
+    "Gn20GpuSku":  [
+                       {
+                           "Member":  "NA",
+                           "Value":  0,
+                           "Hex":  "0x0",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "E3",
+                           "Value":  1,
+                           "Hex":  "0x1",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "E4",
+                           "Value":  2,
+                           "Hex":  "0x2",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "E5",
+                           "Value":  3,
+                           "Hex":  "0x3",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "MaxQ",
+                           "Value":  4,
+                           "Hex":  "0x4",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "E7",
+                           "Value":  5,
+                           "Hex":  "0x5",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "P0",
+                           "Value":  6,
+                           "Hex":  "0x6",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "P1",
+                           "Value":  7,
+                           "Hex":  "0x7",
+                           "Explicit":  false
+                       },
+                       {
+                           "Member":  "E6",
+                           "Value":  8,
+                           "Hex":  "0x8",
+                           "Explicit":  false
+                       }
+                   ],
+    "Gn21GpuSku":  [
+                       {
+                           "Member":  "NA",
+                           "Value":  0,
+                           "Hex":  "0x0",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "N18P",
+                           "Value":  2,
+                           "Hex":  "0x2",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "E3",
+                           "Value":  3,
+                           "Hex":  "0x3",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "E4",
+                           "Value":  4,
+                           "Hex":  "0x4",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "E5",
+                           "Value":  5,
+                           "Hex":  "0x5",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "MaxQ",
+                           "Value":  6,
+                           "Hex":  "0x6",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "E7",
+                           "Value":  7,
+                           "Hex":  "0x7",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "P0",
+                           "Value":  8,
+                           "Hex":  "0x8",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "P1",
+                           "Value":  9,
+                           "Hex":  "0x9",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "E6",
+                           "Value":  10,
+                           "Hex":  "0xA",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "E8",
+                           "Value":  11,
+                           "Hex":  "0xB",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "P0R",
+                           "Value":  12,
+                           "Hex":  "0xC",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "P1R",
+                           "Value":  13,
+                           "Hex":  "0xD",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "X2",
+                           "Value":  16,
+                           "Hex":  "0x10",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "X4",
+                           "Value":  17,
+                           "Hex":  "0x11",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "X6",
+                           "Value":  18,
+                           "Hex":  "0x12",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "X9",
+                           "Value":  19,
+                           "Hex":  "0x13",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "X11",
+                           "Value":  20,
+                           "Hex":  "0x14",
+                           "Explicit":  true
+                       },
+                       {
+                           "Member":  "X2R",
+                           "Value":  21,
+                           "Hex":  "0x15",
+                           "Explicit":  true
+                       }
+                   ]
+}

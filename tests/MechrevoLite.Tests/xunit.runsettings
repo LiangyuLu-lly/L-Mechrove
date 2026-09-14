@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <!--
+      把测试期间的日志重定向到测试输出目录下的 test-logs\。
+
+      为什么必须在这里设、而不是靠测试程序集里的 [ModuleInitializer]：
+      Logger 是另一个程序集里的静态类，appPath 是 static readonly，第一次触碰 Logger
+      时就被固化。模块初始化器与「测试宿主里谁先触碰 Logger」之间存在竞争——实测同一份
+      代码两次运行结果不同（一次隔离成功、一次仍写进了生产日志）。
+      runsettings 的环境变量在测试宿主进程启动之前设置，不存在这个竞争。
+
+      相对路径由 Logger.ResolveAppPath 里的 Path.GetFullPath 解析到测试输出目录，
+      因此随 bin 一起清理，不会残留，也绝不会碰到 %AppData%\MechrevoLite\log.txt。
+    -->
+    <EnvironmentVariables>
+      <LMECHREVO_LOG_DIR>test-logs</LMECHREVO_LOG_DIR>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>
