@@ -32,7 +32,9 @@ public class UpdateClientEndToEndTests
     public async Task ClientChecksDownloadsVerifiesAndExtractsAgainstLocalStub()
     {
         string clientVersion = InformationalVersionOfMechrevoAssembly();
-        string serverLatest = "0.289.0-beta14";
+        // 桩必须给出严格新于本地版本的"服务端最新版"：UpdateChecker 的交叉校验会把"并不更新"的
+        // 响应按无更新处理。从本地版本推导，避免每次发版后硬编码版本变得等于本地版本而失效。
+        string serverLatest = Regex.Replace(clientVersion, @"(\d+)(?!.*\d)", m => (int.Parse(m.Value) + 1).ToString());
         string sandbox = ResolveSandbox();
         bool keepSandbox = Environment.GetEnvironmentVariable(SandboxVariable) is { Length: > 0 };
         string requestLogPath = Path.Combine(sandbox, "stub-request-log.txt");

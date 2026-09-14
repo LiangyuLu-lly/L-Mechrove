@@ -9,8 +9,12 @@ using MechrevoLite.UI;
 /// </summary>
 public sealed class SettingsDialog : UI.RForm
 {
+    Control? _displayHeader;
+    Control? _displayRow;
+    Form? _owner;
+
     public SettingsDialog(Control themePanel, Control officialPanel,
-        Control? overdriveChk)
+        Control? overdriveChk, bool displayGroupAvailable)
     {
         BackColor = UI.UiVisualStyle.Window;
         ForeColor = UI.UiVisualStyle.Text;
@@ -23,7 +27,7 @@ public sealed class SettingsDialog : UI.RForm
         // 「控制台」按钮被右边缘裁掉（真机 2026-09-13 截图）。与 RColorPicker 同策略：
         // 关掉自动缩放，尺寸一律用设备像素自算（D() 与 ShrinkToContent）。
         AutoScaleMode = AutoScaleMode.None;
-        ClientSize = new Size(470, 340);   // 占位；OnShown / ShowAdjacentTo 按实测内容改宽高
+        ClientSize = new Size(470, 340);   // 占位；OnLoad（首帧之前）按实测内容收口
         AutoScroll = true;
         InitTheme(true);
         // I5：非模态 Show() 的窗体被 Close() 会连同被过继进来的主界面面板一起释放，
@@ -56,60 +60,68 @@ public sealed class SettingsDialog : UI.RForm
         Controls.Add(root);
         int r = 0;
 
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(new Label
+        // 组标题不单独占位：只有该组至少有一行**可见**时才渲染标题。
+        // 空的组标题（例如机型不支持响应加速时的「显示」）既不留空块也不留间距——
+        // 标题与行都是 AutoSize 行，一起隐藏时行高为 0。
+        Label AddHeader(string text, int topMargin)
         {
-            Text = "界面",
-            Font = UI.UiVisualStyle.Font(UI.UiVisualStyle.TypeScale.Caption),
-            ForeColor = UI.UiVisualStyle.Muted,
-            AutoSize = true,
-            Margin = new Padding(0, 0, 0, D(4)),
-        }, 0, r++);
+            var header = new Label
+            {
+                Text = text,
+                Font = UI.UiVisualStyle.Font(UI.UiVisualStyle.TypeScale.Caption),
+                ForeColor = UI.UiVisualStyle.Muted,
+                AutoSize = true,
+                Margin = new Padding(0, D(topMargin), 0, D(4)),
+            };
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.Controls.Add(header, 0, r++);
+            return header;
+        }
 
+        void AddRow(Control control)
+        {
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.Controls.Add(control, 0, r++);
+        }
+
+        AddHeader("界面", 0);
         themePanel.Dock = DockStyle.Top;
         // 主窗以 Visible=false 延迟托管（Settings.cs 构建尾部）；弹窗接管后必须重新显示，
         // 否则 界面外观（日间/夜间）与 官方控制台 两节在弹窗里永远空白（真机实测）。
         themePanel.Visible = true;
         officialPanel.Visible = true;
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(themePanel, 0, r++);
+        AddRow(themePanel);
 
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(new Label
-        {
-            Text = "显示",
-            Font = UI.UiVisualStyle.Font(UI.UiVisualStyle.TypeScale.Caption),
-            ForeColor = UI.UiVisualStyle.Muted,
-            AutoSize = true,
-            Margin = new Padding(0, D(10), 0, D(4)),
-        }, 0, r++);
-
+        // 「显示」组只有响应加速一行（屏幕校色已迁出弹窗：改为「屏幕」行头内联下拉，
+        // Settings.cs，2026-09-14）。控件缺失或机型不支持响应加速时整组（标题 + 行）
+        // 都不建，避免截图里「显示」下面空无一物。
         if (overdriveChk is not null)
         {
+            _displayHeader = AddHeader("显示", 10);
             overdriveChk.Dock = DockStyle.Left;
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.Controls.Add(overdriveChk, 0, r++);
+            AddRow(overdriveChk);
+            _displayRow = overdriveChk;
+            SetDisplayGroupAvailable(displayGroupAvailable);
         }
-        // 屏幕校色已迁出弹窗：改为「屏幕」行头内联下拉（Settings.cs，2026-09-14）。
 
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(new Label
-        {
-            Text = "系统",
-            Font = UI.UiVisualStyle.Font(UI.UiVisualStyle.TypeScale.Caption),
-            ForeColor = UI.UiVisualStyle.Muted,
-            AutoSize = true,
-            Margin = new Padding(0, D(10), 0, D(4)),
-        }, 0, r++);
-
+        AddHeader("系统", 10);
         officialPanel.Dock = DockStyle.Top;
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(officialPanel, 0, r++);
+        AddRow(officialPanel);
+    }
+
+    /// <summary>
+    /// 「显示」组的可见性由宿主（SettingsForm）按机型能力决定：行与标题同进同退，
+    /// 保证标题只在至少有一行可见时渲染。构造后能力变化时由 RefreshDeviceCapabilities 重发。
+    /// </summary>
+    internal void SetDisplayGroupAvailable(bool available)
+    {
+        if (_displayRow is not null) _displayRow.Visible = available;
+        if (_displayHeader is not null) _displayHeader.Visible = available;
     }
 
     /// <summary>按内容收紧窗口：宽与高都改。高取 root（Dock=Top + AutoSize）实测高；
     /// 宽取"行的所需宽度"上界（绝对列之和 + 同行控件首选宽 + padding），宁可略宽绝不裁切；
-    /// 两者都钳制到工作区。幂等：ShowAdjacentTo 在 PerformLayoutTree 后会再调一次。</summary>
+    /// 两者都钳制到工作区。幂等：OnLoad 与再次打开的 ShowAdjacentTo 都会调一次。</summary>
     internal void ShrinkToContent()
     {
         Control? content = Controls.OfType<Control>().FirstOrDefault(c => c is TableLayoutPanel);
@@ -156,13 +168,20 @@ public sealed class SettingsDialog : UI.RForm
         return widest;
     }
 
-    protected override void OnShown(EventArgs e)
+    protected override void OnLoad(EventArgs e)
     {
-        base.OnShown(e);
+        base.OnLoad(e);
+        // Load 在首次绘制之前触发：这里按内容收口尺寸并按 owner 贴边定位。
+        // ApplyResponsiveBounds（RForm.OnShown）随后只做工作区钳制，正常不会改几何。
+        ResponsiveLayout.PerformLayoutTree(this);
         ShrinkToContent();
+        if (_owner is not null) ResponsiveLayout.PlaceAdjacent(this, _owner);
     }
 
-    /// <summary>Positions and lays out the window before it becomes visible.</summary>
+    /// <summary>
+    /// 定位并显示。首次打开时尺寸/位置在 OnLoad（首帧之前）确定；再次打开（句柄已在）时
+    /// 在 Show 之前重算并贴边，保证首帧即最终帧；Show 之后不再改 Location/Size。
+    /// </summary>
     internal void ShowAdjacentTo(Form owner)
     {
         if (Visible)
@@ -171,13 +190,13 @@ public sealed class SettingsDialog : UI.RForm
             return;
         }
 
-        Opacity = 0.01;
-        ResponsiveLayout.PlaceAdjacent(this, owner);
+        _owner = owner;
+        if (IsHandleCreated)
+        {
+            ResponsiveLayout.PerformLayoutTree(this);
+            ShrinkToContent();
+            ResponsiveLayout.PlaceAdjacent(this, owner);
+        }
         Show();
-        ResponsiveLayout.PerformLayoutTree(this);
-        ShrinkToContent();
-        ResponsiveLayout.PlaceAdjacent(this, owner);
-        Update();
-        Opacity = 1;
     }
 }

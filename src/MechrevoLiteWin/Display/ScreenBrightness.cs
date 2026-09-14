@@ -6,8 +6,30 @@
 
     public static class ScreenBrightness
     {
-        public static int Get()
+        /// <summary>
+        /// 测试接缝（先例：<c>NativeMethods.IdleTimeProvider</c> / <c>UpdateChecker.HttpGetOverride</c>）。
+        /// 非 null 时由它提供亮度读数；返回 null 表示「读不到」——调用方绝不能把读不到当成 0 去盲目调光。
+        /// 生产运行时保持 null，直接走 WMI。
+        /// </summary>
+        internal static Func<int?>? ReadOverride { get; set; }
+
+        /// <summary>
+        /// 测试接缝：非 null 时由它接收亮度写入（测试只记录，绝不真改屏）。生产运行时保持 null，走 WMI。
+        /// </summary>
+        internal static Action<int>? WriteOverride { get; set; }
+
+        /// <summary>
+        /// 读取当前面板亮度。返回 false 表示没有可用的 WMI 实例（读不到），调用方不得据此猜数。
+        /// </summary>
+        public static bool TryGet(out int brightness)
         {
+            if (ReadOverride is { } read)
+            {
+                int? value = read();
+                brightness = value ?? 0;
+                return value.HasValue;
+            }
+
             using var mclass = new ManagementClass("WmiMonitorBrightness")
             {
                 Scope = new ManagementScope(@"\\.\root\wmi")
@@ -15,13 +37,27 @@
             using var instances = mclass.GetInstances();
             foreach (ManagementObject instance in instances)
             {
-                return (byte)instance.GetPropertyValue("CurrentBrightness");
+                brightness = (byte)instance.GetPropertyValue("CurrentBrightness");
+                return true;
             }
-            return 0;
+            brightness = 0;
+            return false;
+        }
+
+        public static int Get()
+        {
+            TryGet(out int brightness);
+            return brightness;
         }
 
         public static void Set(int brightness)
         {
+            if (WriteOverride is { } write)
+            {
+                write(brightness);
+                return;
+            }
+
             using var mclass = new ManagementClass("WmiMonitorBrightnessMethods")
             {
                 Scope = new ManagementScope(@"\\.\root\wmi")

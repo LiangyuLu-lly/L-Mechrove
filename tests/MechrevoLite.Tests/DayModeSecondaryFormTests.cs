@@ -30,7 +30,7 @@ public class DayModeSecondaryFormTests
             var officialPanel = new Panel { Height = 40 };
             themePanel.Visible = false;
             officialPanel.Visible = false;
-            dialog = new SettingsDialog(themePanel, officialPanel, null);
+            dialog = new SettingsDialog(themePanel, officialPanel, null, displayGroupAvailable: false);
             owner.AddOwnedForm(dialog);
 
             UiVisualStyle.SetAuditNightMode(false);

@@ -167,7 +167,7 @@ public class SettingsLayoutTests
         Control overdrive = (Control)typeof(SettingsForm).GetField("_overdriveChk",
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
         // 2026-09-14：校色按钮删除（改为屏幕行头内联下拉），弹窗只收 overdrive。
-        using var dialog = new SettingsDialog(themePanel, officialPanel, overdrive);
+        using var dialog = new SettingsDialog(themePanel, officialPanel, overdrive, displayGroupAvailable: true);
 
         Assert.Empty(dialog.Controls.Find("checkOverlayToggle", true));
         Assert.Empty(dialog.Controls.Find("checkLocalDimming", true));

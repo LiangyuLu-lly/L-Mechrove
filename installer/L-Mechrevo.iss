@@ -18,19 +18,19 @@
   #define AppPublisher "L-Mechrevo contributors"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.289.0-beta13"
+  #define AppVersion "0.289.0-beta14"
 #endif
 #ifndef AppVersionNumeric
   #define AppVersionNumeric "0.289.0.0"
 #endif
 #ifndef AppLabel
-  #define AppLabel "beta13"
+  #define AppLabel "beta14"
 #endif
 #ifndef RepoRoot
   #define RepoRoot AddBackslash(SourcePath) + ".."
 #endif
 #ifndef AppSourceDir
-  #define AppSourceDir RepoRoot + "\dist\beta13"
+  #define AppSourceDir RepoRoot + "\dist\beta14"
 #endif
 #ifndef OutputDir
   #define OutputDir "output"

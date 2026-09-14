@@ -61,6 +61,9 @@ namespace MechrevoLite
         private static long _keyboardStatusBaselineVersion;
         private static int _keyboardStatusBaselineBrightness = -1;
         private static string _keyboardStatusBaselineEffect = "";
+        // Fn 热键（固件）接管键盘的代际：每次检测推进一代，只有仍处于当前代际的重申才写 HID，
+        // 迟到的旧检测不得覆盖更新的状态（与 SettingsForm._kbCmdGen 同一守卫语义）。
+        private static int _keyboardFirmwareTakeoverGeneration;
         private static int _resumeKeyboardRestorePending;
         private static System.Threading.Timer? _lightingIdleTimer;
         private static int _lightingIdleSuspended;
@@ -68,7 +71,13 @@ namespace MechrevoLite
         // 一次「临时熄灯」请求 = 一次允许重放外置灯效的令牌。空闲恢复/唤醒恢复/连接恢复/
         // 电源握手会相继触发同一个恢复；令牌相同则只应用一次，避免灯带/Logo 反复上电闪烁。
         private static int _lightingRestoreRequestId;
-        private static int _lightingExternalRestoreAppliedId = -1;
+        // 外置灯带/Logo 每条通道各自记账：只有该通道**确认**上电成功才写入本轮令牌。
+        // 单条通道确认失败时，重试只补刷这条未确认的通道，已确认的通道不再重复上电（避免闪烁）。
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _lightingExternalRestoreAppliedIds = new(StringComparer.OrdinalIgnoreCase);
+        // 键盘本地 HID 效果与外置通道同一套令牌语义：每个恢复周期（requestId）只写一次电源、
+        // 只重进一次自定义帧模式。空闲恢复/连接恢复/唤醒恢复/Fn 重申会相继触发同一次恢复，
+        // 重复写电源或重进帧模式会让键盘闪烁。GCU 电源回读未确认不阻止本周期落地。
+        private static int _keyboardRestoreAppliedRequestId = int.MinValue;
         // 临时熄灯前各条外置灯带的电源态，按控制主题存。过去是两个独立的 bool?，
         // 每加一条灯带就要多一组字符串分支；改成字典后四条通道走同一段代码。
         private static readonly Dictionary<string, bool> _externalPowerBeforeTemporarySuspend = new(StringComparer.OrdinalIgnoreCase);
@@ -123,9 +132,18 @@ namespace MechrevoLite
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            AppDomain.CurrentDomain.UnhandledException += (s, e) => Logger.WriteLine("Unhandled: " + e.ExceptionObject);
+            // 异常路径也要尽力把亮度还回去：息屏期间崩掉会把用户留在黑屏里（best-effort，绝不抛）。
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            {
+                TryRestoreScreenAfterFailure();
+                Logger.WriteLine("Unhandled: " + e.ExceptionObject);
+            };
             TaskScheduler.UnobservedTaskException += (s, e) => { Logger.WriteLine("Unobserved: " + e.Exception); e.SetObserved(); };
-            Application.ThreadException += (_, e) => Logger.WriteLine("UI thread exception: " + e.Exception);
+            Application.ThreadException += (_, e) =>
+            {
+                TryRestoreScreenAfterFailure();
+                Logger.WriteLine("UI thread exception: " + e.Exception);
+            };
 
             string action = "";
             if (args.Length > 0) action = args[0];
@@ -1054,7 +1072,12 @@ namespace MechrevoLite
             }
         }
 
-        static async Task RestoreLightingWithRetryAsync(bool force = false)
+        /// <summary>
+        /// 有界退避重试的恢复入口：启动、GCU 重连、系统唤醒、空闲唤醒共用。
+        /// force=true 时每轮都强制重跑（不被协调器「本代次已完成」的门挡住），
+        /// 这样外置灯带一次确认失败后下一轮仍会补刷，而不是直接判定恢复完成。
+        /// </summary>
+        internal static async Task RestoreLightingWithRetryAsync(bool force = false)
         {
             int delayMs = 250;
             for (int attempt = 1; attempt <= 20 && Volatile.Read(ref _exitStarted) == 0; attempt++)
@@ -1062,7 +1085,7 @@ namespace MechrevoLite
                 int generation = hw?.ConnectionGeneration ?? 0;
                 if (await RestoreLightingForGenerationAsync(
                     generation,
-                    force && attempt == 1).ConfigureAwait(false)) return;
+                    force).ConfigureAwait(false)) return;
                 if (attempt == 1 || attempt % 5 == 0)
                     Logger.WriteLine($"灯效开机恢复等待设备: attempt={attempt}, mqtt={hw?.IsConnected == true}");
                 await Task.Delay(delayMs).ConfigureAwait(false);
@@ -1148,6 +1171,62 @@ namespace MechrevoLite
             Interlocked.Exchange(ref _keyboardStatusBaselineEffect, hw.KeyboardEffect ?? "");
         }
 
+        /// <summary>
+        /// 固件（Fn 热键）接管判定：只有版本前进、且亮度或效果相对基线发生变化的那一帧才算接管。
+        /// 同值状态帧（GCU 周期回显）与过期版本一律不算，因此一次真实变化只重申一次。
+        /// 抽成静态内部方法以便单测锁定该契约。
+        /// </summary>
+        internal static bool ShouldReassertKeyboardCustomMode(
+            long statusVersion, long baselineVersion,
+            int reportedBrightness, int baselineBrightness,
+            string effect, string baselineEffect)
+        {
+            if (statusVersion <= baselineVersion) return false;
+            bool lightChanged = baselineBrightness is >= 0 and <= 100 && reportedBrightness is >= 0 and <= 100 &&
+                reportedBrightness != baselineBrightness;
+            bool effectChanged = !string.IsNullOrWhiteSpace(effect) &&
+                !string.Equals(effect, baselineEffect, StringComparison.OrdinalIgnoreCase);
+            return lightChanged || effectChanged;
+        }
+
+        /// <summary>
+        /// 把 HID 渲染亮度同步到固件上报值——保留固件的新亮度、绝不写回旧值。
+        /// 帧未带有效亮度（-1/越界）时保持现有 HID 亮度不变。返回是否发生变化。
+        /// </summary>
+        internal static bool SyncKeyboardBrightnessForFirmwareChange(
+            int reportedBrightness, Func<int> currentHidBrightness, Action<int> setHidBrightness)
+        {
+            if (reportedBrightness is < 0 or > 100) return false;
+            if (currentHidBrightness() == reportedBrightness) return false;
+            setHidBrightness(reportedBrightness);
+            return true;
+        }
+
+        /// <summary>
+        /// Fn 热键（固件）接管后的立即重申按代际守卫：只有仍处于当前代际的重申才写 HID。
+        /// 迟到的旧检测（或期间推进代际的新事件）不得再重进模式，否则会覆盖更新的状态——
+        /// 与 SettingsForm.StopHidEffectForCurrentGeneration 同一守卫语义。返回是否执行了重申。
+        /// </summary>
+        internal static bool ReassertKeyboardCustomModeForCurrentGeneration(
+            int generation, Func<int> currentGeneration, Action reassert)
+        {
+            if (generation != currentGeneration()) return false;
+            reassert();
+            return true;
+        }
+
+        /// <summary>
+        /// 立即重进 ITE 自定义帧模式并确保效果线程在跑（与开关 ON / RgbForm 路径同一 ReInit+StartMode 语义）。
+        /// </summary>
+        static void ReassertKeyboardCustomMode()
+        {
+            KeyboardRgb? kb = rgb;
+            if (kb is null || !kb.KbPowerOn) return;
+            kb.ReInitCustomMode();
+            kb.StartMode(kb.KbHidMode);
+            Logger.WriteLine($"RGB 固件接管，立即重申自定义帧模式：mode={kb.KbHidMode}");
+        }
+
         static void OnHardwareStateChanged(string topic)
         {
             if (!string.Equals(topic, "Keyboard/Status", StringComparison.Ordinal) ||
@@ -1156,47 +1235,36 @@ namespace MechrevoLite
                 Volatile.Read(ref _lightingIdleSuspended) != 0)
                 return;
 
-            long version = hw.KeyboardStatusVersion;
-            if (version <= Interlocked.Read(ref _keyboardStatusBaselineVersion)) return;
-
             int reportedBrightness = MechrevoLite.Hardware.KeyboardRgb.MapReportedHardwareBrightness(
                 hw.KeyboardBrightness, hw.KeyboardLight);
-            int baselineBrightness = Volatile.Read(ref _keyboardStatusBaselineBrightness);
-            bool lightChanged = baselineBrightness is >= 0 and <= 100 && reportedBrightness is >= 0 and <= 100 &&
-                reportedBrightness != baselineBrightness;
-            bool effectChanged = !string.IsNullOrWhiteSpace(hw.KeyboardEffect) &&
-                !string.Equals(hw.KeyboardEffect, _keyboardStatusBaselineEffect, StringComparison.OrdinalIgnoreCase);
-            if (!lightChanged && !effectChanged) return;
+            if (!ShouldReassertKeyboardCustomMode(
+                    hw.KeyboardStatusVersion, Interlocked.Read(ref _keyboardStatusBaselineVersion),
+                    reportedBrightness, Volatile.Read(ref _keyboardStatusBaselineBrightness),
+                    hw.KeyboardEffect ?? "", Volatile.Read(ref _keyboardStatusBaselineEffect)))
+                return;
+
+            // 亮度同步先于单飞门：Fn 连发时每一档都要落到渲染器，否则灯停在旧档（固件新亮度必须保留）。
+            if (SyncKeyboardBrightnessForFirmwareChange(reportedBrightness, () => rgb.Brightness,
+                    value => { rgb.Brightness = value; rgb.QueueSaveConfig(); }))
+                Logger.WriteLine($"RGB 硬件亮度同步：GCU={reportedBrightness}% HID={reportedBrightness}%");
+
             if (Interlocked.Exchange(ref _keyboardStatusRecoveryPending, 1) != 0) return;
 
+            int takeoverGeneration = Interlocked.Increment(ref _keyboardFirmwareTakeoverGeneration);
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    // Fn 键可能连续上报多次，等状态稳定后只重入一次 HID 会话。
-                    await Task.Delay(180).ConfigureAwait(false);
-                    if (Volatile.Read(ref _exitStarted) != 0 || rgb is null ||
-                        !rgb.KbPowerOn || hw is null || Volatile.Read(ref _lightingIdleSuspended) != 0)
-                        return;
+                    // 固件重新进入官方效果模式后控制器已退出 ITE 自定义帧模式，HID 帧被静默忽略
+                    //（WriteFile 仍返回成功，帧循环不会察觉）。必须**立即**重进自定义帧模式：
+                    // 等下一帧不会重进（帧循环只管发帧），等去抖只会让官方效果多可见一段。
+                    // 重申单飞、代际守卫，不加重试循环。
+                    ReassertKeyboardCustomModeForCurrentGeneration(
+                        takeoverGeneration, () => Volatile.Read(ref _keyboardFirmwareTakeoverGeneration),
+                        ReassertKeyboardCustomMode);
 
-                    int currentBrightness = MechrevoLite.Hardware.KeyboardRgb.MapReportedHardwareBrightness(
-                        hw.KeyboardBrightness, hw.KeyboardLight);
-                    int currentBaselineBrightness = Volatile.Read(ref _keyboardStatusBaselineBrightness);
-                    if (currentBaselineBrightness is >= 0 and <= 100 &&
-                        currentBrightness is >= 0 and <= 100 && currentBrightness != currentBaselineBrightness)
-                    {
-                        if (rgb.Brightness != currentBrightness)
-                        {
-                            rgb.Brightness = currentBrightness;
-                            rgb.QueueSaveConfig();
-                            Logger.WriteLine($"RGB 硬件亮度同步：GCU={currentBrightness}% HID={currentBrightness}%");
-                        }
-                    }
-
-                    bool restored = await RestoreKeyboardLightingAsync(force: true).ConfigureAwait(false);
-                    if (restored)
-                        MarkKeyboardCustomStatusBaseline();
-                    else
+                    bool restored = await RestoreKeyboardLightingAsync(force: false).ConfigureAwait(false);
+                    if (!restored)
                     {
                         Logger.WriteLine("RGB 硬件亮度事件恢复失败，将等待下一次硬件连接恢复");
                         _ = RestoreLightingWithRetryAsync(force: true);
@@ -1216,7 +1284,7 @@ namespace MechrevoLite
         internal static void NotifyLightingUserIntent()
         {
             if (Interlocked.Exchange(ref _lightingIdleSuspended, 0) != 0)
-                _ = ReconcileLightingPowerAsync(forceKeyboardRestore: true);
+                _ = RestoreLightingWithRetryAsync(force: true);
         }
 
         /// <summary>三条通道当前是否处于临时熄灯（空闲休眠或离电关灯）。开关回显与恢复判据共用这一份。</summary>
@@ -1232,6 +1300,13 @@ namespace MechrevoLite
             get => Volatile.Read(ref _lightingIdleSuspended) != 0;
             set => Volatile.Write(ref _lightingIdleSuspended, value ? 1 : 0);
         }
+
+        /// <summary>测试 seam：当前「允许外置灯效重放一次」的恢复令牌。</summary>
+        internal static int LightingRestoreRequestId => Volatile.Read(ref _lightingRestoreRequestId);
+
+        /// <summary>测试 seam：指定外置通道已确认上电的恢复令牌；-1 = 本轮尚未确认。</summary>
+        internal static int ExternalRestoreAppliedRequestId(string topic) =>
+            _lightingExternalRestoreAppliedIds.TryGetValue(topic, out int appliedId) ? appliedId : -1;
 
         /// <summary>时钟线程入口：读取配置与系统空闲时长的单一决策点，三条通道共用。</summary>
         internal static Task<LightingIdleAction> EvaluateLightingIdleAsync() =>
@@ -1264,7 +1339,9 @@ namespace MechrevoLite
                     Interlocked.Exchange(ref _lightingIdleSuspended, 0) != 0)
                 {
                     Logger.WriteLine("灯效空闲恢复：检测到用户输入");
-                    await ReconcileLightingPowerAsync(forceKeyboardRestore: true).ConfigureAwait(false);
+                    // 走与启动/唤醒相同的重试通道：外置灯带确认失败时有限次退避补刷，
+                    // 否则灯带/Logo 会一直暗到下一次无关事件触发恢复。
+                    await RestoreLightingWithRetryAsync(force: true).ConfigureAwait(false);
                 }
                 return action;
             }
@@ -1288,8 +1365,14 @@ namespace MechrevoLite
                     return true;
                 }
 
-                bool keyboardRestored = await RestoreKeyboardLightingAsync(forceKeyboardRestore).ConfigureAwait(false);
-                bool externalRestored = await RestoreExternalLightingAsync().ConfigureAwait(false);
+                // 对齐规则：一次恢复周期同时驱动全部三条通道。键盘本地 HID 与外置 GCU 电源
+                // 在这一轮**并行**下发，两侧都只发命令、不等厂商回读——谁都不得比谁早/晚约 2 秒，
+                // 也不得因回读不来而把对方推进重试。可见变化因此落在同一时间窗内。
+                Task<bool> keyboardTask = RestoreKeyboardLightingAsync(forceKeyboardRestore);
+                Task<bool> externalTask = RestoreExternalLightingAsync();
+                await Task.WhenAll(keyboardTask, externalTask).ConfigureAwait(false);
+                bool keyboardRestored = await keyboardTask.ConfigureAwait(false);
+                bool externalRestored = await externalTask.ConfigureAwait(false);
                 return keyboardRestored && externalRestored;
             }
             catch (Exception ex)
@@ -1311,8 +1394,13 @@ namespace MechrevoLite
             }
 
             CaptureExternalPowerBeforeTemporarySuspend();
-            if (rgb.KbPowerOn && await service.SetKeyboardPower(false).ConfigureAwait(false))
-                Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 1);
+            if (rgb.KbPowerOn)
+            {
+                // 熄灭同样只下发不等回读：键盘本地效果已在上面立即停掉，外置关灯紧随同一轮发出。
+                bool issued = await service.PublishLightPower("Keyboard/Ctrl", false).ConfigureAwait(false);
+                service.ObserveLightPower("Keyboard/Ctrl", false);
+                if (issued) Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 1);
+            }
             await SetExternalLightingPowerAsync(on: false, restoreEffect: false, useTemporarySnapshot: false)
                 .ConfigureAwait(false);
             Logger.WriteLine($"灯效临时熄灭（同一到期）：{DescribeLightingChannels()}");
@@ -1350,17 +1438,17 @@ namespace MechrevoLite
         static async Task<bool> RestoreExternalLightingAsync()
         {
             int requestId = Volatile.Read(ref _lightingRestoreRequestId);
-            // 同一熄灯周期内只上电重放一次：空闲恢复/唤醒恢复/连接恢复/电源握手会相继触发，
-            // 重复上电会让固件重新初始化，灯带与 Logo 反复闪烁。效果重放失败则不记账，允许重试。
-            if (requestId == Volatile.Read(ref _lightingExternalRestoreAppliedId)) return true;
-            bool restored = await SetExternalLightingPowerAsync(on: true, restoreEffect: true, useTemporarySnapshot: true)
+            // 同一熄灯周期内每条通道只落地一次：空闲恢复/唤醒恢复/连接恢复/电源握手会相继触发，
+            // 重复上电会让固件重新初始化，灯带与 Logo 反复闪烁。只有命令**发布失败**（不是回读未确认）
+            // 的通道才不记账，交给重试只补刷它；已成功下发的通道保持沉默。
+            (bool allIssued, bool applied, string issuedSummary) = await SetExternalLightingPowerAsync(
+                on: true, restoreEffect: true, useTemporarySnapshot: true, restoreRequestId: requestId)
                 .ConfigureAwait(false);
-            if (restored)
-            {
-                Volatile.Write(ref _lightingExternalRestoreAppliedId, requestId);
-                Logger.WriteLine($"灯效恢复（单次应用）：{DescribeLightingChannels()}");
-            }
-            return restored;
+            // 记录的是本轮**下发的目标**而非回读快照：回读现在是异步遥测，同步读到的状态必然滞后，
+            // 用它当证据只会误导（旧日志里出现 keyboard=Off 的假象）。真实状态由随后的两行遥测给出。
+            if (allIssued && applied)
+                Logger.WriteLine($"灯效恢复（单次下发）：keyboard={(rgb?.KbPowerOn == true ? "On" : "Off")} {issuedSummary}");
+            return allIssued;
         }
 
         /// <summary>
@@ -1379,15 +1467,25 @@ namespace MechrevoLite
                 .ConfigureAwait(false);
         }
 
-        static async Task<bool> SetExternalLightingPowerAsync(bool on, bool restoreEffect, bool useTemporarySnapshot)
+        static async Task<(bool AllIssued, bool Attempted, string IssuedSummary)> SetExternalLightingPowerAsync(
+            bool on, bool restoreEffect, bool useTemporarySnapshot, int? restoreRequestId = null)
         {
-            if (hw is not { IsConnected: true } || service is null) return false;
+            if (hw is not { IsConnected: true } || service is null) return (false, false, "");
 
             bool allSucceeded = true;
             bool attempted = false;
+            var issuedSummary = new List<string>();
+            var effectTasks = new List<Task<bool>>();
+            var effectTopics = new List<string>();
             foreach (var (topic, _, supported) in ExternalLightChannels)
             {
                 if (!supported()) continue;
+
+                // 恢复路径：这条通道已经在本轮落地过了，跳过——重复上电会让灯带/Logo 反复闪烁。
+                if (on && restoreRequestId is int requestId &&
+                    _lightingExternalRestoreAppliedIds.TryGetValue(topic, out int appliedId) &&
+                    appliedId == requestId)
+                    continue;
 
                 bool hasSavedSettings = LightingSettingsStore.TryLoad(topic, out LightChannelSettings settings);
                 bool? capturedPower = _externalPowerBeforeTemporarySuspend.TryGetValue(topic, out bool snapshot)
@@ -1397,16 +1495,42 @@ namespace MechrevoLite
 
                 bool requested = on && (hasSavedSettings ? settings.PowerOn : capturedPower == true);
                 attempted = true;
-                bool powered = await service.SetLightPower(topic, requested).ConfigureAwait(false);
-                bool channelSucceeded = powered;
-                if (powered && requested && restoreEffect && hasSavedSettings)
-                    channelSucceeded &= await ApplyLightChannelEffectAsync(topic, settings).ConfigureAwait(false);
+                // 与 SupportsLightTopic/确认逻辑共用唯一一份 topic→开关键映射，不写第二份。
+                string? switchKey = MechrevoService.LightTopicToQuickSwitchKey(topic);
+                if (switchKey is not null) issuedSummary.Add($"{switchKey}={(requested ? "On" : "Off")}");
+                // 只下发不等回读：命令一旦成功发布就视为已应用。厂商确认降级为后台遥测，
+                // 既不阻塞本条通道的效果重放，也不把「已下发、灯已亮」判成失败去触发重发。
+                bool issued = await service.PublishLightPower(topic, requested).ConfigureAwait(false);
+                if (issued) service.ObserveLightPower(topic, requested);
+                bool channelSucceeded = issued;
+                if (issued && requested && restoreEffect && hasSavedSettings)
+                {
+                    // 效果重放带着各自的上电初始化延迟启动，稍后并行等待——两条灯带同时亮，
+                    // 而不是串行各差一个 120ms 窗口。注意这里挂在 `issued` 上，不再挂在回读确认上。
+                    effectTasks.Add(ApplyLightChannelEffectAsync(topic, settings));
+                    effectTopics.Add(topic);
+                }
                 allSucceeded &= channelSucceeded;
                 if (on && useTemporarySnapshot && channelSucceeded)
                     _externalPowerBeforeTemporarySuspend.Remove(topic);
+                // 只有这条通道的命令成功下发才记账；发布失败的通道保持未记账，交给重试补刷。
+                if (on && restoreRequestId is int successRequestId && channelSucceeded)
+                    _lightingExternalRestoreAppliedIds[topic] = successRequestId;
             }
-            return !attempted || allSucceeded;
+
+            for (int i = 0; i < effectTasks.Count; i++)
+            {
+                if (await effectTasks[i].ConfigureAwait(false)) continue;
+                // 效果重放发布失败：撤掉该通道本轮的记账，让下一轮只补刷它。
+                allSucceeded = false;
+                if (on && restoreRequestId is not null)
+                    _lightingExternalRestoreAppliedIds.TryRemove(effectTopics[i], out _);
+            }
+            return (!attempted || allSucceeded, attempted, string.Join(' ', issuedSummary));
         }
+
+        /// <summary>键盘电源命令与本地 HID 效果之间的固定上电静置；替代过去「等 GCU 回读确认」的约 2 秒阻塞。</summary>
+        const int KeyboardPowerSettleMs = 120;
 
         static async Task<bool> RestoreKeyboardLightingAsync(bool force = false)
         {
@@ -1420,28 +1544,49 @@ namespace MechrevoLite
                 {
                     rgb.StopCurrentEffect();
                     if (hw is not { IsConnected: true } || service is null) return false;
-                    bool poweredOff = await service.SetKeyboardPower(false).ConfigureAwait(false);
-                    if (poweredOff)
+                    // 只下发不等回读：键盘本就该灭（StopCurrentEffect 已就地生效），回读未确认不得
+                    // 把这条通道判成失败、把整个周期拖进 20 轮重发。
+                    bool issued = await service.PublishLightPower("Keyboard/Ctrl", false).ConfigureAwait(false);
+                    service.ObserveLightPower("Keyboard/Ctrl", false);
+                    if (issued)
                     {
                         Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 0);
                         Logger.WriteLine("RGB 自动恢复：按用户设置保持关闭");
                     }
-                    return poweredOff;
+                    return issued;
                 }
                 if (temporaryPowerOff && (hw is not { IsConnected: true } || service is null)) return false;
+
+                int requestId = Volatile.Read(ref _lightingRestoreRequestId);
+                bool appliedThisCycle = Volatile.Read(ref _keyboardRestoreAppliedRequestId) == requestId;
+                // 本周期键盘已落地且效果在跑：同一熄灯周期的恢复会相继触发（重试/连接/唤醒），
+                // 不再重复写电源或重进帧模式（避免闪烁）。
+                if (appliedThisCycle && rgb.IsConnected && rgb.ActiveMode == rgb.KbHidMode)
+                {
+                    MarkKeyboardCustomStatusBaseline();
+                    return true;
+                }
+
                 if (hw is { IsConnected: true } && service is not null)
                 {
-                    if (LightingState.ShouldRestoreKeyboardPower(
+                    if (!appliedThisCycle && LightingState.ShouldRestoreKeyboardPower(
                             rgb.KbPowerOn, temporaryPowerOff, hw.KeyboardPower))
                     {
-                        if (!await service.SetKeyboardPower(true).ConfigureAwait(false)) return false;
-                        await Task.Delay(120).ConfigureAwait(false);
+                        // 只下发不等回读：GCU 键盘电源回读本机长期 not confirmed，等待它会凭空给
+                        // 本地 HID 效果加上约 2 秒延迟，与外置通道错开。命令成功发布即继续。
+                        bool issued = await service.PublishLightPower("Keyboard/Ctrl", true).ConfigureAwait(false);
+                        service.ObserveLightPower("Keyboard/Ctrl", true);
+                        if (issued) await Task.Delay(KeyboardPowerSettleMs).ConfigureAwait(false);
+                        else Logger.WriteLine("RGB 自动恢复：键盘电源未能下发，继续恢复本地 HID 效果");
                     }
-                    // 设备侧计时关闭：睡眠由应用内空闲检测实现。
-                    await service.SwitchCloseTimer(0).ConfigureAwait(false);
+                    // 设备侧计时关闭：睡眠由应用内空闲检测实现（每个恢复周期只需设置一次）。
+                    // 只下发不等确认——这条设置的回读同样可能永远不确认（本机 GCU 既有现象），
+                    // await 它会把本地 HID 效果再推迟约 2 秒，正是两条路径错位的第二个来源。
+                    if (!appliedThisCycle) _ = service.SwitchCloseTimer(0);
                 }
-                if (rgb.IsConnected && rgb.ActiveMode == rgb.KbHidMode && !forceEffectRestore)
+                if (!forceEffectRestore && rgb.IsConnected && rgb.ActiveMode == rgb.KbHidMode)
                 {
+                    Volatile.Write(ref _keyboardRestoreAppliedRequestId, requestId);
                     MarkKeyboardCustomStatusBaseline();
                     return true;
                 }
@@ -1456,6 +1601,7 @@ namespace MechrevoLite
                 rgb.StartMode(rgb.KbHidMode);
                 MarkKeyboardCustomStatusBaseline();
                 Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 0);
+                Volatile.Write(ref _keyboardRestoreAppliedRequestId, requestId);
                 Logger.WriteLine($"RGB 自动恢复：HID 效果 {rgb.KbHidMode} 已运行");
                 return true;
             }
@@ -1470,6 +1616,8 @@ namespace MechrevoLite
 
         private static void SystemEvents_SessionEnding(object sender, SessionEndingEventArgs e)
         {
+            // 注销/关机/重启时兜底还原亮度（best-effort，不能因为一个 Win32 调用失败而中断会话结束流程）。
+            TryRestoreScreenAfterFailure();
             gpuControl.StandardModeFix();
             modeControl.ShutdownReset();
             BatteryControl.AutoBattery();
@@ -1762,9 +1910,17 @@ namespace MechrevoLite
             settingsForm.RefreshSensors();
         }
 
+        /// <summary>退出/会话结束/未处理异常共用的亮度兜底：绝不抛，息屏状态下一律还原。</summary>
+        internal static void TryRestoreScreenAfterFailure()
+        {
+            try { ScreenBlankController.RestoreImmediate(); }
+            catch (Exception ex) { Debug.WriteLine("Screen blank restore on failure failed: " + ex.Message); }
+        }
+
         static void OnExit(object sender, EventArgs e)
         {
             if (Interlocked.Exchange(ref _exitStarted, 1) != 0) return;
+            TryRestoreScreenAfterFailure();
             _telemetryRecoveryTimer?.Dispose();
             _telemetryRecoveryTimer = null;
             _lightingIdleTimer?.Dispose();

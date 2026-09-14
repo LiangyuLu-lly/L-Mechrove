@@ -1088,9 +1088,12 @@ public static class OfficialConsoleIsolation
     private static void RefreshToolbar(IntPtr handle)
     {
         if (handle == IntPtr.Zero || !GetClientRect(handle, out RECT rect)) return;
+        // 合成 WM_MOUSEMOVE 逼通知区工具栏重画。必须用 PostMessage（非阻塞）：此前用 SendMessage
+        // 会同步等待资源管理器——explorer 卡住时整个 UI 线程跟着冻在消息循环外（本次「恢复后界面
+        // 打不开」就是同类阻塞路径）。PostMessage 立即返回，由 explorer 自己的消息循环处理。
         for (int x = 0; x < rect.Right; x += 8)
         for (int y = 0; y < rect.Bottom; y += 8)
-            SendMessage(handle, 0x0200, IntPtr.Zero, (IntPtr)((y << 16) | (x & 0xffff)));
+            PostMessage(handle, 0x0200, IntPtr.Zero, (IntPtr)((y << 16) | (x & 0xffff)));
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1111,6 +1114,6 @@ public static class OfficialConsoleIsolation
     [DllImport("user32.dll")]
     private static extern bool GetClientRect(IntPtr window, out RECT rect);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

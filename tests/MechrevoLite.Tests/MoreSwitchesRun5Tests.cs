@@ -1,5 +1,7 @@
+using MechrevoLite.Display;
 using MechrevoLite.Hardware;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace MechrevoLite.Tests;
@@ -11,15 +13,18 @@ namespace MechrevoLite.Tests;
 ///    Setting/Status 的回读要等重启才更新（FunctionVerifier 归为「需重启」，官方界面同款提示），
 ///    所以用户的选择持久化到 <c>deepsleep_pending</c>，开关打开时必须显示硬件回读的真实状态
 ///    （有待生效改动时显示改动值），不能停在硬编码默认。
-/// 2. 仅关闭显示器——一次性动作：向 HWND_BROADCAST 广播 WM_SYSCOMMAND/SC_MONITORPOWER(2)，
-///    执行后回到 OFF。真实广播在 <c>NativeMethods.MonitorOffSender</c> 接缝后面，测试只记录参数。
+/// 2. 息屏（不睡眠）——一次性动作：把面板亮度压到最低做黑屏，同时用
+///    <c>SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED)</c> 顶住
+///    Modern Standby，执行后回到 OFF。真实亮度读写藏在 <see cref="ScreenBrightness.ReadOverride"/> /
+///    <see cref="ScreenBrightness.WriteOverride"/> 接缝后面，测试只记录，绝不真改屏。
+///
+/// 真机事故（2026-09-14）：本机只报 S0 低功耗待机（无 S3），旧实现向 HWND_BROADCAST 广播
+/// WM_SYSCOMMAND/SC_MONITORPOWER(2) 被 Windows 当成进入 Connected Standby，点一次开关就睡了。
+/// 该类含静态扫描测试，锁死阻塞 SendMessage 广播路径不再存在。
 /// </summary>
 public class MoreSwitchesRun5Tests
 {
     const string DeepSleepPendingKey = "deepsleep_pending";
-    const int WM_SYSCOMMAND = 0x0112;
-    const int SC_MONITORPOWER = 0xF170;
-    const int MONITOR_OFF = 2;
 
     // ------------------------------------------------------------ 配置键
 
@@ -63,82 +68,53 @@ public class MoreSwitchesRun5Tests
         Assert.StartsWith(Path.GetTempPath(), full, StringComparison.OrdinalIgnoreCase);
     }
 
-    // ------------------------------------------------------------ 关屏接缝
-
-    /// <summary>
-    /// (b) 接缝必须收到精确的广播参数：HWND_BROADCAST + WM_SYSCOMMAND + SC_MONITORPOWER(2)。
-    /// LParam=2 是「只关显示器」，不是睡眠/休眠/关机。
-    /// </summary>
-    [Fact]
-    public void TurnOffScreen_BroadcastsMonitorPowerToAllTopLevelWindows()
-    {
-        Action<nint, int, int, int>? previous = NativeMethods.MonitorOffSender;
-        var calls = new List<(nint Hwnd, int Message, int WParam, int LParam)>();
-        try
-        {
-            NativeMethods.MonitorOffSender = (hwnd, message, wParam, lParam) => calls.Add((hwnd, message, wParam, lParam));
-            NativeMethods.TurnOffScreen();
-        }
-        finally
-        {
-            NativeMethods.MonitorOffSender = previous;
-        }
-
-        var call = Assert.Single(calls);
-        Assert.Equal(NativeMethods.HWND_BROADCAST, call.Hwnd);
-        Assert.Equal(WM_SYSCOMMAND, call.Message);
-        Assert.Equal(SC_MONITORPOWER, call.WParam);
-        Assert.Equal(MONITOR_OFF, call.LParam);
-    }
-
-    // ------------------------------------------------------------ 关屏守卫链
+    // ------------------------------------------------------------ 息屏守卫链
     //
-    // 「仅关闭显示器」是全局、不可逆、自动化无法恢复的副作用：SC_MONITORPOWER 会灭掉整块屏幕，
-    // 而程序化/自动化输入唤不醒它。守卫链（见 Settings.cs 的 monitoroff 分支）：
+    // 「息屏（不睡眠）」是全局、用户可见的副作用（屏幕变黑）。守卫链（见 Settings.cs 的 monitoroff 分支）：
     //   1) 事件是 Click，不是 CheckedChanged —— 程序化写 Checked（含启动回读）不会触发 Click；
     //   2) _syncingSwitches 期间直接返回（回显同步不触发动作，纵深防御）；
     //   3) 只有 OFF→ON 的翻转才动作（!cb.Checked 直接返回）；
     //   4) GetLastInputInfo 显示刚刚有真实输入（≈500ms 窗口）才放行；
-    //   5) 无论是否广播都回弹 OFF、不落配置。
-    // 下列测试全程走 NativeMethods.MonitorOffSender / IdleTimeProvider 接缝：只记录参数，
-    // 绝不真灭屏，也绝不产生真实输入。
+    //   5) 无论是否息屏都回弹 OFF、不落配置。
+    // 下列测试全程走 ScreenBrightness / ScreenBlankController / NativeMethods 接缝：只记录，绝不真改屏。
 
     /// <summary>
-    /// 程序化赋值 Checked（等价于启动回读/任意自动化写）绝不能广播。这也是「Checked= 不触发
-    /// Click」的机器证据：它只触发 CheckedChanged，而监听在 Click 上，所以一次广播都没有。
+    /// 程序化赋值 Checked（等价于启动回读/任意自动化写）绝不能息屏。这也是「Checked= 不触发
+    /// Click」的机器证据：它只触发 CheckedChanged，而监听在 Click 上，所以一次亮度写入都没有。
     /// </summary>
     [Fact]
-    public void ProgrammaticCheckedAssignment_DoesNotBroadcastMonitorOff()
+    public void ProgrammaticCheckedAssignment_DoesNotDim()
     {
-        WithMonitorOffSeams(calls =>
+        WithScreenBlankSeams((writes, exec) =>
         {
             using var form = new SettingsForm();
             form.CreateControl();
             var box = MonitorOffBox(form);
 
-            Assert.False(box.Checked, "仅关闭显示器不是持久开关，初始必须是 OFF。");
-            box.Checked = true;    // 程序化写入：绝不能触发关屏
+            Assert.False(box.Checked, "息屏不是持久开关，初始必须是 OFF。");
+            box.Checked = true;    // 程序化写入：绝不能触发息屏
             box.Checked = false;
             box.Checked = true;
 
-            Assert.Empty(calls);
+            Assert.Empty(writes);
+            Assert.Empty(exec);
+            Assert.False(ScreenBlankController.IsDimmed);
         });
     }
 
     /// <summary>
     /// 启动/定时回显路径（<see cref="SettingsForm"/> 的 UpdateQuickSwitches：内部置
-    /// _syncingSwitches=true 并把硬件回读值写进 Checked）必须对关屏开关完全惰性。
-    /// 最坏情形是「每次启动都灭一次屏」——这正是本次事故的形态，必须锁死。
+    /// _syncingSwitches=true 并把硬件回读值写进 Checked）必须对息屏开关完全惰性。
     /// </summary>
     [Fact]
-    public void SwitchSyncAndReadBack_NeverBroadcastMonitorOff()
+    public void SwitchSyncAndReadBack_NeverDims()
     {
         using var hardware = new MechrevoHw(null, MechrevoDeviceCapabilities.FromValues(
             new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)));
         // 故意让回读里出现 monitoroff=true（生产不会写这个键，但守卫必须对任何 Checked= 写入惰性）。
         hardware.QuickSwitches["monitoroff"] = true;
 
-        WithMonitorOffSeams(calls =>
+        WithScreenBlankSeams((writes, exec) =>
         {
             using var form = new SettingsForm();
             form.CreateControl();
@@ -149,17 +125,20 @@ public class MoreSwitchesRun5Tests
                 .GetMethod("UpdateQuickSwitches", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(form, null);
 
-            Assert.Empty(calls);
+            Assert.Empty(writes);
+            Assert.Empty(exec);
+            Assert.False(ScreenBlankController.IsDimmed);
         }, hardware: hardware);
     }
 
     /// <summary>
-    /// 真实点击 + 新鲜输入（GetLastInputInfo 显示刚刚有输入）→ 精确广播一次并回弹 OFF。
+    /// 真实点击 + 新鲜输入 → 精确把面板压到 0，并设置执行状态标志、回弹 OFF；
+    /// 首次真实输入（时钟越过最小黑屏时长、空闲窗口为 0）→ 恢复原亮度并清除标志。
     /// </summary>
     [Fact]
-    public void GenuineUserClick_BroadcastsExactlyOnceAndRevertsToOff()
+    public void GenuineClick_DimsAndSetsExecutionState_ThenRestoresOnInput()
     {
-        WithMonitorOffSeams(calls =>
+        WithScreenBlankSeams((writes, exec) =>
         {
             using var form = new SettingsForm();
             form.CreateControl();
@@ -168,23 +147,31 @@ public class MoreSwitchesRun5Tests
 
             RaiseClick(box);
 
-            var call = Assert.Single(calls);
-            Assert.Equal(NativeMethods.HWND_BROADCAST, call.Hwnd);
-            Assert.Equal(WM_SYSCOMMAND, call.Message);
-            Assert.Equal(SC_MONITORPOWER, call.WParam);
-            Assert.Equal(MONITOR_OFF, call.LParam);
-            Assert.False(box.Checked, "一次性动作执行后必须回到 OFF（不落配置、不回弹）。");
+            Assert.Equal(new[] { 0 }, writes);   // 只写入一次 0（黑屏）
+            Assert.False(box.Checked, "一次性动作执行后必须回到 OFF。");
+            Assert.True(ScreenBlankController.IsDimmed);
+            uint state = Assert.Single(exec);
+            Assert.Equal(ScreenBlankController.BlankExecutionState, state);
+            Assert.True((state & ScreenBlankController.ES_SYSTEM_REQUIRED) != 0,
+                "息屏期间必须置 ES_SYSTEM_REQUIRED 顶住 Modern Standby。");
+
+            // 首次真实输入：空闲窗口为 0（idle 接缝），时钟越过最小黑屏时长。
+            ScreenBlankController.Poll(DateTime.UtcNow.AddSeconds(2));
+
+            Assert.Equal(new[] { 0, 50 }, writes);   // 恢复原亮度 50
+            Assert.Equal(ScreenBlankController.ES_CONTINUOUS, exec[^1]);
+            Assert.False(ScreenBlankController.IsDimmed);
         }, idle: static () => TimeSpan.Zero);
     }
 
     /// <summary>
-    /// 陈旧输入（自动化/UIA 点击的典型形态：最近一次真实输入在两秒前）与输入缺失都不能广播；
+    /// 陈旧输入（自动化/UIA 点击的典型形态：最近一次真实输入在两秒前）与输入缺失都不能息屏；
     /// 末尾的新鲜输入对照证明空结果来自新鲜度判定，而不是点击根本没投递。
     /// </summary>
     [Fact]
-    public void StaleOrMissingRealInput_DoesNotBroadcast()
+    public void StaleOrMissingRealInput_DoesNotDim()
     {
-        WithMonitorOffSeams(calls =>
+        WithScreenBlankSeams((writes, exec) =>
         {
             using var form = new SettingsForm();
             form.CreateControl();
@@ -192,71 +179,141 @@ public class MoreSwitchesRun5Tests
 
             NativeMethods.IdleTimeProvider = static () => TimeSpan.FromMilliseconds(2000);
             RaiseClick(box);
-            Assert.Empty(calls);
+            Assert.Empty(writes);
             Assert.False(box.Checked, "被拒绝的一次性动作也必须回到 OFF，不能停在半开。");
 
             NativeMethods.IdleTimeProvider = static () => TimeSpan.MaxValue;   // 读不到输入
             RaiseClick(box);
-            Assert.Empty(calls);
+            Assert.Empty(writes);
 
             NativeMethods.IdleTimeProvider = static () => TimeSpan.Zero;       // 反向对照：新鲜输入放行
             RaiseClick(box);
-            Assert.Single(calls);
+            Assert.Equal(new[] { 0 }, writes);
+            ScreenBlankController.RestoreImmediate();
         });
     }
 
     /// <summary>
-    /// (b) 开关语义：真实点击拨到 ON 触发一次动作后自动回到 OFF（它是动作，不是持久状态），
-    /// 且第二次真实点击仍能再执行（一次性动作可重复，不是被禁用）。
+    /// watchdog：黑屏时长达到上限（<see cref="ScreenBlankController.MaxBlankDuration"/>）即强制恢复，
+    /// 即使期间完全没有输入；未到上限且无输入则保持黑屏。
     /// </summary>
     [Fact]
-    public void MonitorOffSwitch_ExecutesTheBroadcastThenRevertsToOff()
+    public void Watchdog_RestoresAfterMaxBlankDuration()
     {
-        WithMonitorOffSeams(calls =>
+        WithScreenBlankSeams((writes, exec) =>
         {
             using var form = new SettingsForm();
             form.CreateControl();
             var box = MonitorOffBox(form);
 
-            Assert.False(box.Checked, "仅关闭显示器不是持久开关，初始必须是 OFF。");
-            RaiseClick(box);
-            Assert.Single(calls);
-            Assert.False(box.Checked, "执行后必须回到 OFF（一次性动作）。");
+            RaiseClick(box);   // 点击时 idle=0（新鲜输入）放行
+            Assert.Equal(new[] { 0 }, writes);
+            Assert.True(ScreenBlankController.IsDimmed);
 
-            RaiseClick(box);
-            Assert.Equal(2, calls.Count);
-            Assert.False(box.Checked);
+            // 黑屏后没有任何输入（空闲窗口很大）：只有 watchdog 能恢复。
+            NativeMethods.IdleTimeProvider = static () => TimeSpan.FromMinutes(10);
+            ScreenBlankController.Poll(DateTime.UtcNow.AddMinutes(10));
+            Assert.Equal(new[] { 0 }, writes);   // 未到上限：不恢复
+            Assert.True(ScreenBlankController.IsDimmed);
+
+            ScreenBlankController.Poll(DateTime.UtcNow.Add(
+                ScreenBlankController.MaxBlankDuration + TimeSpan.FromSeconds(1)));
+            Assert.Equal(new[] { 0, 50 }, writes);
+            Assert.Equal(ScreenBlankController.ES_CONTINUOUS, exec[^1]);
+            Assert.False(ScreenBlankController.IsDimmed);
         }, idle: static () => TimeSpan.Zero);
     }
 
-    // ------------------------------------------------------------ 关屏测试脚手架
+    /// <summary>亮度读失败时绝不猜、绝不息屏（否则可能把屏幕压黑却记错原值，无法恢复）。</summary>
+    [Fact]
+    public void BrightnessReadFailure_NeverDims()
+    {
+        WithScreenBlankSeams((writes, exec) =>
+        {
+            using var form = new SettingsForm();
+            form.CreateControl();
+            var box = MonitorOffBox(form);
+
+            RaiseClick(box);
+
+            Assert.Empty(writes);
+            Assert.Empty(exec);
+            Assert.False(ScreenBlankController.IsDimmed);
+        }, idle: static () => TimeSpan.Zero, brightness: null);
+    }
+
+    // ------------------------------------------------------------ 阻塞调用静态锁
 
     /// <summary>
-    /// 注入关屏接缝并托管全局状态（审计模式、hw、两个静态接缝），结束时全部还原——
-    /// 套件已禁用并行，但静态状态仍必须还原以免污染后续测试。广播只进内存记录器，绝不真灭屏。
+    /// 旧的阻塞广播入口/接缝必须彻底消失：它曾在 UI 线程上同步等待所有顶层窗口，
+    /// 在本机把系统带进 Connected Standby，恢复后界面卡死。
     /// </summary>
-    static void WithMonitorOffSeams(
-        Action<List<(nint Hwnd, int Message, int WParam, int LParam)>> body,
+    [Fact]
+    public void NativeMethods_NoLongerExposesBlockingMonitorOffBroadcast()
+    {
+        Assert.Null(typeof(NativeMethods).GetMethod("TurnOffScreen",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+        Assert.Null(typeof(NativeMethods).GetProperty("MonitorOffSender",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+        string source = File.ReadAllText(MainProjectFile("NativeMethods.cs"));
+        Assert.DoesNotContain("TurnOffScreen", source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\bSendMessage\(", source);
+    }
+
+    /// <summary>
+    /// 通知区工具栏刷新必须走非阻塞 PostMessage：旧实现用阻塞 SendMessage 逐格同步等待
+    /// explorer，explorer 一卡，UI 线程就冻在消息循环外（本次「恢复后界面打不开」的同类路径）。
+    /// </summary>
+    [Fact]
+    public void ShellTrayRefresh_UsesNonBlockingPostMessage()
+    {
+        string source = File.ReadAllText(MainProjectFile(Path.Combine("Helpers", "OfficialConsoleIsolation.cs")));
+        Assert.Contains("PostMessage(", source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\bSendMessage\(", source);
+    }
+
+    // ------------------------------------------------------------ 息屏测试脚手架
+
+    /// <summary>
+    /// 注入亮度读/写、执行状态、空闲时间接缝并托管全局状态（审计模式、hw、自动轮询），结束时全部还原——
+    /// 套件已禁用并行，但静态状态仍必须还原以免污染后续测试。亮度写入只进内存记录器，绝不真改屏。
+    /// </summary>
+    static void WithScreenBlankSeams(
+        Action<List<int>, List<uint>> body,
         Func<TimeSpan>? idle = null,
+        int? brightness = 50,
         MechrevoHw? hardware = null)
     {
         bool previousAudit = Program.UiAuditMode;
         MechrevoHw? previousHardware = Program.hw;
-        Action<nint, int, int, int>? previousSender = NativeMethods.MonitorOffSender;
+        Func<int?>? previousRead = ScreenBrightness.ReadOverride;
+        Action<int>? previousWrite = ScreenBrightness.WriteOverride;
+        Action<uint>? previousExecutionState = ScreenBlankController.ExecutionStateOverride;
         Func<TimeSpan>? previousIdle = NativeMethods.IdleTimeProvider;
-        var calls = new List<(nint Hwnd, int Message, int WParam, int LParam)>();
+        bool previousAutoPoll = ScreenBlankController.AutoPollEnabled;
+        var writes = new List<int>();
+        var executionStates = new List<uint>();
         try
         {
             Program.UiAuditMode = true;
             Program.hw = hardware!;
-            NativeMethods.MonitorOffSender = (hwnd, message, wParam, lParam) => calls.Add((hwnd, message, wParam, lParam));
+            ScreenBrightness.ReadOverride = () => brightness;
+            ScreenBrightness.WriteOverride = writes.Add;
+            ScreenBlankController.ExecutionStateOverride = executionStates.Add;
             NativeMethods.IdleTimeProvider = idle;
-            body(calls);
+            ScreenBlankController.AutoPollEnabled = false;   // 测试直接调 Poll(now)，不依赖消息泵定时器
+            body(writes, executionStates);
         }
         finally
         {
+            // 接缝仍在时先还原，避免把接缝状态/黑屏状态泄漏给后续测试（写入进记录器，不碰真屏）。
+            ScreenBlankController.RestoreImmediate();
+            ScreenBlankController.AutoPollEnabled = previousAutoPoll;
             NativeMethods.IdleTimeProvider = previousIdle;
-            NativeMethods.MonitorOffSender = previousSender;
+            ScreenBlankController.ExecutionStateOverride = previousExecutionState;
+            ScreenBrightness.WriteOverride = previousWrite;
+            ScreenBrightness.ReadOverride = previousRead;
             Program.hw = previousHardware!;
             Program.UiAuditMode = previousAudit;
         }
@@ -274,6 +331,20 @@ public class MoreSwitchesRun5Tests
     static void RaiseClick(CheckBox box) =>
         typeof(CheckBox).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(box, new object[] { EventArgs.Empty });
+
+    /// <summary>沿目录向上找仓库根（含 MechrevoLite.slnx 的那一层）。</summary>
+    static DirectoryInfo RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(
+            Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "MechrevoLite.slnx")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+        return directory!;
+    }
+
+    static string MainProjectFile(string relativePath) =>
+        Path.Combine(RepositoryRoot().FullName, "src", "MechrevoLiteWin", relativePath);
 
     // ------------------------------------------------------------ 深度睡眠初值
 

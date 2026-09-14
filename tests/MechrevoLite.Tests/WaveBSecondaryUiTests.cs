@@ -282,7 +282,7 @@ public class WaveBSecondaryUiTests
         var officialPanel = new Panel { Height = 40 };
         var overdrive = new RCheckBox { Text = "响应加速", Height = 30 };
         // 2026-09-14：校色按钮删除（改为屏幕行头内联下拉），弹窗只收 overdrive。
-        var dialog = new SettingsDialog(themePanel, officialPanel, overdrive);
+        var dialog = new SettingsDialog(themePanel, officialPanel, overdrive, displayGroupAvailable: true);
         try
         {
             dialog.Show();

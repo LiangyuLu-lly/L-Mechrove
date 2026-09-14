@@ -165,6 +165,9 @@ internal sealed class UpdateForm : RForm
         ResponsiveLayout.ScaleFrom96(this, this);
         _designClientWidth = ClientSize.Width;
         _designClientHeight = ClientSize.Height;
+        // 首帧之前完成空态收口：CreateControl 让句柄/布局就绪，否则 ApplyNotesState 会被
+        // IsHandleCreated 守卫跳过，等到 OnShown（已可见）才真正收口——首帧先按设计高画再跳。
+        CreateControl();
         ApplyNotesState();
     }
 

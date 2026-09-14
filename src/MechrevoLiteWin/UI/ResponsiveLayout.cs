@@ -85,6 +85,24 @@ public static class ResponsiveLayout
             Math.Clamp(owner.Top, area.Top, Math.Max(area.Top, area.Bottom - child.Height)));
     }
 
+    /// <summary>
+    /// 贴边显示二级窗体：在窗体**可见之前**完成最终布局与定位，再 Show。
+    /// 首帧就落在主窗旁边，不会先画在默认位置（0,0）再跳过去。内容派生尺寸必须在
+    /// 构造函数/OnLoad 里完成（见各窗体），这里只保证句柄/布局就绪并定位后才显示。
+    /// </summary>
+    public static void ShowAdjacentTo(Form child, Form owner)
+    {
+        if (child.Visible)
+        {
+            child.Activate();
+            return;
+        }
+        if (!child.IsHandleCreated) child.CreateControl();
+        PerformLayoutTree(child);
+        PlaceAdjacent(child, owner);
+        child.Show();
+    }
+
     public static int VisibleContentBottom(Control container)
         => container.Controls.Cast<Control>()
             .Where(control => control.Visible)

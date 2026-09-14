@@ -54,37 +54,21 @@ public static class NativeMethods
 
     }
 
-    private const int WM_SYSCOMMAND = 0x0112;
-    private const int SC_MONITORPOWER = 0xF170;
-    private const int MONITOR_OFF = 2;
-
-    /// <summary>HWND_BROADCAST：广播句柄（0xFFFF），关屏消息发给所有顶层窗口。</summary>
-    internal static readonly nint HWND_BROADCAST = 0xFFFF;
-
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     public static extern int RegisterWindowMessage(string lpString);
 
-    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    private static extern IntPtr SendMessage(nint hWnd, int hMsg, int wParam, int lParam);
-
     /// <summary>
-    /// 关屏动作的测试接缝（先例：<c>UpdateChecker.HttpGetOverride</c>）。非 null 时由它代替
-    /// 真实 user32 广播——测试只记录参数，绝不真灭屏；生产运行时保持 null，直接走广播。
-    /// </summary>
-    internal static Action<nint, int, int, int>? MonitorOffSender { get; set; }
-
-    /// <summary>
-    /// 关屏输入新鲜度的测试接缝：非 null 时替代 GetLastInputInfo 读取「最近一次真实输入距今多久」。
+    /// 输入新鲜度的测试接缝：非 null 时替代 GetLastInputInfo 读取「最近一次真实输入距今多久」。
     /// 测试只喂时间、绝不产生真实输入；生产运行时保持 null，直接读 user32。重置前不得跨测试泄漏。
     /// </summary>
     internal static Func<TimeSpan>? IdleTimeProvider { get; set; }
 
-    /// <summary>关屏放行所需的「刚刚发生的真实输入」窗口（毫秒）。</summary>
+    /// <summary>「刚刚发生的真实输入」窗口（毫秒）。息屏等一次性动作的放行条件。</summary>
     internal const int FreshInputWindowMs = 500;
 
     /// <summary>
     /// 最近一次真实用户输入是否落在 <paramref name="windowMs"/> 窗口内。程序化写入 Checked、
-    /// UIA TogglePattern 与启动回读都不会刷新 GetLastInputInfo，因此这是关屏动作的唯一放行条件。
+    /// UIA TogglePattern 与启动回读都不会刷新 GetLastInputInfo，因此这是真实动作的唯一放行条件。
     /// </summary>
     public static bool HasFreshUserInput(int windowMs = FreshInputWindowMs)
     {
@@ -99,21 +83,6 @@ public static class NativeMethods
     public static void LockScreen()
     {
         LockWorkStation();
-    }
-
-    /// <summary>
-    /// 仅关闭显示器：向 HWND_BROADCAST 广播 WM_SYSCOMMAND / SC_MONITORPOWER(2)。
-    /// 只关显示面板，不进入睡眠/休眠/关机；任意键鼠输入即恢复（Windows 自身行为，
-    /// 与官方控制台「显示屏电源 → Off」同一语义：close panel only, not set system in sleep）。
-    /// </summary>
-    public static void TurnOffScreen()
-    {
-        if (MonitorOffSender is { } sender)
-        {
-            sender(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, MONITOR_OFF);
-            return;
-        }
-        SendMessage(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, MONITOR_OFF);
     }
 
     // Monitor Power detection

@@ -43,6 +43,9 @@ public class CustomModeForm : RForm
     RSlider _fanSwitchSpeed = null!;
     RNumericUpDown _fanSwitchSpeedVal = null!;
     RCheckBox _dbChk = null!, _tccChk = null!, _ocChk = null!, _fanSwitchSpeedChk = null!;
+    // GPU 超频数值行的可调性快照：来自同一次硬件回读，供 SyncGpuOverclockDependents 推导启用状态。
+    bool _gpuOcCoreAdjustable;
+    bool _gpuOcMemoryAdjustable;
     RComboBox _planCombo = null!, _boostCombo = null!;   // Windows 电源计划 / 睿频（按档独立）
     bool _syncingWinPower;
     int _currentIdx = -1;   // 当前选中的自定义档（Windows 电源设置按档保存）
@@ -428,13 +431,18 @@ public class CustomModeForm : RForm
         _ocChk = AddCheckRow("GPU 超频", hw?.GpuOverclockEnabled ?? false, on =>
         {
             Queue("OverClockingSwitch", on ? "1" : "0");
-            _coreOc.Enabled = _memOc.Enabled = on;
+            // 关：只禁用数值行，绝不重算数值（ApplyRange 在范围不可用/设备报 0 时会把用户值
+            // 清零）；开：先按同一来源启用，具体范围与数值等回读完成后由 OnCustomChanged 统一 clamp。
+            SyncGpuOverclockDependents();
         });
         var coreRange = DeviceRange(hw?.GpuCoreOffsetUserMinimum ?? -1, hw?.GpuCoreOffsetUserMaximum ?? -1, hw?.EffectiveGpuCoreClockOffset ?? 0, allowNegative: true);
         (_coreOc, _coreOcVal) = AddSliderRow("核心频率偏移 (MHz)", coreRange.Min, coreRange.Max, coreRange.Value, v => Queue("GpuCoreClockOffsetOC", v.ToString()));
         var memoryRange = DeviceRange(hw?.GpuMemoryOffsetUserMinimum ?? -1, hw?.GpuMemoryOffsetUserMaximum ?? -1, hw?.EffectiveGpuMemoryClockOffset ?? 0, allowNegative: true);
         (_memOc, _memOcVal) = AddSliderRow("显存频率偏移 (MHz)", memoryRange.Min, memoryRange.Max, memoryRange.Value, v => Queue("GpuMemoryClockOffsetOC", v.ToString()));
         _ocChk.Enabled = Program.UiAuditMode || hw?.SupportsGpuOverclock == true && (coreRange.Adjustable || memoryRange.Adjustable);
+        _gpuOcCoreAdjustable = coreRange.Adjustable;
+        _gpuOcMemoryAdjustable = memoryRange.Adjustable;
+        SyncGpuOverclockDependents();   // 初值来源与回读一致：开关 OFF ⇒ 数值行不可拖动
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(table, 0, rootRow++);
 
@@ -825,6 +833,18 @@ public class CustomModeForm : RForm
         return range.Adjustable;
     }
 
+    /// <summary>
+    /// GPU 超频区唯一状态来源：数值行（滑条 + 数值框 + ± 键）的可用性只由开关当前勾选状态
+    /// 与可调性快照推导。构建后、硬件回读后、用户拨动开关后都经这一个方法，杜绝
+    /// 「开关 OFF 而数值行仍可拖动」的首次打开不一致（数值框的 Enabled 会带动 ± 键）。
+    /// </summary>
+    void SyncGpuOverclockDependents()
+    {
+        bool on = _ocChk.Checked;
+        _coreOc.Enabled = _coreOcVal.Enabled = on && _gpuOcCoreAdjustable;
+        _memOc.Enabled = _memOcVal.Enabled = on && _gpuOcMemoryAdjustable;
+    }
+
     void OnCustomChanged()
     {
         try
@@ -847,13 +867,21 @@ public class CustomModeForm : RForm
                 bool tccAdjustable = ApplyRange(_tcc, _tccVal, hw.TccMinimum, hw.TccMaximum, hw.TccTarget);
                 bool tgpAdjustable = ApplyRange(_tgp, _tgpVal, hw.GpuTgpMinimum, hw.GpuTgpMaximum, hw.GpuTgp);
                 bool dbAdjustable = ApplyRange(_db, _dbVal, hw.GpuDbMinimum, hw.GpuDbMaximum, hw.GpuDb);
-                bool coreAdjustable = ApplyRange(_coreOc, _coreOcVal, hw.GpuCoreOffsetUserMinimum, hw.GpuCoreOffsetUserMaximum, hw.EffectiveGpuCoreClockOffset, allowNegative: true);
-                bool memoryAdjustable = ApplyRange(_memOc, _memOcVal, hw.GpuMemoryOffsetUserMinimum, hw.GpuMemoryOffsetUserMaximum, hw.EffectiveGpuMemoryClockOffset, allowNegative: true);
+                bool ocSupported = hw.SupportsGpuOverclock;
+                bool ocEnabled = hw.GpuOverclockEnabled && ocSupported;
+                // 只在超频已开启时套用/夹取数值：关闭时设备会把偏移报成 0，ApplyRange 会把
+                // 用户刚设的值清零（用户报告：关掉开关下面的数值归零）。关闭时保留当前 UI 输入
+                // 与可调性快照，等重新开启时再 clamp。
+                if (ocEnabled)
+                {
+                    _gpuOcCoreAdjustable = ApplyRange(_coreOc, _coreOcVal, hw.GpuCoreOffsetUserMinimum, hw.GpuCoreOffsetUserMaximum, hw.EffectiveGpuCoreClockOffset, allowNegative: true);
+                    _gpuOcMemoryAdjustable = ApplyRange(_memOc, _memOcVal, hw.GpuMemoryOffsetUserMinimum, hw.GpuMemoryOffsetUserMaximum, hw.EffectiveGpuMemoryClockOffset, allowNegative: true);
+                }
                 bool fanSwitchAdjustable = ApplyRange(_fanSwitchSpeed, _fanSwitchSpeedVal,
                     hw.FanSwitchSpeedMinimum, hw.FanSwitchSpeedMaximum, hw.FanSwitchSpeed);
                 SetRowVisible(_tccChk, tccAdjustable);
                 SetRowVisible(_dbChk, dbAdjustable);
-                SetRowVisible(_ocChk, hw.SupportsGpuOverclock);
+                SetRowVisible(_ocChk, ocSupported);
                 // 灵敏度整行的显隐只看机型是否报过这一项；范围是我们按 EC 字段宽度推的，恒有效。
                 SetRowVisible(_fanSwitchSpeedChk, hw.SupportsFanSwitchSpeed);
                 SetRowVisible(_fanSwitchSpeed, hw.SupportsFanSwitchSpeed, _fanSwitchSpeedVal);
@@ -872,10 +900,9 @@ public class CustomModeForm : RForm
                 _tccChk.Checked = hw.TccSwitch;
                 _tccChk.Enabled = tccAdjustable;
                 _tcc.Enabled = hw.TccSwitch && tccAdjustable;
-                _ocChk.Checked = hw.GpuOverclockEnabled;
-                _ocChk.Enabled = hw.SupportsGpuOverclock;
-                _coreOc.Enabled = hw.GpuOverclockEnabled && hw.SupportsGpuOverclock && coreAdjustable;
-                _memOc.Enabled = hw.GpuOverclockEnabled && hw.SupportsGpuOverclock && memoryAdjustable;
+                _ocChk.Checked = ocEnabled;
+                _ocChk.Enabled = ocSupported;
+                SyncGpuOverclockDependents();
                 if (hw.CustomProfileIndex >= 0)
                 {
                     _status.Text = "自定义 " + (hw.CustomProfileIndex + 1) + " 已激活";

@@ -1967,15 +1967,37 @@ public class MechrevoService
     public Task<bool> SetKeyboardPower(bool on)
         => SetLightPower("Keyboard/Ctrl", on);
 
-    /// <summary>通用灯开关（键盘/灯条/Logo 灯 SetPower）。</summary>
-    public async Task<bool> SetLightPower(string topic, bool on)
+    /// <summary>
+    /// 灯效通道上电/断电的「只下发」语义：返回命令是否成功发布，**不等待厂商回读**。
+    ///
+    /// 恢复/熄灯周期必须用它把命令立即发出——本地 HID 与 GCU 通道在同一周期落地。
+    /// 回读确认是慢且可能永远不来的外部事实（本机键盘主题长期 <c>not confirmed</c>），
+    /// 绝不能拿它当可见结果的闸门，否则「命令已下发、灯已亮」也会被判定成失败并触发重发。
+    /// </summary>
+    public async Task<bool> PublishLightPower(string topic, bool on)
     {
         try
         {
             if (!SupportsLightTopic(topic)) return false;
             await _hw.Publish(topic, new Dictionary<string, object> { ["function"] = "SetPower", ["powerstatus"] = on ? 1 : 0 });
-            // 确认要看**这条**灯带的状态：确认逻辑与 SupportsLightTopic 共用
-            // LightTopicToQuickSwitchKey 一份，不许再写第二份映射。
+            return true;
+        }
+        catch (Exception ex) { Logger.WriteLine("PublishLightPower fail: " + ex.Message); return false; }
+    }
+
+    /// <summary>
+    /// 等待厂商回读确认某条通道的电源态（best-effort）：先做 180ms 快速等待，再最多 3 次 GETSTATUS。
+    ///
+    /// 只供 UI / 校验等确实需要回显的调用方使用。恢复周期只把它当遥测
+    /// （<see cref="ObserveLightPower"/>），绝不在落地效果前 await 它。
+    /// 确认逻辑与 <c>SupportsLightTopic</c> 共用 <c>LightTopicToQuickSwitchKey</c> 一份映射，
+    /// 不许再写第二份。
+    /// </summary>
+    public async Task<bool> ConfirmLightPower(string topic, bool on)
+    {
+        try
+        {
+            if (!SupportsLightTopic(topic)) return false;
             string? lightKey = LightTopicToQuickSwitchKey(topic);
             bool IsConfirmed() => topic.StartsWith("Keyboard/", StringComparison.OrdinalIgnoreCase)
                 ? _hw.KeyboardPower == on
@@ -1994,7 +2016,17 @@ public class MechrevoService
             Logger.WriteLine($"SetLightPower({topic}, {on}) not confirmed");
             return false;
         }
-        catch (Exception ex) { Logger.WriteLine("SetLightPower fail: " + ex.Message); return false; }
+        catch (Exception ex) { Logger.WriteLine("ConfirmLightPower fail: " + ex.Message); return false; }
+    }
+
+    /// <summary>遥测专用后台确认：立即返回；确认与否只写日志，绝不参与周期成败判定。</summary>
+    public void ObserveLightPower(string topic, bool on) => _ = Task.Run(() => ConfirmLightPower(topic, on));
+
+    /// <summary>通用灯开关（键盘/灯条/Logo 灯 SetPower）。UI/校验路径：下发后等待回读确认。</summary>
+    public async Task<bool> SetLightPower(string topic, bool on)
+    {
+        if (!await PublishLightPower(topic, on).ConfigureAwait(false)) return false;
+        return await ConfirmLightPower(topic, on).ConfigureAwait(false);
     }
 
     /// <summary>深度睡眠开关；secs&gt;0 时携带定时（900-1800s），仅开启状态生效。</summary>

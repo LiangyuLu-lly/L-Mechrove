@@ -30,6 +30,7 @@ public class RgbForm : RForm
     int _closeTimerCommandGen;   // 睡眠时间快速连选时仅确认最后一次设置（ApplyModeSelection 收尾推送用）
     System.Windows.Forms.Timer? _modeSyncTimer;   // 仪表盘改效果时，已打开的对话框跟随重放
     int _activeHidMode = KeyboardRgb.ModeWave;
+    Action? _updateClientHeight;   // 内容定高；OnLoad 里首帧之前跑一次（Shown 时窗口已可见，改高会跳）
 
     int D(int value) => ResponsiveLayout.LogicalToDevice(this, value);
 
@@ -152,6 +153,7 @@ public class RgbForm : RForm
         }
         table.SizeChanged += (_, _) => UpdateClientHeight();
         UpdateClientHeight();   // 构建期先校一次，避免首帧停在初始 D(120) 高
+        _updateClientHeight = UpdateClientHeight;
 
         // 模式跟随：仪表盘键盘行改 KbHidMode 时（对话框已打开/可见），2s 内重放到本窗。
         // 睡眠空闲检测已由 Program.StartLightingIdleMonitor 统一轮询，这里不再重复。
@@ -185,7 +187,8 @@ public class RgbForm : RForm
 
         Shown += async (_, _) =>
         {
-            UpdateClientHeight();   // 显示后布局已定，按内容表实际首选高再校一次窗口高度
+            // 注意：内容定高已在 OnLoad（首帧之前）完成，这里不再改高——Shown 时窗口已可见，
+            // 改高会让首帧之后跳一下。
             // 重新显示时恢复设备相关控件（DeviceLost 曾禁用过它们），状态色回中性。
             SetDeviceUiEnabled(true);
             _lblStatus.ForeColor = UiVisualStyle.Muted;
@@ -205,6 +208,16 @@ public class RgbForm : RForm
         };
         UiVisualStyle.ApplyWindow(this);
         UiVisualStyle.ApplySection(_hidPanel);
+    }
+
+    /// <summary>
+    /// Load 在窗体可见之前触发：这里按内容表实测高定窗口高，保证首帧尺寸就是最终尺寸。
+    /// （原先放在 Shown——那时窗口已经画过一次，高度收紧会让首帧之后跳一下。）
+    /// </summary>
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        _updateClientHeight?.Invoke();
     }
 
     /// <summary>设备可用性驱动的 UI 态：HID 断开时参数面板整体禁用，

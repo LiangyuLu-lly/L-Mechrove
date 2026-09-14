@@ -149,7 +149,8 @@ namespace MechrevoLite.Display
             if (dialogResult == DialogResult.Yes)
             {
                 Program.acpi.DeviceSet(AsusACPI.ScreenFHD, (fhd == 1) ? 0 : 1, "FHD");
-                Process.Start("shutdown", "/r /t 1");
+                // 不可逆动作走统一入口：确认框刚点过 → 新鲜输入放行；后台发起，不占用 UI 线程。
+                SystemRestart.RequestRestart("FHD toggle", SystemRestart.RebootNowArguments);
             }
         }
 

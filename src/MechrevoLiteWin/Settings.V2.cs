@@ -855,7 +855,7 @@ public partial class SettingsForm
             // 用户 2026-09-13：弹窗里的「悬浮窗」开关与 footer 键重复，整体移除（footer 路径不动）。
             _settingsDialog = new SettingsDialog(
                 _themeModePanel, _officialConsolePanel,
-                _overdriveChk);
+                _overdriveChk, _overdriveAvailable);
             AddOwnedForm(_settingsDialog);
         }
         if (_settingsDialog is not null)

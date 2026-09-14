@@ -214,7 +214,7 @@ internal static class UiAuditRunner
                     ForeColor = UiVisualStyle.Text,
                 };
                 // 屏幕校色按钮已删（改为屏幕行头内联下拉，主窗审计已覆盖该行）。
-                return new SettingsDialog(themePanel, officialPanel, overdrive);
+                return new SettingsDialog(themePanel, officialPanel, overdrive, displayGroupAvailable: true);
             }, null),
             // 更新窗口同样漏采；注入合成更新信息（网盘发布态：无直链/哈希，不走自替换检查），
             // 保证渲染不触网（Shown 不再刷新）。

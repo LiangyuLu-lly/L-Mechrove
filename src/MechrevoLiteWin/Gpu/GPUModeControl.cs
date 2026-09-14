@@ -246,7 +246,8 @@ namespace MechrevoLite.Gpu
             if (restart)
             {
                 settings.VisualiseGPUMode();
-                Process.Start("shutdown", "/r /t 1");
+                // 不可逆动作走统一入口（新鲜输入 + 后台线程）；程序化路径拿不到新鲜输入即拒绝。
+                SystemRestart.RequestRestart("legacy GPU mode switch", SystemRestart.RebootNowArguments);
             }
 
         }
@@ -532,11 +533,8 @@ namespace MechrevoLite.Gpu
             if (choice == DialogResult.Yes)
             {
                 try { Program.toast?.RunToast("5 秒后重启以应用核显模式"); } catch { }
-                Process.Start(new ProcessStartInfo("shutdown", "/r /t 5")
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                });
+                // 用户刚点过 [是] → 新鲜输入放行；后台线程发起，不占用 UI 线程。
+                SystemRestart.RequestRestart("iGPU reboot-to-apply", SystemRestart.RebootAfterFiveSecondsArguments);
             }
             else
             {

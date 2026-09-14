@@ -105,6 +105,9 @@ namespace MechrevoLite
         SettingsDialog? _settingsDialog;
         RCheckBox? _autoHzChk;
         RCheckBox? _overdriveChk;
+        // 「显示」组（设置弹窗）里响应加速行的可用性，唯一真相源：能力刷新时更新，
+        // 弹窗懒建时按它决定该组标题是否渲染。
+        bool _overdriveAvailable;
         RComboBox? _calibCombo;
         Button? _dayModeButton;
         Button? _nightModeButton;
@@ -394,8 +397,8 @@ namespace MechrevoLite
             else
             {
                 AddOwnedForm(f);
-                f.Show();
-                ResponsiveLayout.PlaceAdjacent(f, this);
+                // 定位在 Show 之前完成：首帧就在主窗旁边，不再先画在默认位置再跳。
+                ResponsiveLayout.ShowAdjacentTo(f, this);
             }
         }
 
@@ -403,11 +406,7 @@ namespace MechrevoLite
         {
             if (rgbForm is null || rgbForm.IsDisposed) { rgbForm = new RgbForm(Program.rgb); AddOwnedForm(rgbForm); }
             if (rgbForm.Visible) rgbForm.Close();
-            else
-            {
-                rgbForm.Show();
-                ResponsiveLayout.PlaceAdjacent(rgbForm, this);
-            }
+            else ResponsiveLayout.ShowAdjacentTo(rgbForm, this);
         }
 
         void BuildQuickSwitchPanel()
@@ -490,7 +489,7 @@ namespace MechrevoLite
                 ("fanboost", "风扇增强"),
                 // 本轮新增两项（用户要求）：
                 // 深度睡眠 = 官方 DeepSleepSwitch（Setting/Control DEEPSLEEP_ON/OFF），改动要重启才写回状态；
-                // 仅关闭显示器 = 一次性动作（WM_SYSCOMMAND/SC_MONITORPOWER 广播），拨到 ON 立即执行并回弹。
+                // 息屏 = 一次性动作（压面板亮度 + SetThreadExecutionState 顶住待机），拨到 ON 立即执行并回弹。
                 ("deepsleep", "深度睡眠"),
                 // 本轮补齐的官方开关。全部按「服务端报过该字段」显示，机型没有就自动隐藏，
                 // 所以这里可以无条件列出——可见性由 SyncQuickSwitchVisibility 按能力决定。
@@ -500,7 +499,7 @@ namespace MechrevoLite
                 ("gamewhitelist", "游戏白名单"), ("cpuadvperf", "CPU高级性能"),
                 // Windows 侧的三项（官方控制台同样有，同样不走 MQTT）。
                 ("taskbarautohide", "任务栏自动隐藏"), ("transparency", "透明效果"), ("darktheme", "深色主题"),
-                ("monitoroff", "仅关闭显示器"),
+                ("monitoroff", "息屏（不睡眠）"),
                 // 开机自启动（用户要求补入口）：状态来自系统里真实的用户级计划任务，
                 // 不经过 GCU，也没有机型差异——任何机器都能开机自启。
                 ("startup", "开机自启动"),
@@ -540,6 +539,14 @@ namespace MechrevoLite
                 box.Enabled = true;
                 if (hadFocus && !box.Focused && box.CanFocus) box.Focus();
                 return confirmed;
+            }
+            // 回显同步：把 Checked 写回真实状态但不触发动作（动作只在 Click 上）。
+            // 破坏性开关（开机自启动/深度睡眠）回滚/回显统一走这里，避免 _syncingSwitches 泄漏。
+            void RevertCheck(CheckBox box, bool value)
+            {
+                _syncingSwitches = true;
+                try { box.Checked = value; }
+                finally { _syncingSwitches = false; }
             }
             // 宽度交给 RCheckBox 自己量（AutoSize）。曾试过"按最宽标签定宽"以求列对齐，
             // 但那条路要自己算 DPI 缩放，实测在审计缩放下算出的项宽超过半张卡片，反而退化成
@@ -595,12 +602,24 @@ namespace MechrevoLite
                     int pending = AppConfig.Get("deepsleep_pending", -1);
                     _deepSleepPendingValue = pending;
                     cb.Checked = pending >= 0 ? pending == 1 : ReadQuickSwitchState(key) == true;
-                    cb.CheckedChanged += async (_, _) =>
+                    // 破坏性副作用守卫链（与息屏同源）：深度睡眠是 EC/BIOS 状态写入，命令发出即生效
+                    // （重启后写回）。只挂 Click（程序化写 Checked 不触发 Click），并要求
+                    // GetLastInputInfo 显示刚刚有真实输入——回读同步、自动化写值都不会刷新它。
+                    // 被拒绝时回滚到当前回显值，绝不把用户值留在半开。
+                    cb.Click += async (_, _) =>
                     {
                         if (_syncingSwitches) return;
+                        bool requested = cb.Checked;
+                        if (!NativeMethods.HasFreshUserInput())
+                        {
+                            Logger.WriteLine("Deep sleep switch ignored: no fresh user input.");
+                            RevertCheck(cb, _deepSleepPendingValue >= 0
+                                ? _deepSleepPendingValue == 1
+                                : ReadQuickSwitchState(key) == true);
+                            return;
+                        }
                         _lastQuickSwitchUi = DateTime.Now;
                         if (Program.service is not { } svc || Program.hw is not { IsConnected: true }) return;
-                        bool requested = cb.Checked;
                         bool hadFocus = cb.Focused;
                         if (hadFocus && cb.Parent is { CanFocus: true } park) park.Focus();
                         cb.Enabled = false;
@@ -610,30 +629,30 @@ namespace MechrevoLite
                         cb.Enabled = true;
                         if (hadFocus && !cb.Focused && cb.CanFocus) cb.Focus();
                         SetDeepSleepPending(requested ? 1 : 0);
-                        _syncingSwitches = true;
-                        try { cb.Checked = requested; }
-                        finally { _syncingSwitches = false; }
+                        RevertCheck(cb, requested);
                         Logger.WriteLine($"SwitchDeepSleep({requested}) confirmed={confirmed}; 重启后生效");
-                        MessageBox.Show(
-                            requested ? "深度睡眠已开启，重启后生效！" : "深度睡眠已关闭，重启后生效！",
-                            "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Asterisk);
+                        // 审计/测试模式不弹模态框：会阻塞消息泵、挡住脚本化点击（用户路径不变）。
+                        if (!Program.UiAuditMode)
+                            MessageBox.Show(
+                                requested ? "深度睡眠已开启，重启后生效！" : "深度睡眠已关闭，重启后生效！",
+                                "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Asterisk);
                     };
                 }
                 else if (key == "monitoroff")
                 {
-                    // 一次性动作，不是持久状态：真实点击拨到 ON 才广播关屏，随后自动回到 OFF。
-                    // 官方 5.17 控制台「显示屏电源 → Off」1:1 语义（只关面板，不进睡眠，
-                    // 键鼠输入即恢复）。不落配置、不回读；真实广播藏在 NativeMethods.TurnOffScreen
-                    // 的接缝（MonitorOffSender）后面，测试注入记录器后绝不真灭屏。
+                    // 一次性动作，不是持久状态：真实点击拨到 ON 才息屏，随后自动回到 OFF。
+                    // 语义 =「息屏（不睡眠）」：把面板亮度压到最低做黑屏，同时用 SetThreadExecutionState
+                    // 顶住 Modern Standby（ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED），首次真实输入或
+                    // watchdog 到期即自动亮回。绝不广播 WM_SYSCOMMAND/SC_MONITORPOWER——本机只报
+                    // S0 低功耗待机，那会让系统进 Connected Standby（真机已睡过一次，见
+                    // Display/ScreenBlankController.cs 的注释）。不落配置、不回读。
                     //
-                    // 此控件绝不能被程序化驱动：SC_MONITORPOWER 会灭掉整块屏幕，而程序化/自动化的
-                    // 输入无法把它唤醒，驱动一次就可能把机器永久留在黑屏里（本仓库已发生过）。
-                    // 所以只挂 Click（程序化写 Checked 只触发 CheckedChanged、不触发 Click），
-                    // 并要求 GetLastInputInfo 显示刚刚有真实输入：
+                    // 此控件同样绝不能被程序化驱动：只挂 Click（程序化写 Checked 只触发 CheckedChanged、
+                    // 不触发 Click），并要求 GetLastInputInfo 显示刚刚有真实输入：
                     //   1) _syncingSwitches 期间直接返回（回显同步不触发动作）；
                     //   2) 只有 OFF→ON 的翻转才动作；
-                    //   3) 500ms 内确有真实输入才广播；
-                    //   4) 无论是否广播都回弹 OFF、不落配置。
+                    //   3) 500ms 内确有真实输入才息屏；
+                    //   4) 无论是否息屏都回弹 OFF、不落配置。
                     cb.Click += (_, _) =>
                     {
                         if (_syncingSwitches || !cb.Checked) return;
@@ -641,11 +660,11 @@ namespace MechrevoLite
                         try
                         {
                             if (NativeMethods.HasFreshUserInput())
-                                NativeMethods.TurnOffScreen();
+                                ScreenBlankController.Dim();
                             else
-                                Logger.WriteLine("Monitor off ignored: no fresh user input.");
+                                Logger.WriteLine("Screen blank ignored: no fresh user input.");
                         }
-                        catch (Exception ex) { Logger.WriteLine("Monitor off failed: " + ex.Message); }
+                        catch (Exception ex) { Logger.WriteLine("Screen blank failed: " + ex.Message); }
                         finally
                         {
                             _syncingSwitches = true;
@@ -686,14 +705,23 @@ namespace MechrevoLite
                 {
                     // 开机自启动：真实状态来自系统里用户级自启动计划任务（复用 Helpers/Startup.cs），
                     // 不经过 GCU，也不需要管理员。初值必须在挂事件之前读，否则这次赋值会被当成用户
-                    // 操作再写回一次。切换走 Startup 的接缝：同步、行内已回读确认，所以不用
-                    // ApplyQuickSwitchAsync 那套异步确认（那是给 MQTT 命令用的）。
+                    // 操作再写回一次。
+                    //
+                    // 破坏性副作用守卫链（与息屏同源）：加/删计划任务是不可逆的系统状态写入，只挂
+                    // Click（程序化写 Checked 不触发 Click），并要求 GetLastInputInfo 显示刚刚有真实
+                    // 输入——回读同步、自动化写值都不会刷新它。写入失败/被拒绝一律回滚到系统真实状态。
                     bool? initial = Startup.ReadScheduledState();
                     if (initial.HasValue) cb.Checked = initial.Value;
-                    cb.CheckedChanged += (_, _) =>
+                    cb.Click += (_, _) =>
                     {
                         if (_syncingSwitches) return;
                         bool requested = cb.Checked;
+                        if (!NativeMethods.HasFreshUserInput())
+                        {
+                            Logger.WriteLine("Autostart switch ignored: no fresh user input.");
+                            RevertCheck(cb, Startup.ReadScheduledState() ?? !requested);
+                            return;
+                        }
                         if (cb.Focused && cb.Parent is { CanFocus: true } park) park.Focus();   // I4a：同款停放，避免高光跳走
                         cb.Enabled = false;
                         try
@@ -706,12 +734,14 @@ namespace MechrevoLite
                             }
                             else
                             {
-                                _syncingSwitches = true;
-                                try { cb.Checked = !requested; }
-                                finally { _syncingSwitches = false; }
+                                RevertCheck(cb, Startup.ReadScheduledState() ?? !requested);
                             }
                         }
-                        catch (Exception ex) { Logger.WriteLine("Autostart switch failed: " + ex.Message); }
+                        catch (Exception ex)
+                        {
+                            Logger.WriteLine("Autostart switch failed: " + ex.Message);
+                            RevertCheck(cb, Startup.ReadScheduledState() ?? !requested);
+                        }
                         finally { cb.Enabled = true; }
                     };
                     boxes.Add(cb);
@@ -2075,7 +2105,9 @@ namespace MechrevoLite
 
             checkStartup.Checked = false;
             checkStartup.Enabled = Program.UiAuditMode;
-            checkStartup.CheckedChanged += CheckStartup_CheckedChanged;
+            // 破坏性副作用守卫链（与息屏同源）：只挂 Click，程序化回显（RefreshStartupStatusAsync
+            // 写 Checked）不触发计划任务写入；并要求刚刚有真实输入。
+            checkStartup.Click += CheckStartup_Click;
             Shown += (_, _) =>
             {
                 if (!Program.UiAuditMode) _ = RefreshStartupStatusAsync();
@@ -2705,7 +2737,7 @@ namespace MechrevoLite
                 "numpad" => caps.Numpad,
                 "acrecovery" => caps.AcRecovery,
                 "fanboost" => caps.FanBoost,
-                // 任务栏、主题、「仅关闭显示器」与「开机自启动」是 Windows/系统能力，不是这台机器的
+                // 任务栏、主题、「息屏（不睡眠）」与「开机自启动」是 Windows/系统能力，不是这台机器的
                 // 硬件能力：既不依赖 GCU 连接，也没有机型差异，所以恒可见。
                 "taskbarautohide" or "transparency" or "darktheme" or "monitoroff" or "startup" => true,
                 _ => false,
@@ -2766,7 +2798,10 @@ namespace MechrevoLite
             bool brightness = Show(hw?.ScreenBrightnessSeen == true);
             bool calibration = Show(caps.ColorCalibration || hw?.SupportsColorCalibration == true);
             bool overdrive = Show(caps.LcdOverdrive || hw?.SupportsLcdOverdrive == true);
-            if (_overdriveChk is not null) _overdriveChk.Visible = audit || overdrive;
+            _overdriveAvailable = audit || overdrive;
+            if (_overdriveChk is not null) _overdriveChk.Visible = _overdriveAvailable;
+            // 设置弹窗的「显示」组标题只在响应加速行可见时渲染：空组不保留标题。
+            _settingsDialog?.SetDisplayGroupAvailable(_overdriveAvailable);
             if (_calibCombo is not null) _calibCombo.Visible = audit || calibration;
             SetVisible("labelScreenBrightness", brightness);
             SetVisible("sliderScreenBrightness", brightness);
@@ -3208,22 +3243,47 @@ namespace MechrevoLite
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == NativeMethods.WM_POWERBROADCAST)
+            {
+                // 电源/恢复路径绝不能让 UI 线程卡死：处理体只做轻量、非阻塞的调度
+                //（重活各自 Task.Run / 定时器），且任何异常都吞掉留痕，不中断消息泵。
+                try { HandlePowerBroadcast(ref m); }
+                catch (Exception ex) { Logger.WriteLine("Power broadcast handling failed: " + ex.Message); }
+            }
 
-            if (m.Msg == NativeMethods.WM_POWERBROADCAST && m.WParam == (IntPtr)NativeMethods.PBT_APMSUSPEND)
+            if (m.Msg == Program.WM_TASKBARCREATED)
+            {
+                Logger.WriteLine("Taskbar created, re-creating tray icon");
+                if (Program.trayIcon is not null) Program.trayIcon.Visible = true;
+            }
+
+            try
+            {
+                base.WndProc(ref m);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex.ToString());
+            }
+        }
+
+        private void HandlePowerBroadcast(ref Message m)
+        {
+            if (m.WParam == (IntPtr)NativeMethods.PBT_APMSUSPEND)
             {
                 Logger.WriteLine("System Suspend");
                 Program.modeControl.SleepReset();
                 m.Result = (IntPtr)1;
             }
 
-            if (m.Msg == NativeMethods.WM_POWERBROADCAST && m.WParam == (IntPtr)NativeMethods.PBT_APMRESUMEAUTOMATIC)
+            if (m.WParam == (IntPtr)NativeMethods.PBT_APMRESUMEAUTOMATIC)
             {
                 Logger.WriteLine("System Resume");
                 BatteryControl.AutoBattery();
                 m.Result = (IntPtr)1;
             }
 
-            if (m.Msg == NativeMethods.WM_POWERBROADCAST && m.WParam == (IntPtr)NativeMethods.PBT_POWERSETTINGCHANGE)
+            if (m.WParam == (IntPtr)NativeMethods.PBT_POWERSETTINGCHANGE)
             {
                 var settings = (NativeMethods.POWERBROADCAST_SETTING)m.GetLParam(typeof(NativeMethods.POWERBROADCAST_SETTING));
                 if (settings.PowerSetting == NativeMethods.PowerSettingGuid.LIDSWITCH_STATE_CHANGE)
@@ -3270,21 +3330,6 @@ namespace MechrevoLite
                     }
                 }
                 m.Result = (IntPtr)1;
-            }
-
-            if (m.Msg == Program.WM_TASKBARCREATED)
-            {
-                Logger.WriteLine("Taskbar created, re-creating tray icon");
-                if (Program.trayIcon is not null) Program.trayIcon.Visible = true;
-            }
-
-            try
-            {
-                base.WndProc(ref m);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(ex.ToString());
             }
         }
 
@@ -3615,11 +3660,17 @@ namespace MechrevoLite
             finally { Volatile.Write(ref _startupStatusLoading, 0); }
         }
 
-        private async void CheckStartup_CheckedChanged(object? sender, EventArgs e)
+        private async void CheckStartup_Click(object? sender, EventArgs e)
         {
-            if (sender is null || _syncingStartup || Program.UiAuditMode) return;
-            CheckBox chk = (CheckBox)sender;
+            // 只挂 Click：程序化回显（RefreshStartupStatusAsync 写 Checked）不再触发计划任务写入。
+            if (sender is not CheckBox chk || _syncingStartup || Program.UiAuditMode) return;
             bool requested = chk.Checked;
+            if (!NativeMethods.HasFreshUserInput())
+            {
+                Logger.WriteLine("Autostart (footer) ignored: no fresh user input.");
+                await RefreshStartupStatusAsync();
+                return;
+            }
             chk.Enabled = false;
             try
             {
@@ -3936,6 +3987,8 @@ namespace MechrevoLite
         internal void StopRuntimeTimers()
         {
             if (Volatile.Read(ref _runtimeResourcesDisposed) != 0) return;
+            // 退出前兜底：息屏期间关应用必须把亮度还回去，否则用户被留在黑屏里。
+            ScreenBlankController.RestoreImmediate();
             StopRuntimeTimersCore();
             _brightnessCommitQueue.Dispose();
         }
@@ -3953,6 +4006,7 @@ namespace MechrevoLite
         private void DisposeRuntimeResources()
         {
             if (Interlocked.Exchange(ref _runtimeResourcesDisposed, 1) != 0) return;
+            ScreenBlankController.RestoreImmediate();
             StopRuntimeTimersCore();
             _brightnessCommitQueue.Dispose();
             _liquidCoolingStatusTimer.Dispose();
@@ -4231,11 +4285,8 @@ namespace MechrevoLite
                     if (reboot == DialogResult.OK)
                     {
                         Logger.WriteLine("GCU restart did not happen; falling back to Windows shutdown /r.");
-                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown", "/r /t 5")
-                        {
-                            UseShellExecute = true,
-                            CreateNoWindow = true,
-                        });
+                        // 不可逆动作走统一入口：用户刚点过 [确定] → 新鲜输入放行；后台线程发起。
+                        SystemRestart.RequestRestart("GCU restart fallback", SystemRestart.RebootAfterFiveSecondsArguments);
                     }
                 });
             }

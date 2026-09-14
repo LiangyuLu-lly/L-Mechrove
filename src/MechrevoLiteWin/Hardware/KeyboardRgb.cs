@@ -124,6 +124,9 @@ public class KeyboardRgb : IDisposable
     public string DeviceInfo { get; private set; } = "未连接";
     public string LastError { get; private set; } = "";
     public int ActiveMode => _activeMode;
+
+    /// <summary>测试 seam：效果线程实际启动的次数（每次真正重启才自增，用于锁定「每周期只重启一次」）。</summary>
+    internal int EffectGeneration => Volatile.Read(ref _generation);
     public event Action? DeviceLost;                  // 设备消失/连续失败停止（UI 据此提示）
     DateTime _lastSendFailLog = DateTime.MinValue;   // 发帧失败日志节流（每 5s 至多一条，防刷屏）
     long _successFrames;                              // 帧心跳诊断：成功发帧计数

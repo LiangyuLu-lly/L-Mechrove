@@ -94,9 +94,34 @@ public class Run5AutostartAndTurboGateTests
         });
     }
 
-    /// <summary>用户拨动开关 → 经接缝建/删。</summary>
+    /// <summary>
+    /// 程序化赋值 Checked（启动回读/自动化）绝不触发计划任务读写：动作只在 Click 上。
+    /// 这是守卫链的第一道闸（run5 UI hardening, item 1）。
+    /// </summary>
     [Fact]
-    public void AutostartSwitch_TogglingAppliesThroughTheSeam()
+    public void AutostartSwitch_ProgrammaticCheckAssignment_NeverTouchesTheTask()
+    {
+        bool state = false;
+        WithAutostartSeam(
+            read: () => state,
+            write: value => { state = value; return true; },
+            body: writes =>
+            {
+                using var form = new SettingsForm();
+                form.CreateControl();
+                var box = form.Controls.Find("quick_startup", true).OfType<CheckBox>().Single();
+
+                box.Checked = true;
+                box.Checked = false;
+
+                Assert.Empty(writes);
+                Assert.False(state);
+            });
+    }
+
+    /// <summary>用户真实点击 → 经接缝建/删（点击自带新鲜输入，行为与旧版一致）。</summary>
+    [Fact]
+    public void AutostartSwitch_GenuineClickAppliesThroughTheSeam()
     {
         bool state = false;
         WithAutostartSeam(
@@ -113,11 +138,11 @@ public class Run5AutostartAndTurboGateTests
                 var box = form.Controls.Find("quick_startup", true).OfType<CheckBox>().Single();
                 Assert.False(box.Checked);
 
-                box.Checked = true;
+                RaiseClick(box);   // ON
                 Assert.True(state);
                 Assert.True(box.Checked);
 
-                box.Checked = false;
+                RaiseClick(box);   // OFF
                 Assert.False(state);
                 Assert.False(box.Checked);
 
@@ -138,7 +163,7 @@ public class Run5AutostartAndTurboGateTests
             form.CreateControl();
             var box = form.Controls.Find("quick_startup", true).OfType<CheckBox>().Single();
 
-            box.Checked = true;
+            RaiseClick(box);   // 真实点击 → 写入失败 → 回滚
             Assert.False(box.Checked, "写入失败后必须回滚到系统真实状态（OFF）。");
         });
     }
@@ -240,6 +265,7 @@ public class Run5AutostartAndTurboGateTests
     {
         Func<bool?> previousRead = Startup.ReadScheduledState;
         Func<bool, bool> previousWrite = Startup.WriteScheduledState;
+        Func<TimeSpan>? previousIdle = NativeMethods.IdleTimeProvider;
         var writes = new List<bool>();
         try
         {
@@ -249,14 +275,25 @@ public class Run5AutostartAndTurboGateTests
                 writes.Add(value);
                 return write(value);
             };
+            // 真实点击 = 刚刚有输入：注入新鲜输入接缝，绝不在测试里产生真实输入。
+            NativeMethods.IdleTimeProvider = static () => TimeSpan.Zero;
             body(writes);
         }
         finally
         {
+            NativeMethods.IdleTimeProvider = previousIdle;
             Startup.ReadScheduledState = previousRead;
             Startup.WriteScheduledState = previousWrite;
         }
     }
+
+    /// <summary>
+    /// 投递一次真实 Click（CheckBox.OnClick → Click 路径：先 AutoCheck 翻转 Checked，
+    /// 再触发 Click）。用反射而非 PerformClick，避免依赖整条父链 Visible。
+    /// </summary>
+    static void RaiseClick(CheckBox box) =>
+        typeof(CheckBox).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(box, new object[] { EventArgs.Empty });
 
     static void WithReportedCapabilities(MechrevoDeviceCapabilities capabilities, Action<SettingsForm> body)
     {

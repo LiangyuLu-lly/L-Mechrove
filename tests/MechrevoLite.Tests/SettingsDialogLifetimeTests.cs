@@ -14,7 +14,7 @@ public class SettingsDialogLifetimeTests
     public void UserCloseHidesSoTheDialogCanReopen()
     {
         // 用户 2026-09-13：弹窗移除局部调光/悬浮窗/自动刷新率开关；2026-09-14 校色按钮也移除（3 参数）。
-        var dialog = new SettingsDialog(new Panel(), new Panel(), null);
+        var dialog = new SettingsDialog(new Panel(), new Panel(), null, displayGroupAvailable: false);
         try
         {
             dialog.Show();
@@ -54,7 +54,7 @@ public class SettingsDialogLifetimeTests
         // 复刻主窗的延迟托管：面板先 Visible=false，再交给弹窗（Settings.cs 构建尾部）。
         themePanel.Visible = false;
         officialPanel.Visible = false;
-        var dialog = new SettingsDialog(themePanel, officialPanel, null);
+        var dialog = new SettingsDialog(themePanel, officialPanel, null, displayGroupAvailable: false);
         try
         {
             dialog.Show();
