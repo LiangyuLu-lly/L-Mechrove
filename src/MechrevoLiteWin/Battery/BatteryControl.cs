@@ -27,6 +27,36 @@ namespace MechrevoLite.Battery
             }
         }
 
+        /// <summary>
+        /// 充电上限写入的手势凭证（与重启凭证同源、相互独立）。只有真实滑条手势
+        /// （MouseUp/KeyUp）当刻能捕获；程序化写 Checked / UIA 拖拽 / 回读同步都拿不到。
+        /// </summary>
+        static readonly UserGestureLease _userLimitLease = new();
+
+        /// <summary>滑条真实手势当刻调用：确有新鲜真实输入才授予一次短时凭证。</summary>
+        internal static bool CaptureChargeLimitGesture() => _userLimitLease.Capture();
+
+        /// <summary>测试接缝：清空未被消费的手势凭证，避免跨测试泄漏。</summary>
+        internal static void ResetChargeLimitGesture() => _userLimitLease.Reset();
+
+        /// <summary>
+        /// 用户从滑条发起的「设置新上限」。必须先有真实手势凭证（<see cref="CaptureChargeLimitGesture"/>），
+        /// 否则拒绝并如实回显——这样自动化（UIA 拖拽、程序化写 Value）无法静默改写充电上限，
+        /// 而用户的真实手势也不会因为去抖计时器/硬件耗时烧掉 500ms 窗口而被丢掉。
+        /// 凭证一次性：消费后交给 <see cref="SetBatteryChargeLimit"/> 做真正的 EC 写入。
+        /// </summary>
+        public static bool ApplyChargeLimitFromUserGesture(int limit)
+        {
+            if (!_userLimitLease.IsActive)
+            {
+                Logger.WriteLine($"EC 充电上限写入被拒绝：没有真实用户手势凭证（请求 {limit}%）");
+                RestoreChargeLimitDisplay();
+                return false;
+            }
+            _userLimitLease.Consume();
+            return SetBatteryChargeLimit(limit);
+        }
+
         public static void ToggleBatteryLimitFull()
         {
             if (chargeFull) SetBatteryChargeLimit();
@@ -82,18 +112,25 @@ namespace MechrevoLite.Battery
         /// （社区工具同样明确不碰它）。
         /// 写不进就如实弹回原值并记日志，不假装设置成功。
         /// </summary>
-        public static void SetBatteryChargeLimit(int setLimit = -1)
+        public static bool SetBatteryChargeLimit(int setLimit = -1)
         {
             int limit = setLimit;
             if (limit < 0) limit = AppConfig.Get("charge_limit");
-            if (!EcChargeLimit.IsSupportedLimit(limit)) return;
+            if (!EcChargeLimit.IsSupportedLimit(limit))
+            {
+                // 不静默：请求值不在可写区间（含配置缺失时的 -1 哨兵）就说清楚，并如实回显。
+                Logger.WriteLine(
+                    $"充电上限 {limit}% 不在支持区间（{EcChargeLimit.MinimumPercent}–{EcChargeLimit.MaximumPercent}%），未写入");
+                RestoreChargeLimitDisplay();
+                return false;
+            }
 
             if (!EcChargeLimit.IsAvailableOnThisMachine())
             {
                 // 未验证的机型不猜寄存器地址（不同机型的 EC 布局不一样）。
                 Logger.WriteLine($"EC 充电上限在本机型未验证，忽略 {limit}% 请求");
                 RestoreChargeLimitDisplay();
-                return;
+                return false;
             }
 
             // EC 写是驱动调用（毫秒级，但可能被 EC 总线拖住），放后台，别卡住 UI 线程。
@@ -112,6 +149,7 @@ namespace MechrevoLite.Battery
                     RestoreChargeLimitDisplay();
                 }
             });
+            return true;
         }
 
         static void CommitChargeLimit(int limit)
@@ -124,15 +162,19 @@ namespace MechrevoLite.Battery
             else form.VisualiseBattery(limit);
         }
 
-        /// <summary>把界面回显成配置里的当前上限（写入失败或机型不支持时用来弹回，不谎报）。</summary>
+        /// <summary>
+        /// 把界面回显成配置里的当前上限；没有可信值（从未成功写入 / 写失败 / 机型不支持）时
+        /// 如实显示「未知」，绝不拿 100% 或 -1% 冒充一个并不存在的上限。
+        /// </summary>
         static void RestoreChargeLimitDisplay()
         {
             int stored = AppConfig.Get("charge_limit");
-            if (!EcChargeLimit.IsSupportedLimit(stored)) stored = EcChargeLimit.MaximumPercent;
+            bool known = EcChargeLimit.IsSupportedLimit(stored);
             var form = Program.settingsForm;
             if (form is null || form.IsDisposed) return;
-            if (form.InvokeRequired) form.Invoke(() => form.VisualiseBattery(stored));
-            else form.VisualiseBattery(stored);
+            Action apply = known ? () => form.VisualiseBattery(stored) : form.VisualiseBatteryUnknown;
+            if (form.InvokeRequired) form.Invoke(apply);
+            else apply();
         }
 
         public static void BatteryReport()

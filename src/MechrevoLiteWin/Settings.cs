@@ -2210,7 +2210,7 @@ namespace MechrevoLite
             sliderBattery.MouseUp += SliderBattery_MouseUp;
             sliderBattery.KeyUp += SliderBattery_KeyUp;
             sliderBattery.ValueChanged += SliderBattery_ValueChanged;
-            batteryTimer.Tick += (_, _) => { batteryTimer.Stop(); BatteryControl.SetBatteryChargeLimit(sliderBattery.Value); };
+            batteryTimer.Tick += (_, _) => { batteryTimer.Stop(); BatteryControl.ApplyChargeLimitFromUserGesture(sliderBattery.Value); };
             // 拖动是连续的 40..100：EC 的 CGLM 接受任意百分比（真机实测 73%、54% 都原值生效）。
 
             _sensorTimer = new System.Timers.Timer(AppConfig.Get("sensor_timer", 1000));
@@ -3123,12 +3123,16 @@ namespace MechrevoLite
 
         private void SliderBattery_KeyUp(object? sender, KeyEventArgs e)
         {
+            // 真实键盘手势当刻捕获凭证：随后的去抖计时器/EC 写入即使超过 500ms 也不会把这次设置丢掉。
+            BatteryControl.CaptureChargeLimitGesture();
             batteryTimer.Stop();
             batteryTimer.Start();
         }
 
         private void SliderBattery_MouseUp(object? sender, MouseEventArgs e)
         {
+            // 真实鼠标手势当刻捕获凭证（同上）。
+            BatteryControl.CaptureChargeLimitGesture();
             batteryTimer.Stop();
             batteryTimer.Start();
         }
@@ -4284,8 +4288,10 @@ namespace MechrevoLite
                         "L-Mechrevo", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
                     if (reboot == DialogResult.OK)
                     {
+                        // 用户刚点过 [确定]，立刻捕获重启凭证，后续日志/调度耗时不会让它过期。
+                        SystemRestart.CaptureUserConfirmation();
                         Logger.WriteLine("GCU restart did not happen; falling back to Windows shutdown /r.");
-                        // 不可逆动作走统一入口：用户刚点过 [确定] → 新鲜输入放行；后台线程发起。
+                        // 不可逆动作走统一入口：真实输入或确认凭证 + 后台线程；程序化路径一律拒绝。
                         SystemRestart.RequestRestart("GCU restart fallback", SystemRestart.RebootAfterFiveSecondsArguments);
                     }
                 });
@@ -4783,13 +4789,24 @@ namespace MechrevoLite
             if (!Program.UiAuditMode) _quickSwitchStatusTimer.Start();
         }
 
+        /// <summary>
+        /// 充电上限读数未知（从未成功写入 / 写失败 / 机型不支持）时的占位。绝不能把
+        /// AppConfig 缺失键的 -1 哨兵当成一个真实的「-1%」上限显示出去。
+        /// </summary>
+        internal const string BatteryLimitUnknownText = "—";
+
         public void VisualiseBatteryTitle(int limit)
         {
             // v2（预览 1:1）：标题就是「电池」；循环次数/容量这类健康摘要在右侧 muted 状态里，
             // 充电状态为空时才顶上（避免每秒覆盖掉健康信息）。
             labelBatteryTitle.Text = "电池";
-            if (_batteryLimitValue is not null)
-                _batteryLimitValue.Text = limit.ToString() + "%";
+            if (_batteryLimitValue is null) return;
+            if (!EcChargeLimit.IsSupportedLimit(limit))
+            {
+                _batteryLimitValue.Text = BatteryLimitUnknownText;
+                return;
+            }
+            _batteryLimitValue.Text = limit.ToString() + "%";
         }
 
         /// <summary>
@@ -4830,12 +4847,27 @@ namespace MechrevoLite
         public void VisualiseBattery(int limit)
         {
             if (InvokeRequired) { Invoke(() => VisualiseBattery(limit)); return; }
+            if (!EcChargeLimit.IsSupportedLimit(limit))
+            {
+                // 未知值绝不静默钳成滑条下限（-1 → 40）冒充一个上限：如实显示未知。
+                VisualiseBatteryUnknown();
+                return;
+            }
             VisualiseBatteryTitle(limit);
             sliderBattery.Value = Math.Clamp(limit, sliderBattery.Minimum, sliderBattery.Maximum);
 
             sliderBattery.AccessibleName = Properties.Strings.BatteryChargeLimit + ": " + limit.ToString() + "%";
             //sliderBattery.AccessibilityObject.Select(AccessibleSelection.TakeFocus);
 
+            VisualiseBatteryFull();
+        }
+
+        /// <summary>上限未知时的诚实回显：读数与无障碍名显示未知，且不移动滑条伪装成一个值。</summary>
+        public void VisualiseBatteryUnknown()
+        {
+            if (InvokeRequired) { Invoke(VisualiseBatteryUnknown); return; }
+            if (_batteryLimitValue is not null) _batteryLimitValue.Text = BatteryLimitUnknownText;
+            sliderBattery.AccessibleName = Properties.Strings.BatteryChargeLimit + ": " + BatteryLimitUnknownText;
             VisualiseBatteryFull();
         }
 

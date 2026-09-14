@@ -191,6 +191,9 @@ namespace MechrevoLite.Gpu
                 DialogResult dialogResult = MessageBox.Show(Properties.Strings.AlertUltimateOff, Properties.Strings.AlertUltimateTitle, MessageBoxButtons.YesNo);
                 if (dialogResult == DialogResult.Yes)
                 {
+                    // 确认框刚点过，立刻捕获重启凭证（此时确有新鲜输入）；下面的 EC 写入即使耗时，
+                    // 重启也不会因 500ms 窗口过期被守卫丢掉。写入本身与重启守卫无关，照常执行。
+                    SystemRestart.CaptureUserConfirmation();
                     status = Program.acpi.DeviceSet(AsusACPI.GPUMux, 1, "GPUMux");
                     restart = true;
                     changed = true;
@@ -208,6 +211,10 @@ namespace MechrevoLite.Gpu
                 DialogResult dialogResult = MessageBox.Show(Properties.Strings.AlertUltimateOn, Properties.Strings.AlertUltimateTitle, MessageBoxButtons.YesNo);
                 if (dialogResult == DialogResult.Yes)
                 {
+                    // 必须在 await Task.Delay(500) 与 EC 写入之前捕获：确认后的这 500ms 会吃掉
+                    // GetLastInputInfo 的 500ms 窗口，过去导致这里请求的重启永远被守卫拒绝，
+                    // MUX 寄存器已写但机器不重启 → 重启后模式依旧不变。
+                    SystemRestart.CaptureUserConfirmation();
                     Program.acpi.SetGPUEco(0);
                     await Task.Delay(500);
 
@@ -246,7 +253,9 @@ namespace MechrevoLite.Gpu
             if (restart)
             {
                 settings.VisualiseGPUMode();
-                // 不可逆动作走统一入口（新鲜输入 + 后台线程）；程序化路径拿不到新鲜输入即拒绝。
+                // 上面的 EC/MUX 写入（DeviceSet）已经无条件完成——模式写入不依赖重启守卫。
+                // 这里只负责「重启」这一步：不可逆动作走统一入口（真实输入或确认凭证 + 后台线程），
+                // 程序化路径两者皆无 → 拒绝，绝不静默重启。
                 SystemRestart.RequestRestart("legacy GPU mode switch", SystemRestart.RebootNowArguments);
             }
 
@@ -517,6 +526,10 @@ namespace MechrevoLite.Gpu
                 "核显模式支持「重启生效」：现在保持核显设置，重启后将以核显模式启动。\n\n" +
                 "[是] 立即重启并生效\n[否] 保持设置，稍后自行重启\n[取消] 放弃并恢复原模式",
                 "核显模式", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+
+            // 选 [是] 的用户刚点过按钮，立刻捕获重启凭证；后面的 AppConfig.Flush()/Toast 即使
+            // 超过 500ms，也不会把这次「重启生效」请求判成陈旧而丢掉。
+            if (choice == DialogResult.Yes) SystemRestart.CaptureUserConfirmation();
 
             if (choice == DialogResult.Cancel)
             {

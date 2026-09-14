@@ -148,8 +148,10 @@ namespace MechrevoLite.Display
             DialogResult dialogResult = MessageBox.Show("Changing display mode requires reboot", Properties.Strings.AlertUltimateTitle, MessageBoxButtons.YesNo);
             if (dialogResult == DialogResult.Yes)
             {
+                // 确认框刚点过，先捕获重启凭证再做 EC 写入；写入本身无条件完成，重启仍受守卫。
+                SystemRestart.CaptureUserConfirmation();
                 Program.acpi.DeviceSet(AsusACPI.ScreenFHD, (fhd == 1) ? 0 : 1, "FHD");
-                // 不可逆动作走统一入口：确认框刚点过 → 新鲜输入放行；后台发起，不占用 UI 线程。
+                // 不可逆动作走统一入口：真实输入或确认凭证 + 后台发起，不占用 UI 线程。
                 SystemRestart.RequestRestart("FHD toggle", SystemRestart.RebootNowArguments);
             }
         }

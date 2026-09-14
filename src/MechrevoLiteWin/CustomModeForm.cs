@@ -46,6 +46,11 @@ public class CustomModeForm : RForm
     // GPU 超频数值行的可调性快照：来自同一次硬件回读，供 SyncGpuOverclockDependents 推导启用状态。
     bool _gpuOcCoreAdjustable;
     bool _gpuOcMemoryAdjustable;
+    // 用户本次打开的超频开关意图。零偏移的开启没法被驱动回读确认
+    // （IsGpuOverclockEnableConfirmed 要求至少一个非零偏移），若直接用硬件回读覆盖开关，
+    // 下一次状态帧就会把它弹回、数值行随之禁用，用户来不及拨值——超频于是永远不可用。
+    // arm 保持到用户手动关闭，或窗口隐藏/切换档位时重置。
+    bool _gpuOcArmed;
     RComboBox _planCombo = null!, _boostCombo = null!;   // Windows 电源计划 / 睿频（按档独立）
     bool _syncingWinPower;
     int _currentIdx = -1;   // 当前选中的自定义档（Windows 电源设置按档保存）
@@ -430,6 +435,8 @@ public class CustomModeForm : RForm
         // ---- GPU 超频区（驱动直连或 LCHWOC 任一通道可用时显示）----
         _ocChk = AddCheckRow("GPU 超频", hw?.GpuOverclockEnabled ?? false, on =>
         {
+            // 用户意图先落地：零偏移的开启无法被驱动回读确认，见 _gpuOcArmed 注释。
+            _gpuOcArmed = on;
             Queue("OverClockingSwitch", on ? "1" : "0");
             // 关：只禁用数值行，绝不重算数值（ApplyRange 在范围不可用/设备报 0 时会把用户值
             // 清零）；开：先按同一来源启用，具体范围与数值等回读完成后由 OnCustomChanged 统一 clamp。
@@ -578,6 +585,9 @@ public class CustomModeForm : RForm
         _powerWallTimer.Tick += (_, _) => UpdatePowerWallVerdict();
         VisibleChanged += async (_, _) =>
         {
+            // 窗口隐藏后 arm 不再有意义：重开时以硬件回读为准，否则「开了但还没拨值」
+            // 的意图会让下次打开的开关与真实硬件状态对不上。
+            if (!Visible) _gpuOcArmed = false;
             // 审计模式下不采样：会引入随时间变化的文本，把截图比对搅乱。
             _powerWallTimer.Enabled = Visible && !Program.UiAuditMode;
             if (!Visible || Program.UiAuditMode) return;
@@ -658,6 +668,9 @@ public class CustomModeForm : RForm
         // was edited. Commit it before changing the GCU profile index.
         _debounce.Stop();
         await FlushPendingAsync();
+
+        // 档位换了，超频开关意图随之失效：新档的开关必须由该档的硬件回读决定。
+        _gpuOcArmed = false;
 
         int previousProfile = CurrentConfigurationProfile();
         _status.Text = SwitchPendingText;
@@ -868,14 +881,26 @@ public class CustomModeForm : RForm
                 bool tgpAdjustable = ApplyRange(_tgp, _tgpVal, hw.GpuTgpMinimum, hw.GpuTgpMaximum, hw.GpuTgp);
                 bool dbAdjustable = ApplyRange(_db, _dbVal, hw.GpuDbMinimum, hw.GpuDbMaximum, hw.GpuDb);
                 bool ocSupported = hw.SupportsGpuOverclock;
-                bool ocEnabled = hw.GpuOverclockEnabled && ocSupported;
+                // 硬件确认的开启：设备把「开了但偏移还是 0」报成未开启，所以它只决定是否
+                // 套用/夹取数值（见下），不决定 UI 开关的位置。
+                bool ocHardwareOn = hw.GpuOverclockEnabled && ocSupported;
+                // UI 开关 = 硬件确认开启 或 用户本次已开启（arm）。零偏移的开启无法被驱动确认，
+                // 用硬件状态回写会把用户刚打开的开关弹回、数值行随之禁用，用户来不及拨值。
+                bool ocSwitchOn = (ocHardwareOn || _gpuOcArmed) && ocSupported;
                 // 只在超频已开启时套用/夹取数值：关闭时设备会把偏移报成 0，ApplyRange 会把
                 // 用户刚设的值清零（用户报告：关掉开关下面的数值归零）。关闭时保留当前 UI 输入
                 // 与可调性快照，等重新开启时再 clamp。
-                if (ocEnabled)
+                if (ocHardwareOn)
                 {
                     _gpuOcCoreAdjustable = ApplyRange(_coreOc, _coreOcVal, hw.GpuCoreOffsetUserMinimum, hw.GpuCoreOffsetUserMaximum, hw.EffectiveGpuCoreClockOffset, allowNegative: true);
                     _gpuOcMemoryAdjustable = ApplyRange(_memOc, _memOcVal, hw.GpuMemoryOffsetUserMinimum, hw.GpuMemoryOffsetUserMaximum, hw.EffectiveGpuMemoryClockOffset, allowNegative: true);
+                }
+                else if (_gpuOcArmed && ocSupported)
+                {
+                    // arm 期间刷新可调性快照（只读布尔，不碰数值）：构建时驱动/GCU 尚未就绪
+                    // 会留下 false 快照，若不刷新则数值行永远锁死。
+                    _gpuOcCoreAdjustable = hw.GpuCoreOffsetAdjustable;
+                    _gpuOcMemoryAdjustable = hw.GpuMemoryOffsetAdjustable;
                 }
                 bool fanSwitchAdjustable = ApplyRange(_fanSwitchSpeed, _fanSwitchSpeedVal,
                     hw.FanSwitchSpeedMinimum, hw.FanSwitchSpeedMaximum, hw.FanSwitchSpeed);
@@ -900,7 +925,7 @@ public class CustomModeForm : RForm
                 _tccChk.Checked = hw.TccSwitch;
                 _tccChk.Enabled = tccAdjustable;
                 _tcc.Enabled = hw.TccSwitch && tccAdjustable;
-                _ocChk.Checked = ocEnabled;
+                _ocChk.Checked = ocSwitchOn;
                 _ocChk.Enabled = ocSupported;
                 SyncGpuOverclockDependents();
                 if (hw.CustomProfileIndex >= 0)

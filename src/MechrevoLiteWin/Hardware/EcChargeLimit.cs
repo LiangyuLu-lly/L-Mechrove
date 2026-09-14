@@ -49,6 +49,12 @@ internal static class EcChargeLimit
 
     static readonly object Gate = new();
 
+    /// <summary>
+    /// 测试接缝：非 null 时由它代替真实 EC 写入（测试只记录，绝不碰硬件）。返回 (是否成功, 生效百分比)。
+    /// 生产运行时保持 null，直接走厂商驱动。
+    /// </summary>
+    internal static Func<int, (bool Success, int AppliedPercent)>? TrySetOverride { get; set; }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -93,6 +99,13 @@ internal static class EcChargeLimit
     {
         appliedPercent = -1;
         if (!IsSupportedLimit(percent)) return false;
+
+        if (TrySetOverride is { } seam)
+        {
+            (bool ok, int applied) = seam(percent);
+            appliedPercent = ok ? applied : -1;
+            return ok;
+        }
 
         lock (Gate)
         {
