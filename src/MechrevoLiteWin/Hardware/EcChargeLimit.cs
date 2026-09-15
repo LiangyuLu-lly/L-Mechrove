@@ -55,6 +55,11 @@ internal static class EcChargeLimit
     /// </summary>
     internal static Func<int, (bool Success, int AppliedPercent)>? TrySetOverride { get; set; }
 
+    /// <summary>
+    /// 测试接缝：非 null 时由它代替真实 EC 回读（测试只记录，绝不碰硬件）。返回 -1 表示读不到。
+    /// </summary>
+    internal static Func<int>? ReadPercentOverride { get; set; }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -144,6 +149,7 @@ internal static class EcChargeLimit
     /// <summary>只读当前上限（诊断用）。失败返回 -1。</summary>
     public static int ReadPercent()
     {
+        if (ReadPercentOverride is { } seam) return seam();
         lock (Gate)
         {
             IntPtr handle = CreateFile(DevicePath, 0xC0000000u, 3u, IntPtr.Zero, 3u, 0u, IntPtr.Zero);

@@ -1,0 +1,14 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:PutObject"
+      ],
+      "Resource": [
+        "acs:oss:*:*:lmechrevo/lmechrevo-oss/*"
+      ]
+    }
+  ]
+}

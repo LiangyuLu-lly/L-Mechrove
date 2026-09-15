@@ -82,12 +82,23 @@ public class UpdateCheckerTests
     public void PackageIsOnlyVerifiableWhenBothUrlAndHashArePresent()
     {
         string json = LiveSample
-            .Replace("\"sha256\":null", "\"sha256\":\"e3b0c44298fc1c14\"")
+            .Replace("\"sha256\":null", "\"sha256\":\"" + new string('a', 64) + "\"")
             .Replace("\"filename\":null", "\"filename\":\"L-Mechrevo-13-beta.zip\"");
         UpdateInfo? info = UpdateChecker.ParseResponse(json);
 
         Assert.NotNull(info);
         Assert.True(info!.HasVerifiablePackage);
+    }
+
+    /// <summary>sha256 必须是 64 位十六进制；长度不对的"看起来像哈希"的串不算数。</summary>
+    [Fact]
+    public void APartialHashIsNotVerifiable()
+    {
+        string json = LiveSample.Replace("\"sha256\":null", "\"sha256\":\"e3b0c44298fc1c14\"");
+        UpdateInfo? info = UpdateChecker.ParseResponse(json);
+
+        Assert.NotNull(info);
+        Assert.False(info!.HasVerifiablePackage);
     }
 
     [Theory]
@@ -326,8 +337,9 @@ public class UpdatePackageTests
         finally { Directory.Delete(dir, true); }
     }
 
+    /// <summary>没有 sha256 时必须直接拒绝（fail-closed），不能"仅结构校验"就放行。</summary>
     [Fact]
-    public void WithoutAHashTheResultSaysSoInsteadOfPretendingToVerify()
+    public void WithoutAHashThePackageIsRefused()
     {
         string dir = NewTempDirectory();
         try
@@ -335,8 +347,8 @@ public class UpdatePackageTests
             string zip = CreatePackage(dir, "L-Mechrevo.exe", [1, 2, 3, 4]);
             PackageVerification result = UpdateInstaller.Verify(zip, Info());
 
-            Assert.True(result.Ok);
-            Assert.Contains("未提供校验值", result.Reason);
+            Assert.False(result.Ok);
+            Assert.Contains("SHA-256", result.Reason);
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -348,7 +360,7 @@ public class UpdatePackageTests
         try
         {
             string zip = CreatePackage(dir, "L-Mechrevo.exe", [1, 2, 3, 4]);
-            PackageVerification result = UpdateInstaller.Verify(zip, Info(size: 1));
+            PackageVerification result = UpdateInstaller.Verify(zip, Info(sha256: UpdateInstaller.ComputeSha256(zip), size: 1));
 
             Assert.False(result.Ok);
             Assert.Contains("大小", result.Reason);
@@ -363,7 +375,7 @@ public class UpdatePackageTests
         try
         {
             string zip = CreatePackage(dir, "readme.txt", [1, 2, 3]);
-            PackageVerification result = UpdateInstaller.Verify(zip, Info());
+            PackageVerification result = UpdateInstaller.Verify(zip, Info(sha256: UpdateInstaller.ComputeSha256(zip)));
 
             Assert.False(result.Ok);
             Assert.Contains(".exe", result.Reason);
@@ -379,7 +391,7 @@ public class UpdatePackageTests
         {
             string file = Path.Combine(dir, "not-a-zip.zip");
             File.WriteAllText(file, "hello");
-            PackageVerification result = UpdateInstaller.Verify(file, Info());
+            PackageVerification result = UpdateInstaller.Verify(file, Info(sha256: UpdateInstaller.ComputeSha256(file)));
 
             Assert.False(result.Ok);
         }

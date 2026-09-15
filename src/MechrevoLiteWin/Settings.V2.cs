@@ -1,3 +1,4 @@
+using MechrevoLite.Diagnostics;
 using MechrevoLite.Hardware;
 using MechrevoLite.UI;
 
@@ -158,10 +159,13 @@ public partial class SettingsForm
     /// 刷新率分段按钮重建与当前值点亮（代替旧 comboRefreshRate 下拉）。
     /// 签名守卫：列表/当前值没变就不重建（3 秒一次的画面刷新内不动控件树）。
     /// </summary>
-    void SyncHzButtons()
-    {
-        if (_hzSegTable is null || _hzSegTable.IsDisposed) return;
-        var list = Program.hw?.HzList ?? new List<int>();
+        void SyncHzButtons()
+        {
+            if (_hzSegTable is null || _hzSegTable.IsDisposed) return;
+            // Hz 分段行是固定行高（34 字面量）：没有可显示的频率按钮时整行收为 0，
+            // 否则「支持刷新率但列表未上报」的机型会留一条空带（run5 门禁审计）。
+            SetScreenRowControls(1, _hzButtons.Count > 0, _hzSegTable);
+            var list = Program.hw?.HzList ?? new List<int>();
         int current = Program.hw?.CurrentHz ?? 0;
         string signature = string.Join('|', list) + "#" + current;
         if (signature != _lastHzSignature)
@@ -208,6 +212,7 @@ public partial class SettingsForm
             // 真机可见两个值之间的空旷区域没有任何分段边界）。
             UiVisualStyle.ApplySegmentGroup(_hzButtons.ToArray());
             _hzSegTable.ResumeLayout(true);
+            SetScreenRowControls(1, _hzButtons.Count > 0, _hzSegTable);
         }
         else if (Program.hw is not null)
         {
@@ -807,8 +812,34 @@ public partial class SettingsForm
     {
         if (_dashboardScroll is null || _dashboardStack is null || _dashboardScrollBar is null) return;
         if (rangeChanged)
-            _dashboardScrollBar.SetRange(_dashboardStack.Height, _dashboardScroll.ClientSize.Height);
+        {
+            // 滚动量取「AutoSize 高度」与「控件树真实内容底边」的较大者：快捷开关展开后
+            // 折叠组的 AutoSize 不会总把内容高度交给 _dashboardStack，只按 stack.Height
+            // 设范围会得到 0 滚动量——末尾开关被固定底栏盖住且滚不上来（run6 F2）。
+            // 只放大滚动量、不改内容布局，避免引入新的行溢出。
+            int content = Math.Max(_dashboardStack.Height,
+                DeepestContentBottom(_dashboardStack) + _dashboardStack.Padding.Bottom);
+            _dashboardScrollBar.SetRange(content, _dashboardScroll.ClientSize.Height);
+        }
         _dashboardStack.Location = new Point(_dashboardStack.Left, -_dashboardScrollBar.Value);
+    }
+
+    /// <summary>
+    /// 控件树的真实内容底边（相对 <paramref name="root"/> 坐标）。中间容器的 AutoSize 欠量时，
+    /// 子控件的实际位置仍然有效，逐层取「child.Bottom」与「child.Top + 子树底边」的最大值，
+    /// 就能拿到内容真正延伸到哪一行。
+    /// </summary>
+    static int DeepestContentBottom(Control root)
+    {
+        int bottom = 0;
+        foreach (Control child in root.Controls)
+        {
+            if (!child.Visible) continue;
+            bottom = Math.Max(bottom, child.Bottom);
+            int nested = DeepestContentBottom(child);
+            if (nested > 0) bottom = Math.Max(bottom, child.Top + nested);
+        }
+        return bottom;
     }
 
     /// <summary>滚轮路由：内容视口改自绘滚动（AutoScroll 关闭）后，滚轮要手动转发到面板。
@@ -895,14 +926,14 @@ public partial class SettingsForm
         var host = new BufferedTableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 6,
+            ColumnCount = 7,
             RowCount = 1,
             Margin = Padding.Empty,
             Padding = new Padding(scale(4), 2, 0, 1),
             BackColor = panelFooter.BackColor,
         };
         host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
-        for (int i = 0; i < 5; i++) host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78 / 5f));
+        for (int i = 0; i < 6; i++) host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78 / 6f));
         host.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         host.Controls.Add(labelVersion, 0, 0);
 
@@ -915,7 +946,8 @@ public partial class SettingsForm
         ResetLegacyFooterButton(buttonDonate, "赞助", UiGlyph.Kind.Heart, scale);
         ResetLegacyFooterButton(buttonUpdates, "更新", UiGlyph.Kind.Refresh, scale);
         ResetLegacyFooterButton(buttonOverlay, "悬浮窗", UiGlyph.Kind.Overlay, scale);
-        buttonUpdates.Click += (_, _) => ShowUpdateDialog();
+        // 更新键的 Click 已在构造函数（Settings.cs）绑定；此处再绑一次会让一次点击先后弹出两个
+        // 模态更新窗口（关掉第一个后第二个才出现）——用户报告的「更新窗口要关两次」。不要在此重复接线。
 
         var settingsButton = new Button
         {
@@ -939,11 +971,36 @@ public partial class SettingsForm
         UiVisualStyle.ApplyFooterGlyph(settingsButton, UiGlyph.Kind.Gear, scale(16));
         settingsButton.Click += (_, _) => OpenSettingsDialog();
 
+        // 诊断包入口（footer 幽灵键，与其余四键同形态）：导出到用户选择的 zip。
+        // 它是 panelFooter 的后代——UiAuditRunner.CheckFooterOcclusion 明确跳过底栏自身控件，
+        // 因此不会被固定底栏遮挡，真实点击必有可点中中心点。
+        var diagnosticButton = new Button
+        {
+            Text = "诊断",
+            FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+            AutoSize = false,
+            Size = new Size(scale(46), scale(34)),
+            Anchor = AnchorStyles.None,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            ForeColor = UiStyleXXX(), BackColor = panelFooter.BackColor,
+            FlatAppearance = { BorderColor = panelFooter.BackColor, BorderSize = 0 },
+            ImageAlign = ContentAlignment.TopCenter,
+            TextAlign = ContentAlignment.BottomCenter,
+            TextImageRelation = TextImageRelation.ImageAboveText,
+            Font = UiStyleCaptionFont(),
+            Tag = "footer-ghost",
+            AccessibleName = "导出诊断包",
+        };
+        UiVisualStyle.ApplyFooterGlyph(diagnosticButton, UiGlyph.Kind.Package, scale(16));
+        diagnosticButton.Click += async (_, _) => await DiagnosticPackCommand.RunAsync(this, diagnosticButton);
+
         host.Controls.Add(buttonOverlay, 1, 0);
         host.Controls.Add(settingsButton, 2, 0);
         host.Controls.Add(buttonUpdates, 3, 0);
         host.Controls.Add(buttonDonate, 4, 0);
-        host.Controls.Add(buttonQuit, 5, 0);
+        host.Controls.Add(diagnosticButton, 5, 0);
+        host.Controls.Add(buttonQuit, 6, 0);
         panelFooter.Controls.Add(host);
         panelFooter.Controls.Add(topLine);
     }

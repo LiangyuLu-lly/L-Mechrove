@@ -145,8 +145,19 @@ namespace MechrevoLite.Battery
                 }
                 else
                 {
-                    Logger.WriteLine($"EC 充电上限写入未确认：请求 {limit}%，保持原值");
-                    RestoreChargeLimitDisplay();
+                    // 写入当刻的回读可能撞上 EC 总线时序：驱动器调用返回失败，但硬件其实已经改了。
+                    // 再读一次实际阈值，若已是请求值就按成功收尾（持久化 + 显示），不再显示未知。
+                    int actual = EcChargeLimit.ReadPercent();
+                    if (actual == limit)
+                    {
+                        Logger.WriteLine($"EC 充电上限回读确认延迟：请求 {limit}%，实际阈值已是 {actual}%，按成功收尾");
+                        CommitChargeLimit(actual);
+                    }
+                    else
+                    {
+                        Logger.WriteLine($"EC 充电上限写入未确认：请求 {limit}%，保持原值");
+                        RestoreChargeLimitDisplay();
+                    }
                 }
             });
             return true;
@@ -163,16 +174,34 @@ namespace MechrevoLite.Battery
         }
 
         /// <summary>
-        /// 把界面回显成配置里的当前上限；没有可信值（从未成功写入 / 写失败 / 机型不支持）时
+        /// 显示用上限的唯一真源：优先 EC 的实际阈值（<see cref="EcChargeLimit.ReadPercent"/>，
+        /// 用户设的值真正的落点），读不到时退回已持久化的配置值；两者都不可信时返回 -1（未知）。
+        /// 机型未验证时不读 EC（寄存器布局未知，读了也是猜）。
+        ///
+        /// 这样刷新只回显「硬件的真实状态」，不会再拿缺失键的 -1 哨兵或陈旧配置去覆盖读数的显示。
+        /// </summary>
+        public static int ResolveDisplayLimitPercent()
+        {
+            if (EcChargeLimit.IsAvailableOnThisMachine())
+            {
+                int fromEc = EcChargeLimit.ReadPercent();
+                if (EcChargeLimit.IsSupportedLimit(fromEc)) return fromEc;
+            }
+            int stored = AppConfig.Get("charge_limit");
+            return EcChargeLimit.IsSupportedLimit(stored) ? stored : -1;
+        }
+
+        /// <summary>
+        /// 把界面回显成当前上限（EC 实际阈值优先，其次已持久化的值）；两者都不可信时
         /// 如实显示「未知」，绝不拿 100% 或 -1% 冒充一个并不存在的上限。
         /// </summary>
         static void RestoreChargeLimitDisplay()
         {
-            int stored = AppConfig.Get("charge_limit");
-            bool known = EcChargeLimit.IsSupportedLimit(stored);
+            int resolved = ResolveDisplayLimitPercent();
+            bool known = EcChargeLimit.IsSupportedLimit(resolved);
             var form = Program.settingsForm;
             if (form is null || form.IsDisposed) return;
-            Action apply = known ? () => form.VisualiseBattery(stored) : form.VisualiseBatteryUnknown;
+            Action apply = known ? () => form.VisualiseBattery(resolved) : form.VisualiseBatteryUnknown;
             if (form.InvokeRequired) form.Invoke(apply);
             else apply();
         }

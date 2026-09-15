@@ -17,20 +17,35 @@ public class NvidiaGpuControl : IGpuControl, IGpuOverclockControl
 
     private PhysicalGPU? _internalGpu;
     private bool _writeAccessDenied;
+    /// <summary>
+    /// 进程提权判定。NVAPI 的读取（范围/当前值）不需要提权，写入需要；
+    /// 非提权时写入恒定返回 NVAPI_INVALID_USER_PRIVILEGE，这里据此提前拒绝，
+    /// 不再假装可写后再静默禁用后端。
+    /// </summary>
+    readonly Func<bool> _isElevated;
 
     public GpuClockOffsetRange CoreOffset { get; private set; } = new(0, 0, 0);
     public GpuClockOffsetRange MemoryOffset { get; private set; } = new(0, 0, 0);
     public bool IsAvailable => !_writeAccessDenied && IsValid && (CoreOffset.IsAdjustable || MemoryOffset.IsAdjustable);
+    public bool WritesRequireElevation => !_isElevated();
     public string Name => IsValid ? FullName : "NVIDIA GPU";
 
-    public NvidiaGpuControl()
+    public NvidiaGpuControl() : this(ProcessHelper.IsUserAdministrator)
     {
+    }
+
+    internal NvidiaGpuControl(Func<bool> isElevated)
+    {
+        _isElevated = isElevated;
         _internalGpu = GetInternalDiscreteGpu();
     }
 
-    public static IGpuOverclockControl? TryCreateOverclockControl()
+    public static IGpuOverclockControl? TryCreateOverclockControl() =>
+        TryCreateOverclockControl(ProcessHelper.IsUserAdministrator);
+
+    internal static IGpuOverclockControl? TryCreateOverclockControl(Func<bool> isElevated)
     {
-        var control = new NvidiaGpuControl();
+        var control = new NvidiaGpuControl(isElevated);
         if (control.Refresh()) return control;
         control.Dispose();
         return null;
@@ -350,7 +365,8 @@ public class NvidiaGpuControl : IGpuControl, IGpuOverclockControl
             CoreOffset = ReadOffsetRange(clocks, PublicClockDomain.Graphics);
             MemoryOffset = ReadOffsetRange(clocks, PublicClockDomain.Memory);
             bool available = !_writeAccessDenied && states.IsEditable && (CoreOffset.IsAdjustable || MemoryOffset.IsAdjustable);
-            Logger.WriteLineThrottled("nvidia-oc-capability", $"NVIDIA OC capability: {FullName}, editable={states.IsEditable}, " +
+            bool writable = available && _isElevated();
+            Logger.WriteLineThrottled("nvidia-oc-capability", $"NVIDIA OC capability: {FullName}, editable={states.IsEditable}, writable={writable}, " +
                 $"core={CoreOffset.Minimum}..{CoreOffset.Maximum} current={CoreOffset.Current}, " +
                 $"memory={MemoryOffset.Minimum}..{MemoryOffset.Maximum} current={MemoryOffset.Current}", 10000);
             return available;
@@ -391,6 +407,15 @@ public class NvidiaGpuControl : IGpuControl, IGpuOverclockControl
             return false;
         }
         if (range.Current == value) return true;
+
+        if (!_isElevated())
+        {
+            // 非提权进程的 NVAPI 写入恒定被拒；提前拒绝并保留后端可用（不再靠异常触发
+            // 「disabling the direct backend for this session」）。UI 已按 writable 状态禁用控件。
+            Logger.WriteLineThrottled("nvidia-oc-needs-elevation",
+                $"NVIDIA OC write skipped (requires administrator): domain={domain}, value={value}", 5000);
+            return false;
+        }
 
         try
         {

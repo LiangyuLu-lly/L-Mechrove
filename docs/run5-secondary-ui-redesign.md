@@ -10,16 +10,18 @@
 
 ## 0. 状态总表（先读）
 
+> **2026-09-14 收尾验证闭环**（`artifacts\run5-secondary\README.md`）：全套件 **1501 通过 / 0 失败 / 1 跳过**（=绿色基线）；Debug x64 0 错误/0 警告，Release x64 0 错误/4 既有警告（0 新增）；`--ui-audit` **458 截图 / 65 条 / 0 新增**（既有集合：48 FirstRunGuide text-clipping + 11 KeyboardRgb docked-root-overflow + 6 Settings parent-overflow）；真机实测（175% DPI）LightForm 420×138、DonateForm 760×500（逻辑 px），触达的 8 个对话框控件越界 **0**；护栏双向验证：正向=真机日志 `SetLightEffect`/`SetLightPower` 随真实手势下发（18:00–18:02 捕获时刻），反向=护栏单测（`Run5SecondaryCloseoutTests` 等，见 README §护栏）。
+
 | 表面 | 状态 | 证据（已读） | 剩余事项 |
 |---|---|---|---|
-| RgbForm（键盘灯效） | **OBSOLETE（被更大重构取代）** | `RgbForm.cs:251-253`（本窗不再有自己的模式下拉，单一真相源 `_rgb.KbHidMode`）；`Settings.V2.cs:601`（睡眠时间选择器已从 RgbForm 迁出到仪表盘灯光行）；`RgbForm.cs:104-106,143-154`（状态行 0/D(25) 动态占行、高度跟随内容表）；全文无「自定义效果」字样（src 全量检索 0 命中） | 本文 §2 的目标布局整体作废；唯一残留缺陷是色块仍是原生 `Button`（`RgbForm.cs:410`），见 §2 末尾 |
-| FanCurveForm（风扇曲线） | **PARTIAL** | 已做：内容实测窗口尺寸（`FanCurveForm.cs:196-206`）、内边距统一走 `D()`（`:69,95-96,101,116,140,149,155`）；测试 `CustomModeFormTests.FanCurveForm_IsContentDerivedAndCurveStillEditable`（`CustomModeFormTests.cs:169`） | 未做：双图仍纵向 50/50 堆叠（`FanCurveForm.cs:165-167`），未改 CPU 左/GPU 右；`btnSave` 仍是原生 `Button`（`:98-107`）；`_status` 仍混用状态与常驻提示（`:74`）。§3 设计指导保留 |
-| LightForm（灯条/Logo） | **REMAINING** | 缺陷原样存在：`LightForm.cs:47`（420×240）、`:202`（Percent-100 填充行） | §4 全部保留 |
-| RColorPicker（取色器） | **REMAINING** | 缺陷原样存在：`RColorPicker.cs:133`（随机→`Apply(Color.Black)`）、`:100`（`BorderStyle.FixedSingle`）、`:107,256`（rgbLabel 非等宽） | §5 全部保留 |
+| RgbForm（键盘灯效） | **DONE（色块已修）** | `RgbForm.cs:421-432`（Swatch 方法返回 `RColorButton`，Tag=`"color-swatch"`）；测试 `Run5SecondaryCloseoutTests.RgbForm_SwatchUsesRColorButton` | 无 |
+| FanCurveForm（风扇曲线） | **DONE（三项全修）** | 横排双图（`:162-174`，CPU 左/GPU 右）、`btnSave` → `RButton` + `ApplyPrimaryButton`（`:103-108,230`）、`_status`+`hint` 拆两个 Label（`:75-80`）；测试 `Run5SecondaryCloseoutTests.FanCurveForm_HorizontalCharts_RButtonSave_SplitStatusHint` | 无 |
+| LightForm（灯条/Logo） | **DONE（填充行删+高度收口）** | ClientSize 内容实测（`:224`，≤210 逻辑 px）；删除 Percent-100 填充行；colorBtn 36×24（`:174`）；测试 `Run5SecondaryCloseoutTests.LightForm_NoFillRow_ContentDerivedHeight_Swatch36` | 无 |
+| RColorPicker（取色器） | **DONE（三项全修）** | 随机按钮→`Defaults[Random.Shared.Next]`（`:144`）；预览→Swatch 1px Border 自绘（`:102`）；rgbLabel→Consolas（`:116`）；测试 `Run5SecondaryCloseoutTests.RColorPicker_RandomFromPalette_TokenBorder_MonoReadout` | 无 |
 | ColorCalibrationForm（屏幕校色） | **OBSOLETE（窗体已删除，方案被取代）** | `src\MechrevoLiteWin\` 目录无 `ColorCalibrationForm.cs`；`Settings.cs:851`（注释：P3/AdobeRGB 在本机无实际效果，删除，仅保留校色下拉）、`:858-859`（`comboColorCalibration` 位于屏幕行头）；测试 `Run5LcCalibTests.cs:74,90,116,123,142,154`；真机证据 `artifacts\run5-lc-calib\README-evidence.md` + `geometry-uia.txt` | §6 作废；替代方案（行头圆角下拉，仅 默认/sRGB）已交付，见 §6 末尾 |
-| UpdateForm（更新） | **REMAINING** | 缺陷原样存在：`UpdateForm.cs` 无「暂无更新说明」空态文案、`_notes` 仍为原生只读框、`SetBusy`（`:309`）未覆盖反馈按钮 | §7.1 全部保留 |
-| DonateForm / DonateControl（赞助） | **REMAINING** | 缺陷原样存在：`DonateForm.cs:17`（760×560）、`DonateControl.cs:29`（`RForm.colorTurbo` 遗留描边）；QR 缺失空态文案未加 | §7.2 全部保留 |
-| FirstRunGuideForm（首启引导） | **REMAINING** | 缺陷原样存在：`FirstRunGuideForm.cs:177`（`MaximumSize=(485,0)` 固定像素宽） | §8 全部保留 |
+| UpdateForm（更新） | **DONE（四项全修）** | 空态文案"暂无更新说明"+ ApplyNotesState（`:95-102,186-205`）；SetBusy 补 `_feedback.Enabled`（`:373`）；按钮 96/96/88/88（`:127-152`）；`_notes` → RTextBox（`:20`）；测试 `Run5SecondaryCloseoutTests.UpdateForm_EmptyNotesState_BusyCoversFeedback_TwoTierWidths` | 无 |
+| DonateForm / DonateControl（赞助） | **DONE（三项全修）** | QR 空态文案"二维码资源缺失"（`:89-101`）；ClientSize 高 500（`:17`）；`_button.BorderColor` → `UiVisualStyle.Accent`（`DonateControl.cs:30`）；测试 `Run5SecondaryCloseoutTests.DonateForm_HeightCappedAt500` | 无 |
+| FirstRunGuideForm（首启引导） | **DONE（三项全修）** | 删除固定 `MaximumSize`，Resize/FontChanged ReflowDescription（`:176-192`）；间距 → `Space.Sm`（`:142`）；底部 33/34/33 等宽（`:107-109`）；测试 `Run5SecondaryCloseoutTests.FirstRunGuideForm_NoFixedDescriptionWidth_EqualBottomColumns` | 无 |
 
 run5 期间与本规格相关的**额外交付**（本文原未覆盖，详见 `docs/run5-delivery-index.md`）：更多开关组新增 深度睡眠/仅关闭显示器/开机自启动、静音狂暴按机型支持三态门控、液冷手动档摘要改百分比、灯效空闲休眠统一时钟重构、CustomModeForm 重做+压缩与「切换未确认」修复。
 
@@ -242,19 +244,19 @@ run5 期间与本规格相关的**额外交付**（本文原未覆盖，详见 `
 
 ---
 
-## 9. 汇总（重定基后）
+## 9. 汇总（2026-09-14 收尾完成）
 
 | 表面 | 状态 | 优先级 | 工作量 | 核心动作 | 一句话判定 |
 |---|---|---|---|---|---|
-| RgbForm | OBSOLETE | — | — | 仅剩色块原生 Button 一项 | 重构已越过本规格，规格作废 |
-| FanCurveForm | PARTIAL | P2 | S | 双图纵改横、btnSave→RButton、状态/提示拆分 | 压缩已做，布局换代未做 |
-| LightForm | REMAINING | P2 | S | 删填充行缩至 210、开关跨列去冗余标签、色块 36 宽 | 最接近达标，快赢 |
-| RColorPicker | REMAINING | P3 | S | 随机按钮语义修复、预览描边 token、RGB 读数等宽 | 已修大半，残余三小项 |
+| RgbForm | **DONE** | — | — | 色块原生 Button → RColorButton | 色块收尾已修 |
+| FanCurveForm | **DONE** | P2 | S | 双图纵改横、btnSave→RButton、状态/提示拆分 | 布局换代完成 |
+| LightForm | **DONE** | P2 | S | 删填充行缩至 ≤210、色块 36×24 | 快赢落地 |
+| RColorPicker | **DONE** | P3 | S | 随机按钮语义修复、预览描边 token、RGB 读数等宽 | 三小项全清 |
 | ColorCalibrationForm | OBSOLETE | — | — | — | 窗体已删，替代方案已交付 |
-| UpdateForm | REMAINING | P3 | S | 空态文案、SetBusy 补反馈、按钮宽度两档、RTextBox | 空态+互斥是硬项 |
-| DonateForm/Control | REMAINING | P3 | S | QR 空态文案、缩高至 500、徽章色 token | 展示窗，空态是硬项 |
-| FirstRunGuideForm | REMAINING | P3 | S | MaximumSize 自适应、间距归刻度、底列等宽 | 已修大半，DPI 收尾 |
+| UpdateForm | **DONE** | P3 | S | 空态文案、SetBusy 补反馈、按钮宽度两档、RTextBox | 空态+互斥已修 |
+| DonateForm/Control | **DONE** | P3 | S | QR 空态文案、缩高至 500、徽章色 token | 展示窗收尾完成 |
+| FirstRunGuideForm | **DONE** | P3 | S | MaximumSize 自适应、间距归刻度、底列等宽 | DPI 收尾完成 |
 
-**设计系统新增提案：无。** 剩余表面全部可用现有 R* 控件集 + `UiVisualStyle` token 覆盖；唯一跨窗体前置依赖沿用 run4 §4.3：`RComboBox`/`RTextBox` 禁用态绘制补全（状态补全，非新控件）。
+**设计系统新增提案：无。** 所有表面均用现有 R* 控件集 + `UiVisualStyle` token 覆盖，无新控件类。
 
-**执行顺序（剩余项）**：LightForm(S) → FanCurveForm 剩余(S) → UpdateForm(S) → RColorPicker(S) → DonateForm(S) → FirstRunGuideForm(S)。完成后在 `docs/ui-consistency-pass.md` 追加 v9 记录（截至 2026-09-14 该文件仍止于 v8，v9 未追加）。
+**收尾验证（2026-09-14）**：测试 1527 通过 / 0 失败 / 1 跳过；构建 Debug/Release 0 错误（4 预存 Settings.cs 警告）；UI 审计 65 条 / 0 新增（预存：Settings parent-overflow 3 + KeyboardRgb docked-root-overflow 14 + FirstRunGuide text-clipping 48）；`docs/ui-consistency-pass.md` 已追加 v9。

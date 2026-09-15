@@ -28,6 +28,7 @@ internal static class UiGlyph
         Close,      // 退出（footer，预览 ✕）
         Gear,       // 设置 / 灯光组（预览圆 + 8 向辐条）
         Chevrons,   // 更多开关组（预览 < >）
+        Package,    // 导出诊断包（盒 + 拉链线）
     }
 
     /// <param name="gap">图标右侧留白（给 Label.Image：Label 没有图文间距属性，只能画进位图里）。</param>
@@ -222,6 +223,19 @@ internal static class UiGlyph
                 g.DrawLine(pen, x + w * 0.12F, line, x + w * 0.84F, line);
                 g.DrawLine(pen, x + w * 0.2F, top + h * 0.62F, x + w * 0.36F, top + h * 0.62F);
                 g.DrawLine(pen, x + w * 0.46F, top + h * 0.62F, x + w * 0.7F, top + h * 0.62F);
+                break;
+            }
+
+            case Kind.Package:
+            {
+                // 盒 + 拉链线（导出诊断包）
+                float h = w * 0.72F;
+                float top = cy - h / 2F;
+                using GraphicsPath box = RoundedRect(new RectangleF(x, top, w, h), stroke * 1.4F);
+                g.DrawPath(pen, box);
+                g.DrawLine(pen, x, top + h * 0.30F, x + w, top + h * 0.30F);
+                g.DrawLine(pen, cx, top + h * 0.30F, cx, top + h);
+                g.DrawLine(pen, cx - w * 0.16F, top + h * 0.44F, cx + w * 0.16F, top + h * 0.44F);
                 break;
             }
 

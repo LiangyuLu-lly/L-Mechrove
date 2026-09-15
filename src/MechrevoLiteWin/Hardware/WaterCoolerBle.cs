@@ -406,8 +406,22 @@ public class WaterCoolerBle : IDisposable
     public async Task<bool> ApplyPumpProfileAsync(int profile, int temperatureC, bool persist = true)
     {
         if (profile is < ProfileAutomatic or > 3) return false;
-        int effective = profile == ProfileAutomatic
-            ? SelectAutomaticPumpProfile(temperatureC, _lastAutomaticPump) : profile;
+        int effective;
+        if (profile == ProfileAutomatic)
+        {
+            int? automatic = SelectAutomaticPumpProfileIfUsable(temperatureC, _lastAutomaticPump);
+            // 温度读不到/已过期：保持泵当前档位，绝不拿 0°C 去挑最低档；自动意图仍要落配置。
+            if (automatic is null)
+            {
+                if (persist) AppConfig.Set("lc_pump_profile", profile);
+                return true;
+            }
+            effective = automatic.Value;
+        }
+        else
+        {
+            effective = profile;
+        }
         if (profile == ProfileAutomatic && effective == _lastAutomaticPump)
         {
             if (persist) AppConfig.Set("lc_pump_profile", profile);
@@ -426,8 +440,22 @@ public class WaterCoolerBle : IDisposable
     public async Task<bool> ApplyFanProfileAsync(int profile, int temperatureC, bool persist = true)
     {
         if (profile is < ProfileAutomatic or > 4) return false;
-        int effective = profile == ProfileAutomatic
-            ? SelectAutomaticFanProfile(temperatureC, _lastAutomaticFan) : profile;
+        int effective;
+        if (profile == ProfileAutomatic)
+        {
+            int? automatic = SelectAutomaticFanProfileIfUsable(temperatureC, _lastAutomaticFan);
+            // 同上：温度不可用时保持风扇当前档位。
+            if (automatic is null)
+            {
+                if (persist) AppConfig.Set("lc_fan_profile", profile);
+                return true;
+            }
+            effective = automatic.Value;
+        }
+        else
+        {
+            effective = profile;
+        }
         if (profile == ProfileAutomatic && effective == _lastAutomaticFan)
         {
             if (persist) AppConfig.Set("lc_fan_profile", profile);
@@ -498,6 +526,18 @@ public class WaterCoolerBle : IDisposable
 
     internal static int SelectAutomaticPumpProfile(int temperatureC, int current = -1) =>
         SelectAutomaticProfile(temperatureC, current, [int.MinValue, 46, 61, 76]);
+
+    /// <summary>自动泵档；温度读不到/已过期时返回 null——保持现状，绝不按 0°C 挑最低档。</summary>
+    internal static int? SelectAutomaticPumpProfileIfUsable(int temperatureC, int current = -1) =>
+        LiquidCoolingAutoPolicy.TemperatureUsable(temperatureC)
+            ? SelectAutomaticPumpProfile(temperatureC, current)
+            : null;
+
+    /// <summary>自动风扇档；温度不可用时返回 null。</summary>
+    internal static int? SelectAutomaticFanProfileIfUsable(int temperatureC, int current = -1) =>
+        LiquidCoolingAutoPolicy.TemperatureUsable(temperatureC)
+            ? SelectAutomaticFanProfile(temperatureC, current)
+            : null;
 
     /// <summary>
     /// 自动档是否已经落在目标档位（是则不必再下发）。必须同时看客户端记忆与厂商回读：

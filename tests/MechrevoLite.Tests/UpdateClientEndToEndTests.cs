@@ -123,6 +123,80 @@ public class UpdateClientEndToEndTests
         }
     }
 
+    /// <summary>
+    /// 篡改回归：元数据里的 sha256 是"好包"的，桩服务器却吐出被改过的字节 → 必须先被 SHA-256
+    /// 拦下、删除临时包、拒绝解压安装，运行中的程序照常。
+    /// </summary>
+    [Fact]
+    public async Task CorruptedPackageIsRefusedAndDeletedAgainstLocalStub()
+    {
+        string clientVersion = InformationalVersionOfMechrevoAssembly();
+        string serverLatest = Regex.Replace(clientVersion, @"(\d+)(?!.*\d)", m => (int.Parse(m.Value) + 1).ToString());
+        string sandbox = ResolveSandbox();
+        Directory.CreateDirectory(sandbox);
+
+        // 好包（其哈希会写进元数据）。
+        string sourcePackage = Path.Combine(sandbox, "source", $"L-Mechrevo-{serverLatest}.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(sourcePackage)!);
+        using (ZipArchive archive = ZipFile.Open(sourcePackage, ZipArchiveMode.Create))
+        using (Stream exe = archive.CreateEntry("L-Mechrevo-test.exe").Open())
+            exe.Write(Encoding.ASCII.GetBytes("MZ-genuine-payload"));
+        string goodSha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(sourcePackage)));
+
+        // 桩实际吐出的"坏包"：同样长度区间无所谓，只要 sha 对不上。
+        byte[] corruptedBytes = Encoding.ASCII.GetBytes("MZ-TAMPERED-payload-different-bytes");
+
+        var requests = new ConcurrentQueue<string>();
+        (HttpListener listener, string baseUrl) = StartLoopbackListener();
+        string manifestJson =
+            "{\"ok\":true,\"data\":{\"current_version\":\"" + clientVersion + "\",\"latest_version\":\"" + serverLatest +
+            "\",\"channel\":\"beta\",\"update_available\":true,\"filename\":\"L-Mechrevo-" + serverLatest +
+            ".zip\",\"size\":" + corruptedBytes.Length + ",\"sha256\":\"" + goodSha256 + "\",\"download_url\":\"" + baseUrl +
+            "/pkg/L-Mechrevo-" + serverLatest + ".zip\"}}";
+
+        var serverStop = new CancellationTokenSource();
+        Task serverTask = Task.Run(() => ServeStub(listener, manifestJson, corruptedBytes, requests, serverStop.Token));
+
+        string? oldTmp = Environment.GetEnvironmentVariable("TMP");
+        string? oldTemp = Environment.GetEnvironmentVariable("TEMP");
+        string isolatedTemp = Path.Combine(sandbox, "sys-temp");
+        Directory.CreateDirectory(isolatedTemp);
+
+        UpdateChecker.BaseUrlOverride = baseUrl;
+        UpdateChecker.HttpGetOverride = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("TMP", isolatedTemp);
+            Environment.SetEnvironmentVariable("TEMP", isolatedTemp);
+
+            UpdateInfo? info = await UpdateChecker.CheckAsync(force: true);
+            Assert.NotNull(info);
+            Assert.True(info!.UpdateAvailable);
+
+            string? downloaded = await UpdateInstaller.DownloadAsync(info);
+            Assert.NotNull(downloaded);
+
+            PackageVerification verification = UpdateInstaller.Verify(downloaded!, info);
+            Assert.False(verification.Ok);
+            Assert.Contains("SHA-256", verification.Reason);
+
+            UpdateInstaller.DiscardPackage(downloaded!);
+            Assert.False(File.Exists(downloaded), "篡改包必须被删除");
+        }
+        finally
+        {
+            UpdateChecker.BaseUrlOverride = null;
+            Environment.SetEnvironmentVariable("TMP", oldTmp);
+            Environment.SetEnvironmentVariable("TEMP", oldTemp);
+            serverStop.Cancel();
+            listener.Stop();
+            listener.Close();
+            await serverTask;
+            serverStop.Dispose();
+            TryDeleteDirectory(sandbox);
+        }
+    }
+
     static void ServeStub(HttpListener listener, string manifestJson, byte[] packageBytes,
         ConcurrentQueue<string> requests, CancellationToken token)
     {

@@ -767,6 +767,16 @@ namespace MechrevoLite
             rgb.LoadConfig();   // 必须先于任何连接/状态回读加载，防止开机默认值覆盖用户速度
             ble = new MechrevoLite.Hardware.WaterCoolerBle();   // 蓝牙水冷直连（打开连接窗口时扫描）
             hw.ConnectionReady += generation => _ = RestoreAfterHardwareConnectionAsync(generation);
+            // GCU 状态指示条：连上瞬间即时刷新（断开侧由传感器节拍 ≤2s 兜底）。
+            hw.ConnectionReady += _ =>
+            {
+                try
+                {
+                    if (settingsForm is not null && !settingsForm.IsDisposed)
+                        settingsForm.RefreshGcuStatus();
+                }
+                catch (Exception ex) { Logger.WriteLine("GCU status refresh failed: " + ex.Message); }
+            };
             StartTelemetryRecoveryMonitor();
             // 接线不依赖首次连接成败：重连成功后 UI 数据/事件照常工作（幂等，只执行一次）
             _ = Task.Run(async () =>

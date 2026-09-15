@@ -479,3 +479,27 @@ A 批附带修掉的两处：
 验证：构建 Debug/Release **0 error**（仅既有 CS8321/CS0649）；测试 **1335 通过 / 0 失败 / 1 跳过 / 1336**（+11 条新测试）；UI 审计 **0 条 / 430 张 × 16 视口**；独立审查门最终结论 **无阻断，S1–S5 与 GLOBAL 全 PASS**。
 
 未能真机取证的项（已在交付说明中标注）：④a 的待机截图（时序窗口短）、④b 的弹窗截图（原生弹窗合成点击不可靠）、①的下拉选择真机复现（同因）——三项均由单元测试/源码审查覆盖。
+
+
+---
+
+## v9 二级界面重设计收尾（2026-09-14，`docs/run5-secondary-ui-redesign.md` 全项完成）
+
+| 表面 | 变更 | 文件:行 |
+|---|---|---|
+| RgbForm | 色块原生 `Button` → `RColorButton`（Swatch 方法），Tag=`"color-swatch"` | `RgbForm.cs:421-432` |
+| FanCurveForm | 双图纵向→横向（CPU 左/GPU 右）；`btnSave` → `RButton` + `ApplyPrimaryButton`；`_status`+`hint` 拆两个 Label | `FanCurveForm.cs:75-80,103-108,162-174,230` |
+| LightForm | 删 Percent-100 填充行；ClientSize 内容实测（≤210）；colorBtn 36×24 | `LightForm.cs:47,174,224` |
+| RColorPicker | 随机按钮→`Defaults[Random.Shared.Next]`；预览→Swatch 1px Border；rgbLabel→Consolas | `RColorPicker.cs:100,107,116,144` |
+| UpdateForm | 空态"暂无更新说明"+ ApplyNotesState；SetBusy 补 `_feedback.Enabled`；按钮 96/96/88/88；`_notes`→RTextBox | `UpdateForm.cs:20-21,95-102,127-152,186-205,365-374` |
+| DonateForm | QR 空态"二维码资源缺失"；ClientSize 高 500 | `DonateForm.cs:17,89-101` |
+| DonateControl | 徽章描边 `RForm.colorTurbo` → `UiVisualStyle.Accent` | `DonateControl.cs:30` |
+| FirstRunGuideForm | 删固定 MaximumSize；Resize/FontChanged ReflowDescription；间距→Space.Sm；底部 33/34/33 | `FirstRunGuideForm.cs:107-109,142,173-192` |
+
+护栏测试：`Run5SecondaryCloseoutTests` 7 条全 GREEN（`LightForm_NoFillRow`、`FanCurveForm_HorizontalCharts`、`UpdateForm_EmptyNotesState`、`RColorPicker_RandomFromPalette`、`DonateForm_HeightCappedAt500`、`FirstRunGuideForm_NoFixedDescriptionWidth`、`RgbForm_SwatchUsesRColorButton`）。
+
+验证：构建 Debug/Release **0 error**（4 预存 Settings.cs 警告）；测试 **1501 通过 / 0 失败 / 1 跳过 / 1502**（=绿色基线）；UI 审计 **65 条 / 0 新增 / 458 张 × 16 视口**（预存集：Settings parent-overflow 6 + KeyboardRgb docked-root-overflow 11 + FirstRunGuide text-clipping 48）。
+
+真机实测（2026-09-14 收尾验证，175% DPI，`artifacts\run5-secondary\README.md`）：LightForm 实测 420×138 逻辑 px（填充行已删，≤210 上限）；DonateForm 实测恰 760×500 逻辑 px；触达的 8 个对话框控件 Right/Bottom 越界 **0**。护栏双向验证：正向=真机日志 `SetLightEffect(HidLightbar/Ctrl, Wave, …) 已发送` + `SetLightPower(...) confirmed` 随真实 UIA 手势下发（18:00–18:02 捕获时刻）；反向=护栏单测（UpdateForm SetBusy 覆盖反馈键、FanCurveForm 未连接拒存/`_saveInProgress` 互斥、RColorPicker 非法 Hex 拒绝与随机落色板、LightForm 关灯禁用）。真机截图：`Lightbar-`/`LogoLight-`/`KeyboardRgb-`/`Donate-`/`UpdateForm-`/`FirstRunGuide-`（交互捕获）+ `FanCurve-`/`ColorPicker-audit-render-175pct.png`（审计渲染回退，交互捕获因 UIA 模态阻塞/token 错误不可达）。
+
+未能真机取证的项：所有 7 个对话框的真机目视节奏验证（测试覆盖尺寸/无裁剪，但无法验证视觉间距与对齐）；DonateForm QR 缺失空态的视觉居中对齐；日间模式下全部对话框的主题一致性。

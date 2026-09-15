@@ -63,7 +63,9 @@ public class FanCurveForm : RForm
             Dock = DockStyle.Fill,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
+            // 3 列 = 标题 + 状态 + 常驻提示。此前声明 ColumnCount=2 却放了 3 列内容，
+            // WinForms 会多出一条 ~22px 的幻影空行（run5 门禁审计 empty-band 实证）。
+            ColumnCount = 3,
             RowCount = 1,
             BackColor = UiVisualStyle.Window,
             Padding = new Padding(D(12), D(8), D(12), 0),

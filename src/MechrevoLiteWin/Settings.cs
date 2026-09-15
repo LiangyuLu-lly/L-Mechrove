@@ -77,11 +77,19 @@ namespace MechrevoLite
         RCollapseGroup? _quickGroup;
         RCollapseGroup? _lightGroup;
         BufferedPanel? _telemetryPanel;
+        // GCU 连接状态指示条（页面栈首行，真值 = Program.hw 的连接快照）。
+        BufferedPanel? _panelGcuStatus;
+        Label? _labelGcuStatus;
         Label? _telemetryCpuName; Label? _telemetryCpuTemp; Label? _telemetryCpuRest;
         Label? _telemetrySeparator;
         Label? _telemetryGpuName; Label? _telemetryGpuTemp; Label? _telemetryGpuRest;
         bool _telemetryLayingOut;
         TableLayoutPanel? _hzSegTable;
+        // 屏幕卡的固定行高表（26 行头 / 34 Hz 分段 / 28 亮度）。能力门禁隐藏某行内容时，
+        // 必须把对应 RowStyle 高度一起收为 0——只藏子控件会留下固定高的空带（run5 门禁审计）。
+        TableLayoutPanel? _screenRowsLayout;
+        static readonly int[] ScreenRowHeights = { 26, 34, 28 };
+        readonly int[] _screenRowVisibleHeights = new int[3];   // 隐藏前采样到的渲染行高（0=未采样）
         readonly List<RButton> _hzButtons = new();
         string _lastHzSignature = "";
         RCheckBox? _kbPowerSw;
@@ -362,7 +370,6 @@ namespace MechrevoLite
         int _lcGcuRestoreGeneration = -1;
         int _lcGcuRestoreAttempts;
         DateTime _lcGcuLastRestoreAttempt = DateTime.MinValue;
-        int _lcGcuAutoPumpGear = -1;   // GCU 通道泵速自动当前档（-1=尚未套用）
         SystemBluetoothConnectionObservation _lcSystemBluetoothObservation;
         int _performanceRequest; // Rapid clicks use latest-request-wins semantics.
         readonly BrightnessCommitQueue _brightnessCommitQueue = new(
@@ -875,6 +882,7 @@ namespace MechrevoLite
             brightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));   // 行头
             brightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));   // Hz 分段行
             brightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));   // 亮度滑条行
+            _screenRowsLayout = brightLayout;
             brightPanel.Controls.Add(brightLayout);
             var brightLabel = new Label { Name = "labelScreenBrightness", Text = "亮度", Font = UiStyleBody(), ForeColor = UiStyleXXX(), AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty, BackColor = brightPanel.BackColor };
             // 深潜座舱：亮度滑条用自绘 RSlider（4px 轨道 + Accent 填充 + 圆环滑块），不再用原生 TrackBar。
@@ -1021,7 +1029,13 @@ namespace MechrevoLite
                     _liquidGroup.Summary = LcSummaryText(lcStatus.Text);
             };
             // GCU 和本进程的 BLE 直连不能同时拥有同一个水冷设备。
-            int CurrentCoolingTemperature() => Math.Max(Program.hw?.CpuTemp ?? 0, Program.hw?.GpuTemp ?? 0);
+            int CurrentCoolingTemperature()
+            {
+                var hw = Program.hw;
+                if (hw is null) return 0;
+                return LiquidCoolingAutoPolicy.ResolveCoolingTemperature(
+                    hw.CpuTemp, hw.GpuTemp, hw.IsTemperatureFresh(LiquidCoolingAutoPolicy.TemperatureFreshness));
+            }
 
             LiquidCoolingControlRoute GetLiquidCoolingRoute()
             {
@@ -1033,29 +1047,22 @@ namespace MechrevoLite
                     gcuControllable,
                     _lcSystemBluetoothObservation.IsConnected);
             }
-            // GCU 通道（无 BLE 直连）下的自动模式：
-            // - 风扇：厂商设备侧自动档（实测 BT_LC/Control LC_FanCtrl=4 → LC_CoolingAuto=true）。
-            // - 泵速：厂商协议没有自动档（只有 0..2 固定档），由客户端按与 BLE 直连相同的
-            //   温度阈值选档后经 GCU 下发；失败不用 _lcGcuAutoPumpGear 记进度，下个周期重试。
-            async Task<bool> ApplyGcuAutomaticPumpGearAsync()
-            {
-                if (Program.service is null || Program.hw is not { IsConnected: true } hw) return false;
-                int gear = WaterCoolerBle.SelectAutomaticPumpProfile(CurrentCoolingTemperature(), _lcGcuAutoPumpGear);
-                // 自动档选出的 3（100%）在厂商泵速协议里不存在（只有 0..2 → 45/60/90%），钳到 90%。
-                gear = Math.Min(gear, 2);
-                if (WaterCoolerBle.AutomaticGearAlreadyApplied(gear, _lcGcuAutoPumpGear, hw.LcPumpControl)) return true;
-                if (!await Program.service.SwitchLcPump(gear)) return false;
-                _lcGcuAutoPumpGear = gear;
-                return true;
-            }
+            // GCU 通道（无 BLE 直连）下的自动模式 = 厂商固件曲线：
+            // 下发 BT_LC/Control LC_FanCtrl=4 让设备进入 LC_CoolingAuto（实测回读 LC_CoolingAuto=true），
+            // 固件自己按温度驱动泵与风扇（GCUService PumpFanAuto/RunCoolingAuto）。厂商泵协议没有独立
+            // 自动档，官方界面同样只在风扇档位里提供「自动」，所以泵自动也走这条通道。
+            //
+            // 这里曾经是客户端按温度挑一个具体泵速档（0..2）周期下发：3 秒一次的具体档位会把固件曲线
+            // 钉死在那一刻的读数上，负载升高时泵不再跟随固件升速——这正是「自动不升速」的根因。
+            // 现在自动意图下只补发「进入自动」这一条命令，绝不下发具体档位（见 LiquidCoolingAutoPolicy）。
             async Task UpdateGcuAutomaticCoolingAsync()
             {
                 if (Program.service is null || Program.hw is not { IsConnected: true } hw) return;
-                if (CurrentCoolingTemperature() <= 0) return;
-                if (AppConfig.Get("lc_pump_profile", WaterCoolerBle.ProfileUnset) == WaterCoolerBle.ProfileAutomatic)
-                    await ApplyGcuAutomaticPumpGearAsync();
-                if (AppConfig.Get("lc_fan_profile", WaterCoolerBle.ProfileUnset) == WaterCoolerBle.ProfileAutomatic &&
-                    hw.LcFanControl != LiquidCoolingDisplayPolicy.GcuFanAutoIndex)
+                var action = LiquidCoolingAutoPolicy.DecideGcuRefresh(
+                    AppConfig.Get("lc_pump_profile", WaterCoolerBle.ProfileUnset) == WaterCoolerBle.ProfileAutomatic,
+                    AppConfig.Get("lc_fan_profile", WaterCoolerBle.ProfileUnset) == WaterCoolerBle.ProfileAutomatic,
+                    hw.LcFanControl);
+                if (action == LiquidCoolingAutoPolicy.RefreshAction.EnableVendorAuto)
                     await Program.service.SwitchLcFanAuto();
             }
             string DescribeGcuLiquidCoolingState()
@@ -1294,8 +1301,9 @@ namespace MechrevoLite
                 {
                     LiquidCoolingControlRoute.DirectBle when Program.ble is { IsConnected: true } ble =>
                         await ble.ApplyPumpProfileAsync(kv.Value, CurrentCoolingTemperature()),
-                    LiquidCoolingControlRoute.Gcu when Program.service is not null && kv.Value == WaterCoolerBle.ProfileAutomatic =>
-                        await ApplyGcuAutomaticPumpGearAsync(),
+                    LiquidCoolingControlRoute.Gcu when Program.service is not null &&
+                        LiquidCoolingAutoPolicy.ShouldTransmitVendorAuto(kv.Value) =>
+                        await Program.service.SwitchLcFanAuto(),
                     LiquidCoolingControlRoute.Gcu when Program.service is not null && kv.Value is >= 0 and <= 2 =>
                         await Program.service.SwitchLcPump(kv.Value),
                     _ => false,
@@ -1353,7 +1361,8 @@ namespace MechrevoLite
                 {
                     LiquidCoolingControlRoute.DirectBle when Program.ble is { IsConnected: true } ble =>
                         await ble.ApplyFanProfileAsync(kv.Value, CurrentCoolingTemperature()),
-                    LiquidCoolingControlRoute.Gcu when Program.service is not null && kv.Value == WaterCoolerBle.ProfileAutomatic =>
+                    LiquidCoolingControlRoute.Gcu when Program.service is not null &&
+                        LiquidCoolingAutoPolicy.ShouldTransmitVendorAuto(kv.Value) =>
                         await Program.service.SwitchLcFanAuto(),
                     LiquidCoolingControlRoute.Gcu when Program.service is not null && kv.Value is >= 0 and <= 3 =>
                         await Program.service.SwitchLcFan(kv.Value),
@@ -2517,7 +2526,11 @@ namespace MechrevoLite
             lc.Dock = DockStyle.Top;
             _liquidGroup = new RCollapseGroup("液冷", UiGlyph.Kind.Droplet, "group_lc_open", defaultExpanded: false, showDivider: true);
             _liquidGroup.SetContent(lc);
-            _liquidGroup.Toggled += (_, _) => UpdateDashboardWindowHeight();
+            _liquidGroup.Toggled += (_, _) =>
+            {
+                UpdateDashboardWindowHeight();
+                UpdateDashboardScroll();   // 内容高度变了：重算滚动量（窗口高度固定时不会自动重算）
+            };
             quick.Dock = DockStyle.Top;
             _quickGroup = new RCollapseGroup("更多开关", UiGlyph.Kind.Chevrons, "group_quick_open", defaultExpanded: false);
             _quickGroup.SetContent(quick);
@@ -2525,14 +2538,21 @@ namespace MechrevoLite
             {
                 UpdateDashboardWindowHeight();
                 if (_quickGroup.Expanded) _fitQuickCards?.Invoke();   // I3：展开后确定性重排
+                UpdateDashboardScroll();   // 展开的快捷开关越多，滚动量必须跟着长（否则滚不到底）
             };
             _lightGroup = new RCollapseGroup("灯光", UiGlyph.Kind.Gear, "group_light_open", defaultExpanded: true);
-            _lightGroup.Toggled += (_, _) => UpdateDashboardWindowHeight();
+            _lightGroup.Toggled += (_, _) =>
+            {
+                UpdateDashboardWindowHeight();
+                UpdateDashboardScroll();
+            };
             BuildLightRowsPanel();
+
+            BuildGcuStatusStrip(D);
 
             _dashboardSections = new Control[]
             {
-                panelPerformance, _telemetryPanel!, panelGPU, brightness, panelBattery,
+                _panelGcuStatus!, panelPerformance, _telemetryPanel!, panelGPU, brightness, panelBattery,
                 _liquidGroup, _lightGroup, _quickGroup,
             };
             _enabledDashboardSections.Clear();
@@ -2635,6 +2655,66 @@ namespace MechrevoLite
                 button.Margin = Padding.Empty;
                 button.Padding = Padding.Empty;
             }
+        }
+
+        /// <summary>
+        /// GCU 连接状态指示条：页面栈第一行（性能卡之上），默认/最小窗口与审计视口都落在
+        /// 滚动顶部，恒可见。状态真值 = Program.hw 连接快照（MechrevoHw.IsConnected /
+        /// IsReconnecting / ConnectionGeneration），映射见 UI.GcuConnectionStatus。
+        /// 颜色只是强调，文本标签 + tooltip 承载状态语义（非仅色差）。
+        /// </summary>
+        void BuildGcuStatusStrip(Func<int, int> scale)
+        {
+            _panelGcuStatus = new BufferedPanel
+            {
+                Name = "panelGcuStatus",
+                CardStyle = true,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(scale(12), scale(7), scale(12), scale(7)),
+                BackColor = UiVisualStyle.Surface,
+                Margin = new Padding(0, 0, 0, scale(6)),
+                AccessibleRole = AccessibleRole.StatusBar,
+            };
+            _labelGcuStatus = new Label
+            {
+                Name = "labelGcuStatus",
+                AutoSize = true,
+                Text = "● GCU 状态未知",
+                ForeColor = UiVisualStyle.Muted,
+                BackColor = _panelGcuStatus.BackColor,
+                Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Margin = Padding.Empty,
+            };
+            _labelGcuStatus.Click += (_, _) => RefreshGcuStatus();
+            _panelGcuStatus.Controls.Add(_labelGcuStatus);
+            UpdateGcuStatus();
+        }
+
+        /// <summary>按当前硬件快照刷新指示条（文本/前景色/tooltip）。UI 线程调用。</summary>
+        internal void UpdateGcuStatus()
+        {
+            if (_labelGcuStatus is null || _panelGcuStatus is null || IsDisposed) return;
+            MechrevoLite.Hardware.MechrevoHw? hw = Program.hw;
+            var state = UI.GcuConnectionStatus.Resolve(
+                hw is not null, hw?.IsConnected == true, hw?.IsReconnecting == true,
+                hw is { ConnectionGeneration: > 0 });
+            (Color fore, string text, string tooltip) = UI.GcuConnectionStatus.Describe(state);
+            if (_labelGcuStatus.Text != text) _labelGcuStatus.Text = text;
+            if (_labelGcuStatus.ForeColor != fore) _labelGcuStatus.ForeColor = fore;
+            toolTip.SetToolTip(_labelGcuStatus, tooltip);
+        }
+
+        /// <summary>测试缝：指示条当前 tooltip 文本（toolTip 字段是 Designer 私有）。</summary>
+        internal string GcuStatusTooltip => _labelGcuStatus is null ? "" : toolTip.GetToolTip(_labelGcuStatus);
+
+        /// <summary>ConnectionReady 等后台线程事件的入口：封送到 UI 线程刷新。</summary>
+        internal void RefreshGcuStatus()
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            if (InvokeRequired) { BeginInvoke(() => UpdateGcuStatus()); return; }
+            UpdateGcuStatus();
         }
 
         private void BuildThemeModePanel(Func<int, int> scale)
@@ -2803,13 +2883,13 @@ namespace MechrevoLite
             // 设置弹窗的「显示」组标题只在响应加速行可见时渲染：空组不保留标题。
             _settingsDialog?.SetDisplayGroupAvailable(_overdriveAvailable);
             if (_calibCombo is not null) _calibCombo.Visible = audit || calibration;
-            SetVisible("labelScreenBrightness", brightness);
-            SetVisible("sliderScreenBrightness", brightness);
-            SetVisible("labelScreenBrightnessValue", brightness);
             bool display = brightness || calibration || overdrive;
             bool liquidCooling = Show(caps.LiquidCooling || hw?.SupportsLiquidCooling == true);
+            // 亮度行/Hz 行是固定行高（26/34/28 字面量）：隐藏内容时必须把行高一起收为 0，
+            // 否则留下空带（例如「有校色无刷新率」的机型会留 34px 空行）。
+            SetScreenRowVisible(2, brightness, "labelScreenBrightness", "sliderScreenBrightness", "labelScreenBrightnessValue");
+            if (_hzSegTable is not null) SetScreenRowControls(1, _hzButtons.Count > 0, _hzSegTable);
             SetVisible("panelBrightness", display);
-            if (_hzSegTable is not null) _hzSegTable.Visible = audit || refresh;
 
             bool turbo = Show(caps.TurboMode);
             // 静音狂暴入口只在证据确认支持时出现（Unknown/Unsupported 一律隐藏，见
@@ -2837,6 +2917,8 @@ namespace MechrevoLite
 
             _enabledDashboardSections.Clear();
             EnableSection(panelPerformance, true);
+            // GCU 状态条不依赖机型能力，恒可见（能力门禁 Clear 后必须重发，同 panelPerformance）。
+            EnableSection(_panelGcuStatus!, true);
             EnableSection(panelGPU, gpu);
             EnableSection(_telemetryPanel, true);
             // 液冷/快捷/灯光装在折叠组里：能力位决定**组**的出现与否。
@@ -2869,12 +2951,57 @@ namespace MechrevoLite
                 if (control is not null) control.Visible = visible;
             }
 
+            void SetScreenRowVisible(int row, bool visible, params string[] controlNames)
+            {
+                if (_screenRowsLayout is null) return;
+                var controls = controlNames
+                    .Select(name => Controls.Find(name, true).FirstOrDefault())
+                    .OfType<Control>()
+                    .ToArray();
+                SetScreenRowControls(row, visible, controls);
+            }
+
             void EnableSection(Control? section, bool enabled)
             {
                 if (section is null) return;
                 section.Visible = enabled;
                 if (enabled) _enabledDashboardSections.Add(section);
             }
+        }
+
+        /// <summary>
+        /// 屏幕卡固定行的显隐：内容隐藏时把该行 RowStyle 高度收为 0（恢复时还原字面量行高）。
+        /// 只藏子控件不动行高会留下固定高的空带——这是能力门禁「隐藏必须收拢」的关键路径。
+        /// </summary>
+        void SetScreenRowControls(int row, bool visible, params Control[] controls)
+        {
+            if (_screenRowsLayout is null || row < 0 || row >= ScreenRowHeights.Length) return;
+            foreach (Control control in controls) control.Visible = visible;
+            RowStyle style = _screenRowsLayout.RowStyles[row];
+            if (_screenRowsLayout.Parent is not Control card) return;
+            // 幂等增量：只在状态真的翻转时动样式/卡高。RefreshDeviceCapabilities 会在审计的
+            // form.Scale 之后再次排队执行——若每次都按字面量重写行高，会把已缩放的样式打回
+            // 未缩放值，行高与卡片失配（实测 100pct 视口 labelScreenBrightness 假裁切）。
+            // 改 RowStyle.Height 不会使 TableLayoutPanel 布局失效（WinForms 已知行为），
+            // 所以翻转后必须显式重排。
+            if (!visible)
+            {
+                if (style.Height <= 0) return;
+                // 采样当前渲染行高（缩放后与字面量不同），恢复时按采样值还原。
+                int rendered = _screenRowsLayout.GetRowHeights()[row];
+                _screenRowVisibleHeights[row] = rendered > 0 ? rendered : ScreenRowHeights[row];
+                style.Height = 0;
+                card.Height -= _screenRowVisibleHeights[row];
+            }
+            else
+            {
+                if (style.Height > 0) return;
+                int restore = _screenRowVisibleHeights[row] > 0 ? _screenRowVisibleHeights[row] : ScreenRowHeights[row];
+                style.Height = restore;
+                card.Height += restore;
+            }
+            _screenRowsLayout.SuspendLayout();
+            _screenRowsLayout.ResumeLayout(true);
         }
 
         /// <summary>
@@ -3483,6 +3610,8 @@ namespace MechrevoLite
             AddAction("键盘灯效", false, () => OpenRgbForm());
             AddAction("悬浮监控", AppConfig.IsOverlay(), () => ToggleOverlay());   // Overlay 硬件状态悬浮窗
             AddAction("打开主界面", false, () => Program.SettingsToggle(false, true));
+            // 导出诊断包：与 footer「诊断」键同一入口（本地打包，不联网）。
+            AddAsyncAction("导出诊断包", false, () => MechrevoLite.Diagnostics.DiagnosticPackCommand.RunAsync(this, null));
 
             contextMenuStrip.Items.Add("-");
 
@@ -4358,6 +4487,7 @@ namespace MechrevoLite
                 UpdatePerfRowStatus();
                 if (labelGPUFan.Text != "重启生效") labelGPUFan.Text = "重启生效";
                 UpdateTelemetryText();
+                UpdateGcuStatus();   // 复用既有传感器节拍（≤2s），不新增轮询机制
 
                 if (HardwareControl.gpuFan is not null && AppConfig.NoGpu())
                 {
@@ -4745,7 +4875,7 @@ namespace MechrevoLite
         void InitQuickSwitchRefresh()
         {
             BuildQuickSwitchPanel();
-            VisualiseBatteryTitle(AppConfig.Get("charge_limit"));   // 百分比读数首次回显
+            VisualiseBatteryTitle(BatteryControl.ResolveDisplayLimitPercent());   // 百分比读数首次回显（EC 实际阈值优先）
             // 面板布局调整（依赖 QuickSwitch 面板已创建）：
             // 1. 删蓝色 100% 满充按钮（上限由滑条设定，这个按钮已无意义）
             buttonBatteryFull.Visible = false;
@@ -4783,8 +4913,8 @@ namespace MechrevoLite
                 UpdateQuickSwitches();
                 if (Program.hw is not { IsConnected: true }) return;
                 // 电池健康后缀要等 System/BatteryInfo 到达之后才有内容，所以跟着这个定时器刷
-                // （顺带回显上限百分比）。
-                VisualiseBatteryTitle(AppConfig.Get("charge_limit"));
+                // （顺带回显上限百分比）。读 EC 实际阈值而不是配置：配置只是缓存，刷新不得覆盖真值。
+                VisualiseBatteryTitle(BatteryControl.ResolveDisplayLimitPercent());
             };
             if (!Program.UiAuditMode) _quickSwitchStatusTimer.Start();
         }

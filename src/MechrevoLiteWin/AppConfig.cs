@@ -79,6 +79,30 @@ public static class AppConfig
     }
 
     /// <summary>
+    /// 导出诊断包用：当前生效/可用的配置文件（真实路径 + zip 内文件名 + 一句话说明）。
+    /// 走环境变量旁路（测试/诊断）时不返回 ProgramData 回退文件，避免泄漏它机配置。
+    /// </summary>
+    internal static IReadOnlyList<(string SourcePath, string FileName, string Description)> ExportableConfigFiles()
+    {
+        var files = new List<(string, string, string)>();
+        void Add(string path, string fileName, string description)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            if (files.Any(file => string.Equals(file.Item1, path, StringComparison.OrdinalIgnoreCase))) return;
+            files.Add((path, fileName, description));
+        }
+
+        Add(configFile, Path.GetFileName(configFile),
+            "主配置：性能/显卡模式、灯效、快捷开关、窗口外观等设置项");
+        Add(configFile + ".bak", Path.GetFileName(configFile) + ".bak",
+            "主配置上一次成功写入的备份（原子替换留下）");
+        if (!configFileOverridden)
+            Add(fallbackConfigFile, "config.fallback.json",
+                "机器级回退配置（ProgramData，供 SYSTEM/计划任务身份读取）");
+        return files;
+    }
+
+    /// <summary>
     /// 宽松反序列化。返回 null 表示这份内容不可用（空、字面量 null、语法错误）。
     /// 过去调用方直接把结果赋给 config 字段，内容为字面量 "null" 时后续每一次
     /// config.TryGetValue 都会抛 NullReferenceException。

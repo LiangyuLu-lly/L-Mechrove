@@ -12,10 +12,11 @@ internal sealed record PackageVerification(bool Ok, string Reason);
 /// <summary>
 /// 更新包的下载、校验、解压与替换安装。
 ///
-/// 安全边界（2026-09-11 与服务端现状对齐）：
+/// 安全边界（静态 OSS 后端，fail-closed）：
 /// <list type="bullet">
-/// <item>服务端目前**不给 sha256**（网盘发布），所以"校验"只能做到：HTTPS、体积上限、
-/// 是不是合法 zip、包内有没有预期的 exe。**这些都不能证明来源可信**；</item>
+/// <item>下载前必须通过 <see cref="UpdatePolicy"/>：https（回环例外）、host 白名单、sha256 合法；</item>
+/// <item>下载后必须与 sha256（以及 size，若提供）严格匹配，再校验 zip 与包内 exe —— 全部通过才允许安装；</item>
+/// <item>校验失败会删除临时包并中止，运行中的程序与用户配置保持不变；</item>
 /// <item>安装只发生在用户明确点击"下载并安装"之后，绝不静默执行；</item>
 /// <item>替换前先备份旧 exe，失败自动回滚；更新器只复制 exe，不碰同目录的 config.json（用户配置）。</item>
 /// </list>
@@ -46,11 +47,15 @@ internal static class UpdateInstaller
     internal static async Task<string?> DownloadAsync(UpdateInfo info, IProgress<int>? progress = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(info.DownloadUrl)) return null;
-        if (!Uri.TryCreate(info.DownloadUrl, UriKind.Absolute, out Uri? uri)) return null;
-        // 只接受 https（本地联调桩服务器允许回环 http）。
-        if (uri.Scheme != Uri.UriSchemeHttps && !(uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback))
+        if (!UpdatePolicy.TryAcceptDownloadUrl(info.DownloadUrl, out Uri? uri, out string urlReason))
         {
-            Logger.WriteLine($"更新包下载被拒：非 HTTPS 地址 {uri.Scheme}");
+            Logger.WriteLine($"更新包下载被拒：{urlReason}");
+            return null;
+        }
+        // 没有合法 sha256 就绝不下载：静态后端下无法确认来源与完整性。
+        if (!UpdatePolicy.IsValidSha256(info.Sha256))
+        {
+            Logger.WriteLine("更新包下载被拒：服务端未提供有效的 SHA-256 校验值");
             return null;
         }
 
@@ -103,29 +108,27 @@ internal static class UpdateInstaller
         }
     }
 
-    /// <summary>能验的都验：sha256（服务端给了就强校验）、大小合理性、zip 合法性、包内含预期 exe。</summary>
+    /// <summary>
+    /// 强校验：sha256 必备且必须匹配（缺失/非法直接拒绝），大小声明必须一致，
+    /// 且必须是含预期 exe 的合法 zip。解析/提取之前调用；失败一律不允许继续安装。
+    /// </summary>
     internal static PackageVerification Verify(string filePath, UpdateInfo info)
     {
         if (!File.Exists(filePath)) return new PackageVerification(false, "下载文件不存在");
+
+        if (!UpdatePolicy.IsValidSha256(info.Sha256))
+            return new PackageVerification(false, "服务端未提供有效的 SHA-256 校验值，拒绝安装");
 
         long size = new FileInfo(filePath).Length;
         if (size <= 0) return new PackageVerification(false, "下载文件为空");
         if (info.Size is long declaredSize && declaredSize > 0 && declaredSize != size)
             return new PackageVerification(false, $"文件大小与服务器声明不符（{size} ≠ {declaredSize}）");
 
-        if (!string.IsNullOrWhiteSpace(info.Sha256))
+        string actual = ComputeSha256(filePath);
+        if (!string.Equals(actual, info.Sha256!.Trim(), StringComparison.OrdinalIgnoreCase))
         {
-            string actual = ComputeSha256(filePath);
-            if (!string.Equals(actual, info.Sha256.Trim(), StringComparison.OrdinalIgnoreCase))
-            {
-                Logger.WriteLine($"更新包 SHA-256 不匹配：期望 {info.Sha256} 实际 {actual}");
-                return new PackageVerification(false, "更新包校验失败（SHA-256 不匹配）");
-            }
-        }
-        else
-        {
-            // 没有哈希时不做任何"看起来通过"的假校验，只记日志，由调用方提示用户。
-            Logger.WriteLine("更新包未提供 SHA-256（服务端网盘发布），只能做结构校验");
+            Logger.WriteLine($"更新包 SHA-256 不匹配：期望 {info.Sha256} 实际 {actual}");
+            return new PackageVerification(false, "更新包校验失败（SHA-256 不匹配）");
         }
 
         try
@@ -140,9 +143,15 @@ internal static class UpdateInstaller
             return new PackageVerification(false, "更新包不是有效的 zip：" + ex.Message);
         }
 
-        return new PackageVerification(true, string.IsNullOrWhiteSpace(info.Sha256)
-            ? "未提供校验值，仅通过结构检查"
-            : "SHA-256 校验通过");
+        return new PackageVerification(true, "SHA-256 校验通过");
+    }
+
+    /// <summary>校验失败时删除临时包，避免把已知被篡改/损坏的文件留在盘上。</summary>
+    internal static void DiscardPackage(string? packagePath)
+    {
+        if (string.IsNullOrWhiteSpace(packagePath)) return;
+        TryDelete(packagePath);
+        Logger.WriteLine($"临时更新包已删除：{packagePath}");
     }
 
     /// <summary>解压到临时目录并返回包内 exe 的绝对路径；失败返回 null。</summary>

@@ -58,6 +58,9 @@ internal sealed class RScrollBar : Control
         }
     }
 
+    /// <summary>最大滚动量（内容高 − 视口高，最小 0）。</summary>
+    public int MaxValue => Math.Max(0, _contentHeight - _viewHeight);
+
     /// <summary>一格滚轮/翻页步长：约 40 逻辑 px。</summary>
     public int Step => Math.Max(24, (int)Math.Round(UiDpi.Paint(this) / 96.0 * 40));
 

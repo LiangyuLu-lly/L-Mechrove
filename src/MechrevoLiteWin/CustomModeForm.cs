@@ -1,4 +1,5 @@
 using MechrevoLite.Hardware;
+using MechrevoLite.Helpers;
 using MechrevoLite.UI;
 
 namespace MechrevoLite;
@@ -51,6 +52,9 @@ public class CustomModeForm : RForm
     // 下一次状态帧就会把它弹回、数值行随之禁用，用户来不及拨值——超频于是永远不可用。
     // arm 保持到用户手动关闭，或窗口隐藏/切换档位时重置。
     bool _gpuOcArmed;
+    // 「超频需要管理员权限」提示行：直连 NVAPI 写入在非提权进程里恒定被拒，
+    // 非提权时该行可见并给出「以管理员身份重启」的显式入口（UAC 由用户在该步同意）。
+    FlowLayoutPanel _gpuOcAdminRow = null!;
     RComboBox _planCombo = null!, _boostCombo = null!;   // Windows 电源计划 / 睿频（按档独立）
     bool _syncingWinPower;
     int _currentIdx = -1;   // 当前选中的自定义档（Windows 电源设置按档保存）
@@ -446,10 +450,40 @@ public class CustomModeForm : RForm
         (_coreOc, _coreOcVal) = AddSliderRow("核心频率偏移 (MHz)", coreRange.Min, coreRange.Max, coreRange.Value, v => Queue("GpuCoreClockOffsetOC", v.ToString()));
         var memoryRange = DeviceRange(hw?.GpuMemoryOffsetUserMinimum ?? -1, hw?.GpuMemoryOffsetUserMaximum ?? -1, hw?.EffectiveGpuMemoryClockOffset ?? 0, allowNegative: true);
         (_memOc, _memOcVal) = AddSliderRow("显存频率偏移 (MHz)", memoryRange.Min, memoryRange.Max, memoryRange.Value, v => Queue("GpuMemoryClockOffsetOC", v.ToString()));
-        _ocChk.Enabled = Program.UiAuditMode || hw?.SupportsGpuOverclock == true && (coreRange.Adjustable || memoryRange.Adjustable);
+        _ocChk.Enabled = hw?.GpuOverclockWritable == true && (coreRange.Adjustable || memoryRange.Adjustable);
         _gpuOcCoreAdjustable = coreRange.Adjustable;
         _gpuOcMemoryAdjustable = memoryRange.Adjustable;
         SyncGpuOverclockDependents();   // 初值来源与回读一致：开关 OFF ⇒ 数值行不可拖动
+        // ---- 非提权时的诚实提示：超频需要管理员权限 + 显式「以管理员身份重启」入口 ----
+        _gpuOcAdminRow = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = UiVisualStyle.Surface,
+            Margin = new Padding(0, D(2), 0, 0),
+            Visible = false,
+        };
+        _gpuOcAdminRow.Controls.Add(new Label
+        {
+            Text = "超频需要管理员权限",
+            ForeColor = UiVisualStyle.Warn,
+            AutoSize = true,
+            Margin = new Padding(0, D(6), D(12), D(2)),
+        });
+        var ocAdminButton = new RButton
+        {
+            Name = "buttonRestartAsAdmin",
+            Text = "以管理员身份重启",
+            AutoSize = true,
+            Cursor = Cursors.Hand,
+            Margin = new Padding(0, 0, 0, 0),
+        };
+        ocAdminButton.Click += (_, _) => RestartAsAdmin();
+        _gpuOcAdminRow.Controls.Add(ocAdminButton);
+        table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        table.Controls.Add(_gpuOcAdminRow, 0, tableRow++);
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(table, 0, rootRow++);
 
@@ -853,9 +887,34 @@ public class CustomModeForm : RForm
     /// </summary>
     void SyncGpuOverclockDependents()
     {
-        bool on = _ocChk.Checked;
+        bool on = _ocChk.Checked && _ocChk.Enabled;
         _coreOc.Enabled = _coreOcVal.Enabled = on && _gpuOcCoreAdjustable;
         _memOc.Enabled = _memOcVal.Enabled = on && _gpuOcMemoryAdjustable;
+    }
+
+    /// <summary>测试接缝：非 null 时代替 ProcessHelper.RunAsAdmin（测试只记录，绝不提权重启）。</summary>
+    internal static Action? RestartAsAdminOverride { get; set; }
+
+    /// <summary>
+    /// 「以管理员身份重启」入口：这是 owner 选定的唯一提权方式——由用户点这个显式动作，
+    /// 由 UAC 在这一步征求同意；应用自身启动/写超频时绝不自动弹 UAC。
+    /// 守卫与其它不可逆动作同源：必须确有新鲜真实输入（程序化/自动化调用一律拒绝）。
+    /// </summary>
+    void RestartAsAdmin()
+    {
+        if (!NativeMethods.HasFreshUserInput())
+        {
+            Logger.WriteLine("Restart-as-admin ignored: no fresh user input.");
+            return;
+        }
+        Action? overrideAction = RestartAsAdminOverride;
+        if (overrideAction is not null)
+        {
+            overrideAction();
+            return;
+        }
+        Logger.WriteLine("Restart-as-admin requested by user (GPU overclock requires elevation).");
+        ProcessHelper.RunAsAdmin();
     }
 
     void OnCustomChanged()
@@ -881,6 +940,10 @@ public class CustomModeForm : RForm
                 bool tgpAdjustable = ApplyRange(_tgp, _tgpVal, hw.GpuTgpMinimum, hw.GpuTgpMaximum, hw.GpuTgp);
                 bool dbAdjustable = ApplyRange(_db, _dbVal, hw.GpuDbMinimum, hw.GpuDbMaximum, hw.GpuDb);
                 bool ocSupported = hw.SupportsGpuOverclock;
+                // 直连 NVAPI 写入需要提权：非提权会话里可调范围能读到但写不动，
+                // 此时不给可编辑控件，只显示「超频需要管理员权限」+ 重启入口。
+                bool ocRequiresElevation = hw.GpuOverclockRequiresElevation;
+                bool ocWritable = ocSupported && !ocRequiresElevation;
                 // 硬件确认的开启：设备把「开了但偏移还是 0」报成未开启，所以它只决定是否
                 // 套用/夹取数值（见下），不决定 UI 开关的位置。
                 bool ocHardwareOn = hw.GpuOverclockEnabled && ocSupported;
@@ -925,8 +988,9 @@ public class CustomModeForm : RForm
                 _tccChk.Checked = hw.TccSwitch;
                 _tccChk.Enabled = tccAdjustable;
                 _tcc.Enabled = hw.TccSwitch && tccAdjustable;
-                _ocChk.Checked = ocSwitchOn;
-                _ocChk.Enabled = ocSupported;
+                _ocChk.Checked = ocWritable && ocSwitchOn;
+                _ocChk.Enabled = ocWritable;
+                if (_gpuOcAdminRow is not null) _gpuOcAdminRow.Visible = ocSupported && ocRequiresElevation;
                 SyncGpuOverclockDependents();
                 if (hw.CustomProfileIndex >= 0)
                 {

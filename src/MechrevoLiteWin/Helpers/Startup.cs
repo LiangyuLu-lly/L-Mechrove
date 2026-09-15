@@ -13,7 +13,7 @@ public class Startup
 
     static string taskName = "LMechrevo";
     static string chargeTaskName = taskName + "Charge";
-    static string strExeFilePath = NormalizeExecutablePath(Application.ExecutablePath);
+    static readonly string strExeFilePath = ResolvePersistentExecutablePath();
     // WindowsIdentity.GetCurrent().User 是可空的。过去在静态字段初始化器里直接 .Value
     // 解引用，为 null 时会抛 TypeInitializationException，之后 Startup 的**所有**静态成员
     // （IsScheduled / StartupCheck / Schedule）都不可用。主项目的 Nullable 只开 annotations，
@@ -70,6 +70,45 @@ public class Startup
     /// </summary>
     internal static string NormalizeExecutablePath(string? exePath) =>
         (exePath ?? string.Empty).Trim().Trim('"');
+
+    /// <summary>
+    /// 计划任务动作指向的**持久**宿主 exe。单文件发布下 <c>Assembly.Location</c> 为空，不能用来
+    /// 定位镜像；<c>Environment.ProcessPath</c> 是官方文档化的、自解压安全的来源（宿主真实 exe），
+    /// 缺失时退回 <c>Application.ExecutablePath</c>（内部即 GetModuleFileName(NULL)）。自更新只原地
+    /// 替换该路径的 exe，任务因此跨更新保持有效。
+    /// </summary>
+    internal static string ResolvePersistentExecutablePath() =>
+        ResolvePersistentExecutablePath(Environment.ProcessPath, Application.ExecutablePath);
+
+    internal static string ResolvePersistentExecutablePath(string? processPath, string? executablePath)
+    {
+        string resolved = NormalizeExecutablePath(processPath);
+        return resolved.Length > 0 ? resolved : NormalizeExecutablePath(executablePath);
+    }
+
+    /// <summary>当前注册动作实际使用的路径（测试用；等价于运行镜像的持久路径）。</summary>
+    internal static string ScheduledExecutablePath => strExeFilePath;
+
+    /// <summary>
+    /// 运行镜像是否位于临时目录（单文件自解压 / 更新器暂存都落在 <c>%TEMP%</c>）。这类路径随时
+    /// 会被系统清理，绝不能让持久自启动项指向它——否则清理后开机自启静默失效。判定为纯函数，
+    /// 便于测试。
+    /// </summary>
+    internal static bool IsTransientExecutablePath(string? exePath) =>
+        IsTransientExecutablePath(exePath, Path.GetTempPath());
+
+    internal static bool IsTransientExecutablePath(string? exePath, string? tempRoot)
+    {
+        if (string.IsNullOrWhiteSpace(exePath) || string.IsNullOrWhiteSpace(tempRoot)) return false;
+        try
+        {
+            string root = Path.GetFullPath(tempRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            string full = Path.GetFullPath(NormalizeExecutablePath(exePath));
+            return full.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
 
     /// <summary>计划任务名不能含路径分隔符，account name 形如 DOMAIN\User。</summary>
     internal static string SanitizeTaskNameFragment(string? value)
@@ -174,6 +213,14 @@ public class Startup
 
     static void StartupCheckCore()
     {
+        // 从临时副本运行时绝不碰持久自启动项：当前镜像不是用户真正会启动的那个 exe，
+        // 拿它重新注册只会把任务指向随时会被清理的 %TEMP%，清理后开机自启静默失效。
+        if (IsTransientExecutablePath(strExeFilePath))
+        {
+            Logger.WriteLine("Skipping startup task check: the running image is transient: " + strExeFilePath);
+            return;
+        }
+
         bool restoreMissingTask = false;
         using (TaskService taskService = new TaskService())
         {
@@ -252,7 +299,7 @@ public class Startup
             && MatchesUserStartupPlan(definition);
     }
 
-    static bool MatchesUserStartupPlan(TaskDefinition definition)
+    internal static bool MatchesUserStartupPlan(TaskDefinition definition)
     {
         StartupTaskPlan plan = GetUserStartupTaskPlan();
         bool logonDelay = definition.Triggers.OfType<LogonTrigger>()
@@ -267,7 +314,7 @@ public class Startup
             definition.Settings.StartWhenAvailable;
     }
 
-    static void ConfigureUserStartupTask(TaskDefinition definition, string userName)
+    internal static void ConfigureUserStartupTask(TaskDefinition definition, string userName)
     {
         StartupTaskPlan plan = GetUserStartupTaskPlan();
         definition.RegistrationInfo.Description = "L-Mechrevo Auto Start";
@@ -368,6 +415,13 @@ public class Startup
     /// </summary>
     internal static bool ScheduleUserTaskOnly()
     {
+        // 同 StartupCheckCore：拒绝把持久自启动项注册到临时目录下的镜像路径。
+        if (IsTransientExecutablePath(strExeFilePath))
+        {
+            Logger.WriteLine("Refusing to register the startup task from a transient location: " + strExeFilePath);
+            return false;
+        }
+
         try
         {
             using TaskService taskService = new();

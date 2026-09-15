@@ -1,4 +1,4 @@
-using MechrevoLite.Hardware;
+﻿using MechrevoLite.Hardware;
 using MechrevoLite.Update;
 using System.Drawing.Imaging;
 using System.Text;
@@ -82,6 +82,77 @@ internal static class UiAuditRunner
                 TurboSubMode = false,
                 DgpuDirect = false,
                 IgpuOnly = false,
+            }),
+            // 能力门禁回归画像（run5-gating）：每个画像关掉一类能力，验证隐藏会收拢、
+            // 不留空带、不挤相邻行。全开基线 = "Settings"（audit 模式强制全可见）。
+            // 40 系类机（无灯带/无 Logo/无静音狂暴/无液冷）由 MinimalDisplay 覆盖。
+            ("Settings-NoLighting", () => new SettingsForm(), new MechrevoDeviceCapabilities
+            {
+                ProfileAvailable = true,
+                TurboMode = true,
+                TurboSubMode = true,
+                CpuPerformanceTuning = true,
+                FanSettings = true,
+                LiquidCooling = true,
+                DisplayRefresh = true,
+                ColorCalibration = true,
+                LcdOverdrive = true,
+                DgpuDirect = true,
+                IgpuOnly = true,
+                Keyboard = false,
+                Lightbar = false,
+                LogoLight = false,
+            }),
+            ("Settings-NoSilentTurbo", () => new SettingsForm(), new MechrevoDeviceCapabilities
+            {
+                ProfileAvailable = true,
+                TurboMode = true,
+                TurboSubMode = false,
+                CpuPerformanceTuning = true,
+                FanSettings = true,
+                LiquidCooling = true,
+                DisplayRefresh = true,
+                ColorCalibration = true,
+                LcdOverdrive = true,
+                DgpuDirect = true,
+                IgpuOnly = true,
+                Keyboard = true,
+                Lightbar = true,
+                LogoLight = true,
+            }),
+            ("Settings-NoLiquidCooling", () => new SettingsForm(), new MechrevoDeviceCapabilities
+            {
+                ProfileAvailable = true,
+                TurboMode = true,
+                TurboSubMode = true,
+                CpuPerformanceTuning = true,
+                FanSettings = true,
+                LiquidCooling = false,
+                DisplayRefresh = true,
+                ColorCalibration = true,
+                LcdOverdrive = true,
+                DgpuDirect = true,
+                IgpuOnly = true,
+                Keyboard = true,
+                Lightbar = true,
+                LogoLight = true,
+            }),
+            ("Settings-MinimalDisplay", () => new SettingsForm(), new MechrevoDeviceCapabilities
+            {
+                ProfileAvailable = true,
+                TurboMode = false,
+                TurboSubMode = false,
+                CpuPerformanceTuning = false,
+                FanSettings = false,
+                LiquidCooling = false,
+                DisplayRefresh = false,
+                ColorCalibration = false,
+                LcdOverdrive = false,
+                DgpuDirect = false,
+                IgpuOnly = false,
+                Keyboard = false,
+                Lightbar = false,
+                LogoLight = false,
             }),
             ("CustomMode", () => new CustomModeForm(), new MechrevoDeviceCapabilities
             {
@@ -235,6 +306,8 @@ internal static class UiAuditRunner
 
         var issues = new List<AuditIssue>();
         var screenshots = new List<string>();
+        var rowGaps = new List<string>();
+        var checkLog = new List<string>();
         string activeFactory = "unknown";
         string activeViewport = "unknown";
         ThreadExceptionEventHandler threadExceptionHandler = (_, args) =>
@@ -369,7 +442,7 @@ internal static class UiAuditRunner
                                     }
                                 }
                             }
-                            AuditForm(pageName, viewport, settings, issues);
+                            AuditForm(pageName, viewport, settings, issues, rowGaps, checkLog);
                             foreach (string screenshot in CapturePages(outputDirectory, pageName, viewport, settings))
                                 screenshots.Add(screenshot);
                         }
@@ -377,21 +450,21 @@ internal static class UiAuditRunner
                         settings.SelectDashboardPageForAudit(2);
                         ResponsiveLayout.PerformLayoutTree(settings);
                         Application.DoEvents();
-                        AuditForm(factory.Name + "-Day-System", viewport, settings, issues);
+                        AuditForm(factory.Name + "-Day-System", viewport, settings, issues, rowGaps, checkLog);
                         foreach (string screenshot in CapturePages(outputDirectory, factory.Name + "-Day-System", viewport, settings))
                             screenshots.Add(screenshot);
                         settings.ApplyThemeMode(true);
                         settings.SelectDashboardPageForAudit(0);
                         ResponsiveLayout.PerformLayoutTree(settings);
                         Application.DoEvents();
-                        AuditForm(factory.Name + "-Night-Common", viewport, settings, issues);
+                        AuditForm(factory.Name + "-Night-Common", viewport, settings, issues, rowGaps, checkLog);
                         foreach (string screenshot in CapturePages(outputDirectory, factory.Name + "-Night-Common", viewport, settings))
                             screenshots.Add(screenshot);
                         AuditBrightnessIsolation(viewport, settings, issues);
                     }
                     else
                     {
-                        AuditForm(factory.Name, viewport, form, issues);
+                        AuditForm(factory.Name, viewport, form, issues, rowGaps, checkLog);
                         foreach (string screenshot in CapturePages(outputDirectory, factory.Name, viewport, form))
                             screenshots.Add(screenshot);
                     }
@@ -417,8 +490,8 @@ internal static class UiAuditRunner
         }
         Application.ThreadException -= threadExceptionHandler;
 
-        WriteJson(outputDirectory, screenshots.Count, issues, hostDpi);
-        WriteMarkdown(outputDirectory, screenshots, issues);
+        WriteJson(outputDirectory, screenshots.Count, issues, hostDpi, rowGaps, checkLog);
+        WriteMarkdown(outputDirectory, screenshots, issues, rowGaps, checkLog);
         return issues.Count == 0 ? 0 : 1;
     }
 
@@ -440,7 +513,7 @@ internal static class UiAuditRunner
         }
     }
 
-    private static void WriteJson(string outputDirectory, int screenshotCount, IReadOnlyCollection<AuditIssue> issues, int hostDpi)
+    private static void WriteJson(string outputDirectory, int screenshotCount, IReadOnlyCollection<AuditIssue> issues, int hostDpi, IReadOnlyCollection<string> rowGaps, IReadOnlyCollection<string> checkLog)
     {
         // Explicit JSON keeps the packaged audit independent of reflection metadata removed by obfuscation.
         using FileStream stream = File.Create(Path.Combine(outputDirectory, "ui-audit.json"));
@@ -475,6 +548,16 @@ internal static class UiAuditRunner
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
+        writer.WritePropertyName("RowGaps");
+        writer.WriteStartArray();
+        foreach (string gap in rowGaps)
+            writer.WriteStringValue(gap);
+        writer.WriteEndArray();
+        writer.WritePropertyName("Checks");
+        writer.WriteStartArray();
+        foreach (string check in checkLog)
+            writer.WriteStringValue(check);
+        writer.WriteEndArray();
         writer.WriteEndObject();
     }
 
@@ -489,7 +572,7 @@ internal static class UiAuditRunner
         }
     }
 
-    private static void AuditForm(string formName, Viewport viewport, Form form, List<AuditIssue> issues)
+    private static void AuditForm(string formName, Viewport viewport, Form form, List<AuditIssue> issues, List<string>? rowGaps = null, List<string>? checkLog = null)
     {
         if (form.Width > viewport.WorkingArea.Width || form.Height > viewport.WorkingArea.Height)
         {
@@ -535,6 +618,33 @@ internal static class UiAuditRunner
         foreach (var finding in CheckClipping(form))
             issues.Add(new AuditIssue(formName, viewport.Id, finding.Kind, finding.Control, finding.Detail));
 
+        // 能力门禁回归检查：隐藏必须收拢（AutoSize 行塌为 0 / 容器整行隐藏），
+        // 不得留下「有高度无内容」的空带，也不得让相邻可见行重叠。
+        foreach (var finding in CheckEmptyBands(form))
+            issues.Add(new AuditIssue(formName, viewport.Id, finding.Kind, finding.Control, finding.Detail));
+        if (rowGaps is not null)
+            foreach (string gap in DescribeRowGaps(form))
+                rowGaps.Add($"{formName}/{viewport.Id}: {gap}");
+
+        foreach (var finding in CheckSiblingOverlaps(form))
+            issues.Add(new AuditIssue(formName, viewport.Id, finding.Kind, finding.Control, finding.Detail));
+
+        // 底栏遮挡回归（run6 F2）：固定底栏 panelFooter 覆盖了内容控件会让它拿不到点击点，
+        // 用户表现为「拨不动」。每个视口都判定一次并把结果写进审计报告。
+        var footerFindings = CheckFooterOcclusion(form);
+        foreach (var finding in footerFindings)
+            issues.Add(new AuditIssue(formName, viewport.Id, finding.Kind, finding.Control, finding.Detail));
+        checkLog?.Add($"footer-occlusion {formName}/{viewport.Id}: " +
+            (HasFooter(form) ? (footerFindings.Count == 0 ? "PASS" : $"FAIL({footerFindings.Count})") : "N/A(no footer)"));
+    }
+
+    /// <summary>
+    /// 兄弟控件重叠检查（能力门禁回归的第二条断言）：隐藏收拢后剩余行不得互相压盖。
+    /// 从 AuditForm 抽出以便测试直接对能力画像断言「零重叠」。
+    /// </summary>
+    internal static List<(string Kind, string Control, string Detail)> CheckSiblingOverlaps(Form form)
+    {
+        var findings = new List<(string Kind, string Control, string Detail)>();
         foreach (Control parent in Flatten(form).Where(control => control.Visible && control is not TableLayoutPanel && control is not FlowLayoutPanel))
         {
             Control[] leaves = parent.Controls.Cast<Control>()
@@ -547,11 +657,144 @@ internal static class UiAuditRunner
                     Rectangle overlap = Rectangle.Intersect(leaves[i].Bounds, leaves[j].Bounds);
                     if (overlap.Width > 3 && overlap.Height > 3)
                     {
-                        issues.Add(new AuditIssue(formName, viewport.Id, "sibling-overlap", ControlPath(parent),
+                        findings.Add(("sibling-overlap", ControlPath(parent),
                             $"{DisplayName(leaves[i])} {leaves[i].Bounds} overlaps {DisplayName(leaves[j])} {leaves[j].Bounds}."));
                     }
                 }
             }
+        }
+        return findings;
+    }
+
+    /// <summary>
+    /// 底栏遮挡检查（run6 F2 回归）：任何可见的**可交互**控件都不得被固定底栏
+    /// <c>panelFooter</c> 覆盖。被覆盖的控件在真实输入下没有可点击点
+    /// （UIA GetClickablePoint 抛错、WindowFromPoint 命中底栏），用户表现为「拨不动」。
+    ///
+    /// 在「滚到最底」的位置判定：内容「还能滚上来」不算遮挡，只有滚到尽头仍落在底栏
+    /// 矩形里的控件才算。判定用纯几何偏移（<c>delta = −(最大滚动量 − 当前值)</c>），
+    /// **绝不真的移动视口**——移动 RScrollBar 会触发宿主的自绘滚动链，在审计的多视口
+    /// 循环里造成原生崩溃。返回 (Kind, ControlPath, Detail)。
+    /// </summary>
+    internal static List<(string Kind, string Control, string Detail)> CheckFooterOcclusion(Form form)
+    {
+        var findings = new List<(string Kind, string Control, string Detail)>();
+        Control? footer = Flatten(form).FirstOrDefault(control => control.Visible && control.Name == "panelFooter");
+        if (footer is null) return findings;
+        // 只判定滚动视口里的内容；没有该视口时退回整窗体（测试用的合成窗体）。
+        Control host = Flatten(form).FirstOrDefault(control => control.Name == "dashboardPageHost") ?? form;
+
+        RScrollBar? scrollBar = Flatten(form).OfType<RScrollBar>().FirstOrDefault(bar => bar.Name == "dashboardScrollBar");
+        int delta = scrollBar is null ? 0 : -(scrollBar.MaxValue - scrollBar.Value);
+        int footerTop = RelativeTop(footer, form);
+
+        foreach (Control control in Flatten(host))
+        {
+            if (!control.Visible) continue;
+            if (control.Controls.Count > 0) continue;      // 只判定叶子控件（容器由子控件代表）
+            if (!control.CanSelect) continue;              // 只判定可交互控件
+            if (control.Width <= 2 || control.Height <= 2) continue;
+            // 滚到最底后，控件底边必须完全在底栏上缘之上；否则它永远有一部分压在底栏下
+            // （滚动量欠量时最典型：内容真实底边超出 _dashboardStack 的高度，滚不动）。
+            int reachableBottom = RelativeTop(control, form) + control.Height + delta;
+            if (reachableBottom > footerTop + 2)
+                findings.Add(("footer-occlusion", ControlPath(control),
+                    $"{DisplayName(control)} bottom {reachableBottom} is below panelFooter top {footerTop} at max scroll."));
+        }
+        return findings;
+    }
+
+    /// <summary>控件相对 <paramref name="ancestor"/> 的顶边（逐层累加 Top；两者必须同一条父链）。</summary>
+    static int RelativeTop(Control control, Control ancestor)
+    {
+        int top = 0;
+        for (Control? current = control; current is not null && !ReferenceEquals(current, ancestor); current = current.Parent)
+            top += current.Top;
+        return top;
+    }
+
+    /// <summary>该窗体是否有可见的固定底栏（没有则底栏遮挡检查不适用）。</summary>
+    internal static bool HasFooter(Form form) =>
+        Flatten(form).Any(control => control.Visible && control.Name == "panelFooter");
+
+    /// <summary>
+    /// 空带检查（能力门禁回归）：可见容器里「有高度、无可见内容」的行/区域。
+    /// 典型成因是只把行内的子控件 Visible=false，而行高是固定值——隐藏没有收拢，
+    /// 屏幕上就是一条空带。契约：
+    /// <list type="bullet">
+    /// <item>TableLayoutPanel 的某一行高度 &gt; 2px 且该行没有任何可见子控件 → 报 empty-band；</item>
+    /// <item>可见容器（Panel 等）有子控件但全部不可见且自身高度 &gt; 2px → 报 empty-band。</item>
+    /// </list>
+    /// </summary>
+    internal static List<(string Kind, string Control, string Detail)> CheckEmptyBands(Form form)
+    {
+        var findings = new List<(string Kind, string Control, string Detail)>();
+
+        foreach (Control control in Flatten(form).Where(c => c.Visible))
+        {
+            if (control is TableLayoutPanel tlp && tlp.RowCount > 0 && tlp.Height > 2)
+            {
+                int[] rowHeights = tlp.GetRowHeights();
+                for (int row = 0; row < rowHeights.Length; row++)
+                {
+                    if (rowHeights[row] <= 2) continue;
+                    bool anyVisible = tlp.Controls.Cast<Control>().Any(child =>
+                        tlp.GetRow(child) == row && child.Visible);
+                    if (!anyVisible)
+                        findings.Add(("empty-band", ControlPath(tlp),
+                            $"Row {row} is {rowHeights[row]}px tall with no visible child."));
+                }
+                continue;
+            }
+
+            // 非 TLP 容器：有子控件但全部不可见 → 整块是空带（行高固定时同样成立）。
+            if (control is not TableLayoutPanel && control.Controls.Count > 0 && control.Height > 2 &&
+                control.Controls.Cast<Control>().All(child => !child.Visible))
+            {
+                findings.Add(("empty-band", ControlPath(control),
+                    $"Container {control.Size} has {control.Controls.Count} children, none visible."));
+            }
+        }
+
+        return findings;
+    }
+
+    /// <summary>
+    /// 行距测量（诊断，不计违规）：对每个可见 TableLayoutPanel，列出「可见行」之间
+    /// 的垂直间隙（下一可见行顶 − 上一可见行底）。用于验收「隐藏收拢后剩余行距一致、
+    /// 无双倍空隙」；数值异常时人工看对应容器。
+    /// </summary>
+    internal static List<string> DescribeRowGaps(Form form)
+    {
+        var lines = new List<string>();
+        foreach (Control control in Flatten(form).Where(c => c.Visible && c is TableLayoutPanel { RowCount: > 1 } tlp && tlp.Height > 2))
+        {
+            var tlp = (TableLayoutPanel)control;
+            int[] rowHeights = tlp.GetRowHeights();
+            var occupied = new List<(int Row, int Top, int Bottom)>();
+            for (int row = 0; row < rowHeights.Length; row++)
+            {
+                if (rowHeights[row] <= 2) continue;
+                if (tlp.Controls.Cast<Control>().Any(child => tlp.GetRow(child) == row && child.Visible))
+                    occupied.Add((row, 0, 0));
+            }
+            if (occupied.Count < 2) continue;
+            var gaps = new List<int>();
+            for (int i = 1; i < occupied.Count; i++)
+                gaps.Add(rowHeights[occupied[i - 1].Row] >= 0 ? GapBetween(tlp, occupied[i - 1].Row, occupied[i].Row) : 0);
+            lines.Add($"{ControlPath(tlp)} rows=[{string.Join(',', occupied.Select(o => o.Row))}] gaps=[{string.Join(',', gaps)}]");
+        }
+        return lines;
+
+        static int GapBetween(TableLayoutPanel tlp, int upperRow, int lowerRow)
+        {
+            Control? upper = tlp.Controls.Cast<Control>()
+                .Where(c => tlp.GetRow(c) == upperRow && c.Visible)
+                .OrderBy(c => c.Bottom).FirstOrDefault();
+            Control? lower = tlp.Controls.Cast<Control>()
+                .Where(c => tlp.GetRow(c) == lowerRow && c.Visible)
+                .OrderBy(c => c.Top).FirstOrDefault();
+            return upper is null || lower is null ? -1 : lower.Top - upper.Bottom;
         }
     }
 
@@ -747,7 +990,7 @@ internal static class UiAuditRunner
         return string.Join("/", parts);
     }
 
-    private static void WriteMarkdown(string outputDirectory, IReadOnlyCollection<string> screenshots, IReadOnlyCollection<AuditIssue> issues)
+    private static void WriteMarkdown(string outputDirectory, IReadOnlyCollection<string> screenshots, IReadOnlyCollection<AuditIssue> issues, IReadOnlyCollection<string> rowGaps, IReadOnlyCollection<string> checkLog)
     {
         var text = new StringBuilder()
             .AppendLine("# L-Mechrevo UI audit")
@@ -758,6 +1001,16 @@ internal static class UiAuditRunner
             .AppendLine();
         foreach (var issue in issues.Take(500))
             text.AppendLine($"- [{issue.Kind}] {issue.Form}/{issue.Viewport} `{issue.Control}`: {issue.Detail}");
+        text.AppendLine();
+        text.AppendLine("## Checks (per form/viewport)");
+        text.AppendLine();
+        foreach (string check in checkLog)
+            text.AppendLine($"- {check}");
+        text.AppendLine();
+        text.AppendLine("## Row gaps (diagnostic)");
+        text.AppendLine();
+        foreach (string gap in rowGaps.Take(2000))
+            text.AppendLine($"- {gap}");
         File.WriteAllText(Path.Combine(outputDirectory, "ui-audit.md"), text.ToString(), Encoding.UTF8);
     }
 

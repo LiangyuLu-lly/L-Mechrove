@@ -9,7 +9,8 @@ namespace MechrevoLite.Update;
 ///
 /// 两条硬纪律：
 /// <list type="bullet">
-/// <item>没有 sha256 时必须先弹一次明确告知（网盘发布的包无法校验来源），用户确认才继续；</item>
+/// <item>没有合法 sha256（或下载地址不在允许的 host 列表内）时**禁用自动安装**，
+/// 只保留"打开下载页"手动路径——静态后端下没有校验值就无法确认来源与完整性；</item>
 /// <item>安装前再确认一次，因为安装会关闭程序并重启——绝不静默替换 exe。</item>
 /// </list>
 /// </summary>
@@ -268,30 +269,32 @@ internal sealed class UpdateForm : RForm
             return;
         }
 
-        _install.Enabled = true;
-        if (info.HasVerifiablePackage)
+        // fail-closed：下载地址协议/host 白名单 + 必备 sha256 全部通过才允许自动安装。
+        if (!UpdatePolicy.TryAcceptOffer(info, out string policyReason))
         {
-            _status.Text = "服务端提供了 SHA-256，下载后会自动校验。";
-            _status.ForeColor = UiVisualStyle.Ok;
-        }
-        else
-        {
-            _status.Text = "⚠ 服务端未提供校验值（网盘发布），无法验证更新包来源与完整性。";
+            _install.Enabled = false;
+            _status.Text = policyReason;
             _status.ForeColor = UiVisualStyle.Warn;
+            Logger.WriteLine("更新窗口：自动安装被拒 —— " + policyReason);
+            return;
         }
+
+        _install.Enabled = true;
+        _status.Text = "服务端提供了 SHA-256，下载后会自动校验。";
+        _status.ForeColor = UiVisualStyle.Ok;
     }
 
     async Task StartInstallAsync()
     {
         if (_busy || _info is not { UpdateAvailable: true } info) return;
 
-        if (!info.HasVerifiablePackage)
+        // 与 UpdateForm.Apply 同一套判定；按钮正常不可达这里，作为兜底再拒一次。
+        if (!UpdatePolicy.TryAcceptOffer(info, out string reason))
         {
-            DialogResult warn = MessageBox.Show(
-                "该更新包没有服务端校验值（SHA-256），下载后只能做结构检查，无法确认它是否被篡改。\n\n" +
-                "确认要从这个下载地址安装吗？\n" + info.DownloadUrl,
-                "更新包无法校验", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
-            if (warn != DialogResult.OK) return;
+            _status.Text = reason;
+            _status.ForeColor = UiVisualStyle.Warn;
+            Logger.WriteLine("更新窗口：安装被拒 —— " + reason);
+            return;
         }
 
         if (!UpdateInstaller.CanSelfInstall(out string why))
@@ -322,6 +325,7 @@ internal sealed class UpdateForm : RForm
             PackageVerification verification = UpdateInstaller.Verify(package, info);
             if (!verification.Ok)
             {
+                UpdateInstaller.DiscardPackage(package);
                 _status.Text = "更新包未通过校验：" + verification.Reason;
                 _status.ForeColor = UiVisualStyle.Danger;
                 Logger.WriteLine("更新包校验失败：" + verification.Reason);

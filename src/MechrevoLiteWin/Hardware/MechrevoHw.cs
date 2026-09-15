@@ -67,6 +67,11 @@ public class MechrevoHw : IDisposable
     int? _elevatedGpuCoreReadback;
     int? _elevatedGpuMemoryReadback;
     readonly bool _persistDirectGpuOverclock;
+    /// <summary>
+    /// 进程提权判定接缝。生产取 <see cref="IsElevatedProcess"/>（进程运行期不变）；
+    /// 测试注入固定值，避免依赖测试宿主的真实令牌。
+    /// </summary>
+    readonly Func<bool> _isProcessElevated;
     // volatile：Dispose 由 UI 线程写，ConnectAsync/ReconnectLoopAsync 由后台线程读。
     // 过去是普通 bool，Dispose 之后仍可能有一轮连接完成并建立新会话。
     volatile bool _disposed;
@@ -86,6 +91,8 @@ public class MechrevoHw : IDisposable
     long _keyboardStatusVersion;
     long _lcStatusVersion;
     long _lcStatusReceivedAt;
+    long _cpuInfoReceivedAt;
+    long _gpuInfoReceivedAt;
     int _lcConsecutiveMeterFaults;
 
     /// <summary>
@@ -166,21 +173,44 @@ public class MechrevoHw : IDisposable
     {
     }
 
+    /// <summary>测试接缝：注入进程提权判定，验证「非提权 ⇒ 超频不可编辑且不写不弹 UAC」。</summary>
+    internal MechrevoHw(
+        Func<string, object, Task>? publishOverride,
+        MechrevoDeviceCapabilities? capabilities,
+        IGpuOverclockControl? gpuOverclock,
+        IGpuOverclockElevatedApplier? elevatedGpuOverclockApplier,
+        Func<bool> isProcessElevated)
+        : this(publishOverride, capabilities, gpuOverclock, gpuOverclockFactory: null,
+            elevatedGpuOverclockApplier, null, isProcessElevated)
+    {
+    }
+
+    /// <summary>测试接缝：带直连后端工厂与提权判定（用于启动恢复档位路径）。</summary>
+    internal MechrevoHw(
+        Func<string, object, Task>? publishOverride,
+        MechrevoDeviceCapabilities? capabilities,
+        Func<IGpuOverclockControl?> gpuOverclockFactory,
+        Func<bool> isProcessElevated)
+        : this(publishOverride, capabilities, null, gpuOverclockFactory, null, null, isProcessElevated)
+    {
+    }
+
     MechrevoHw(
         Func<string, object, Task>? publishOverride,
         MechrevoDeviceCapabilities? capabilities,
         IGpuOverclockControl? gpuOverclock,
         Func<IGpuOverclockControl?>? gpuOverclockFactory,
         IGpuOverclockElevatedApplier? elevatedGpuOverclockApplier = null,
-        string? clientId = null)
+        string? clientId = null,
+        Func<bool>? isProcessElevated = null)
     {
         _clientId = clientId ?? PrimaryClientId;
         _publishOverride = publishOverride;
         _gpuOverclock = gpuOverclock;
         _gpuOverclockFactory = gpuOverclockFactory;
-        _elevatedGpuOverclockApplier = elevatedGpuOverclockApplier ??
-            (gpuOverclockFactory is null ? null : new ElevatedGpuOverclockApplier());
+        _elevatedGpuOverclockApplier = elevatedGpuOverclockApplier;
         _persistDirectGpuOverclock = gpuOverclockFactory is not null;
+        _isProcessElevated = isProcessElevated ?? (static () => IsElevatedProcess);
         Capabilities = capabilities ?? MechrevoDeviceCapabilities.Load();
         // 构造函数即加载本地默认曲线（不依赖 MQTT 连接，保证 UI 曲线图始终有数据）
         LoadDefaultCurveFromDisk();
@@ -404,6 +434,8 @@ public class MechrevoHw : IDisposable
     public bool GpuSwitchResultReported { get; private set; }
     public long GpuSwitchResultVersion => Interlocked.Read(ref _gpuSwitchResultVersion);
     internal int ConnectionGeneration => Volatile.Read(ref _connectionGeneration);
+    /// <summary>重连循环是否在飞（断线后自动重试中）。GCU 状态指示条据此区分「连接中/未连接」。</summary>
+    internal bool IsReconnecting => Volatile.Read(ref _reconnecting) != 0;
 
     // 能力判定分两类，务必区分：
     // 1) 显卡切换（下面三行）是**破坏性**操作，误报会让用户点到本机不具备的入口。
@@ -533,6 +565,31 @@ public class MechrevoHw : IDisposable
         ((LchwocSupportReported ?? (Capabilities.OverclockSettings ||
             GpuCoreOffsetAdjustable || GpuMemoryOffsetAdjustable)) &&
         (GpuCoreOffsetAdjustable || GpuMemoryOffsetAdjustable));
+
+    /// <summary>当前进程是否已提权（NVAPI 直连超频写入的前置条件）。</summary>
+    public bool GpuOverclockWriteElevated => _isProcessElevated();
+
+    /// <summary>
+    /// GPU 超频写入是否必须提权：NVIDIA 直连（NVAPI）后端存在且进程未提权时为 true。
+    /// NVAPI 的超频写入在非提权进程里恒定返回 NVAPI_INVALID_USER_PRIVILEGE——能读到
+    /// 可调范围不等于能写。UI 据此显示「超频需要管理员权限」并提供以管理员身份重启，
+    /// 而不是给出一个永远写不动的可编辑控件。
+    /// </summary>
+    public bool GpuOverclockRequiresElevation
+    {
+        get
+        {
+            lock (_gpuOverclockLock)
+            {
+                if (_gpuOverclock is null) return false;
+                return _gpuOverclock.WritesRequireElevation &&
+                    (_gpuOverclock.CoreOffset.IsAdjustable || _gpuOverclock.MemoryOffset.IsAdjustable);
+            }
+        }
+    }
+
+    /// <summary>GPU 超频此刻是否真的能写入并确认（能力支持且不需要提权）。</summary>
+    public bool GpuOverclockWritable => SupportsGpuOverclock && !GpuOverclockRequiresElevation;
     public bool HasAnyCustomRange => Pl1Adjustable || Pl2Adjustable || TccAdjustable
         || GpuTgpAdjustable || GpuDynamicBoostAdjustable || GpuCoreOffsetAdjustable || GpuMemoryOffsetAdjustable;
 
@@ -736,6 +793,21 @@ public class MechrevoHw : IDisposable
         if (receivedAt == 0) return false;
         long current = now >= 0 ? now : Environment.TickCount64;
         return current - receivedAt <= maximumAge.TotalMilliseconds;
+    }
+
+    /// <summary>
+    /// 最近一次 CPU 或 GPU 温度上报是否还在有效期内。液冷自动决策用它区分「真的热」和
+    /// 「只是上一帧的残留温度」：过期就当 0 处理，宁可保持现状也不按陈旧读数挑档。
+    /// </summary>
+    public bool IsTemperatureFresh(TimeSpan maximumAge, long now = -1)
+    {
+        long current = now >= 0 ? now : Environment.TickCount64;
+        long cpuAt = Interlocked.Read(ref _cpuInfoReceivedAt);
+        long gpuAt = Interlocked.Read(ref _gpuInfoReceivedAt);
+        return Within(cpuAt) || Within(gpuAt);
+
+        bool Within(long receivedAt) =>
+            receivedAt != 0 && current - receivedAt <= maximumAge.TotalMilliseconds;
     }
 
     // ---- 键盘灯官方状态（Keyboard/Status）----
@@ -1158,12 +1230,14 @@ public class MechrevoHw : IDisposable
                     CpuTemp = Int(o, "CpuTemperature");
                     CpuUsage = Int(o, "CpuUsage");
                     CpuFrequency = Int(o, "CpuFrequency");
+                    Interlocked.Exchange(ref _cpuInfoReceivedAt, Environment.TickCount64);
                     break;
                 case "System/GpuInfo":
                     GpuTemp = Int(o, "GpuTemperature");
                     GpuUsage = Int(o, "GpuUsage");
                     GpuCoreFreq = Int(o, "GpuCoreFreq");
                     VramUsedMb = Int(o, "GpuMem");
+                    Interlocked.Exchange(ref _gpuInfoReceivedAt, Environment.TickCount64);
                     break;
                 case "System/MemoryInfo":
                     RamUsage = Int(o, "MemoryUsage");
@@ -2567,9 +2641,10 @@ public class MechrevoHw : IDisposable
 
                 _directGpuOverclockEnabled =
                     _gpuOverclock.CoreOffset.Current != 0 || _gpuOverclock.MemoryOffset.Current != 0;
-                Logger.WriteLine($"Direct GPU overclock enabled through {_gpuOverclock.Name}: " +
+                Logger.WriteLine($"Direct GPU overclock backend present via {_gpuOverclock.Name}: " +
                     $"core={_gpuOverclock.CoreOffset.Minimum}..{_gpuOverclock.CoreOffset.Maximum}, " +
-                    $"memory={_gpuOverclock.MemoryOffset.Minimum}..{_gpuOverclock.MemoryOffset.Maximum}");
+                    $"memory={_gpuOverclock.MemoryOffset.Minimum}..{_gpuOverclock.MemoryOffset.Maximum}, " +
+                    $"elevated={_isProcessElevated()}, writable={_gpuOverclock.IsAvailable && _isProcessElevated()}");
                 return true;
             }
             catch (Exception ex)
@@ -2705,6 +2780,16 @@ public class MechrevoHw : IDisposable
         }
 
         ClearElevatedGpuReadback(core.HasValue, memory.HasValue);
+
+        if (GpuOverclockRequiresElevation)
+        {
+            // 非提权的 NVAPI 写入恒定失败（NVAPI_INVALID_USER_PRIVILEGE）。不再尝试、不再
+            // 弹出提权助手（owner 选择：不自动 UAC），只在日志里给出诚实原因，UI 显示
+            // 「超频需要管理员权限」并以重启到管理员进程作为显式入口。
+            Logger.WriteLine("GPU OC refused: the NVIDIA direct write requires an elevated process " +
+                "(restart as administrator); no write attempted, no UAC prompt raised.");
+            return false;
+        }
 
         void MarkEnableUnconfirmed()
         {
@@ -2906,6 +2991,15 @@ public class MechrevoHw : IDisposable
             !AppConfig.Is(DirectGpuProfileKey("enabled", profileIndex)))
             return false;
         if (!EnsureDirectGpuOverclock()) return false;
+
+        if (GpuOverclockRequiresElevation)
+        {
+            // 启动恢复档位走的是直连 NVAPI；非提权进程写入会被拒。跳过并给出诚实原因，
+            // 不再写出 NVAPI_INVALID_USER_PRIVILEGE 后静默禁用后端。
+            Logger.WriteLine($"Restore direct GPU OC profile {profileIndex + 1} skipped: " +
+                "the NVIDIA direct write requires an elevated process (restart as administrator).");
+            return false;
+        }
 
         int core = AppConfig.Get(DirectGpuProfileKey("core", profileIndex), 0);
         int memory = AppConfig.Get(DirectGpuProfileKey("memory", profileIndex), 0);
@@ -3279,7 +3373,7 @@ public class MechrevoHw : IDisposable
             return TryGetDirectOffsetRange(core, out GpuClockOffsetRange? direct)
                 ? (direct.Minimum, direct.Maximum)
                 : (-1, -1);
-        if (!IsElevatedProcess)
+        if (!_isProcessElevated())
             return (fallbackMinimum, fallbackMaximum);
         return TryGetDirectOffsetRange(core, out GpuClockOffsetRange? elevated)
             ? (Math.Min(elevated.Minimum, fallbackMinimum), Math.Max(elevated.Maximum, fallbackMaximum))
