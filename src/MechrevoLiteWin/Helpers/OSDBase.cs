@@ -359,40 +359,15 @@ namespace MechrevoLite.Helpers
         public const int WS_EX_NOACTIVATE = 0x08000000;
         public const int SW_SHOWNOACTIVATE = 4;
         public const int SW_HIDE = 0;
-        public const uint AW_HOR_POSITIVE = 0x1;
-        public const uint AW_HOR_NEGATIVE = 0x2;
-        public const uint AW_VER_POSITIVE = 0x4;
-        public const uint AW_VER_NEGATIVE = 0x8;
-        public const uint AW_CENTER = 0x10;
-        public const uint AW_HIDE = 0x10000;
-        public const uint AW_ACTIVATE = 0x20000;
-        public const uint AW_SLIDE = 0x40000;
-        public const uint AW_BLEND = 0x80000;
         public const nint DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4;
         // Methods
         private User32()
         {
         }
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool AnimateWindow(nint hWnd, uint dwTime, uint dwFlags);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool ClientToScreen(nint hWnd, ref POINT pt);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool DispatchMessage(ref MSG msg);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool DrawFocusRect(nint hWnd, ref RECT rect);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern nint GetDC(nint hWnd);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern nint GetFocus();
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern ushort GetKeyState(int virtKey);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern short GetAsyncKeyState(int virtKey);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool GetMessage(ref MSG msg, int hWnd, uint wFilterMin, uint wFilterMax);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern nint GetParent(nint hWnd);
         [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
         public static extern bool GetClientRect(nint hWnd, [In, Out] ref RECT rect);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
@@ -402,31 +377,11 @@ namespace MechrevoLite.Helpers
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern bool GetWindowRect(nint hWnd, ref RECT rect);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool HideCaret(nint hWnd);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool InvalidateRect(nint hWnd, ref RECT rect, bool erase);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern nint LoadCursor(nint hInstance, uint cursor);
-        [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
-        public static extern int MapWindowPoints(nint hWndFrom, nint hWndTo, [In, Out] ref RECT rect, int cPoints);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool MoveWindow(nint hWnd, int x, int y, int width, int height, bool repaint);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool PeekMessage(ref MSG msg, int hWnd, uint wFilterMin, uint wFilterMax, uint wFlag);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern bool PostMessage(nint hWnd, int Msg, uint wParam, uint lParam);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern bool ReleaseCapture();
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern int ReleaseDC(nint hWnd, nint hDC);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool ScreenToClient(nint hWnd, ref POINT pt);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern uint SendMessage(nint hWnd, int Msg, uint wParam, uint lParam);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern nint SetCursor(nint hCursor);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern nint SetFocus(nint hWnd);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern nint SetThreadDpiAwarenessContext(nint dpiContext);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
@@ -434,27 +389,11 @@ namespace MechrevoLite.Helpers
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern int SetWindowPos(nint hWnd, nint hWndAfter, int X, int Y, int Width, int Height, uint flags);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool SetWindowRgn(nint hWnd, nint hRgn, bool redraw);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool ShowCaret(nint hWnd);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern bool SetCapture(nint hWnd);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern int ShowWindow(nint hWnd, short cmdShow);
         [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref int bRetValue, uint fWinINI);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool TrackMouseEvent(ref TRACKMOUSEEVENTS tme);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool TranslateMessage(ref MSG msg);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
         internal static extern bool UpdateLayeredWindow(nint hwnd, nint hdcDst, ref POINT pptDst, ref SIZE psize, nint hdcSrc, ref POINT pprSrc, int crKey, ref BLENDFUNCTION pblend, int dwFlags);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool UpdateWindow(nint hwnd);
-        [DllImport("User32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool WaitMessage();
-        [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
-        public static extern bool AdjustWindowRectEx(ref RECT lpRect, int dwStyle, bool bMenu, int dwExStyle);
     }
 
     internal class Gdi32
@@ -464,21 +403,11 @@ namespace MechrevoLite.Helpers
         {
         }
         [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
-        internal static extern int CombineRgn(nint dest, nint src1, nint src2, int flags);
-        [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
-        internal static extern nint CreateBrushIndirect(ref LOGBRUSH brush);
-        [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
         internal static extern nint CreateCompatibleDC(nint hDC);
-        [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
-        internal static extern nint CreateRectRgnIndirect(ref RECT rect);
         [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
         internal static extern bool DeleteDC(nint hDC);
         [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
         internal static extern nint DeleteObject(nint hObject);
-        [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
-        internal static extern int GetClipBox(nint hDC, ref RECT rectBox);
-        [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
-        internal static extern bool PatBlt(nint hDC, int x, int y, int width, int height, uint flags);
         [DllImport("gdi32.dll", CharSet = CharSet.Auto)]
         internal static extern int SelectClipRgn(nint hDC, nint hRgn);
         [DllImport("gdi32.dll", CharSet = CharSet.Auto)]

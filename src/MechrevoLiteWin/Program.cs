@@ -64,6 +64,14 @@ namespace MechrevoLite
         // Fn 热键（固件）接管键盘的代际：每次检测推进一代，只有仍处于当前代际的重申才写 HID，
         // 迟到的旧检测不得覆盖更新的状态（与 SettingsForm._kbCmdGen 同一守卫语义）。
         private static int _keyboardFirmwareTakeoverGeneration;
+        // 空闲恢复「效果保护窗口」：恢复时我们先下发键盘上电、立刻进入自定义帧模式，但固件的
+        // 上电初始化约 1s 后才完成并重新套用官方（静态）效果——那一帧 Keyboard/Status 只前进一版，
+        // effect/亮度相对基线不变、只有 power 由 Off→On，既有变化判据看不到它。窗口内这一帧
+        // 由 ShouldReassertProtectedKeyboardCustomMode 识别，恰好重申一次自定义帧模式。
+        private static int _keyboardEffectProtectArmed;
+        private static long _keyboardEffectProtectBaselineVersion;
+        private static long _keyboardEffectProtectDeadlineMs;
+        const int KeyboardEffectProtectWindowMs = 3000;
         private static int _resumeKeyboardRestorePending;
         private static System.Threading.Timer? _lightingIdleTimer;
         private static int _lightingIdleSuspended;
@@ -226,11 +234,9 @@ namespace MechrevoLite
                 return;
             }
 
-            // 进程内硬件自测默认禁用：它会真实改写模式、曲线、灯效。
-            // 这个守卫必须放在 HARDWARE_DIAGNOSTICS 的取反条件里——此前它无条件 return，
-            // 使得下面整段 #if HARDWARE_DIAGNOSTICS 代码即便定义了该常量也永远不可达，
-            // 编译开关形同虚设。
-#if !HARDWARE_DIAGNOSTICS
+            // 进程内硬件自测已停用：这些命令会真实改写模式、曲线、灯效。
+            // 它们原本由 #if HARDWARE_DIAGNOSTICS 保护，但该常量从未在任何构建中定义，
+            // 整段诊断代码不可达，已删除；这里保留显式拒绝，避免命令被误当成可用功能。
             if (action is "selftest" or "--selftest" or "rgbtest" or "--rgbtest" or "lctest" or "--lctest" or "customtest" or "--customtest" or "colortest" or "--colortest" or "--verify-functions")
             {
                 Logger.WriteLine($"The in-process hardware test command '{action}' is disabled. Rebuild with -p:DefineConstants=HARDWARE_DIAGNOSTICS to enable it, or use the isolated test project with explicit fixtures.");
@@ -238,462 +244,6 @@ namespace MechrevoLite
                 Logger.Close();
                 return;
             }
-#endif
-
-#if HARDWARE_DIAGNOSTICS
-            if (action == "--verify-functions")
-            {
-                // 逐项验证每个功能在这台机器上是不是真的可用：
-                // 读现状 → 下发不同的值 → 回读确认真的变了 → 恢复原状。
-                // 会真实改写硬件状态（每项都恢复），所以和其他自测一样受编译开关保护。
-                string report = args.Length > 1
-                    ? Path.GetFullPath(args[1])
-                    : Path.Combine(AppContext.BaseDirectory, "verify-functions.json");
-                // Main 是同步的（[STAThread] + WinForms 消息循环），这里阻塞等待即可：
-                // 这条路径不显示 UI，跑完就退出。
-                Environment.ExitCode = MechrevoLite.Diagnostics.FunctionVerifier
-                    .RunAsync(report).GetAwaiter().GetResult();
-                Logger.Close();
-                return;
-            }
-#endif
-
-#if HARDWARE_DIAGNOSTICS
-            if (action == "selftest" || action == "--selftest")
-            {
-                // 自测模式：自动执行模式切换循环，记录结果后退出（不显示 UI）
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                    hw = new MechrevoLite.Hardware.MechrevoHw();
-                    var ok = await hw.ConnectAsync();
-                    Logger.WriteLine($"SELFTEST connected={ok}");
-                    if (!ok) { Environment.Exit(1); return; }
-                    await Task.Delay(1500);
-                    int initOp = hw.OperatingMode;   // 记录初始模式（结束时恢复）
-                    Logger.WriteLine($"SELFTEST 初始 opMode={initOp}");
-                    int[] modes = { 2, 0, 1 };   // Silent(办公), Balanced(游戏), Turbo(增强)
-                    for (int r = 0; r < 3; r++)
-                    {
-                        Logger.WriteLine($"SELFTEST ========== ROUND {r + 1} ==========");
-                        foreach (int m in modes)
-                        {
-                            Logger.WriteLine($"SELFTEST --- 切模式 {m} ---");
-                            await hw.SetMode(m);
-                            await Task.Delay(1500);
-                            Logger.WriteLine($"SELFTEST 回读: opMode={hw.OperatingMode} GHelperMode={hw.GHelperMode} table={hw.TableName} curve={hw.CurveName} cpuDuty={string.Join(",", hw.CpuCurveDuty.Take(8))}");
-                        }
-                    }
-                    // 保存→读回验证：向当前表写一条阶梯曲线，读回确认
-                    Logger.WriteLine("SELFTEST --- 保存曲线验证 ---");
-                    var testDuty = new int[] { 0, 40, 45, 50, 55, 60, 70, 80, 0, 0, 0, 0, 0, 0, 0, 0 };
-                    await hw.SetFanCurve(0, testDuty);
-                    await Task.Delay(2000);
-                    await hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
-                    await Task.Delay(1500);
-                    Logger.WriteLine($"SELFTEST 保存后读回: table={hw.CurveName} cpuDuty={string.Join(",", hw.CpuCurveDuty.Take(8))}");
-                    // ===== 模式切换全链路验证（走 MechrevoService 确认链）=====
-                    Logger.WriteLine("SELFTEST === 模式切换全链路 ===");
-                    service = new MechrevoLite.Hardware.MechrevoService(hw);
-                    int[] svcModes = { 2, 0, 1 };   // 办公, 游戏, 增强
-                    foreach (int sm in svcModes)
-                    {
-                        bool modeOk = await service.SwitchMode(sm);
-                        Logger.WriteLine($"SELFTEST 模式 {sm} 切换确认: ok={modeOk} actual={service.CurrentMode}");
-                    }
-
-                    // ===== 显卡状态回读验证（不切换——切换会改写 BIOS 设置重启生效，测试不做副作用）=====
-                    Logger.WriteLine("SELFTEST === 显卡状态 ===");
-                    await hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                    await Task.Delay(1500);
-                    Logger.WriteLine($"SELFTEST 显卡状态回读: GpuMode={service.CurrentGpuMode} (0=核显 1=标准 2=独显直连 3=自动)");
-
-                    // ===== 电池充电保护三档验证 =====
-                    Logger.WriteLine("SELFTEST === 电池三档 ===");
-                    foreach (int bp in new[] { 0, 1, 2 })
-                    {
-                        await hw.SetBatteryProtection(bp);
-                        await Task.Delay(2000);
-                        await hw.Publish("BatteryProtection/Control", new Dictionary<string, object> { ["Report"] = "GET" });
-                        await Task.Delay(1000);
-                        Logger.WriteLine($"SELFTEST 电池档 {bp} -> 回读 HealthProtectionStatus={hw.BatteryProtection} ok={hw.BatteryProtection == bp}");
-                    }
-                    // 电池恢复平衡档
-                    await hw.SetBatteryProtection(1);
-
-                    // ===== 新增快捷开关验证（发命令→回读→恢复原状态，不留改动）=====
-                    Logger.WriteLine("SELFTEST === 新增快捷开关 ===");
-                    await hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                    await Task.Delay(1200);
-                    var newKeys = new[] { "copilot", "acrecovery", "highperf", "deepsleep" };
-                    var bl = newKeys.ToDictionary(k => k, k => hw.QuickSwitches.TryGetValue(k, out bool v) ? (bool?)v : null);
-                    Logger.WriteLine($"SELFTEST 基线: {string.Join(", ", bl.Select(kv => kv.Key + "=" + (kv.Value?.ToString() ?? "无回读")))}");
-                    async Task<bool?> ReadBack(string k)
-                    {
-                        await hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                        await Task.Delay(1200);
-                        return hw.QuickSwitches.TryGetValue(k, out bool nv) ? (bool?)nv : null;
-                    }
-                    foreach (string k in newKeys)
-                    {
-                        bool target = bl[k] != true;   // 当前非开→发开；当前开→发关（验证双向命令）
-                        Logger.WriteLine($"SELFTEST --- {k} 发 {target} ---");
-                        switch (k)
-                        {
-                            case "deepsleep":
-                                await service.SwitchDeepSleep(target);
-                                break;
-                            default:
-                                await service.SwitchQuick(k, target);
-                                break;
-                        }
-                        bool? after = await ReadBack(k);   // 每步独立回读，定位双向命令各自是否生效
-                        await service.SwitchQuick(k, !target);
-                        bool? restored = await ReadBack(k);
-                        if (restored != bl[k])   // 恢复失败则重试一次基线状态
-                        {
-                            Logger.WriteLine($"SELFTEST {k}: 恢复未达基线({bl[k]}), 重试 {!target}");
-                            await service.SwitchQuick(k, bl[k] ?? false);
-                            restored = await ReadBack(k);
-                        }
-                        Logger.WriteLine($"SELFTEST {k}: 发{target}后={after?.ToString() ?? "无回读"} 恢复后={restored?.ToString() ?? "无回读"} DeepSleepTime={hw.DeepSleepTime}");
-                    }
-
-                    // ===== 原有快捷开关双向测试（切换→恢复，不留改动）=====
-                    Logger.WriteLine("SELFTEST === 原有快捷开关 ===");
-                    var oldKeys = new[] { "touchpad", "wifi", "bt", "webcam", "winkey", "fnkey", "osd" };
-                    var oldBl = oldKeys.ToDictionary(k => k, k => hw.QuickSwitches.TryGetValue(k, out bool v) ? (bool?)v : null);
-                    Logger.WriteLine($"SELFTEST 基线: {string.Join(", ", oldBl.Select(kv => kv.Key + "=" + (kv.Value?.ToString() ?? "无回读")))}");
-                    foreach (string k in oldKeys)
-                    {
-                        bool target = oldBl[k] != true;
-                        await service.SwitchQuick(k, target);
-                        await Task.Delay(1500);
-                        await service.SwitchQuick(k, !target);   // 恢复原状态
-                        await Task.Delay(1500);
-                        Logger.WriteLine($"SELFTEST 快捷 {k}: 基线={oldBl[k]?.ToString() ?? "-"} 已发{target}并恢复");
-                    }
-
-                    // ===== USB 充电 / 风扇增强双向测试 =====
-                    bool usbBl = hw.UsbCharger;
-                    await service.SwitchUsbCharger(!usbBl);
-                    await Task.Delay(1500);
-                    await service.SwitchUsbCharger(usbBl);
-                    Logger.WriteLine($"SELFTEST USB充电: 基线={usbBl} 已双向测试并恢复");
-                    await hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                    await Task.Delay(1200);
-                    bool fanBoostBl = hw.FanBoost;
-                    await service.SwitchFanBoost(!fanBoostBl);
-                    await Task.Delay(1500);
-                    await service.SwitchFanBoost(fanBoostBl);
-                    Logger.WriteLine($"SELFTEST 风扇增强: 基线={fanBoostBl} 已双向测试并恢复");
-
-                    // ===== 刷新率幂等发送 =====
-                    if (hw.CurrentHz > 0)
-                    {
-                        await service.SwitchRefreshRate(hw.CurrentHz);
-                        Logger.WriteLine($"SELFTEST 刷新率: 幂等发送 {hw.CurrentHz}Hz OK");
-                    }
-                    else Logger.WriteLine("SELFTEST 刷新率: CurrentHz=0 跳过");
-
-                    // ===== CloseTimer 回读 =====
-                    Logger.WriteLine($"SELFTEST CloseTimer={hw.CloseTimerMinutes} 分钟");
-
-                    // ===== 遥测字段完整性（等推流后检查）=====
-                    await Task.Delay(5000);
-                    Logger.WriteLine($"SELFTEST 遥测: CpuTemp={hw.CpuTemp} CpuUsage={hw.CpuUsage} GpuTemp={hw.GpuTemp} GpuUsage={hw.GpuUsage} CpuFanDuty={hw.CpuFanDuty} CpuFanRpm={hw.CpuFanRpm} GpuFanDuty={hw.GpuFanDuty} GpuFanRpm={hw.GpuFanRpm} Battery={hw.BatteryPercent} IsAC={hw.IsAC}");
-
-                    // ===== 恢复初始模式 =====
-                    int restoreG = initOp switch { 0 => 2, 1 => 0, 2 => 1, _ => -1 };   // opMode→GHelper 枚举
-                    if (restoreG >= 0) { await service.SwitchMode(restoreG); Logger.WriteLine($"SELFTEST 已恢复初始模式 opMode={initOp}"); }
-
-                    Logger.WriteLine("SELFTEST done");
-                    Environment.Exit(0);
-                    }
-                    catch (Exception ex)   // 任何异常都记录并退出，避免空消息循环挂死
-                    {
-                        Logger.WriteLine("SELFTEST FAIL: " + ex);
-                        Environment.Exit(2);
-                    }
-                });
-                Application.Run();
-                return;
-            }
-
-            if (action == "rgbtest" || action == "--rgbtest")
-            {
-                // 灯效链路自测：枚举 → 连接 → 静态红 2.5s → 清屏退出
-                _ = Task.Run(() =>
-                {
-                    try
-                    {
-                        Logger.WriteLine("RGBTEST === HID 枚举 (全部) ===");
-                        var all = MechrevoLite.Hardware.HidDeviceWin.Enumerate(0);
-                        Logger.WriteLine($"RGBTEST 枚举总数={all.Count}");
-                        foreach (var d in all)
-                            Logger.WriteLine($"RGBTEST device: {d.DeviceInfo} path={d.Path}");
-                        Logger.WriteLine("RGBTEST === HID 枚举 (048D) ===");
-                        foreach (var d in MechrevoLite.Hardware.HidDeviceWin.Enumerate(0x048D))
-                            Logger.WriteLine($"RGBTEST ite: {d.DeviceInfo}");
-                        var rgb = new MechrevoLite.Hardware.KeyboardRgb();
-                        bool ok = rgb.Connect();
-                        Logger.WriteLine($"RGBTEST connect={ok} dev={rgb.DeviceInfo} err={rgb.LastError}");
-                        if (ok)
-                        {
-                            // 三效果各 1.2s 轮播验证（键盘实际点亮，结束时清屏）
-                            int[] allModes = { 9, 0, 1 };
-                            foreach (int m in allModes)
-                            {
-                                rgb.StartMode(m);
-                                Thread.Sleep(1200);
-                                Logger.WriteLine($"RGBTEST 效果 {m} 运行 OK");
-                            }
-                            rgb.StopCurrentEffect();
-                            Logger.WriteLine("RGBTEST 三效果轮播 → blank 清屏完成");
-                        }
-                        Logger.WriteLine("RGBTEST done");
-                        Environment.Exit(0);
-                    }
-                    catch (Exception ex) { Logger.WriteLine("RGBTEST FAIL: " + ex); Environment.Exit(2); }
-                });
-                Application.Run();
-                return;
-            }
-
-            if (action == "lctest" || action == "--lctest")
-            {
-                // 液冷全链路自测：状态回读 + 泵速/风扇/灯光命令验证（底层闭环）
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var lcHw = new MechrevoLite.Hardware.MechrevoHw();
-                        bool ok = await lcHw.ConnectAsync();
-                        Logger.WriteLine($"LCTEST connected={ok}");
-                        if (!ok) { Environment.Exit(1); return; }
-                        var lcSvc = new MechrevoLite.Hardware.MechrevoService(lcHw);
-
-                        // 1. 状态回读链路
-                        await lcHw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                        await Task.Delay(2500);
-                        Logger.WriteLine($"LCTEST 状态: connected={lcHw.LcConnected} pump={lcHw.LcPumpDuty} fan={lcHw.LcFanDuty} fw={lcHw.LcFwVersion} macs=[{string.Join(",", lcHw.LcDeviceMacs)}] curMac={lcHw.LcCurrentMac}");
-
-                        // 2. 泵速三档循环（发档位→回读占空比）
-                        for (int i = 0; i <= 2; i++)
-                        {
-                            await lcSvc.SwitchLcPump(i);
-                            await Task.Delay(1800);
-                            Logger.WriteLine($"LCTEST 泵速档{i} → 回读 PumpDuty={lcHw.LcPumpDuty}");
-                        }
-
-                        // 3. 风扇四档循环
-                        for (int i = 0; i <= 3; i++)
-                        {
-                            await lcSvc.SwitchLcFan(i);
-                            await Task.Delay(1800);
-                            Logger.WriteLine($"LCTEST 风扇档{i} → 回读 FanDuty={lcHw.LcFanDuty}");
-                        }
-
-                        // 4. 灯光效果命令（呼吸→多彩→旋转→彩虹→关闭）
-                        foreach (var (name, mode) in new[] { ("呼吸", 1), ("多彩", 2), ("旋转色", 4), ("彩虹", 5) })
-                        {
-                            await lcSvc.LcLight(mode);
-                            await Task.Delay(1500);
-                            Logger.WriteLine($"LCTEST 灯光[{name}] 已发送");
-                        }
-                        await lcSvc.LcLight(0);
-                        Logger.WriteLine("LCTEST 灯光[关闭] 已发送");
-
-                        // 5. 最终状态
-                        await lcHw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                        await Task.Delay(2500);
-                        Logger.WriteLine($"LCTEST 最终状态: connected={lcHw.LcConnected} pump={lcHw.LcPumpDuty} fan={lcHw.LcFanDuty}");
-                        Logger.WriteLine($"LCTEST 结论: {(lcHw.LcConnected ? "已连接——参数命令闭环验证完成" : "未连接——命令已发送（服务端接受），连接后参数才作用于设备")}");
-                        Logger.WriteLine("LCTEST done");
-                        Environment.Exit(0);
-                    }
-                    catch (Exception ex) { Logger.WriteLine("LCTEST FAIL: " + ex); Environment.Exit(2); }
-                });
-                Application.Run();
-                return;
-            }
-
-            if (action == "customtest" || action == "--customtest")
-            {
-                // 自定义性能模式全链路自测：4 档切换回读 + 参数写回读验证 + 恢复原状态
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var cHw = new MechrevoLite.Hardware.MechrevoHw();
-                        bool ok = await cHw.ConnectAsync();
-                        Logger.WriteLine($"CUSTOMTEST connected={ok}");
-                        if (!ok) { Environment.Exit(1); return; }
-                        var cSvc = new MechrevoLite.Hardware.MechrevoService(cHw);
-                        await Task.Delay(1500);
-
-                        // 基线：记录原模式与原参数
-                        int origMode = cHw.OperatingMode;
-                        int origPl1 = cHw.Pl1, origPl2 = cHw.Pl2, origTcc = cHw.TccOffset, origTgp = cHw.GpuTgp, origDb = cHw.GpuDb;
-                        int origCpi = cHw.CustomProfileIndex;
-                        Logger.WriteLine($"CUSTOMTEST 基线: opMode={origMode} cpi={origCpi} PL1={origPl1} PL2={origPl2} TCC={origTcc} TGP={origTgp} DB={origDb} TjMax={cHw.TjMax}");
-
-                        // 1. 逐档切换（0-3）→ 回读 CustomProfileIndex
-                        var validProfiles = new List<int>();
-                        for (int i = 0; i <= 3; i++)
-                        {
-                            await cSvc.SwitchCustomProfile(i);
-                            await Task.Delay(2500);
-                            Logger.WriteLine($"CUSTOMTEST 档{i}: opMode={cHw.OperatingMode} cpi={cHw.CustomProfileIndex} PL1={cHw.Pl1} PL2={cHw.Pl2} TCC={cHw.TccOffset} TGP={cHw.GpuTgp} DB={cHw.GpuDb}");
-                            if (cHw.OperatingMode == 3 && cHw.CustomProfileIndex == i) validProfiles.Add(i);
-                        }
-                        Logger.WriteLine($"CUSTOMTEST 有效档位: [{string.Join(",", validProfiles)}]");
-
-                        // 2. 参数写回读验证（在最后一个有效档上）：PL1 微调 ±1 后恢复
-                        if (validProfiles.Count > 0)
-                        {
-                            int testIdx = validProfiles[^1];
-                            await cSvc.SwitchCustomProfile(testIdx);
-                            await Task.Delay(2500);
-                            int basePl1 = cHw.Pl1 > 0 ? cHw.Pl1 : 210;
-                            int testPl1 = Math.Clamp(basePl1 - 5, 10, 210);
-                            await cSvc.SetCustomDetail(new Dictionary<string, string> { ["PL1"] = testPl1.ToString() });
-                            await Task.Delay(2500);
-                            Logger.WriteLine($"CUSTOMTEST 写 PL1={testPl1} → 回读 PL1={cHw.Pl1} (期望 {testPl1})");
-                            await cSvc.SetCustomDetail(new Dictionary<string, string> { ["PL1"] = basePl1.ToString() });
-                            await Task.Delay(2500);
-                            Logger.WriteLine($"CUSTOMTEST 恢复 PL1={basePl1} → 回读 PL1={cHw.Pl1}");
-                            // 关键修正：每次写后必须 GETSTATUS 主动拉状态（服务端对 PL 会自发推送，TCC/TGP/DB 可能不推）
-                            async Task<string> WriteAndRead(string field, string value, string tag)
-                            {
-                                await cSvc.SetCustomDetail(new Dictionary<string, string> { [field] = value });
-                                await Task.Delay(1200);
-                                await cHw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                                await Task.Delay(1500);
-                                string state = $"TCC={cHw.TccOffset} TCC开关={cHw.TccSwitch} TGP={cHw.GpuTgp} DB开关={cHw.GpuDbSwitch} DB={cHw.GpuDb} PL1={cHw.Pl1} PL2={cHw.Pl2} 超频开关={cHw.OcSwitch} 核心偏移={cHw.GpuCoreClockOffset} 显存偏移={cHw.GpuMemClockOffset}";
-                                Logger.WriteLine($"CUSTOMTEST {tag} 写{field}={value} → {state}");
-                                return state;
-                            }
-
-                            await cSvc.SwitchCustomProfile(1);
-                            await Task.Delay(2500);
-                            Logger.WriteLine($"CUSTOMTEST 档1 初始: TCC={cHw.TccOffset} TCC开关={cHw.TccSwitch} TGP={cHw.GpuTgp} DB开关={cHw.GpuDbSwitch} DB={cHw.GpuDb} PL1={cHw.Pl1} PL2={cHw.Pl2}");
-                            int diagnosticTjMax = cHw.TjMax > 0 ? cHw.TjMax : 100;
-                            int diagnosticTccHigh = Math.Clamp(diagnosticTjMax - 5, cHw.TccMinimum, cHw.TccMaximum);
-                            int diagnosticTccLow = Math.Clamp(diagnosticTjMax - 15, cHw.TccMinimum, cHw.TccMaximum);
-
-                            // TCC 开关单独字段验证（温度墙是否生效取决于开关状态）
-                            await WriteAndRead("CpuTccOffsetSwitch", "1", "TCC开关开");
-                            await WriteAndRead("CpuTccOffsetSwitch", "0", "TCC开关关");
-                            await WriteAndRead("CpuTccOffsetSwitch", "1", "TCC开关开");
-
-                            // TCC（目标温度语义，原版发 TjMax−偏移）
-                            await WriteAndRead("CpuTccOffset", diagnosticTccHigh.ToString(), "TCC");
-                            // TGP
-                            await WriteAndRead("GpuConfigurableTGPTarget", "140", "TGP");
-                            // DB 开关
-                            await WriteAndRead("GpuDynamicBoostSwitch", "1", "DB开关");
-                            // DB 值
-                            await WriteAndRead("GpuDynamicBoost", "10", "DB值");
-                            // PL2 验证
-                            await WriteAndRead("PL2", "80", "PL2");
-
-                            // 超频区验证（OverClockingSwitch + 核心/显存偏移，需 LCHWOC 支持）
-                            Logger.WriteLine($"CUSTOMTEST 超频区: LchwocSupport={cHw.LchwocSupport} OcSwitch={cHw.OcSwitch} 核心偏移={cHw.GpuCoreClockOffset} 显存偏移={cHw.GpuMemClockOffset}");
-                            if (cHw.LchwocSupport)
-                            {
-                                await WriteAndRead("OverClockingSwitch", "1", "超频开关");
-                                await WriteAndRead("GpuCoreClockOffsetOC", "160", "核心偏移");
-                                await WriteAndRead("GpuMemoryClockOffsetOC", "200", "显存偏移");
-                                await WriteAndRead("GpuCoreClockOffsetOC", "150", "核心偏移恢复");
-                                await WriteAndRead("GpuMemoryClockOffsetOC", "0", "显存偏移恢复");
-                            }
-
-                            // 恢复
-                            await cSvc.SetCustomDetail(new Dictionary<string, string>
-                            {
-                                ["CpuTccOffset"] = diagnosticTccLow.ToString(),
-                                ["GpuConfigurableTGPTarget"] = "150",
-                                ["GpuDynamicBoostSwitch"] = "0",
-                                ["GpuDynamicBoost"] = "5",
-                                ["PL2"] = "85",
-                            });
-                            await Task.Delay(1200);
-                            await cHw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                            await Task.Delay(1500);
-                            Logger.WriteLine($"CUSTOMTEST 恢复后: TCC={cHw.TccOffset} TGP={cHw.GpuTgp} DB开关={cHw.GpuDbSwitch} DB={cHw.GpuDb} PL1={cHw.Pl1} PL2={cHw.Pl2}");
-                        }
-
-                        // 3. 恢复原模式
-                        if (origMode == 3)
-                        {
-                            if (origCpi >= 0) { await cSvc.SwitchCustomProfile(origCpi); await Task.Delay(2000); }
-                        }
-                        else if (origMode >= 0)
-                        {
-                            await cSvc.SwitchMode(origMode == 0 ? 2 : origMode == 2 ? 1 : 0);   // 服务层枚举：0=游戏 1=增强 2=办公
-                            await Task.Delay(2000);
-                        }
-                        Logger.WriteLine($"CUSTOMTEST 已恢复模式 opMode={cHw.OperatingMode}");
-                        Logger.WriteLine("CUSTOMTEST done");
-                        Environment.Exit(0);
-                    }
-                    catch (Exception ex) { Logger.WriteLine("CUSTOMTEST FAIL: " + ex); Environment.Exit(2); }
-                });
-                Application.Run();
-                return;
-            }
-
-            if (action == "colortest" || action == "--colortest")
-            {
-                // 屏幕校色全链路自测：4 色域档位切换 + 关闭 + 回读注册表 + 恢复原档
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var ccHw = new MechrevoLite.Hardware.MechrevoHw();
-                        bool ok = await ccHw.ConnectAsync();
-                        Logger.WriteLine($"COLORTEST connected={ok}");
-                        if (!ok) { Environment.Exit(1); return; }
-                        var ccSvc = new MechrevoLite.Hardware.MechrevoService(ccHw);
-                        await Task.Delay(1500);
-
-                        int origMode = MechrevoLite.Hardware.MechrevoService.GetColorCalibrationMode();
-                        bool origOn = MechrevoLite.Hardware.MechrevoService.IsColorCalibrationOn();
-                        Logger.WriteLine($"COLORTEST 基线: mode={origMode} on={origOn}");
-
-                        // Gamma LUT 检测：切档前后读显示器 gamma 表（校色实际落地的直接证据）
-                        string rampBefore = NativeMethods.GetGammaRampHash();
-                        Logger.WriteLine($"COLORTEST ramp 基线={rampBefore}");
-
-                        foreach (int m in new[] { 1, 2, 3, 4 })
-                        {
-                            await ccSvc.SetColorCalibration(m);
-                            await Task.Delay(4000);
-                            string ramp = NativeMethods.GetGammaRampHash();
-                            await ccHw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                            await Task.Delay(1200);
-                            int read = MechrevoLite.Hardware.MechrevoService.GetColorCalibrationMode();
-                            Logger.WriteLine($"COLORTEST 切档{m} → ramp={ramp} (基线 {rampBefore}) 注册表={read} 开关={MechrevoLite.Hardware.MechrevoService.IsColorCalibrationOn()} Result={ccHw.ColorCalibrationResult}");
-                        }
-
-                        // 关闭 → 恢复
-                        await ccSvc.SetColorCalibration(0);
-                        await Task.Delay(2500);
-                        Logger.WriteLine($"COLORTEST 关闭 → 开关={MechrevoLite.Hardware.MechrevoService.IsColorCalibrationOn()} (期望 False)");
-                        await ccSvc.SetColorCalibration(origOn ? (origMode >= 1 ? origMode : 1) : 0);
-                        await Task.Delay(2500);
-                        Logger.WriteLine($"COLORTEST 恢复档{origMode} → 回读={MechrevoLite.Hardware.MechrevoService.GetColorCalibrationMode()} 开关={MechrevoLite.Hardware.MechrevoService.IsColorCalibrationOn()}");
-                        Logger.WriteLine("COLORTEST done");
-                        Environment.Exit(0);
-                    }
-                    catch (Exception ex) { Logger.WriteLine("COLORTEST FAIL: " + ex); Environment.Exit(2); }
-                });
-                Application.Run();
-                return;
-            }
-#endif
 
             if (action == "charge")
             {
@@ -1182,6 +732,35 @@ namespace MechrevoLite
         }
 
         /// <summary>
+        /// 空闲恢复重新给键盘上电时武装「效果保护窗口」，记下当前 Keyboard/Status 版本作为窗口基线。
+        /// 窗口内版本前进且固件上报键盘电源为开的那一帧，就是固件完成上电初始化、重新套用官方
+        /// 效果的信号（effect/亮度不变，只有 power Off→On）。
+        /// </summary>
+        internal static void ArmKeyboardEffectProtect()
+        {
+            if (hw is null) return;
+            Interlocked.Exchange(ref _keyboardEffectProtectBaselineVersion, hw.KeyboardStatusVersion);
+            Volatile.Write(ref _keyboardEffectProtectDeadlineMs, Environment.TickCount64 + KeyboardEffectProtectWindowMs);
+            Interlocked.Exchange(ref _keyboardEffectProtectArmed, 1);
+        }
+
+        /// <summary>测试 seam：保护窗口是否仍武装（命中一次即解除）。</summary>
+        internal static bool KeyboardEffectProtectArmed => Volatile.Read(ref _keyboardEffectProtectArmed) != 0;
+
+        /// <summary>
+        /// 保护窗口判据（纯函数）：窗口已武装、未过期、固件上报键盘电源为开、且状态版本前进过。
+        /// 空闲恢复周期里处于临时熄灯状态的键盘 power=Off，所以该帧只可能是固件的上电回帧，
+        /// 一次只重申一次；过期或已解除后同值回帧不再算接管。
+        /// </summary>
+        internal static bool ShouldReassertProtectedKeyboardCustomMode(
+            bool armed, long statusVersion, long protectBaselineVersion,
+            bool reportedPower, bool expired)
+        {
+            if (!armed || expired || !reportedPower) return false;
+            return statusVersion > protectBaselineVersion;
+        }
+
+        /// <summary>
         /// 固件（Fn 热键）接管判定：只有版本前进、且亮度或效果相对基线发生变化的那一帧才算接管。
         /// 同值状态帧（GCU 周期回显）与过期版本一律不算，因此一次真实变化只重申一次。
         /// 抽成静态内部方法以便单测锁定该契约。
@@ -1237,7 +816,7 @@ namespace MechrevoLite
             Logger.WriteLine($"RGB 固件接管，立即重申自定义帧模式：mode={kb.KbHidMode}");
         }
 
-        static void OnHardwareStateChanged(string topic)
+        internal static void OnHardwareStateChanged(string topic)
         {
             if (!string.Equals(topic, "Keyboard/Status", StringComparison.Ordinal) ||
                 Volatile.Read(ref _exitStarted) != 0 || rgb is null || !rgb.KbPowerOn ||
@@ -1247,11 +826,18 @@ namespace MechrevoLite
 
             int reportedBrightness = MechrevoLite.Hardware.KeyboardRgb.MapReportedHardwareBrightness(
                 hw.KeyboardBrightness, hw.KeyboardLight);
-            if (!ShouldReassertKeyboardCustomMode(
+            bool takeover = ShouldReassertKeyboardCustomMode(
                     hw.KeyboardStatusVersion, Interlocked.Read(ref _keyboardStatusBaselineVersion),
                     reportedBrightness, Volatile.Read(ref _keyboardStatusBaselineBrightness),
-                    hw.KeyboardEffect ?? "", Volatile.Read(ref _keyboardStatusBaselineEffect)))
-                return;
+                    hw.KeyboardEffect ?? "", Volatile.Read(ref _keyboardStatusBaselineEffect));
+            // 空闲恢复后的保护窗口：固件的上电回帧（power On、effect/亮度不变）同样是接管信号。
+            bool protectedTakeover = ShouldReassertProtectedKeyboardCustomMode(
+                KeyboardEffectProtectArmed,
+                hw.KeyboardStatusVersion,
+                Interlocked.Read(ref _keyboardEffectProtectBaselineVersion),
+                hw.KeyboardPower,
+                Environment.TickCount64 > Volatile.Read(ref _keyboardEffectProtectDeadlineMs));
+            if (!takeover && !protectedTakeover) return;
 
             // 亮度同步先于单飞门：Fn 连发时每一档都要落到渲染器，否则灯停在旧档（固件新亮度必须保留）。
             if (SyncKeyboardBrightnessForFirmwareChange(reportedBrightness, () => rgb.Brightness,
@@ -1259,6 +845,8 @@ namespace MechrevoLite
                 Logger.WriteLine($"RGB 硬件亮度同步：GCU={reportedBrightness}% HID={reportedBrightness}%");
 
             if (Interlocked.Exchange(ref _keyboardStatusRecoveryPending, 1) != 0) return;
+            // 保护窗口命中即解除：一次变化恰好重申一次，不形成重试风暴。
+            if (protectedTakeover) Interlocked.Exchange(ref _keyboardEffectProtectArmed, 0);
 
             int takeoverGeneration = Interlocked.Increment(ref _keyboardFirmwareTakeoverGeneration);
             _ = Task.Run(async () =>
@@ -1396,6 +984,7 @@ namespace MechrevoLite
         static async Task SuspendLightingTemporarilyAsync()
         {
             Interlocked.Increment(ref _lightingRestoreRequestId);   // 新熄灯周期 = 允许下一次恢复重放一次
+            Interlocked.Exchange(ref _keyboardEffectProtectArmed, 0);   // 新熄灯周期：上一次恢复的保护窗口作废
             rgb.StopCurrentEffect();
             if (hw is not { IsConnected: true } || service is null)
             {
@@ -1582,6 +1171,9 @@ namespace MechrevoLite
                     if (!appliedThisCycle && LightingState.ShouldRestoreKeyboardPower(
                             rgb.KbPowerOn, temporaryPowerOff, hw.KeyboardPower))
                     {
+                        // 先武装保护窗口再上电：固件约 1s 后完成的这次上电初始化会重新套用官方效果，
+                        // 那一帧只有窗口能识别（effect/亮度不变，仅 power Off→On）。
+                        ArmKeyboardEffectProtect();
                         // 只下发不等回读：GCU 键盘电源回读本机长期 not confirmed，等待它会凭空给
                         // 本地 HID 效果加上约 2 秒延迟，与外置通道错开。命令成功发布即继续。
                         bool issued = await service.PublishLightPower("Keyboard/Ctrl", true).ConfigureAwait(false);
@@ -1591,8 +1183,9 @@ namespace MechrevoLite
                     }
                     // 设备侧计时关闭：睡眠由应用内空闲检测实现（每个恢复周期只需设置一次）。
                     // 只下发不等确认——这条设置的回读同样可能永远不确认（本机 GCU 既有现象），
-                    // await 它会把本地 HID 效果再推迟约 2 秒，正是两条路径错位的第二个来源。
-                    if (!appliedThisCycle) _ = service.SwitchCloseTimer(0);
+                    // await 它会把本地 HID 效果再推迟约 2 秒。但**必须在进入自定义帧模式之前下发**：
+                    // 若这条 GCU 写落在效果启动之后，固件会重新套用官方效果把我们刚启动的效果顶掉。
+                    if (!appliedThisCycle) await service.PublishKeyboardCloseTimer(0).ConfigureAwait(false);
                 }
                 if (!forceEffectRestore && rgb.IsConnected && rgb.ActiveMode == rgb.KbHidMode)
                 {

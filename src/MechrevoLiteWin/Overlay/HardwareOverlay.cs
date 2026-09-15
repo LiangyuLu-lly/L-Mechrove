@@ -349,19 +349,6 @@ namespace MechrevoLite.Overlay
 
         private float GetScale() => BaseScale * (_scalePercent / 100f);
 
-        private int BaseModeWidth()
-        {
-            int w = _mode switch
-            {
-                OverlayMode.Light    => BaseLightWidth,
-                OverlayMode.Full     => BaseFullWidth,
-                OverlayMode.Complete => BaseCompleteWidth,
-                _                    => BaseWidth,
-            };
-            if (_showBattery && _onBattery) w += BaseBatColGap + BaseBatColWidth + BaseBatIconGap + BaseBatIconWidth;
-            return _showNames ? w + BaseNameColWidth + BaseColGap : w;
-        }
-
         private static int S(float sc, int v) => (int)(v * sc);
         private static double D(object? v) { try { return v is null ? 0.0 : Convert.ToDouble(v); } catch { return 0.0; } }
 

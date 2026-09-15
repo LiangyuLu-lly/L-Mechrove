@@ -462,7 +462,6 @@ public class MechrevoHw : IDisposable
     public bool SupportsLcdOverdrive =>
         LcdOverdriveSupport != false && (Capabilities.LcdOverdrive || LcdOverdriveSeen);
     public bool SupportsFanBoost => Capabilities.FanBoost || FanBoostSeen;
-    public bool SupportsFanSettings => Capabilities.FanSettings || FanCurveSeen || HasAnyCustomRange;
     public bool SupportsFanRespective => FanRespectiveSeen;
     public bool Pl1Adjustable => IsAdjustable(Pl1Minimum, Pl1Maximum);
     public bool Pl2Adjustable => IsAdjustable(Pl2Minimum, Pl2Maximum);
@@ -565,9 +564,6 @@ public class MechrevoHw : IDisposable
         ((LchwocSupportReported ?? (Capabilities.OverclockSettings ||
             GpuCoreOffsetAdjustable || GpuMemoryOffsetAdjustable)) &&
         (GpuCoreOffsetAdjustable || GpuMemoryOffsetAdjustable));
-
-    /// <summary>当前进程是否已提权（NVAPI 直连超频写入的前置条件）。</summary>
-    public bool GpuOverclockWriteElevated => _isProcessElevated();
 
     /// <summary>
     /// GPU 超频写入是否必须提权：NVIDIA 直连（NVAPI）后端存在且进程未提权时为 true。
@@ -2655,12 +2651,6 @@ public class MechrevoHw : IDisposable
                 return false;
             }
         }
-    }
-
-    public bool RefreshDirectGpuOverclock()
-    {
-        lock (_gpuOverclockLock)
-            return _gpuOverclock?.Refresh() == true;
     }
 
     internal bool TryGetDirectGpuOverclockReadback(out int core, out int memory)

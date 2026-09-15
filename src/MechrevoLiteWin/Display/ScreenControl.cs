@@ -58,17 +58,6 @@ namespace MechrevoLite.Display
             }
         }
 
-        public static void ToggleScreenRate()
-        {
-            var laptopScreen = ScreenNative.FindLaptopScreen(true);
-            var refreshRate = ScreenNative.GetRefreshRate(laptopScreen);
-            if (refreshRate < 0) return;
-
-            ScreenNative.SetRefreshRate(laptopScreen, refreshRate > MIN_RATE ? MIN_RATE : GetMaxRate(laptopScreen));
-            InitScreen();
-        }
-
-
         public static void SetScreen(int frequency = -1, int overdrive = -1, int miniled = -1)
         {
             var laptopScreen = ScreenNative.FindLaptopScreen(true);
@@ -133,11 +122,6 @@ namespace MechrevoLite.Display
             AppConfig.Set("optimal_brightness", status);
             if (status == 2) status = SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Offline ? 1 : 0;
             Program.acpi.DeviceSet(AsusACPI.ScreenOptimalBrightness, status, "Optimal Brightness");
-        }
-
-        public static int GetOptimalBrightness()
-        {
-            return Program.acpi.DeviceGet(AsusACPI.ScreenOptimalBrightness);
         }
 
         public static void ToogleFHD()

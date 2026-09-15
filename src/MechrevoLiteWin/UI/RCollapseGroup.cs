@@ -16,7 +16,6 @@ internal sealed class RCollapseGroup : BufferedPanel
     readonly Label _summary;
     readonly Label _titleLabel;
     readonly string _configKey;
-    bool _suppressTogglePersistence;
 
     public RCollapseGroup(string title, UiGlyph.Kind icon, string configKey, bool defaultExpanded = true, bool showDivider = false)
     {
@@ -154,18 +153,6 @@ internal sealed class RCollapseGroup : BufferedPanel
         set => _summary.Text = value;
     }
 
-    public Label TitleLabel => _titleLabel;
-
-    /// <summary>审计模式下强制展开（不管持久化状态），保证折叠组内容可被截图审计。</summary>
-    public void ForceExpandedForAudit()
-    {
-        _suppressTogglePersistence = true;
-        Expanded = true;
-        _content.Visible = true;
-        _arrow.Text = "▾";
-        _suppressTogglePersistence = false;
-    }
-
     /// <summary>放入内容区（承载一个既有分区面板；高度沿用该面板自己的几何）。</summary>
     public void SetContent(Control content)
     {
@@ -182,7 +169,7 @@ internal sealed class RCollapseGroup : BufferedPanel
             Expanded = !Expanded;
             _content.Visible = Expanded;
             _arrow.Text = Expanded ? "▾" : "▸";
-            if (!_suppressTogglePersistence && !Program.UiAuditMode)
+            if (!Program.UiAuditMode)
                 AppConfig.Set(_configKey, Expanded ? 1 : 0);
         }
         finally

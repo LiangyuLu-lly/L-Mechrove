@@ -340,34 +340,6 @@ namespace MechrevoLite.Helpers
             }
         }
 
-        public static void StopDisableService(string serviceName, string disable = "Disabled")
-        {
-            try
-            {
-                string script = $"Get-Service -Name \"{serviceName}\" | Stop-Service -Force -PassThru | Set-Service -StartupType {disable}";
-                Logger.WriteLine(script);
-                RunCMD("powershell", script);
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine(ex.ToString());
-            }
-        }
-
-        public static void StartEnableService(string serviceName, bool automatic = true)
-        {
-            try
-            {
-                string script = $"Set-Service -Name \"{serviceName}\" -Status running" + (automatic? " -StartupType Automatic":"");
-                Logger.WriteLine(script);
-                RunCMD("powershell", script);
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine(ex.ToString());
-            }
-        }
-
         public static string RunCMD(string name, string args, string? directory = null, int timeoutMs = 0)
         {
             using var cmd = new Process();

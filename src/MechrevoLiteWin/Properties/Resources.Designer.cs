@@ -64,26 +64,6 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap ally {
-            get {
-                object obj = ResourceManager.GetObject("ally", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap backlight {
-            get {
-                object obj = ResourceManager.GetObject("backlight", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
         internal static System.Drawing.Bitmap backlight_down {
             get {
                 object obj = ResourceManager.GetObject("backlight_down", resourceCulture);
@@ -122,82 +102,12 @@ namespace MechrevoLite.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap cross_23 {
-            get {
-                object obj = ResourceManager.GetObject("cross_23", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
-        /// </summary>
-        internal static System.Drawing.Icon dark_eco {
-            get {
-                object obj = ResourceManager.GetObject("dark_eco", resourceCulture);
-                return ((System.Drawing.Icon)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
-        /// </summary>
-        internal static System.Drawing.Icon dark_standard {
-            get {
-                object obj = ResourceManager.GetObject("dark_standard", resourceCulture);
-                return ((System.Drawing.Icon)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap dot_eco {
-            get {
-                object obj = ResourceManager.GetObject("dot_eco", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap dot_standard {
-            get {
-                object obj = ResourceManager.GetObject("dot_standard", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap dot_ultimate {
-            get {
-                object obj = ResourceManager.GetObject("dot_ultimate", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
         /// </summary>
         internal static System.Drawing.Icon eco {
             get {
                 object obj = ResourceManager.GetObject("eco", resourceCulture);
                 return ((System.Drawing.Icon)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_add_64 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_add_64", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
             }
         }
         
@@ -217,16 +127,6 @@ namespace MechrevoLite.Properties {
         internal static System.Drawing.Bitmap icons8_automation_32 {
             get {
                 object obj = ResourceManager.GetObject("icons8-automation-32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_batterie_voll_geladen_48 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_batterie_voll_geladen_48", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -347,26 +247,6 @@ namespace MechrevoLite.Properties {
         internal static System.Drawing.Bitmap icons8_dollar_32 {
             get {
                 object obj = ResourceManager.GetObject("icons8-dollar-32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_edit_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_edit_32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_fan_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_fan_32", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -504,16 +384,6 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap icons8_ladende_batterie_48 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_ladende_batterie_48", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
         internal static System.Drawing.Bitmap icons8_laptop_32 {
             get {
                 object obj = ResourceManager.GetObject("icons8-laptop-32", resourceCulture);
@@ -554,29 +424,9 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap icons8_maus_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_maus_32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
         internal static System.Drawing.Bitmap icons8_maus_48 {
             get {
                 object obj = ResourceManager.GetObject("icons8_maus_48", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_mauszeiger_50 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_mauszeiger_50", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -624,16 +474,6 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap icons8_processor_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_processor_32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
         internal static System.Drawing.Bitmap icons8_project_management_48__1_ {
             get {
                 object obj = ResourceManager.GetObject("icons8-project-management-48 (1)", resourceCulture);
@@ -657,26 +497,6 @@ namespace MechrevoLite.Properties {
         internal static System.Drawing.Bitmap icons8_refresh_32 {
             get {
                 object obj = ResourceManager.GetObject("icons8-refresh-32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_remove_64 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_remove_64", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_rocket_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_rocket_32", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -724,26 +544,6 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap icons8_share_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_share_32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_software_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_software_32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
         internal static System.Drawing.Bitmap icons8_software_32_white {
             get {
                 object obj = ResourceManager.GetObject("icons8-software-32-white", resourceCulture);
@@ -774,16 +574,6 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap icons8_temperature_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_temperature_32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
         internal static System.Drawing.Bitmap icons8_touchpad_96 {
             get {
                 object obj = ResourceManager.GetObject("icons8_touchpad_96", resourceCulture);
@@ -794,29 +584,9 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
-        internal static System.Drawing.Bitmap icons8_video_48 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_video_48", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
         internal static System.Drawing.Bitmap icons8_video_card_32 {
             get {
                 object obj = ResourceManager.GetObject("icons8-video-card-32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap icons8_voltage_32 {
-            get {
-                object obj = ResourceManager.GetObject("icons8_voltage_32", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -838,66 +608,6 @@ namespace MechrevoLite.Properties {
             get {
                 object obj = ResourceManager.GetObject("icons8-xbox-rt-32", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
-        /// </summary>
-        internal static System.Drawing.Icon light_eco {
-            get {
-                object obj = ResourceManager.GetObject("light_eco", resourceCulture);
-                return ((System.Drawing.Icon)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
-        /// </summary>
-        internal static System.Drawing.Icon light_standard {
-            get {
-                object obj = ResourceManager.GetObject("light_standard", resourceCulture);
-                return ((System.Drawing.Icon)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap lighting_dot_24 {
-            get {
-                object obj = ResourceManager.GetObject("lighting_dot_24", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap lighting_dot_32 {
-            get {
-                object obj = ResourceManager.GetObject("lighting_dot_32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap lighting_dot_48 {
-            get {
-                object obj = ResourceManager.GetObject("lighting_dot_48", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Byte[].
-        /// </summary>
-        internal static byte[] MFont {
-            get {
-                object obj = ResourceManager.GetObject("MFont", resourceCulture);
-                return ((byte[])(obj));
             }
         }
         
@@ -932,3 +642,4 @@ namespace MechrevoLite.Properties {
         }
     }
 }
+

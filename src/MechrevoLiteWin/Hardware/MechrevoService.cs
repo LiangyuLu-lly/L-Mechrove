@@ -1506,8 +1506,12 @@ public class MechrevoService
         return confirmed;
     }
 
-    /// <summary>键盘灯睡眠时间（分钟）：0=关闭，否则 KEYBOARD_LIGHTBAR_TIMER_ON+Mins。原版机制：EC 无输入 N 分钟后自动熄灭。</summary>
-    public async Task<bool> SwitchCloseTimer(int minutes)
+    /// <summary>
+    /// 键盘灯睡眠计时「只下发」语义：恢复周期必须用它把命令在进入自定义帧模式**之前**发出，
+    /// **不等待回读**——这条设置的回读本机可能永远不确认，await 它会把本地 HID 效果推迟约 2 秒。
+    /// 与 <see cref="PublishLightPower"/> / <see cref="SetLightPower"/> 同一分拆。
+    /// </summary>
+    public async Task<bool> PublishKeyboardCloseTimer(int minutes)
     {
         try
         {
@@ -1516,6 +1520,17 @@ public class MechrevoService
                 await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "KEYBOARD_LIGHTBAR_TIMER_OFF" });
             else
                 await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "KEYBOARD_LIGHTBAR_TIMER_ON", ["Mins"] = minutes });
+            return true;
+        }
+        catch (Exception ex) { Logger.WriteLine("PublishKeyboardCloseTimer fail: " + ex.Message); return false; }
+    }
+
+    /// <summary>键盘灯睡眠时间（分钟）：0=关闭，否则 KEYBOARD_LIGHTBAR_TIMER_ON+Mins。原版机制：EC 无输入 N 分钟后自动熄灭。</summary>
+    public async Task<bool> SwitchCloseTimer(int minutes)
+    {
+        try
+        {
+            if (!await PublishKeyboardCloseTimer(minutes).ConfigureAwait(false)) return false;
             bool confirmed = await ConfirmSettingAsync(() => _hw.CloseTimerMinutes == Math.Max(0, minutes));
             Logger.WriteLine($"SwitchCloseTimer({minutes}) confirmed={confirmed}");
             return confirmed;

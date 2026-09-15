@@ -115,11 +115,6 @@
             return AppConfig.Get("performance_mode");
         }
 
-        public static bool IsCurrentCustom()
-        {
-            return GetCurrent() > 2;
-        }
-
         public static void SetCurrent(int mode)
         {
             AppConfig.Set("performance_" + Program.PerformanceKey(), mode);

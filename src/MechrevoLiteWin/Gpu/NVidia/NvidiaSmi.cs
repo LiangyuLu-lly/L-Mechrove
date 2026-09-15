@@ -14,20 +14,6 @@ public static class NvidiaSmi
         else return 175;
     }
 
-    public static int GetMaxGPUPower()
-    {
-        string output = RunNvidiaSmiCommand("--query-gpu=power.max_limit --format csv,noheader,nounits");
-        output = output.Trim().Trim('\n', '\r').Replace(".00","").Replace(",00", "");
-
-        if (float.TryParse(output, out float floatValue))
-        {
-            int intValue = (int)floatValue;
-            if (intValue >= 50 && intValue <= 175) return intValue;
-        }
-
-        return GetDefaultMaxGPUPower();
-    }
-
     /// <summary>
     /// 独显上的计算/CUDA 上下文清单（pid + 进程名）。NVAPI 的活跃图形应用列表
     /// 看不到纯计算上下文（实测 QQ 在独显挂 35MiB CUDA 上下文、NVAPI 列表为空、

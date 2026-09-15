@@ -54,14 +54,6 @@ public class Updates : Form
     public void InitTheme() { }
 }
 
-public class UpdatesControl { }
-
-public class MKeyControl
-{
-    public static void ApplyAll() { }
-    public static void Reset() { }
-}
-
 public static class NumberPad
 {
     public static void Init() { }
@@ -108,7 +100,6 @@ public static class PeripheralsProvider
 }
 
 public enum PeripheralType { Mouse, Keyboard, Headset, Pad }
-public enum AuraSpeed { Slow = 0, Medium = 1, Fast = 2, Turbo = 3, One = 4, Two = 5, Three = 6 }
 
 public enum AuraMode
 {

@@ -24,16 +24,12 @@ public class AsusACPI
     public const uint ScreenFHD = 0x0005001C;
     public const uint ScreenHDRControl = 0x00050071;
     public const uint ScreenOptimalBrightness = 0x0005002A;
-    public const uint DevsCPUFanCurve = 0x00110024;
     public const int PPT_APUA0 = 0x001200A0;
     public const int PPT_APUA3 = 0x001200A3;
     public const int PPT_CPUB0 = 0x001200B0;
     public const int PPT_GPUC0 = 0x001200C0;
     public const int PPT_APUC1 = 0x001200C1;
     public const int PPT_GPUC2 = 0x001200C2;
-    public const uint CORES_MAX = 0x001200D3;
-    public const uint CORES_MIN = 0x001200D4;
-    public const uint GPU_BASE = 0x00120099;
     public const uint GPU_POWER = 0x00120098;
     public const int BootSound = 0x00130022;
 
@@ -65,7 +61,6 @@ public class AsusACPI
     // 把下面任何一个常量当成机型限值都会算错。
     public const int MinTotal = 5;
     public const int MinCPU = 5;
-    public const int DefaultCPU = 80;
     public const int MinGPUBoost = 5;
     public const int MaxGPUBoost = 25;
     public const int MinGPUTemp = 75;
@@ -74,19 +69,6 @@ public class AsusACPI
     public static int MaxGPUPower = 70;
     public const int MaxCPU = 210;
     public const int MaxTotal = 210;
-    public const int DefaultTotal = 210;
-    public const int ECoreMin = 1;
-    public const int PCoreMin = 1;
-
-    public static byte[] FixFanCurve(byte[] curve)
-    {
-        for (int i = 1; i < curve.Length; i++)
-            if (curve[i] < curve[i - 1]) curve[i] = curve[i - 1];
-        return curve;
-    }
-
-    public static bool IsEmptyCurve(byte[] curve)
-        => curve == null || curve.All(b => b == 0);
 
     public static bool IsInvalidCurve(byte[] curve)
     {
@@ -191,19 +173,9 @@ public class AsusACPI
         _ = hwCurve.SetFanCurve(device == AsusFan.CPU ? 0 : 1, duties);
         return 0;
     }
-    public int SetFanRange(AsusFan device, byte[] curve, string logName = "FanRange") => 0;
     public (int up, int down) GetFanHysteresis() => (-1, -1);
-    public int SetFanHysteresis(int up, int down) => 0;
 
     public (int, int) GetCores(uint device = 0x001200D5) => (0, 0);
-    public void SetCores(int eCores, int pCores) { }
-    public int GetAPUMem() => 0;
-    public void SetAPUMem(int memory = 4) { }
-
-    public int GetVramMem() => 0;
-    public void SetVramMem(int value) { }
-
-    public int[] GetVramOptions(out int unitMb) { unitMb = 1024; return Array.Empty<int>(); }
 
     /// <summary>
     /// 当前机型画像。优先用已连接实例上的那份（含 MQTT 运行时纠偏），
@@ -263,6 +235,5 @@ public class AsusACPI
         return false;
     }
 
-    public bool ScanRange() => false;
     public int SetGPUEco(int eco) => 0;
 }

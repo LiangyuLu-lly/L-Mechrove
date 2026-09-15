@@ -76,32 +76,10 @@ namespace MechrevoLite.Battery
             Program.settingsForm.VisualiseBatteryFull();
         }
 
-        public static void UnSetBatteryLimitFull()
-        {
-            chargeFull = false;
-            Logger.WriteLine("Battery fully charged");
-            Program.settingsForm.Invoke(Program.settingsForm.VisualiseBatteryFull);
-        }
-
         public static void AutoBattery(bool init = false)
         {
             if (chargeFull && !init) SetBatteryLimitFull();
             else SetBatteryChargeLimit();
-        }
-
-        public static void SetAsusChargeLimit(int value)
-        {
-            if (!ProcessHelper.IsUserAdministrator()) return;
-            const string keyPath = @"SOFTWARE\ASUS\ASUS System Control Interface\AsusOptimization\ASUS Keyboard Hotkeys";
-            try
-            {
-                using var key = Registry.LocalMachine.OpenSubKey(keyPath, writable: true);
-                key.SetValue("ChargingRate", value, RegistryValueKind.DWord);
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine($"Failed to set ChargingRate: {ex.Message}");
-            }
         }
 
         /// <summary>

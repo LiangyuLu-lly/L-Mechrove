@@ -308,13 +308,6 @@ namespace MechrevoLite.UI
 
         [DllImport("user32.dll")]
         public static extern int GetUpdateRgn(nint hwnd, nint hrgn, bool fErase);
-        public enum RegionFlags
-        {
-            ERROR = 0,
-            NULLREGION = 1,
-            SIMPLEREGION = 2,
-            COMPLEXREGION = 3,
-        }
         [DllImport("gdi32.dll")]
         internal static extern bool DeleteObject(nint hObject);
 

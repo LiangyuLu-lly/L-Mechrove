@@ -669,7 +669,6 @@ public partial class SettingsForm
     };
 
     static Font UiStyleCaptionFont() => UiVisualStyle.Font(UiStyleCaption());
-    static float UiStyleBodyFloat() => UiVisualStyle.TypeScale.Body;
     static Font UiStyleBody() => UiVisualStyle.Font(UiVisualStyle.TypeScale.Body);
 
     /// <summary>灯光组同步：开关回显（键盘 = 应用内 HID 意图 KbPowerOn，无渲染器时退回 KeyboardPower；

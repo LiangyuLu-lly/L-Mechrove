@@ -14,7 +14,6 @@ public static class ControlHelper
     static float _scale = 1;
 
     public static float Scale => _scale;
-    public static bool DarkMode => _darkMode;
 
     public static void Adjust(RForm container, bool invert = false)
     {

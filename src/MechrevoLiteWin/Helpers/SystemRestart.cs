@@ -20,9 +20,6 @@ internal static class SystemRestart
     internal const string RebootNowArguments = "/r /t 1";
     internal const string RebootAfterFiveSecondsArguments = "/r /t 5";
 
-    /// <summary>确认凭证有效期：覆盖确认之后到真正发起重启之间的硬件写入/await（最长约 1 秒）。</summary>
-    internal const int ConfirmationValidityMs = UserGestureLease.ValidityMs;
-
     /// <summary>测试接缝：非 null 时由它代替 Process.Start 发起重启（测试只记录，绝不真重启）。</summary>
     internal static Action<string, string>? ProcessStartOverride { get; set; }
 

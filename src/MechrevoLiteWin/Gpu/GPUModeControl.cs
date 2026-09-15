@@ -337,11 +337,6 @@ namespace MechrevoLite.Gpu
         /// <summary>手动显卡切换在途标志：自动流程见到它必须让位，否则会取消用户的在途切换。</summary>
         static int _manualGpuSwitchInFlight;
 
-        /// <summary>Settings 的切换按钮进入在途切换时调用；自动流程见到标志会让位。</summary>
-        internal static void NotifyManualGpuSwitchStarted() => Interlocked.Exchange(ref _manualGpuSwitchInFlight, 1);
-
-        internal static void NotifyManualGpuSwitchFinished() => Interlocked.Exchange(ref _manualGpuSwitchInFlight, 0);
-
         public static bool IsPlugged() =>
             Program.currentSource == Program.PowerSource.Barrel ||
             (Program.currentSource == Program.PowerSource.USBC && !AppConfig.Is("optimized_usbc"));

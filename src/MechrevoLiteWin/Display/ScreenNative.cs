@@ -7,34 +7,6 @@ namespace MechrevoLite.Display
     internal static class ScreenNative
     {
         public const int ENUM_CURRENT_SETTINGS = -1;
-        public const string DefaultDevice = @"\\.\DISPLAY1";
-
-        /// <summary>
-        /// Returns true if at least one active display is not the built-in internal panel.
-        /// </summary>
-        public static bool IsExternalDisplayConnected(bool log = false)
-        {
-            try
-            {
-                string? internalName = AppConfig.GetString("internal_display");
-                foreach (var device in GetAllDevices())
-                {
-                    if (device.outputTechnology != DisplayNative.DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY.DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL &&
-                        device.outputTechnology != DisplayNative.DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY.DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED &&
-                        device.monitorFriendlyDeviceName != internalName)
-                    {
-                        if (log) Logger.WriteLine("Found external screen: " + device.monitorFriendlyDeviceName + ":" + device.outputTechnology);
-                        return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine(ex.ToString());
-            }
-
-            return false;
-        }
 
         private static bool IsInternalDisplay(DisplayNative.DISPLAYCONFIG_TARGET_DEVICE_NAME device)
         {

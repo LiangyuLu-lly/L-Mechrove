@@ -19,14 +19,6 @@ public class HidDeviceWin : IDisposable
     struct SpDeviceInterfaceData { public uint cbSize; public Guid InterfaceClassGuid; public uint Flags; public IntPtr Reserved; }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct SpDeviceInterfaceDetailData
-    {
-        public uint cbSize;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string DevicePath;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     struct HidpCaps
     {
         public ushort Usage;
@@ -62,9 +54,6 @@ public class HidDeviceWin : IDisposable
 
     [DllImport("setupapi.dll")]
     static extern bool SetupDiDestroyDeviceInfoList(IntPtr devInfoSet);
-
-    [DllImport("hid.dll", SetLastError = true)]
-    static extern bool HidD_GetHidGuid(out Guid guid);
 
     [DllImport("hid.dll", SetLastError = true)]
     static extern bool HidD_GetPreparsedData(SafeFileHandle hidDeviceObject, out IntPtr preparsedData);

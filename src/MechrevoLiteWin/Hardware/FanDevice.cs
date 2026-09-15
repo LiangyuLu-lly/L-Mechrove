@@ -15,9 +15,3 @@ public enum AsusFan
     Mid = 2
 }
 /// <summary>模式枚举（G-Helper UI 使用）。Mechrevo 映射：Silent→办公、Balanced→游戏、Turbo→极速。</summary>
-public enum AsusMode
-{
-    Balanced = 0,
-    Turbo = 1,
-    Silent = 2
-}

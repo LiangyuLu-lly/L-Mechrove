@@ -43,7 +43,6 @@ internal static class UpdateChecker
 {
     /// <summary>业主自建的静态 OSS 基址（对象键 lmechrevo-oss/api/update_check.php，匿名只读）。</summary>
     internal const string DefaultBaseUrl = "https://lmechrevo.oss-cn-hangzhou.aliyuncs.com/lmechrevo-oss";
-    internal const string StableChannel = "stable";
     internal const string BetaChannel = "beta";
 
     internal static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(6);

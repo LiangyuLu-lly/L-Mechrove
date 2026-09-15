@@ -41,18 +41,6 @@ namespace MechrevoLite.Mode
             );
 
 
-        [DllImport("powrprof.dll")]
-        static extern uint PowerReadACValue(
-            IntPtr RootPowerKey,
-            Guid SchemeGuid,
-            Guid SubGroupOfPowerSettingGuid,
-            Guid PowerSettingGuid,
-            ref int Type,
-            ref IntPtr Buffer,
-            ref uint BufferSize
-            );
-
-
         [DllImport("PowrProf.dll", CharSet = CharSet.Unicode)]
         static extern UInt32 PowerSetActiveScheme(IntPtr RootPowerKey,
             [MarshalAs(UnmanagedType.LPStruct)] Guid SchemeGuid);
@@ -148,13 +136,6 @@ namespace MechrevoLite.Mode
             PowerSetActiveScheme(IntPtr.Zero, activeSchemeGuid);
 
             Logger.WriteLine("Boost " + boost);
-        }
-
-        public static string GetPowerMode()
-        {
-            if (GetActiveScheme().ToString() == PLAN_HIGH_PERFORMANCE) return PLAN_HIGH_PERFORMANCE;
-            PowerGetEffectiveOverlayScheme(out Guid activeScheme);
-            return activeScheme.ToString();
         }
 
         public static void SetPowerMode(string scheme)
@@ -305,94 +286,6 @@ namespace MechrevoLite.Mode
         {
             if (GetActiveScheme().ToString() != PLAN_BALANCED) return;
             SetASPM(status);
-        }
-
-        public static int GetLidAction(bool ac)
-        {
-            Guid activeSchemeGuid = GetActiveScheme();
-
-            IntPtr activeIndex;
-            if (ac)
-                PowerReadACValueIndex(IntPtr.Zero,
-                     activeSchemeGuid,
-                     GUID_SYSTEM_BUTTON_SUBGROUP,
-                     GUID_LIDACTION, out activeIndex);
-
-            else
-                PowerReadDCValueIndex(IntPtr.Zero,
-                    activeSchemeGuid,
-                    GUID_SYSTEM_BUTTON_SUBGROUP,
-                    GUID_LIDACTION, out activeIndex);
-
-
-            return activeIndex.ToInt32();
-        }
-
-
-        public static void SetLidAction(int action, bool acOnly = false)
-        {
-            /**
-             * 1: Do nothing
-             * 2: Seelp
-             * 3: Hibernate
-             * 4: Shutdown
-             */
-
-            Guid activeSchemeGuid = GetActiveScheme();
-
-            var hrAC = PowerWriteACValueIndex(
-                IntPtr.Zero,
-                activeSchemeGuid,
-                GUID_SYSTEM_BUTTON_SUBGROUP,
-                GUID_LIDACTION,
-                action);
-
-            PowerSetActiveScheme(IntPtr.Zero, activeSchemeGuid);
-
-            if (!acOnly)
-            {
-                var hrDC = PowerWriteDCValueIndex(
-                  IntPtr.Zero,
-                  activeSchemeGuid,
-                  GUID_SYSTEM_BUTTON_SUBGROUP,
-                  GUID_LIDACTION,
-                  action);
-
-                PowerSetActiveScheme(IntPtr.Zero, activeSchemeGuid);
-            }
-
-            Logger.WriteLine("Changed Lid Action to " + action);
-        }
-
-        public static int GetHibernateAfter()
-        {
-            Guid activeSchemeGuid = GetActiveScheme();
-            IntPtr seconds;
-            PowerReadDCValueIndex(IntPtr.Zero,
-                    activeSchemeGuid,
-                    GUID_SLEEP_SUBGROUP,
-                    GUID_HIBERNATEIDLE, out seconds);
-
-            Logger.WriteLine("Hibernate after " + seconds);
-            return (seconds.ToInt32() / 60);
-        }
-
-
-        public static void SetHibernateAfter(int minutes)
-        {
-            int seconds = minutes * 60;
-
-            Guid activeSchemeGuid = GetActiveScheme();
-            var hrAC = PowerWriteDCValueIndex(
-                IntPtr.Zero,
-                activeSchemeGuid,
-                GUID_SLEEP_SUBGROUP,
-                GUID_HIBERNATEIDLE,
-                seconds);
-
-            PowerSetActiveScheme(IntPtr.Zero, activeSchemeGuid);
-
-            Logger.WriteLine("Setting Hibernate after " + seconds + ": " + (hrAC == 0 ? "OK" : hrAC));
         }
 
         [DllImport("Kernel32")]

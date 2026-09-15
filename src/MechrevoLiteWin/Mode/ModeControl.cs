@@ -46,7 +46,6 @@ namespace MechrevoLite.Mode
             }
         }
 
-        public static bool IsPawnAvailable()  => GetSmu() != null;
         public static bool IsPawnInstalled()   => RyzenSmuService.IsPawnInstalled();
 
         static System.Timers.Timer? reapplyTimer;
@@ -154,17 +153,6 @@ namespace MechrevoLite.Mode
         }
 
 
-        public void ResetPerformanceMode()
-        {
-            ResetRyzen();
-
-            _ = Program.acpi.SetPerformanceMode(Modes.GetCurrentBase());
-
-            // Default power mode
-            AppConfig.RemoveMode("powermode");
-            PowerNative.SetPowerMode(Modes.GetCurrentBase());
-        }
-
         public void Toast()
         {
             Program.toast.RunToast(Modes.GetCurrentName(), SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Online ? ToastIcon.Charger : ToastIcon.Battery);
@@ -270,22 +258,6 @@ namespace MechrevoLite.Mode
 
         }
 
-        public void CyclePerformanceMode(bool back = false)
-        {
-            int delay = AppConfig.Get("mode_delay", 1000);
-
-            if (modeToggleTimer is null)
-            {
-                modeToggleTimer = new System.Timers.Timer(delay);
-                modeToggleTimer.Elapsed += ModeToggleTimer_Elapsed;
-            }
-
-            modeToggleTimer.Stop();
-            modeToggleTimer.Start();
-            Modes.SetCurrent(Modes.GetNext(back));
-            Toast();
-        }
-
         public void AutoFans(bool force = false)
         {
             customFans = false;
@@ -358,15 +330,6 @@ namespace MechrevoLite.Mode
         {
             Modes.SetCurrent(mode);
             AppConfig.Set("performance_mode", mode);
-        }
-
-        /// <summary>外部模式变化（快捷键/原版控制中心）同步 UI 高亮。</summary>
-        public void SyncExternalMode(int mechrevoMode)
-        {
-            int ghelper = Program.hw?.GHelperMode ?? AsusACPI.PerformanceBalanced;
-            settings.ShowMode(ghelper);
-            Modes.SetCurrent(ghelper);
-            SetModeLabel();
         }
 
         public void SetModeLabel()

@@ -64,53 +64,6 @@ namespace MechrevoLite.Helpers
             }
         }
 
-        public static void SetEffect(
-            DynamicLightingEffect effect,
-            Color? color = null,
-            Color? color2 = null,
-            int? brightness = null,
-            int? speed = null)
-        {
-            try
-            {
-                // Let Windows own the device
-                WriteLightingValue("ControlledByForegroundApp", 0, RegistryValueKind.DWord);
-
-                // Enable lighting if needed
-                WriteLightingValue("AmbientLightingEnabled", 1, RegistryValueKind.DWord);
-
-                // Core selector
-                WriteLightingValue("EffectType", (int)effect, RegistryValueKind.DWord);
-                WriteLightingValue("EffectMode", 0, RegistryValueKind.DWord);
-
-                if (brightness.HasValue)
-                    WriteLightingValue("Brightness",
-                        Math.Clamp(brightness.Value, 0, 100),
-                        RegistryValueKind.DWord);
-
-                if (speed.HasValue)
-                    WriteLightingValue("Speed",
-                        Math.Clamp(speed.Value, 0, 10),
-                        RegistryValueKind.DWord);
-
-                if (color.HasValue)
-                {
-                    WriteLightingValue("Color", ToDlColorDword(color.Value), RegistryValueKind.DWord);
-                }
-
-                if (color2.HasValue)
-                {
-                    WriteLightingValue("Color2", ToDlColorDword(color2.Value), RegistryValueKind.DWord);
-                }
-
-                Logger.WriteLine($"Dynamic lighting effect set: {effect}");
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine($"Dynamic lighting effect error: {ex}");
-            }
-        }
-
         static void SetDynamicLightingOnAllDevices(int status = 1)
         {
             using RegistryKey? devicesKey = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Lighting\Devices", true);

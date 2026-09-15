@@ -148,19 +148,6 @@ namespace MechrevoLite.Display
         }
 
         [Flags]
-        public enum DisplayDeviceStates : uint
-        {
-            ATTACHED_TO_DESKTOP = 0x01,
-            PRIMARY_DEVICE = 0x04,
-            MIRRORING_DRIVER = 0x08,
-            VGA_COMPATIBLE = 0x10,
-            REMOVABLE = 0x20,
-            DISCONNECTED = 0x2000000,
-            REMOTE = 0x4000000,
-            MODESPRUNED = 0x8000000,
-        }
-
-        [Flags]
         public enum DisplaySettingsFlags : int
         {
             CDS_UPDATEREGISTRY = 1,
@@ -466,24 +453,6 @@ namespace MechrevoLite.Display
         public static extern int ChangeDisplaySettingsEx(
             string lpszDeviceName, ref DEVMODE lpDevMode, IntPtr hwnd,
             DisplaySettingsFlags dwflags, IntPtr lParam);
-
-        [DllImport("gdi32", CharSet = CharSet.Unicode)]
-        public static extern IntPtr CreateDC(string driver, string device, string port, IntPtr deviceMode);
-
-        [DllImport("gdi32", CharSet = CharSet.Unicode)]
-        public static extern bool SetICMProfileW(IntPtr dcHandle, string lpFileName);
-
-        [DllImport("gdi32", CharSet = CharSet.Unicode)]
-        public static extern bool SetICMMode(IntPtr dcHandle, int mode);
-
-        [DllImport("mscms.dll", CharSet = CharSet.Unicode)]
-        public static extern bool WcsSetDefaultColorProfile(
-            WCS_PROFILE_MANAGEMENT_SCOPE scope,
-            string pDeviceName,
-            COLORPROFILETYPE cptColorProfileType,
-            COLORPROFILESUBTYPE cpstColorProfileSubType,
-            uint dwProfileID,
-            string pProfileName);
 
         #endregion
     }

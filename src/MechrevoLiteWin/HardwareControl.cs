@@ -166,7 +166,6 @@ public static class HardwareControl
     }
     public static int GetBatteryChargePercentage() => batteryCharge;
     public static int GetCPUTemp() => cpuTemp;
-    public static bool AmdApu() => false;
     public static void KillGPUApps() { }
     public static void ResetCPUPowerCounter() => cpuPowerSampler?.Reset();
     public static void RefreshBatteryHealth() { }

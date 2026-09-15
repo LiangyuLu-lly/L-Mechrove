@@ -27,17 +27,13 @@ namespace MechrevoLite
         // 改成 D(…) 后在 175% 缩放下反而变大，把卡内内容挤爆（实测 248 条 text-clipping
         // + 288 条 parent-overflow，见 docs/ui-consistency-pass.md §3.3）。紧凑化只动
         // 真正有余量的三张卡。
-        internal const int CompactHzLogicalHeight = 80;                  // 刷新率卡（原来 96）
         internal const int CompactOfficialConsoleLogicalHeight = 56;     // 官方控制台卡（46 在 420 宽下状态文字上下贴边，3840-200% 实测裁切）
-        internal const int CompactThemeModeLogicalHeight = 44;           // 主题模式卡（原来 54）
 
         // 这两张卡的内部行是按内容顶死的（液冷卡是三行控件），
         // 2026-09-11 压到 84/88 时 --ui-audit 直接报出 376 条越界，故维持原值。
         // 液冷卡 106→116：灯光按钮高度跟随下拉首选高（字体驱动），420 窄卡内
         // Percent 行在 125% 附近缩放点只剩 ±1px 余量，被审计判溢出；加高 10 逻辑。
         internal const int LiquidCoolingLogicalHeight = 112;
-        internal const int LiquidCoolingHeaderLogicalHeight = 34;
-        internal const int LiquidCoolingLightLogicalHeight = 34;
 
         /// <summary>
         /// 快捷开关分组（顺序即界面顺序）。键必须覆盖 <c>BuildQuickSwitchPanel</c> 里 items 的
@@ -2614,8 +2610,7 @@ namespace MechrevoLite
             _dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             _dashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             _dashboard.RowStyles.Add(new RowStyle(SizeType.Absolute, D(51)));
-            _dashboard.Controls.Add(_dashboardScroll, 0, 0);
-            _dashboard.Controls.Add(panelFooter, 0, 1);
+            AttachDashboardChrome();
             foreach (Control section in _dashboardSections)
             {
                 section.Dock = DockStyle.Fill;
@@ -3069,6 +3064,32 @@ namespace MechrevoLite
                 visible[i].Margin = new Padding(i == 0 ? 0 : 4, 0, 0, 0);
         }
 
+        /// <summary>
+        /// 把内容宿主与固定底栏挂进仪表盘网格，并保证全树同名控件唯一：若本路径被重入
+        /// （主题/能力/硬件刷新误触发），先移除并释放陈旧同名实例，避免重复 Add 产生多个
+        /// 底栏/内容宿主（run8 报告的多重 footer 重影根因）。可安全重复调用。
+        /// </summary>
+        internal void AttachDashboardChrome()
+        {
+            if (_dashboard is null || _dashboardScroll is null || panelFooter is null) return;
+            AttachGridChildOnce(_dashboard, _dashboardScroll, 0, 0);
+            AttachGridChildOnce(_dashboard, panelFooter, 0, 1);
+        }
+
+        static void AttachGridChildOnce(TableLayoutPanel host, Control child, int column, int row)
+        {
+            foreach (Control stale in host.Controls.Cast<Control>()
+                         .Where(c => !ReferenceEquals(c, child) && c.Name == child.Name).ToArray())
+            {
+                host.Controls.Remove(stale);
+                stale.Dispose();
+            }
+            if (ReferenceEquals(child.Parent, host))
+                host.SetCellPosition(child, new TableLayoutPanelCellPosition(column, row));
+            else
+                host.Controls.Add(child, column, row);
+        }
+
         private void ArrangeDashboard(bool force = false)
         {
             if (_dashboardStack is null || _arrangingDashboard || IsDisposed) return;
@@ -3109,6 +3130,10 @@ namespace MechrevoLite
         void UpdateDashboardWindowHeight()
         {
             if (_dashboardStack is null || _dashboard is null || panelFooter is null || IsDisposed) return;
+            // 最大化/最小化时客户区由系统裁决，绝不能把紧凑高度写回去——回写会把内容宿主钉在
+            // 旧高、底栏停在中途与内容重叠（run8 布局缺陷的 108px 重叠）。还原为 Normal 后
+            // 才重新按紧凑高度校正。
+            if (WindowState != FormWindowState.Normal) return;
             float scale = EffectiveLayoutScale;
             int Scale(int logical) => (int)Math.Round(logical * scale);
             Rectangle area = _lastWorkingArea.IsEmpty
@@ -3153,9 +3178,11 @@ namespace MechrevoLite
             // 宽度固定（DESIGN.md v2 §5：420 逻辑）；高度只是初值，内容高度由
             // UpdateDashboardWindowHeight 在布局之后校正。
             _lastWindowHeightSignature = "";
-            ClientSize = new Size(
-                Scale(CompactDashboardLogicalClientSize.Width),
-                Scale(CompactDashboardLogicalClientSize.Height));
+            // 最大化/最小化时不回写客户区尺寸（DPI 变化落在最大化态时尤其重要）。
+            if (WindowState == FormWindowState.Normal)
+                ClientSize = new Size(
+                    Scale(CompactDashboardLogicalClientSize.Width),
+                    Scale(CompactDashboardLogicalClientSize.Height));
         }
 
         private void ConfigureResponsiveWindow()
@@ -3166,6 +3193,24 @@ namespace MechrevoLite
             AutoScrollMargin = Size.Empty;
             ApplyDashboardWindowMetrics(force: true);
             ApplyResponsiveBounds();
+        }
+
+        private FormWindowState _lastWindowState = FormWindowState.Normal;
+
+        /// <summary>
+        /// 最大化/还原会切换窗口状态：此时必须按新的客户区重排仪表盘并整窗重绘，否则内容宿主
+        /// 可能停在旧几何、最大化出来的客户区残留上一帧的底栏重影（run8 layout 缺陷）。紧凑
+        /// 高度回写只属于 Normal 态（见 <see cref="UpdateDashboardWindowHeight"/>）。
+        /// </summary>
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (_dashboard is null || IsDisposed) return;
+            if (WindowState == _lastWindowState) return;
+            _lastWindowState = WindowState;
+            _dashboard.PerformLayout();
+            UpdateDashboardScroll();
+            Invalidate(true);
         }
 
         public override void ApplyResponsiveBounds(Rectangle? workingArea = null)
@@ -3187,7 +3232,9 @@ namespace MechrevoLite
                 base.ApplyResponsiveBounds(workingArea);
                 ArrangeDashboard();
                 PerformLayout();
-                ResponsiveLayout.PlaceBottomRight(this, workingArea);
+                // 最大化/最小化时窗口位置由系统裁决，不要贴角挪窗（否则会破坏最大化几何）。
+                if (WindowState == FormWindowState.Normal)
+                    ResponsiveLayout.PlaceBottomRight(this, workingArea);
                 UpdateDashboardWindowHeight();
                 NormalizeScreenCardMetrics();
             }
@@ -3641,22 +3688,6 @@ namespace MechrevoLite
 
             donateControl?.ApplyTheme();
         }
-
-        public void SetVersionLabel(string label, bool update = false)
-        {
-            if (InvokeRequired)
-                Invoke(delegate
-                {
-                    labelVersion.Text = label;
-                    if (update) labelVersion.ForeColor = colorTurbo;
-                });
-            else
-            {
-                labelVersion.Text = label;
-                if (update) labelVersion.ForeColor = colorTurbo;
-            }
-        }
-
 
         private void LabelVersion_Click(object? sender, EventArgs e)
         {
@@ -5025,79 +5056,6 @@ namespace MechrevoLite
             labelKeyboard.Text = Properties.Strings.LaptopKeyboard + (PeripheralsProvider.IsAuraSync ? " +" : "");
         }
 
-        public void VisualizePeripherals()
-        {
-            if (!PeripheralsProvider.IsAnyPeripheralConnect())
-            {
-                panelPeripherals.Visible = false;
-                return;
-            }
-
-            Button[] buttons = new Button[] { buttonPeripheral1, buttonPeripheral2, buttonPeripheral3 };
-
-            //we only support 4 devces for now. Who has more than 4 mice connected to the same PC anyways....
-            List<IPeripheral> lp = PeripheralsProvider.AllPeripherals();
-
-            for (int i = 0; i < lp.Count && i < buttons.Length; ++i)
-            {
-                IPeripheral m = lp.ElementAt(i);
-                Button b = buttons[i];
-
-                string id = m.GetDisplayName();
-                bool ready = m.IsDeviceReady;
-                bool hasBat = m.HasBattery();
-                bool charging = ready && hasBat && m.Charging;
-                int level = (ready && hasBat) ? Math.Min(5, (m.Battery + 10) / 20) : -1;
-                bool showPercent = AppConfig.Is("mouse_battery") && ready && hasBat;
-                int cacheBattery = showPercent ? m.Battery : -1;
-                var state = (id, ready, charging, level, cacheBattery, b.ForeColor.ToArgb());
-
-                if (b.Tag is ValueTuple<string, bool, bool, int, int, int> prev && prev.Equals(state) && b.Visible)
-                    continue;
-
-                b.Text = showPercent ? id + "\n" + m.Battery + "%" : id;
-
-                Image? baseIcon = m.DeviceType() switch
-                {
-                    PeripheralType.Mouse => Properties.Resources.icons8_maus_48,
-                    PeripheralType.Keyboard => Properties.Resources.icons8_keyboard_32,
-                    _ => null,
-                };
-
-                if (baseIcon is not null)
-                {
-                    int iw = baseIcon.Width;
-                    int ih = baseIcon.Height;
-                    Image composed = ControlHelper.TintImage(baseIcon, b.ForeColor);
-                    if (!ready)
-                    {
-                        composed = ControlHelper.OverlayBadge(composed, Properties.Resources.icons8_cancel_48, RForm.colorTurbo, iconWidth: iw, iconHeight: ih);
-                    }
-                    else if (hasBat)
-                    {
-                        if (charging)
-                            composed = ControlHelper.OverlayBadge(composed, Properties.Resources.icons8_flash_48, RForm.colorEco, iconWidth: iw, iconHeight: ih);
-
-                        Color barColor = level <= 1 ? colorTurbo
-                                       : level <= 3 ? colorStandard
-                                       : colorEco;
-                        composed = ControlHelper.OverlayChargeBars(composed, level, 5, barColor, iconWidth: iw, iconHeight: ih);
-                    }
-
-                    b.Image = ControlHelper.ResizeImage(composed, ControlHelper.Scale);
-                }
-
-                b.Tag = state;
-                b.Visible = true;
-            }
-
-            for (int i = lp.Count; i < buttons.Length; ++i)
-            {
-                buttons[i].Visible = false;
-            }
-
-            panelPeripherals.Visible = true;
-        }
 
         private void ButtonPeripheral_MouseEnter(object? sender, EventArgs e)
         {

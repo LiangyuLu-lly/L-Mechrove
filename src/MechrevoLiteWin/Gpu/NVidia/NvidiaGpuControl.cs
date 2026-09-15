@@ -320,39 +320,6 @@ public class NvidiaGpuControl : IGpuControl, IGpuOverclockControl
     }
 
 
-    public bool GetClocks(out int core, out int memory)
-    {
-        PhysicalGPU internalGpu = _internalGpu!;
-
-        //Logger.WriteLine(internalGpu.FullName);
-        //Logger.WriteLine(internalGpu.ArchitectInformation.ToString());
-
-        try
-        {
-            var temp = ReadCurrentTemperature(true); // Force wake up GPU for clock reading
-
-            IPerformanceStates20Info states = GPUApi.GetPerformanceStates20(internalGpu.Handle);
-            core = states.Clocks[PerformanceStateId.P0_3DPerformance][0].FrequencyDeltaInkHz.DeltaValue / 1000;
-            memory = states.Clocks[PerformanceStateId.P0_3DPerformance][1].FrequencyDeltaInkHz.DeltaValue / 1000;
-            Logger.WriteLine($"GET GPU CLOCKS: {core}, {memory}");
-
-            foreach (var delta in states.Voltages[PerformanceStateId.P0_3DPerformance])
-            {
-                Logger.WriteLine("GPU VOLT:" + delta.IsEditable + " - " + delta.ValueDeltaInMicroVolt.DeltaValue);
-            }
-
-            return true;
-
-        }
-        catch (Exception ex)
-        {
-            Logger.WriteLine("GET GPU CLOCKS:" + ex.Message);
-            core = memory = 0;
-            return false;
-        }
-
-    }
-
     public bool Refresh()
     {
         if (!IsValid) return false;

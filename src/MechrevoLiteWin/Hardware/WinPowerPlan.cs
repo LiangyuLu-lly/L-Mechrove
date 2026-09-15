@@ -12,7 +12,6 @@ public static class WinPowerPlan
 {
     const int ACCESS_SCHEME = 16;
     internal const int CustomProfileCount = 4;
-    static readonly Guid NoSubgroup = Guid.Empty;
 
     internal readonly record struct ProfileSettings(string Plan, int Boost);
 

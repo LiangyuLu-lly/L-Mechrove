@@ -335,13 +335,6 @@ public static class AppConfig
 
     public static (string, string) GetBiosAndModel() => (_biosData.Value.Bios, _biosData.Value.ModelShort);
 
-    public static string GetModelShort()
-    {
-        string model = GetModel();
-        int trim = model.LastIndexOf('_');
-        return trim > 0 ? model[..trim] : model;
-    }
-
     public static bool ContainsModel(string contains)
         => _model.Value.Contains(contains, StringComparison.OrdinalIgnoreCase);
 
@@ -431,62 +424,12 @@ public static class AppConfig
         return paramName + "_" + name + "_" + mode;
     }
 
-    public static byte[] GetFanConfig(AsusFan device)
-    {
-        string? curveString = GetString(GgetParamName(device));
-        byte[] curve = { };
-
-        if (curveString is not null)
-            curve = StringToBytes(curveString);
-
-        return curve;
-    }
-
-    public static void SetFanConfig(AsusFan device, byte[] curve)
-    {
-        string bitCurve = BitConverter.ToString(curve);
-        Set(GgetParamName(device), bitCurve);
-    }
-
     public static byte[] StringToBytes(string str)
     {
         String[] arr = str.Split('-');
         byte[] array = new byte[arr.Length];
         for (int i = 0; i < arr.Length; i++) array[i] = Convert.ToByte(arr[i], 16);
         return array;
-    }
-
-    public static byte[] GetDefaultCurve(AsusFan device)
-    {
-        int mode = Modes.GetCurrentBase();
-
-        switch (mode)
-        {
-            case AsusACPI.PerformanceTurbo:
-                switch (device)
-                {
-                    case AsusFan.GPU:
-                        return StringToBytes("1E-3F-44-48-4C-50-54-62-16-1F-26-2D-39-47-55-5F");
-                    default:
-                        return StringToBytes("1E-3F-44-48-4C-50-54-62-11-1A-22-29-34-43-51-5A");
-                }
-            case AsusACPI.PerformanceSilent:
-                switch (device)
-                {
-                    case AsusFan.GPU:
-                        return StringToBytes("1E-31-3B-42-47-50-5A-64-00-00-04-11-1B-23-28-2D");
-                    default:
-                        return StringToBytes("1E-31-3B-42-47-50-5A-64-00-00-03-0C-14-1C-22-29");
-                }
-            default:
-                switch (device)
-                {
-                    case AsusFan.GPU:
-                        return StringToBytes("3A-3D-40-44-48-4D-51-62-0C-16-1D-1F-26-2D-34-4A");
-                    default:
-                        return StringToBytes("3A-3D-40-44-48-4D-51-62-08-11-16-1A-22-29-30-45");
-                }
-        }
     }
 
     public static string? GetModeString(string name)
@@ -552,11 +495,6 @@ public static class AppConfig
     public static bool IsEcoBootFix()
     {
         return ContainsModel("G635L") || ContainsModel("G615L") || ContainsModel("G835L") || ContainsModel("G815L") || ContainsModel("FA506");
-    }
-
-    public static bool IsAlwaysUltimate()
-    {
-        return ContainsModel("FA507NUR") || ContainsModel("FA506NCR") || ContainsModel("FA507NVR");
     }
 
     public static bool IsApplyPower() => IsMode("auto_apply_power");
@@ -663,11 +601,6 @@ public static class AppConfig
     public static bool IsSleepReset()
     {
         return Is("sleep_reset") || ContainsModel("GU605MI") || ContainsModel("GU605MV") || ContainsModel("GU605CR");
-    }
-
-    public static bool SaveDimming()
-    {
-        return Is("save_dimming");
     }
 
     public static bool IsAutoASPM()

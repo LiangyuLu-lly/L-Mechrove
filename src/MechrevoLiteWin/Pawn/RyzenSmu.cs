@@ -147,10 +147,6 @@ namespace PawnIO
             return Initialize(ms.ToArray());
         }
 
-        public bool CanSetTDP()   => _cpu is not CpuCodeName.Undefined;
-        public bool CanSetCoAll() => _cpu is not CpuCodeName.Undefined;
-        public bool CanSetThm()   => _cpu is not CpuCodeName.Undefined;
-
         public bool SetAllLimits(int stapmW, int fastW, int slowW)
             => SetStapm(stapmW) == SmuStatus.OK & SetFast(fastW) == SmuStatus.OK & SetSlow(slowW) == SmuStatus.OK;
 

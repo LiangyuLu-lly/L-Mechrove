@@ -59,6 +59,7 @@ public class KeyboardRgb : IDisposable
     volatile bool _stop;
     volatile int _activeMode = -1;
     int _generation;                        // 效果线程代际：旧线程即使 Join 超时残留也会因代际不匹配自行退出
+    int _customModeReinitCount;             // 真正重进自定义帧模式的次数（测试 seam）
     readonly object _startLock = new();     // StartMode 串行化：并发 Start（连点/切页）会产生同代际双效果线程并发写 HID
     readonly object _configLock = new();
     System.Threading.Timer? _configSaveTimer;
@@ -69,7 +70,6 @@ public class KeyboardRgb : IDisposable
     volatile bool _disposed;
     long _reconnectStartedTicks;
     const int ReconnectTimeoutMs = 3000;    // 重连飞行上限：超时释放单飞标志，帧循环不会被永久卡住
-    internal bool ReconnectInFlight => _reconnecting;   // 测试 seam
 
     public KeyboardRgb()
     {
@@ -127,6 +127,9 @@ public class KeyboardRgb : IDisposable
 
     /// <summary>测试 seam：效果线程实际启动的次数（每次真正重启才自增，用于锁定「每周期只重启一次」）。</summary>
     internal int EffectGeneration => Volatile.Read(ref _generation);
+
+    /// <summary>测试 seam：重进自定义帧模式的次数（恢复/固件接管重申各一次都自增）。</summary>
+    internal int CustomModeReinitCount => Volatile.Read(ref _customModeReinitCount);
     public event Action? DeviceLost;                  // 设备消失/连续失败停止（UI 据此提示）
     DateTime _lastSendFailLog = DateTime.MinValue;   // 发帧失败日志节流（每 5s 至多一条，防刷屏）
     long _successFrames;                              // 帧心跳诊断：成功发帧计数
@@ -415,7 +418,9 @@ public class KeyboardRgb : IDisposable
     {
         lock (_lock)
         {
-            return _stream is not null && EnterCustomMode();
+            if (_stream is null || !EnterCustomMode()) return false;
+            Interlocked.Increment(ref _customModeReinitCount);
+            return true;
         }
     }
 
@@ -1132,7 +1137,6 @@ public class KeyboardRgb : IDisposable
         }
     }
 
-    public int LastSavedMode => _lastSavedMode;
     int _lastSavedMode = -1;
 
     public void Dispose()
