@@ -1223,861 +1223,60 @@ public class MechrevoHw : IDisposable
             switch (topic)
             {
                 case MqttTopics.SystemCpuInfo:
-                    CpuTemp = Int(o, "CpuTemperature");
-                    CpuUsage = Int(o, "CpuUsage");
-                    CpuFrequency = Int(o, "CpuFrequency");
-                    Interlocked.Exchange(ref _cpuInfoReceivedAt, Environment.TickCount64);
+                    OnSystemCpuInfo(o);
                     break;
                 case MqttTopics.SystemGpuInfo:
-                    GpuTemp = Int(o, "GpuTemperature");
-                    GpuUsage = Int(o, "GpuUsage");
-                    GpuCoreFreq = Int(o, "GpuCoreFreq");
-                    VramUsedMb = Int(o, "GpuMem");
-                    Interlocked.Exchange(ref _gpuInfoReceivedAt, Environment.TickCount64);
+                    OnSystemGpuInfo(o);
                     break;
                 case MqttTopics.SystemMemoryInfo:
-                    RamUsage = Int(o, "MemoryUsage");
-                    RamUsedGb = Double(o, "TotalUsingMemory", RamUsedGb);
+                    OnSystemMemoryInfo(o);
                     break;
                 case MqttTopics.SystemFanInfo:
-                    CpuFanDuty = Int(o, "CpuFanDuty");
-                    GpuFanDuty = Int(o, "GpuFanDuty");
-                    CpuFanRpm = Int(o, "CpuFanRpm");
-                    GpuFanRpm = Int(o, "GpuFanRpm");
-                    // 这个主题只有这四个字段，没有第三颗风扇。
-                    //
-                    // 曾经在这里加过一段「第三颗风扇解析」，用了五个自己编的字段名
-                    // （MidFanDuty / RamFanDuty / ThirdFanDuty / Fan3Duty / MiddleFanDuty）。
-                    // 那是错的：官方 System/FanInfo 的处理逻辑只读 CpuFanDuty / GpuFanDuty /
-                    // CpuFanRpm / GpuFanRpm 四个字段，全协议 58 个主题里也只有这一个
-                    // 加 System/FanErrorInfo 与风扇有关，没有任何主题发第三颗风扇的读数。
-                    // 官方界面是全机型共用的，它只显示两颗，所以任何机型都不会报第三颗。
-                    //
-                    // 内存风扇（RamFan1p5Support）确实存在，但它在 EC 侧只有三个**风扇表**
-                    // 寄存器（TABLE_STATUS1/2、TABLE_CTRL），没有转速与占空比寄存器；
-                    // 而且它由 GCUService 随风扇表自动管理（MyFanTableCtrl 内部调用），
-                    // 官方控制台自己也没有读数和控制入口。详见 docs/hardware/README.md。
+                    OnSystemFanInfo(o);
                     break;
                 case MqttTopics.SystemBatteryInfo:
-                    BatteryPercent = Int(o, "BatteryLifePercent");
-                    // 电池健康信息：循环次数与设计容量。官方 UI 不展示这两项，
-                    // 但推流里一直带着，比 powercfg /batteryreport 实时得多。
-                    BatteryCycleCount = OptionalInt(o, BatteryCycleCount, "BatteryCycleCount");
-                    BatteryAbnormal = OptionalBool(o, "BatteryAbnormal") == true;
-                    var capacityText = o["BatteryCapacity"]?.ToString();
-                    if (capacityText is not null) BatteryCapacityText = capacityText;
-                    Logger.WriteLineIfChanged("battery-info",
-                        $"BatteryInfo percent={BatteryPercent} cycles={BatteryCycleCount} capacity={BatteryCapacityText} abnormal={BatteryAbnormal}");
+                    OnSystemBatteryInfo(o);
                     break;
                 case MqttTopics.SystemNetworkInfo:
-                    // 官方推流里的网络吞吐。此前完全没订阅，Overlay 想显示网速只能自己数网卡。
-                    // 服务端给的是带单位的字符串（"232 Kbps" / "3.9 Mbps"），原样保留供展示。
-                    NetworkDownload = o["NetworkDownload"]?.ToString() ?? NetworkDownload;
-                    NetworkUpload = o["NetworkUpload"]?.ToString() ?? NetworkUpload;
-                    NetworkInfoSeen = true;
+                    OnSystemNetworkInfo(o);
                     break;
                 case MqttTopics.SystemHardwareInfo:
-                    // 机型/固件铭牌。含 EC 固件版本——排查固件差异类问题时这是关键信息，
-                    // 而它此前只在官方 UI 里可见。
-                    HardwareInfoSeen = true;
-                    string? ecVersion = FirstField(o, "ECVersion", "EcVersion", "EC_Version", "ECFWVersion")?.ToString();
-                    if (!string.IsNullOrWhiteSpace(ecVersion)) EcFirmwareVersion = ecVersion;
-                    Logger.WriteLineIfChanged("hardware-info", "HardwareInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
+                    OnSystemHardwareInfo(o);
                     break;
                 case MqttTopics.SystemFanErrorInfo:
-                    // 风扇异常告警。官方用它弹提示；此前未订阅，风扇故障对用户完全不可见。
-                    FanErrorSeen = true;
-                    bool anyFanError = false;
-                    foreach (var property in o.Properties())
-                    {
-                        if (!property.Name.Contains("Error", StringComparison.OrdinalIgnoreCase) &&
-                            !property.Name.Contains("Abnormal", StringComparison.OrdinalIgnoreCase)) continue;
-                        if (OptionalBool(o, property.Name) == true) anyFanError = true;
-                    }
-                    FanError = anyFanError;
-                    Logger.WriteLineIfChanged("fan-error", "FanErrorInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
+                    OnSystemFanErrorInfo(o);
                     break;
                 case MqttTopics.LightbarStatus:
                 case MqttTopics.LogoLightStatus:
-                    // 主题到过不等于这条灯带存在：开发机曾实测过服务端对不存在的灯带
-                    // 也推一个 type / powerStatus / brightNess 全空的空状态。
-                    // 只认「载荷带了可识别的灯带内容」。
-                    bool lightbarContentPresent = HasLightbarContent(o);
-                    string lightKey;
-                    switch (topic)
-                    {
-                        case MqttTopics.LogoLightStatus:
-                            LogoLightStatusSeen |= lightbarContentPresent;
-                            lightKey = "logolight";
-                            break;
-                        default:
-                            LightbarStatusSeen |= lightbarContentPresent;
-                            lightKey = "lightbar";
-                            // 子灯带的能力位只在主灯带状态里带，别的主题不会报。
-                            LightbarLogoSupport = OptionalBool(o, "LogoSupport") ?? LightbarLogoSupport;
-                            LightbarBaseSupport = OptionalBool(o, "BaseSupport") ?? LightbarBaseSupport;
-                            LightbarNewLogoSupport = OptionalBool(o, "NewlogoSupport") ?? LightbarNewLogoSupport;
-                            LightbarMbLogoSupport = OptionalBool(o, "MBlogoSupport") ?? LightbarMbLogoSupport;
-                            break;
-                    }
-                    // 官方是 text.Equals(RGBKB_PowerStatus.On.ToString())，即精确比 "On"。
-                    // 这里放宽到忽略大小写：值域只有 On/Off 两个枚举名，
-                    // 忽略大小写不会引入误判，但能兜住固件写成 "ON"/"on" 的情况——
-                    // 原来那种写法下，这四条灯带的开关回显会一起变成恒关。
-                    var lbPower = o["powerStatus"]?.ToString();
-                    if (lbPower is not null)
-                        QuickSwitches[lightKey] = string.Equals(lbPower, "On", StringComparison.OrdinalIgnoreCase);
-                    // 判为「无内容」时把整个载荷打出来：三个挑出来的字段看不出服务端到底发了什么，
-                    // 而这正是判断某条子灯带是否真实存在时唯一的依据。
-                    Logger.WriteLineIfChanged("lb-status-" + topic, lightbarContentPresent
-                        ? $"LB {topic}: type={o["type"]?.ToString() ?? "-"} power={lbPower ?? "-"} light={o["brightNess"]?.ToString() ?? "-"}"
-                        : $"LB {topic}: no hardware evidence (type/powerStatus empty), raw={o.ToString(Newtonsoft.Json.Formatting.None)}");
+                    OnLightbarOrLogoLightStatus(topic, o);
                     break;
                 case MqttTopics.KeyboardStatus:
-                    {
-                        KeyboardStatusSeen = true;
-                        var kbEffect = o["effect"]?.ToString();
-                        if (kbEffect is not null) KeyboardEffect = kbEffect;
-                        var kbLight = o["light"]?.ToString();
-                        if (kbLight is not null && int.TryParse(kbLight, out int kl)) KeyboardLight = kl;
-                        var kbBrightness = o.GetValue("brightNess", StringComparison.OrdinalIgnoreCase)?.ToString();
-                        // brightNess 是小数百分比，GCU 恒发点分隔（"62.5"）。走 CurrentCulture 的
-                        // 逗号小数 locale 会解析失败并退化到五档旧字段，亮度回显静默错档；
-                        // 与本文件 Int/Double/ParseOptionalInt 一律显式 InvariantCulture 的纪律对齐。
-                        if (kbBrightness is not null && double.TryParse(kbBrightness, NumberStyles.Float, CultureInfo.InvariantCulture, out double brightness))
-                        {
-                            int legacyLevel = int.TryParse(kbLight, out int parsedLegacyLevel) ? parsedLegacyLevel : -1;
-                            KeyboardBrightness = MechrevoLite.Hardware.KeyboardRgb.MapReportedHardwareBrightness(
-                                (int)Math.Round(brightness), legacyLevel);
-                        }
-                        else if (int.TryParse(kbLight, out int legacyLight))
-                            KeyboardBrightness = MechrevoLite.Hardware.KeyboardRgb.MapReportedHardwareBrightness(-1, legacyLight);
-                        var kbSpeed = o["speed"]?.ToString();
-                        if (kbSpeed is not null && int.TryParse(kbSpeed, out int ks)) KeyboardSpeed = ks;
-                        var kbDirection = o["direction"]?.ToString();
-                        if (kbDirection is not null) KeyboardDirection = kbDirection;
-                        var kbPower = o["powerStatus"]?.ToString();
-                        if (kbPower is not null) KeyboardPower = kbPower == "On";
-                        // 字段写完之后才计版本：Program.OnHardwareStateChanged 正是按
-                        // KeyboardStatusVersion 判断「是否来了新的一帧」再去读亮度和效果的。
-                        Interlocked.Increment(ref _keyboardStatusVersion);
-                        Logger.WriteLineIfChanged("kb-status", $"KB: effect={KeyboardEffect} light={KeyboardLight} brightness={KeyboardBrightness}% speed={KeyboardSpeed} direction={KeyboardDirection} power={KeyboardPower}");
-                        break;
-                    }
+                    OnKeyboardStatus(o);
+                    break;
                 case MqttTopics.BtLcStatus:
-                    {
-                        LcStatusSeen = true;
-                        string? connS = o.GetValue("connected", StringComparison.OrdinalIgnoreCase)?.ToString();
-                        string? connStr = o.GetValue("ConnectString", StringComparison.OrdinalIgnoreCase)?.ToString();
-                        if (connS is not null || connStr is not null)
-                            LcConnectionStateReported = true;
-                        if (connS is not null)
-                        {
-                            LcReportedConnected = OptionalBool(o, "connected") ??
-                                string.Equals(connS, "Connected", StringComparison.OrdinalIgnoreCase);
-                            if (connStr is null)
-                            {
-                                LcConnectString = LcReportedConnected ? "Connected" : "Disconnected";
-                                LcConnectStringReported = false;
-                            }
-                        }
-                        if (connStr is not null)
-                        {
-                            LcConnectStringReported = true;
-                            LcConnectString = connStr;
-                            if (connS is null)
-                                LcReportedConnected = string.Equals(connStr, "Connected", StringComparison.OrdinalIgnoreCase);
-                        }
-                        if (LcConnectionStateReported)
-                            LcConnected = LcReportedConnected &&
-                                (connStr is null || string.Equals(connStr, "Connected", StringComparison.OrdinalIgnoreCase));
-                        if (OptionalBool(o, "AutoConnect") is bool autoConnect) LcAutoConnect = autoConnect;
-                        if (OptionalBool(o, "LC_action") is bool actionSupported)
-                        {
-                            LcActionSupported = actionSupported;
-                            LcActionSupportReported = true;
-                        }
-                        if (OptionalBool(o, "LC_CoolingAuto") is bool coolingAuto) LcCoolingAutoSupported = coolingAuto;
-                        LcPumpDuty = OptionalInt(o, "PumpDuty", LcPumpDuty);
-                        LcFanDuty = OptionalInt(o, "FanDuty", LcFanDuty);
-                        if (OptionalBool(o, "LC_MeterNormal") is bool meterNormal)
-                        {
-                            LcMeterNormal = meterNormal;
-                            if (!meterNormal && LcGcuControllable && LcPumpDuty > 0)
-                                Interlocked.Increment(ref _lcConsecutiveMeterFaults);
-                            else
-                                Interlocked.Exchange(ref _lcConsecutiveMeterFaults, 0);
-                        }
-                        else if (!LcGcuControllable || LcPumpDuty <= 0)
-                        {
-                            Interlocked.Exchange(ref _lcConsecutiveMeterFaults, 0);
-                        }
-                        LcPumpControl = OptionalInt(o, "LC_PumpCtrl", LcPumpControl);
-                        LcFanControl = OptionalInt(o, "LC_FanCtrl", LcFanControl);
-                        string? fwS = o.GetValue("DevFWVersion", StringComparison.OrdinalIgnoreCase)?.ToString();
-                        if (!string.IsNullOrWhiteSpace(fwS)) LcFwVersion = fwS;
-                        LcLedRed = OptionalInt(o, "LCLED_R", LcLedRed);
-                        LcLedGreen = OptionalInt(o, "LCLED_G", LcLedGreen);
-                        LcLedBlue = OptionalInt(o, "LCLED_B", LcLedBlue);
-                        LcLedRedMinimum = OptionalInt(o, "LCLED_RMinimum", LcLedRedMinimum);
-                        LcLedRedMaximum = OptionalInt(o, "LCLED_RMaximum", LcLedRedMaximum);
-                        LcLedGreenMinimum = OptionalInt(o, "LCLED_GMinimum", LcLedGreenMinimum);
-                        LcLedGreenMaximum = OptionalInt(o, "LCLED_GMaximum", LcLedGreenMaximum);
-                        LcLedBlueMinimum = OptionalInt(o, "LCLED_BMinimum", LcLedBlueMinimum);
-                        LcLedBlueMaximum = OptionalInt(o, "LCLED_BMaximum", LcLedBlueMaximum);
-                        LcHeadLightMode = OptionalInt(o, "LCLED_Mode", LcHeadLightMode);
-                        LcFanLightMode = OptionalInt(o, "LCFanLED_Mode", LcFanLightMode);
-                        JToken? macListToken = o.GetValue("DeviceMacList", StringComparison.OrdinalIgnoreCase);
-                        if (macListToken is JArray macList)
-                        {
-                            _lcDeviceMacs = macList
-                                .Select(mac => mac?.ToString())
-                                .Where(mac => !string.IsNullOrWhiteSpace(mac))
-                                .Cast<string>()
-                                .Distinct(StringComparer.OrdinalIgnoreCase)
-                                .ToArray();
-                        }
-                        else if (macListToken?.Type == JTokenType.String &&
-                            macListToken.ToString() is { Length: > 0 } macText)
-                        {
-                            string[] parsedMacs = macText.TrimStart().StartsWith("[", StringComparison.Ordinal)
-                                ? TryParseMacArray(macText)
-                                : macText.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                            if (parsedMacs.Length > 0)
-                                _lcDeviceMacs = parsedMacs
-                                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                                    .ToArray();
-                        }
-                        var curMac = o.GetValue("DevMACString", StringComparison.OrdinalIgnoreCase)?.ToString();
-                        if (!string.IsNullOrWhiteSpace(curMac)) LcCurrentMac = curMac;
-                        Interlocked.Increment(ref _lcStatusVersion);
-                        Interlocked.Exchange(ref _lcStatusReceivedAt, Environment.TickCount64);
-                        // 变化才记录：GCU 每 6 秒推一次液冷状态，内容通常完全相同。
-                        // 只做频率节流会让这一行在一小时内重复几百次，把日志里真正需要
-                        // 排查的内容挤出 2 MB 上限。
-                        Logger.WriteLineIfChanged("lc-status", $"LC: reported={LcReportedConnected} controllable={LcGcuControllable} state={LcConnectString} pump={LcPumpDuty} fan={LcFanDuty} pumpCtrl={LcPumpControl} fanCtrl={LcFanControl} auto={LcCoolingAutoSupported} fw={LcFwVersion} macs={LcDeviceMacs.Count} curMac={LcCurrentMac}");
-                        RaiseIsolated(LcChanged, nameof(LcChanged));
-                        break;
-                    }
+                    OnBtLcStatus(o);
+                    break;
                 case MqttTopics.SystemBatteryProtection:
-                    var prot = Int(o, "HealthProtectionStatus");
-                    if (prot >= 0) BatteryProtection = prot;
+                    OnSystemBatteryProtection(o);
                     break;
                 case MqttTopics.FanTable:
-                    FanCurveSeen = true;
-                    CurveName = o["Name"]?.ToString() ?? CurveName;
-                    bool? tableRespective = OptionalBool(o, "FanControlRespective");
-                    bool respectiveChanged = tableRespective.HasValue &&
-                        (!FanRespectiveSeen || FanRespective != tableRespective.Value);
-                    if (tableRespective.HasValue)
-                    {
-                        FanRespective = tableRespective.Value;
-                        FanRespectiveSeen = true;
-                    }
-                    // 先在本地数组上完成解析和 fallback，最后才整体发布。
-                    // 过去是「整体替换 → 再对已发布的数组做 Array.Copy」，注释声称原子替换，
-                    // 但 fallback 分支实际是原地改写：UI 线程在两次 copy 之间读取会看到
-                    // 半 0 半默认值的曲线，短暂画出一条错误的线。
-                    (byte[] cpuUpT, byte[] cpuDuty) = ParseCurve(o["CPU"] as JArray);
-                    (byte[] gpuUpT, byte[] gpuDuty) = ParseCurve(o["GPU"] as JArray);
-                    // 表名（M1T1/M2T1/M3T1）选默认曲线；M4T1 等未识别表名（自定义）用 opMode 兜底——
-                    // 防偶发直线：Fan/Table 乱序到达时旧表名（如 M4T1）最后到，若不 fallback 则异常数据（恒值）直接显示
-                    int fallback = TableNameToMode(CurveName);
-                    if (fallback < 0)
-                        fallback = OperatingMode switch { 0 => 1, 1 => 0, 2 => 2, _ => 0 };   // opMode→默认曲线数组索引
-                    Logger.WriteLineIfChanged("fan-table", $"Fan/Table [{CurveName}] fallbackMode={fallback} cpuDuty={string.Join(",", cpuDuty.Take(8))} uninitialized={IsUninitializedCurve(cpuDuty)}");
-                    // 只有全 0 的未初始化表才回退。平缓或恒定曲线可能是用户的有效选择，不能覆盖。
-                    if (fallback >= 0 && IsUninitializedCurve(cpuDuty) &&
-                        _defaultCpuDuty[fallback] is { } defaultCpuDuty && _defaultCpuUpT[fallback] is { } defaultCpuUpT)
-                    {
-                        Array.Copy(defaultCpuUpT, cpuUpT, 16);
-                        Array.Copy(defaultCpuDuty, cpuDuty, 16);
-                        Logger.WriteLine($"fallback CPU -> duty={string.Join(",", cpuDuty.Take(8))} upT={string.Join(",", cpuUpT.Take(8))}");
-                    }
-                    if (fallback >= 0 && IsUninitializedCurve(gpuDuty) &&
-                        _defaultGpuDuty[fallback] is { } defaultGpuDuty && _defaultGpuUpT[fallback] is { } defaultGpuUpT)
-                    {
-                        Array.Copy(defaultGpuUpT, gpuUpT, 16);
-                        Array.Copy(defaultGpuDuty, gpuDuty, 16);
-                        Logger.WriteLine($"fallback GPU -> duty={string.Join(",", gpuDuty.Take(8))} upT={string.Join(",", gpuUpT.Take(8))}");
-                    }
-                    // 现在才发布：UI 线程要么看到完整的旧曲线，要么看到完整的新曲线。
-                    CpuCurveUpT = cpuUpT;
-                    CpuCurveDuty = cpuDuty;
-                    GpuCurveUpT = gpuUpT;
-                    GpuCurveDuty = gpuDuty;
-                    // 数据指纹：相同曲线不重复触发重画（Fan/Table 周期推送 + 请求响应会导致反复 InitFans → 窗口闪烁）
-                    string hash = CurveName + "|" + string.Join(",", CpuCurveDuty) + "|" + string.Join(",", GpuCurveDuty);
-                    if (hash != _lastCurveHash)
-                    {
-                        _lastCurveHash = hash;
-                        RaiseIsolated(CurveUpdated, nameof(CurveUpdated));
-                    }
-                    if (respectiveChanged) RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
+                    OnFanTable(o);
                     break;
                 case MqttTopics.GpuDeviceStatus:
-                    GpuDeviceStatusSeen = true;
-                    var hzArr = o["currentHZList"] as JArray;
-                    if (hzArr is not null)
-                    {
-                        _hzList = hzArr
-                            .Select(h => int.TryParse(h?.ToString(), out int value) ? value : 0)
-                            .Where(value => value > 0)
-                            .Distinct()
-                            .OrderByDescending(value => value)
-                            .ToArray();
-                    }
-                    CurrentHz = Int(o, "currentHZ");
-                    // DC_HZ 过去用 Value<bool>()，遇到 "1"/"ON" 这类固件写法会抛
-                    // FormatException 并中断整个 GPUDevice/Status 分支（连带 currentHZList
-                    // 和 currentHZ 一起失效）。改为容错解析，无法识别时保留上一次的已知值。
-                    GpuSaveMode = Int(o, "currentSaveingMode");
-                    // DcHzSeen 只在真的解析出布尔值时置位，避免把"存在但无法识别"当成已知能力。
-                    bool? dcHz = OptionalBool(o, "DC_HZ");
-                    if (dcHz.HasValue) { DcHz = dcHz.Value; DcHzSeen = true; }
+                    OnGpuDeviceStatus(o);
                     break;
                 case MqttTopics.SettingsDeviceSwitchItemStatus:
-                    DeviceSwitchStatusSeen = true;
-                    // 这五项过去是「字段存在就置 Seen」：`HasField(...)` 加
-                    // `OptionalBool(...) == true`。无法识别的值（固件写了个没见过的记法）
-                    // 会静默变成 false 而 Seen 照样置位，于是界面上长出一个点了没反应的开关，
-                    // 确认逻辑也永远等不到回读变化——和 LcdOverdriveSeen 修掉的那个完全同型。
-                    // 正确写法就在下面 GPUDevice/Status 的 DcHzSeen：解析成功才置位。
-                    if (Int(o, "ScreenBrightness") is >= 0 and int screenBrightness)
-                    {
-                        ScreenBrightness = screenBrightness;
-                        ScreenBrightnessSeen = true;
-                    }
-                    if (OptionalBool(o, "TochpadEnable") is bool touchpadEnabled)
-                    {
-                        QuickSwitches["touchpad"] = touchpadEnabled;
-                        TouchpadSeen = true;
-                    }
-                    if (OptionalBool(o, "WIFIEnable") is bool wifiEnabled)
-                    {
-                        QuickSwitches["wifi"] = wifiEnabled;
-                        WifiSeen = true;
-                    }
-                    if (OptionalBool(o, "BTEnable") is bool bluetoothEnabled)
-                    {
-                        QuickSwitches["bt"] = bluetoothEnabled;
-                        BluetoothSeen = true;
-                    }
-                    if (OptionalBool(o, "WebCamEnable") is bool webcamEnabled)
-                    {
-                        QuickSwitches["webcam"] = webcamEnabled;
-                        WebcamSeen = true;
-                    }
+                    OnSettingsDeviceSwitchItemStatus(o);
                     break;
                 case MqttTopics.SettingStatus:
-                    SettingStatusSeen = true;
-                    // 局部调光 / 屏幕响应加速。
-                    //
-                    // 值的判定沿用官方的精确匹配（CCUWinUI L29397-29398 就是
-                    // == LOCALDIMMING_ON / == LCDOverdrive_ON），不改成 Contains——
-                    // 这两个动作名本身不含 OFF/UNLOCK 之类的否定词，Contains 反而没有依据。
-                    //
-                    // 但支持位必须看：服务端对不支持的机型照样发这个字段（实测本机
-                    // LCDOverdriveSwitch=LCDOverdrive_OFF 同时 LCDOverdriveSupport=NotSupport）。
-                    // 过去无条件置 *Seen，于是界面上长出一个点了永远不生效的开关，
-                    // 确认逻辑也永远等不到回读变化。官方是拿注册表 ItemSupport 的
-                    // LCDOverdriveSupport 当门禁（L29288-29292），这里优先用同帧上报的那份。
-                    bool? lcdOverdriveSupport = FirstOptionalBool(o, "LCDOverdriveSupport", "LcdOverdriveSupport");
-                    if (lcdOverdriveSupport is not null) LcdOverdriveSupport = lcdOverdriveSupport;
-                    bool? localDimmingSupport = FirstOptionalBool(o, "LocalDimmingSupport");
-                    if (localDimmingSupport is not null) LocalDimmingSupport = localDimmingSupport;
-
-                    var ldS = o["LocalDimmingSwitch"]?.ToString();
-                    if (ldS is not null)
-                    {
-                        LocalDimming = ldS == "LOCALDIMMING_ON";
-                        if (LocalDimmingSupport != false) LocalDimmingSeen = true;
-                    }
-                    var odS = o["LCDOverdriveSwitch"]?.ToString();
-                    if (odS is not null)
-                    {
-                        LcdOverdrive = odS == "LCDOverdrive_ON";
-                        if (LcdOverdriveSupport != false) LcdOverdriveSeen = true;
-                    }
-                    // Fresh GCU status must win over a registry value that can lag a profile change.
-                    // The registry remains the fallback for older GCU builds without this field.
-                    JToken? ccSwitch = FirstField(o,
-                        "ColorCalibrationSwitch", "ColorCalibrationSwitch_Status", "ColorCalibrationStatus");
-                    // 注册表读取要单独隔离：TryReadColorCalibrationOn / IsColorCalibrationOn
-                    // 在 MQTT 接收线程上做阻塞式注册表 I/O，而这里是 Setting/Status 的中段——
-                    // 它一抛，本帧后面的 USB/OSD/WinKey 一族、显卡模式、两个版本号全都丢，
-                    // 所有在等的 WaitForStateAsync 只能超时。校色状态读不到时按「未知」处理即可。
-                    bool? parsedCcSwitch = null;
-                    bool colorCalibrationParsed = false;
-                    try
-                    {
-                        parsedCcSwitch = MechrevoService.ResolveColorCalibrationSwitch(
-                            MechrevoService.TryReadColorCalibrationOn(),
-                            ParseColorCalibrationSwitch(ccSwitch));
-                        if (parsedCcSwitch.HasValue)
-                        {
-                            ColorCalibrationSwitch = parsedCcSwitch.Value;
-                            ColorCalibrationSwitchSeen = true;
-                            ColorCalibrationSeen = true;
-                            colorCalibrationParsed = true;
-                        }
-                        else if (!ColorCalibrationSwitchSeen)
-                            ColorCalibrationSwitch = MechrevoService.IsColorCalibrationOn();
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.WriteLineThrottled("cc-registry",
-                            "ColorCalibration registry read failed: " + ex.Message, 5000);
-                    }
-
-                    JToken? ccMode = FirstField(o,
-                        "CurrentColorCalibration", "ColorCalibrationMode", "ColorCalibration");
-                    int parsedCcMode = ParseColorCalibrationMode(ccMode);
-                    if (parsedCcMode is >= 1 and <= 4)
-                    {
-                        ColorCalibrationMode = parsedCcMode;
-                        ColorCalibrationModeSeen = true;
-                        ColorCalibrationSeen = true;
-                        colorCalibrationParsed = true;
-                    }
-                    var ccR = o["ColorCalibrationResultCode"]?.ToString();
-                    if (ccR is not null && int.TryParse(ccR, out int ccRV))
-                    {
-                        ColorCalibrationResult = ccRV;
-                        ColorCalibrationSeen = true;
-                        colorCalibrationParsed = true;
-                    }
-                    // 自增条件是「真解析出了值」而不是「字段存在」。
-                    // 按字段存在自增会让 ConfirmColorCalibrationAsync 的 freshCalibrationStatus
-                    // 误报新鲜——虽然它还 AND 了 stateMatches 不至于伪造成功，
-                    // 但一个只在字段存在时跳的版本号本身就不该被当成「状态已更新」的信号。
-                    if (colorCalibrationParsed)
-                        Interlocked.Increment(ref _colorCalibrationStatusVersion);
-                    // CloseTimer 的通知过去在这里裸 ?.Invoke()，位置又在本 case 中段：
-                    // 任一订阅者抛异常就会把后面所有字段和三个通知一起丢掉。
-                    // 现在只记录变化，事件挪到 case 末尾统一发。
-                    int? closeTimerChangedTo = null;
-                    var ctS = o["CloseTimer"]?.ToString();
-                    if (ctS is not null && int.TryParse(ctS, out int ct) && ct != CloseTimerMinutes)
-                    {
-                        CloseTimerMinutes = ct;   // 灯效睡眠时间（分钟，0=关闭）——原版 KEYBOARD_LIGHTBAR_TIMER
-                        Logger.WriteLine($"CloseTimer -> {ct} 分钟");
-                        closeTimerChangedTo = ct;
-                    }
-                    // 下面这一组的判定全部按官方逐字对齐：官方读的是「状态串里有没有
-                    // 那个否定词」，不是把整串跟某个常量比。差别在别的机型上才显出来——
-                    // 固件一旦把 USB_CHARGER_STATUS_ON 写成 USB_CHARGER_ON，
-                    // 精确匹配就永久判成关闭，而开关在界面上是「点了跳回去」。
-                    // 依据：CCUWinUI L73865 / L31146 / L31096 / L31241 / L31192。
-                    var usbS = o["UsbCharger"]?.ToString();
-                    if (usbS is not null) { UsbCharger = !usbS.Contains("OFF", StringComparison.OrdinalIgnoreCase); UsbChargerSeen = true; }
-                    // OSD：官方的 OSDSwitch 语义是「隐藏 OSD」，我们的 QuickSwitches["osd"]
-                    // 语义是「显示 OSD」（下发 ("osd", true) => OSD_HIDDEN_OFF），所以取反。
-                    var osdS = o["OSD"]?.ToString();
-                    if (osdS is not null) { QuickSwitches["osd"] = osdS.Contains("OFF", StringComparison.OrdinalIgnoreCase); OsdSeen = true; }
-                    var wkS = o["WinKey"]?.ToString();
-                    if (wkS is not null) { QuickSwitches["winkey"] = !wkS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); WinKeySeen = true; }   // true=已锁定（勾选=锁定语义）
-                    var fnS = o["FnKey"]?.ToString();
-                    if (fnS is not null) { QuickSwitches["fnkey"] = !fnS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); FnKeySeen = true; }   // true=已锁定（勾选=锁定语义）
-                    var npS = o["NumPad"]?.ToString();
-                    if (npS is not null) { QuickSwitches["numpad"] = !npS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); NumpadSeen = true; }   // true=已锁定（原版勾选语义）
-
-                    // 电池 Logo 灯（BATTERYLOGO_TOGGLE_ON/OFF）。官方 L73879-73881 的判定是
-                    // !BatteryLogo_Status.Contains("OFF")。这一项此前完全缺失：既没解析也没下发，
-                    // 有这条灯的机型在我们这边根本看不到入口。
-                    var blS = o["BatteryLogo_Status"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(blS))
-                    {
-                        QuickSwitches["batterylogo"] = !blS.Contains("OFF", StringComparison.OrdinalIgnoreCase);
-                        BatteryLogoSeen = true;
-                    }
-
-                    // 触摸板切换键：与「触摸板开关」是两件事——这个控制的是 Fn 组合键能否切换触摸板。
-                    var tptS = o["TouchpadToggle"]?.ToString();
-                    if (tptS is not null) { QuickSwitches["touchpadtoggle"] = !tptS.Contains("OFF", StringComparison.OrdinalIgnoreCase); TouchpadToggleSeen = true; }
-
-                    // 单色键盘背光：走 EC 的单色通道，与 RGB 逐键渲染是并列的两套硬件。
-                    var sckS = o["SingleColorKBBL"]?.ToString();
-                    if (sckS is not null) { QuickSwitches["singlecolorkb"] = !sckS.Contains("OFF", StringComparison.OrdinalIgnoreCase); SingleColorKbSeen = true; }
-
-                    // Uni / Omni：官方语义未公开，但两者互斥。只要报了任意一个就认为这台机器有这组开关。
-                    var uniS = o["UniSwitch"]?.ToString();
-                    var omniS = o["OmniSwitch"]?.ToString();
-                    if (uniS is not null) { QuickSwitches["uni"] = !uniS.Contains("OFF", StringComparison.OrdinalIgnoreCase); UniOmniSeen = true; }
-                    if (omniS is not null) { QuickSwitches["omni"] = !omniS.Contains("OFF", StringComparison.OrdinalIgnoreCase); UniOmniSeen = true; }
-
-                    // 电源指示灯：开关 + 亮度两个字段，亮度是 0..100。
-                    //
-                    // 开关的值是状态字符串（实测 "PowerLight_ON"），不是布尔也不是 0/1。
-                    // 这里曾经用 OptionalBool 解析：ParseFlexibleBool 归一化后做的是**精确**匹配，
-                    // "PowerLight_ON" 变成 "POWERLIGHTON" 匹配不上 "ON"，于是永远返回 null，
-                    // 开关在界面上恒显示为关、点了也看不出变化。改成与同族开关一致的含 OFF 判定。
-                    var plS = o["PowerLightSwitch"]?.ToString();
-                    if (plS is not null)
-                    {
-                        QuickSwitches["powerlight"] = !plS.Contains("OFF", StringComparison.OrdinalIgnoreCase);
-                        PowerLightSeen = true;
-                    }
-                    if (HasField(o, "PowerLightBrightness"))
-                    {
-                        int plb = Int(o, "PowerLightBrightness");
-                        if (plb >= 0) PowerLightBrightness = Math.Clamp(plb, 0, 100);
-                    }
-                    // 电池页开关状态（原版 MySetting 结构：状态字符串含 OFF 即关；CopilotKey 含 UNLOCK 即开）
-                    var hpS = o["HighPerformancePowerModeSwitch"]?.ToString(); if (hpS is not null) { QuickSwitches["highperf"] = !hpS.Contains("OFF", StringComparison.OrdinalIgnoreCase); HighPerformanceSeen = true; }
-                    // 这三项过去漏了 OrdinalIgnoreCase，与同族其余十几项不一致：
-                    // 固件把值写成小写 off / unlock 就会被判成相反的状态。
-                    var acS = o["AcRecoverySwitch_Status"]?.ToString(); if (acS is not null) { QuickSwitches["acrecovery"] = !acS.Contains("OFF", StringComparison.OrdinalIgnoreCase); AcRecoverySeen = true; }
-                    var dsS = o["DeepSleepSwitch"]?.ToString(); if (dsS is not null) { QuickSwitches["deepsleep"] = !dsS.Contains("OFF", StringComparison.OrdinalIgnoreCase); DeepSleepSeen = true; }
-                    var cpS = o["CopilotKey"]?.ToString(); if (cpS is not null) { QuickSwitches["copilot"] = !cpS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); CopilotSeen = true; }
-                    var dsT = o["DeepSleepTime"]?.ToString(); if (dsT is not null && int.TryParse(dsT, out int dst)) DeepSleepTime = dst;
-
-                    // 显示色彩模式 / 显示特性 / NVIDIA 全局首选显卡：只读记录，不下发。
-                    var displayMode = o["DisplayMode"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(displayMode)) DisplayColorMode = displayMode;
-                    var displayFeature = o["DisplayFeatureStatus"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(displayFeature))
-                        DisplayFeatureOn = !displayFeature.Contains("OFF", StringComparison.OrdinalIgnoreCase);
-                    var nvPanel = o["DGpu"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(nvPanel)) NvControlPanelPreference = nvPanel;
-                    foreach (string field in DisplayColorParameterFields)
-                    {
-                        int value = OptionalInt(o, field, int.MinValue);
-                        if (value != int.MinValue) _displayColorParameters[field] = value;
-                    }
-                    if (DisplayColorMode.Length > 0 || DisplayFeatureOn.HasValue ||
-                        NvControlPanelPreference.Length > 0 || _displayColorParameters.Count > 0)
-                    {
-                        Logger.WriteLineIfChanged("display-color",
-                            $"Display: mode={(DisplayColorMode.Length > 0 ? DisplayColorMode : "-")} " +
-                            $"feature={(DisplayFeatureOn.HasValue ? DisplayFeatureOn.Value ? "On" : "Off" : "-")} " +
-                            $"nvPanel={(NvControlPanelPreference.Length > 0 ? NvControlPanelPreference : "-")} " +
-                            $"params={{{string.Join(",", _displayColorParameters.Select(p => p.Key + "=" + p.Value))}}}");
-                    }
-                    var dgpuStatus = FirstField(o,
-                        "DiscreteGpuDirectConnectionSwitch_Status", "DGpuDirectConnectionSwitch_Status", "DGPU_DIRECT_STATUS")?.ToString();
-                    var igpuStatus = FirstField(o,
-                        "IGpuOnlyConnectionSwitch_Status", "IGPUOnlyConnectionSwitch_Status", "IGPU_ONLY_STATUS")?.ToString();
-                    bool gpuModeStatusPresent =
-                        !string.IsNullOrWhiteSpace(dgpuStatus) || !string.IsNullOrWhiteSpace(igpuStatus);
-                    DgpuDirectStatusSupport = FirstOptionalBool(o,
-                        "DiscreteGpuDirectConnectionSwitch_Support", "DGpuDirectConnectionSwitch_Support", "DGPU_DIRECT_SUPPORT") ?? DgpuDirectStatusSupport;
-                    IgpuOnlyStatusSupport = FirstOptionalBool(o,
-                        "IGpuOnlyConnectionSwitch_Support", "IGPUOnlyConnectionSwitch_Support", "IGPU_ONLY_SUPPORT") ?? IgpuOnlyStatusSupport;
-                    // Some older GCU versions expose the current switch state but omit the separate
-                    // capability bit. A non-empty status proves that this command family is available.
-                    // 只有能被解析成具体模式的状态才构成「这套命令族存在」的证据。
-                    // 任意非空字符串（"NOT_SUPPORT"/"UNKNOWN"/"NONE"）不算——那会让 UI 暴露
-                    // 本机不具备的显卡切换入口，而且会覆盖掉正确的 ItemSupport 静态画像。
-                    // 显式上报为 false 的支持位已经在上面写入，?? = 不会覆盖它。
-                    if (IsRecognizedDgpuDirectStatus(dgpuStatus)) DgpuDirectStatusSupport ??= true;
-                    if (IsRecognizedIgpuOnlyStatus(igpuStatus)) IgpuOnlyStatusSupport ??= true;
-                    string? gpuSwitchResult = o.GetValue("CheckDGpuStatusforIGpuOnlyOnSuccess", StringComparison.OrdinalIgnoreCase)?.ToString();
-                    bool gpuSwitchResultPresent = !string.IsNullOrWhiteSpace(gpuSwitchResult);
-                    if (gpuSwitchResultPresent)
-                    {
-                        GpuSwitchResult = gpuSwitchResult!.Contains('1') ? 1
-                            : gpuSwitchResult.Contains('2') ? 2
-                            : 0;
-                        GpuSwitchResultReported = true;
-                        // 版本号不在这里自增：GpuMode 要到下面才发布，中间还有
-                        // ResolveGpuModeStatus 与 IgpuSwitchBlocked。热切换的确认谓词
-                        // （SwitchGpuMode.TargetReached）会同时看 CurrentGpuMode 与
-                        // GpuSwitchResultVersion，先跳版本号就构成「新结果 + 旧模式」。
-                        // 目前它靠谓词里 `if (CurrentGpuMode != mode) return false;` 短路兜住，
-                        // 但 Setting/Status 应该只有一个 release 点。
-                    }
-                    int newGpu = ResolveGpuModeStatus(GpuMode, dgpuStatus, igpuStatus);
-                    string? cannotSwitch = FirstField(o, "IGpuCannotBeSwitchNowVisibility")?.ToString();
-                    if (!string.IsNullOrWhiteSpace(cannotSwitch))
-                        IgpuSwitchBlocked = newGpu != MechrevoService.GpuDgpu &&
-                            !cannotSwitch.Contains("false", StringComparison.OrdinalIgnoreCase);
-                    // 版本号必须在字段写完之后才自增（release 语义）。过去它在 case 中段自增，
-                    // 按版本号轮询的调用方会看到「新版本号 + 旧字段值」，表现为
-                    // 「明明落地了却确认失败」的偶发误判。GpuMode 也一样：先赋值，再计版本。
-                    bool gpuModeChanged = newGpu != GpuMode;
-                    if (gpuModeChanged) GpuMode = newGpu;
-                    if (gpuSwitchResultPresent) Interlocked.Increment(ref _gpuSwitchResultVersion);
-                    if (gpuModeStatusPresent) Interlocked.Increment(ref _gpuModeStatusVersion);
-                    Interlocked.Increment(ref _settingStatusVersion);
-                    if (gpuModeChanged)
-                        Logger.WriteLine($"GpuMode -> {newGpu} (dgpu={dgpuStatus ?? "-"}, igpu={igpuStatus ?? "-"})");
-                    // 两个事件都收进 RaiseIsolated 并放到 case 最后：过去是裸 ?.Invoke()，
-                    // 订阅者抛异常会让本帧后面的 Capabilities/State/Data 通知全部不发。
-                    if (closeTimerChangedTo is int closeTimerMinutes)
-                        RaiseIsolated(CloseTimerChanged, nameof(CloseTimerChanged), closeTimerMinutes);
-                    if (gpuModeChanged) RaiseIsolated(GpuModeChanged, nameof(GpuModeChanged));
+                    OnSettingStatus(o);
                     break;
                 case MqttTopics.FanStatus:
-                    FanStatusSeen = true;
-                    // IsAC 过去用 Value<bool>()，是本 case 自增版本号后的第一个赋值。
-                    // 这个协议在同一帧里大量使用字符串型布尔（GPU_DynamicBoostSwitch=="1" 等），
-                    // 一旦 IsAC 也发成 "1" 就会抛异常，导致模式/PL1/PL2/TCC/TGP/超频回读全部失效。
-                    IsAC = OptionalBool(o, "IsAC") ?? IsAC;
-                    // FanBoostEnable 过去走 Int()>0：固件发 JSON 布尔 true 时 int 解析失败得到 0，
-                    // 于是能力被判成"支持"而状态永远显示"关闭"。改走统一的布尔解析，
-                    // 且只有真的解析出布尔值才认为看见过这项能力。
-                    bool? fanBoost = OptionalBool(o, "FanBoostEnable");
-                    if (fanBoost.HasValue) { FanBoost = fanBoost.Value; FanBoostSeen = true; }
-                    var newMode = Int(o, "OperatingMode");
-                    // 事件延后到 case 末尾统一发。过去这里是裸 ModeChanged?.Invoke()，
-                    // 位置在本 case 中段——订阅者抛异常会把后面的功耗墙、温度墙、TGP、
-                    // 超频回读连同版本号一起丢掉，而那些字段是本帧最主要的内容。
-                    int? modeChangedTo = null;
-                    if (newMode != OperatingMode && newMode >= 0)
-                    {
-                        // 期望模式与截止时刻必须原子地一起取，否则会读到「旧期望 + 新截止」的组合。
-                        (bool pending, int pendingMode) = GetModeSwitchPendingState();
-                        bool expectedPendingMode = pending && pendingMode == newMode;
-                        if (pending && pendingMode >= 0 && newMode != pendingMode)
-                        {
-                            Logger.WriteLineThrottled("stale-op-mode", $"Ignored stale opMode {newMode}; pending={pendingMode}", 500);
-                        }
-                        else
-                        {
-                            Logger.WriteLine($"opMode {OperatingMode}->{newMode} pending={pending} expected={expectedPendingMode}");
-                            OperatingMode = newMode;
-                            // A slow GCU can report the confirmed target after the
-                            // service timeout. Notify the UI on that first target
-                            // packet, while keeping the pending window active so
-                            // queued pre-switch packets are still rejected.
-                            if (!pending || expectedPendingMode) modeChangedTo = newMode;
-                        }
-                    }
-                    int genericPl1 = Int(o, "CPU_PL1");
-                    int genericPl2 = Int(o, "CPU_PL2");
-                    // AMD 平台判定过去用 HasField：键存在即算，值为 0/null/无法解析也算。
-                    // Intel 机型上只要 GCU 报文里带了 CPU_AmdSPL: 0，就会被永久判成 AMD 平台，
-                    // 于是功耗墙改用 CpuAmdSPL/CpuAmdSPPT 键下发、被 GCU 忽略、确认永久失败。
-                    // 真实的功耗墙不可能是 0 或负数，所以只有「可用值」才构成平台证据。
-                    bool amdPowerFields = Capabilities.AmdPlatform ||
-                        HasUsablePowerValue(o, "CPU_AmdSPL") ||
-                        HasUsablePowerValue(o, "CPU_AmdSPPT") ||
-                        HasUsablePowerValue(o, "CPU_AmdFPPT");
-                    if (amdPowerFields) AmdPowerStatusSeen = true;
-                    // 同理，只latch 可用值：0 一旦被记住就再也回不到"未知"，
-                    // 而 OptionalInt 的 fallback 是上一次的值（部分帧不该擦除已知值）。
-                    CpuAmdSpl = OptionalUsablePowerValue(o, "CPU_AmdSPL", CpuAmdSpl);
-                    CpuAmdSppt = OptionalUsablePowerValue(o, "CPU_AmdSPPT", CpuAmdSppt);
-                    CpuAmdFppt = OptionalUsablePowerValue(o, "CPU_AmdFPPT", CpuAmdFppt);
-                    // 只有在确认是 AMD 功耗字段体系时才让 AMD 值接管 Pl1/Pl2，
-                    // 否则 Intel 机型上一个伪造的 0 会永久劫持显示值并丢弃真实的 CPU_PL1。
-                    Pl1 = UsesAmdPowerFields && CpuAmdSpl > 0 ? CpuAmdSpl : genericPl1;
-                    Pl2 = UsesAmdPowerFields && CpuAmdSppt > 0 ? CpuAmdSppt : genericPl2;
-                    TccOffset = Int(o, "CPU_TccOffset");
-                    if (HasField(o, "CPU_TccOffset") || HasField(o, "CPU_TccOffsetMinimum") ||
-                        HasField(o, "CPU_TccOffsetMaximum") || HasField(o, "CPU_TccOffsetSwitch") ||
-                        HasField(o, "CPU_AmdTccTarget"))
-                        TccStatusSeen = true;
-                    Pl1Minimum = OptionalInt(o, Pl1Minimum,
-                        "CPU_AmdSPLMinimum", "CPU_AmdSPLMin", "CPU_AmdSPL_Minimum", "CPU_AmdSPL_Min", "CPU_PL1Minimum");
-                    Pl1Maximum = OptionalInt(o, Pl1Maximum,
-                        "CPU_AmdSPLMaximum", "CPU_AmdSPLMax", "CPU_AmdSPL_Maximum", "CPU_AmdSPL_Max", "CPU_PL1Maximum");
-                    Pl2Minimum = OptionalInt(o, Pl2Minimum,
-                        "CPU_AmdSPPTMinimum", "CPU_AmdSPPTMin", "CPU_AmdSPPT_Minimum", "CPU_AmdSPPT_Min", "CPU_PL2Minimum");
-                    Pl2Maximum = OptionalInt(o, Pl2Maximum,
-                        "CPU_AmdSPPTMaximum", "CPU_AmdSPPTMax", "CPU_AmdSPPT_Maximum", "CPU_AmdSPPT_Max", "CPU_PL2Maximum");
-                    TccRawMinimum = OptionalInt(o, "CPU_TccOffsetMinimum", TccRawMinimum);
-                    TccRawMaximum = OptionalInt(o, "CPU_TccOffsetMaximum", TccRawMaximum);
-                    GpuTgpMinimum = OptionalInt(o, "GPU_ConfigurableTGPMinimum", GpuTgpMinimum);
-                    GpuTgpMaximum = OptionalInt(o, "GPU_ConfigurableTGPMaximum", GpuTgpMaximum);
-                    GpuDbMinimum = OptionalInt(o, "GPU_DynamicBoostMinimum", GpuDbMinimum);
-                    GpuDbMaximum = OptionalInt(o, "GPU_DynamicBoostMaximum", GpuDbMaximum);
-                    UpdateGpuOffsetRanges(o);
-                    TableName = o["FAN_TableName"]?.ToString() ?? TableName;
-                    var cpi = o["CustomProfileIndex"]?.ToString();
-                    if (cpi is not null && int.TryParse(cpi, out int cpiV)) CustomProfileIndex = cpiV;
-                    // TGP 与 Dynamic Boost 的目标值同样只接受 > 0：GCU 在这两项关闭时
-                    // 会报 0，一旦写进来就被当成「用户设定的目标值 0 W」，
-                    // 而 Pl1/Pl2 早就用 `CpuAmdSpl > 0` 挡住了同一件事。
-                    int reportedTgp = OptionalUsablePowerValue(o, "GPU_ConfigurableTGPTarget", -1);
-                    if (reportedTgp > 0) GpuTgp = reportedTgp;
-                    var dbS = o["GPU_DynamicBoostSwitch"]?.ToString();
-                    if (dbS is not null) GpuDbSwitch = dbS == "1";
-                    int reportedDb = OptionalUsablePowerValue(o, "GPU_DynamicBoost", -1);
-                    if (reportedDb > 0) GpuDb = reportedDb;
-                    var tccS = o["CPU_TccOffsetSwitch"]?.ToString();
-                    if (tccS is not null) TccSwitch = tccS == "1";
-                    var tj = o["TjMax"]?.ToString();
-                    if (tj is not null && int.TryParse(tj, out int tjV) && tjV > 0) TjMax = tjV;
-                    int amdTccTarget = OptionalInt(o, "CPU_AmdTccTarget", -1);
-                    if (Capabilities.AmdPlatform)
-                    {
-                        TccMinimum = 85;
-                        TccMaximum = TccRawMaximum > 0 ? TccRawMaximum : 95;
-                        if (TccMinimum >= TccMaximum) TccMinimum = Math.Max(0, TccMaximum - 10);
-                    }
-                    else
-                    {
-                        int tjMax = TjMax > 0 ? TjMax : 100;
-                        // New GCU versions may expose 0/0 as an unavailable raw-offset
-                        // range. Official CCU still presents the Intel target range as
-                        // 75..95 C; interpreting 0/0 literally collapses it to 95/95.
-                        bool collapsedZeroRange = TccRawMinimum == 0 && TccRawMaximum == 0;
-                        int deviceMinimum = !collapsedZeroRange && TccRawMaximum >= 0
-                            ? tjMax - TccRawMaximum : 75;
-                        int deviceMaximum = !collapsedZeroRange && TccRawMinimum >= 0
-                            ? tjMax - TccRawMinimum : 95;
-                        TccMinimum = Math.Clamp(deviceMinimum, 75, 95);
-                        TccMaximum = Math.Clamp(deviceMaximum, 75, 95);
-                        if (TccMinimum > TccMaximum) TccMinimum = TccMaximum;
-                    }
-                    int reportedTarget = amdTccTarget >= 0 ? amdTccTarget : TccOffset >= 0 ? TccTargetFromRaw(TccOffset) : -1;
-                    TccTarget = reportedTarget >= 0 ? Math.Clamp(reportedTarget, TccMinimum, TccMaximum) : -1;
-                    var pl4d = o["CPU_PL4_Double_Flag"]?.ToString();
-                    if (pl4d is not null) Pl4Double = pl4d == "1";
-
-                    // PL4 必须在 Pl4Double 之后换算：官方对这类机型把线上值乘 2 当面向用户的瓦数。
-                    //
-                    // 只 latch 可用值（> 0），与 CpuAmdSpl 那一族同一纪律：
-                    // OptionalInt 的 fallback 是上一次的值，所以 0 一旦被记住就再也回不到
-                    // 「未知」，而下面 `_pl4Raw >= 0` 会让它通过所有有效性守卫——
-                    // 界面上就是一个「已知的 0 W」。上下限同理：0/0 会把滑条量程永久压成 0..0。
-                    // 真实的功耗墙不可能是 0 或负数。
-                    _pl4Raw = OptionalUsablePowerValue(o, "CPU_PL4", _pl4Raw);
-                    _pl4RawMinimum = FirstUsablePowerValue(o, _pl4RawMinimum,
-                        "CPU_PL4Minimum", "CPU_PL4Min", "CPU_PL4_Minimum", "CPU_PL4_Min");
-                    _pl4RawMaximum = FirstUsablePowerValue(o, _pl4RawMaximum,
-                        "CPU_PL4Maximum", "CPU_PL4Max", "CPU_PL4_Maximum", "CPU_PL4_Max");
-                    int pl4Scale = Pl4Double ? 2 : 1;
-                    Pl4 = _pl4Raw >= 0 ? _pl4Raw * pl4Scale : -1;
-                    Pl4Minimum = _pl4RawMinimum >= 0 ? _pl4RawMinimum * pl4Scale : -1;
-                    Pl4Maximum = _pl4RawMaximum >= 0 ? _pl4RawMaximum * pl4Scale : -1;
-
-                    // 风扇转换灵敏度：开关与数值分开上报，两者任一出现就说明机型支持这一项。
-                    // 这一项是自定义模式的风扇调参，不是系统快捷开关，所以不进 QuickSwitches：
-                    // 它和 PL1/PL2/温度墙一样由 CustomModeForm 的批量提交路径读写。
-                    bool? fanSwitchEnabled = FirstOptionalBool(o, "FAN_FanSwitchSpeedEnabled", "FanSwitchSpeedEnabled");
-                    if (fanSwitchEnabled is not null)
-                    {
-                        FanSwitchSpeedEnabled = fanSwitchEnabled.Value;
-                        FanSwitchSpeedSeen = true;
-                    }
-                    int fanSwitchSpeed = OptionalInt(o, -1, "FAN_FanSwitchSpeed", "FanSwitchSpeed");
-                    if (fanSwitchSpeed >= 0)
-                    {
-                        FanSwitchSpeed = fanSwitchSpeed;
-                        FanSwitchSpeedSeen = true;
-                    }
-                    int fanSwitchMin = OptionalInt(o, -1,
-                        "FAN_FanSwitchSpeedMinimum", "FAN_FanSwitchSpeedMin", "FanSwitchSpeedMinimum");
-                    int fanSwitchMax = OptionalInt(o, -1,
-                        "FAN_FanSwitchSpeedMaximum", "FAN_FanSwitchSpeedMax", "FanSwitchSpeedMaximum");
-                    if (fanSwitchMin >= 0) FanSwitchSpeedMinimum = fanSwitchMin;
-                    if (fanSwitchMax >= 0) FanSwitchSpeedMaximum = fanSwitchMax;
-
-                    // 游戏白名单：官方用它在检测到白名单进程时自动切模式。
-                    // 值是 JSON 数字 0/1（实测），ParseFlexibleBool 能正确处理。
-                    // 只有真解析出布尔值才置 Seen——这一项在 SupportsQuickSwitch 里
-                    // 没有任何别的门禁兜底，无法识别的值会直接变成一个假开关。
-                    if (OptionalBool(o, "GameWhitelistSwitch") is bool gameWhitelist)
-                    {
-                        QuickSwitches["gamewhitelist"] = gameWhitelist;
-                        GameWhitelistSeen = true;
-                    }
-
-                    // CPU 高级性能 / 超频菜单总闸。
-                    //
-                    // 状态字段名是 CPU_PerformanceAndOverClockMenuSwitch——**带下划线**。
-                    // 这里曾经写成 CPUPerformanceAndOverClockMenuSwitch（那是 GCUService 内部
-                    // 结构体的成员名，没有被序列化成这个名字发出来），于是 HasField 永远为假、
-                    // CpuAdvancedPerformanceSeen 恒 false，整项在界面上从来没出现过。
-                    // 实测载荷：CPU_PerformanceAndOverClockMenuSwitch=1（官方 CCUWinUI L52738
-                    // 读的也是 MyRamFan1p5.CPU_PerformanceAndOverClockMenuSwitch == "1"）。
-                    // 旧名留作别名，避免老固件真用了那个名字时又漏掉。
-                    JToken? cpuAdvPerf = FirstField(o,
-                        "CPU_PerformanceAndOverClockMenuSwitch", "CPUPerformanceAndOverClockMenuSwitch");
-                    if (cpuAdvPerf is not null)
-                    {
-                        QuickSwitches["cpuadvperf"] = ParseFlexibleBool(cpuAdvPerf.ToString()) == true;
-                        CpuAdvancedPerformanceSeen = true;
-                    }
-                    // 超频总开关的支持位。官方门禁是 IsOcSettingsSupport || HWOCSupport
-                    // （CCUWinUI L52736），前者来自注册表 ItemSupport\OcSettingsSupport、
-                    // 后者来自 LCHWOC/Status 的 Support 且默认 true。Fan/Status 同帧也带了
-                    // OcSupport（实测 True），它是这台机器上唯一随状态刷新的那份证据，
-                    // 所以一并解析——只靠构造时读一次注册表会漏掉 BIOS 里开了但注册表没写的机型。
-                    bool? ocSupport = FirstOptionalBool(o, "OcSupport", "OcSettingsSupport");
-                    if (ocSupport is not null) OverclockMenuSupport = ocSupport;
-
-                    // GPU Whisper（静音）模式：**只读**，不提供开关入口。
-                    //
-                    // 服务端确实完整上报这一族（开发机实测 GPU_WhisperModeSupport=true、
-                    // GPU_WhisperModeSwitch="0"、GPU_WhisperModeSetting="0"、
-                    // GPU_WhisperModeMinFps_QUIETER/_QUIET/_BALANCED="30"/"40"/"60"、
-                    // MinFpsMaximum/Minimum="60"/"30"），但官方 5.56 界面里
-                    // GpuWhisperModeSwitch / GpuWhisperModeSetting 只有属性声明、
-                    // **没有任何下发点**，所以拿不到命令的真实形状。
-                    //
-                    // 曾经按猜测实现过一个开关（走 Fan/Control 的 SET_OPERATING_MODE_DETAIL），
-                    // 真机验证证伪：下发后回读毫无变化。留着就是一个点了没反应的空头开关，
-                    // 所以入口已撤掉，这里只保留状态解析供诊断与将来接线用。
-                    //
-                    // 另外注意 Switch 与 Setting 是两件事：Switch 是开关，
-                    // Setting 是静音档位（对应三档 MinFps），此前误把 Setting 当开关读。
-                    bool? whisperSupport = OptionalBool(o, "GPU_WhisperModeSupport");
-                    if (whisperSupport is not null) WhisperModeSupport = whisperSupport;
-                    if (HasField(o, "GPU_WhisperModeSwitch"))
-                    {
-                        WhisperMode = OptionalBool(o, "GPU_WhisperModeSwitch") == true;
-                        WhisperModeSeen = true;
-                    }
-                    WhisperModeLevel = OptionalInt(o, WhisperModeLevel, "GPU_WhisperModeSetting");
-                    // GCU firmware revisions are inconsistent here: some use the
-                    // OC suffix and numeric 0/1 values, while others omit the
-                    // suffix and return JSON booleans. Parse all known variants
-                    // through the same case-insensitive helpers so a valid
-                    // write is not reported as unconfirmed solely because of
-                    // the status schema used by the model.
-                    bool? ocSwitch = FirstOptionalBool(o,
-                        "OverClockingSwitch", "OverclockingSwitch", "GPU_OverClockingSwitch", "GPU_OverclockingSwitch");
-                    if (ocSwitch.HasValue) OcSwitch = ocSwitch.Value;
-                    GpuCoreClockOffset = OptionalInt(o, GpuCoreClockOffset,
-                        "GPU_CoreClockOffsetOC", "GPU_CoreClockOffset", "GpuCoreClockOffsetOC", "GpuCoreClockOffset",
-                        "GPU_CoreOffsetOC", "GPU_CoreOffset", "GpuCoreOffsetOC", "GpuCoreOffset");
-                    GpuMemClockOffset = OptionalInt(o, GpuMemClockOffset,
-                        "GPU_MemoryClockOffsetOC", "GPU_MemoryClockOffset", "GpuMemoryClockOffsetOC", "GpuMemoryClockOffset",
-                        "GPU_MemoryOffsetOC", "GPU_MemoryOffset", "GpuMemoryOffsetOC", "GpuMemoryOffset");
-                    // 过去这里是裸字符串比较（只认 "True"/"true"/"1"），"ON"/"ENABLE" 会被判成
-                    // false，而且无论能否识别都把 FanRespectiveSeen 置位——SupportsFanRespective
-                    // 完全依赖这个标志，于是能力被误报为支持而状态永远是关闭。
-                    bool? fanRespective = OptionalBool(o, "FanControlRespective");
-                    if (fanRespective.HasValue) { FanRespective = fanRespective.Value; FanRespectiveSeen = true; }
-                    // 字段全部写完之后才计版本。过去它在 case 第一行自增，于是解析中途抛异常时
-                    // 外部按 FanStatusVersion 轮询的代码会认为「来了一帧新状态」，
-                    // 而模式、功耗墙、TCC、TGP、超频回读全是旧值。
-                    Interlocked.Increment(ref _fanStatusVersion);
-                    if (modeChangedTo is int changedMode)
-                        RaiseIsolated(ModeChanged, nameof(ModeChanged), changedMode);
-                    RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
+                    OnFanStatus(o);
                     break;
                 case MqttTopics.LchwocStatus:
-                    {
-                        LchwocStatusSeen = true;
-                        bool? support = OptionalBool(o, "Support");
-                        if (support.HasValue)
-                        {
-                            LchwocSupportReported = support.Value;
-                            LchwocSupport = support.Value;
-                        }
-                        bool? enabled = OptionalBool(o, "Enable");
-                        if (enabled.HasValue) LchwocEnable = enabled.Value;
-
-                        // Older GCU builds put some HWOC values on this topic instead of Fan/Status.
-                        UpdateGpuOffsetRanges(o);
-                        GpuCoreClockOffset = OptionalInt(o, GpuCoreClockOffset,
-                            "GPU_CoreClockOffsetOC", "GPU_CoreClockOffset", "GpuCoreClockOffsetOC", "GpuCoreClockOffset",
-                            "GPU_CoreOffsetOC", "GPU_CoreOffset", "GpuCoreOffsetOC", "GpuCoreOffset");
-                        GpuMemClockOffset = OptionalInt(o, GpuMemClockOffset,
-                            "GPU_MemoryClockOffsetOC", "GPU_MemoryClockOffset", "GpuMemoryClockOffsetOC", "GpuMemoryClockOffset",
-                            "GPU_MemoryOffsetOC", "GPU_MemoryOffset", "GpuMemoryOffsetOC", "GpuMemoryOffset");
-                        bool? lchwocSwitch = FirstOptionalBool(o,
-                            "OverClockingSwitch", "OverclockingSwitch", "GPU_OverClockingSwitch", "GPU_OverclockingSwitch");
-                        if (lchwocSwitch.HasValue) OcSwitch = lchwocSwitch.Value;
-                        Logger.WriteLineIfChanged("hwoc-status", $"HWOC: support={LchwocSupportReported?.ToString() ?? "unknown"} enable={LchwocEnable}");
-                        RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
-                        break;
-                    }
+                    OnLchwocStatus(o);
+                    break;
             }
             // 三个通知都做逐个订阅者隔离。过去是裸 ?.Invoke()，而且顺序是
             // CapabilitiesChanged → StateChanged → DataChanged：任一 CapabilitiesChanged
@@ -2112,6 +1311,891 @@ public class MechrevoHw : IDisposable
                 $"MechrevoHw parse fail {topic}: {ex.GetType().Name}: {ex.Message}",
                 5000);
         }
+    }
+
+    private void OnSystemCpuInfo(JObject o)
+    {
+        CpuTemp = Int(o, "CpuTemperature");
+        CpuUsage = Int(o, "CpuUsage");
+        CpuFrequency = Int(o, "CpuFrequency");
+        Interlocked.Exchange(ref _cpuInfoReceivedAt, Environment.TickCount64);
+    }
+
+    private void OnSystemGpuInfo(JObject o)
+    {
+        GpuTemp = Int(o, "GpuTemperature");
+        GpuUsage = Int(o, "GpuUsage");
+        GpuCoreFreq = Int(o, "GpuCoreFreq");
+        VramUsedMb = Int(o, "GpuMem");
+        Interlocked.Exchange(ref _gpuInfoReceivedAt, Environment.TickCount64);
+    }
+
+    private void OnSystemMemoryInfo(JObject o)
+    {
+        RamUsage = Int(o, "MemoryUsage");
+        RamUsedGb = Double(o, "TotalUsingMemory", RamUsedGb);
+    }
+
+    private void OnSystemFanInfo(JObject o)
+    {
+        CpuFanDuty = Int(o, "CpuFanDuty");
+        GpuFanDuty = Int(o, "GpuFanDuty");
+        CpuFanRpm = Int(o, "CpuFanRpm");
+        GpuFanRpm = Int(o, "GpuFanRpm");
+        // 这个主题只有这四个字段，没有第三颗风扇。
+        //
+        // 曾经在这里加过一段「第三颗风扇解析」，用了五个自己编的字段名
+        // （MidFanDuty / RamFanDuty / ThirdFanDuty / Fan3Duty / MiddleFanDuty）。
+        // 那是错的：官方 System/FanInfo 的处理逻辑只读 CpuFanDuty / GpuFanDuty /
+        // CpuFanRpm / GpuFanRpm 四个字段，全协议 58 个主题里也只有这一个
+        // 加 System/FanErrorInfo 与风扇有关，没有任何主题发第三颗风扇的读数。
+        // 官方界面是全机型共用的，它只显示两颗，所以任何机型都不会报第三颗。
+        //
+        // 内存风扇（RamFan1p5Support）确实存在，但它在 EC 侧只有三个**风扇表**
+        // 寄存器（TABLE_STATUS1/2、TABLE_CTRL），没有转速与占空比寄存器；
+        // 而且它由 GCUService 随风扇表自动管理（MyFanTableCtrl 内部调用），
+        // 官方控制台自己也没有读数和控制入口。详见 docs/hardware/README.md。
+    }
+
+    private void OnSystemBatteryInfo(JObject o)
+    {
+        BatteryPercent = Int(o, "BatteryLifePercent");
+        // 电池健康信息：循环次数与设计容量。官方 UI 不展示这两项，
+        // 但推流里一直带着，比 powercfg /batteryreport 实时得多。
+        BatteryCycleCount = OptionalInt(o, BatteryCycleCount, "BatteryCycleCount");
+        BatteryAbnormal = OptionalBool(o, "BatteryAbnormal") == true;
+        var capacityText = o["BatteryCapacity"]?.ToString();
+        if (capacityText is not null) BatteryCapacityText = capacityText;
+        Logger.WriteLineIfChanged("battery-info",
+            $"BatteryInfo percent={BatteryPercent} cycles={BatteryCycleCount} capacity={BatteryCapacityText} abnormal={BatteryAbnormal}");
+    }
+
+    private void OnSystemNetworkInfo(JObject o)
+    {
+        // 官方推流里的网络吞吐。此前完全没订阅，Overlay 想显示网速只能自己数网卡。
+        // 服务端给的是带单位的字符串（"232 Kbps" / "3.9 Mbps"），原样保留供展示。
+        NetworkDownload = o["NetworkDownload"]?.ToString() ?? NetworkDownload;
+        NetworkUpload = o["NetworkUpload"]?.ToString() ?? NetworkUpload;
+        NetworkInfoSeen = true;
+    }
+
+    private void OnSystemHardwareInfo(JObject o)
+    {
+        // 机型/固件铭牌。含 EC 固件版本——排查固件差异类问题时这是关键信息，
+        // 而它此前只在官方 UI 里可见。
+        HardwareInfoSeen = true;
+        string? ecVersion = FirstField(o, "ECVersion", "EcVersion", "EC_Version", "ECFWVersion")?.ToString();
+        if (!string.IsNullOrWhiteSpace(ecVersion)) EcFirmwareVersion = ecVersion;
+        Logger.WriteLineIfChanged("hardware-info", "HardwareInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
+    }
+
+    private void OnSystemFanErrorInfo(JObject o)
+    {
+        // 风扇异常告警。官方用它弹提示；此前未订阅，风扇故障对用户完全不可见。
+        FanErrorSeen = true;
+        bool anyFanError = false;
+        foreach (var property in o.Properties())
+        {
+            if (!property.Name.Contains("Error", StringComparison.OrdinalIgnoreCase) &&
+                !property.Name.Contains("Abnormal", StringComparison.OrdinalIgnoreCase)) continue;
+            if (OptionalBool(o, property.Name) == true) anyFanError = true;
+        }
+        FanError = anyFanError;
+        Logger.WriteLineIfChanged("fan-error", "FanErrorInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
+    }
+
+    private void OnLightbarOrLogoLightStatus(string topic, JObject o)
+    {
+        // 主题到过不等于这条灯带存在：开发机曾实测过服务端对不存在的灯带
+        // 也推一个 type / powerStatus / brightNess 全空的空状态。
+        // 只认「载荷带了可识别的灯带内容」。
+        bool lightbarContentPresent = HasLightbarContent(o);
+        string lightKey;
+        switch (topic)
+        {
+            case MqttTopics.LogoLightStatus:
+                LogoLightStatusSeen |= lightbarContentPresent;
+                lightKey = "logolight";
+                break;
+            default:
+                LightbarStatusSeen |= lightbarContentPresent;
+                lightKey = "lightbar";
+                // 子灯带的能力位只在主灯带状态里带，别的主题不会报。
+                LightbarLogoSupport = OptionalBool(o, "LogoSupport") ?? LightbarLogoSupport;
+                LightbarBaseSupport = OptionalBool(o, "BaseSupport") ?? LightbarBaseSupport;
+                LightbarNewLogoSupport = OptionalBool(o, "NewlogoSupport") ?? LightbarNewLogoSupport;
+                LightbarMbLogoSupport = OptionalBool(o, "MBlogoSupport") ?? LightbarMbLogoSupport;
+                break;
+        }
+        // 官方是 text.Equals(RGBKB_PowerStatus.On.ToString())，即精确比 "On"。
+        // 这里放宽到忽略大小写：值域只有 On/Off 两个枚举名，
+        // 忽略大小写不会引入误判，但能兜住固件写成 "ON"/"on" 的情况——
+        // 原来那种写法下，这四条灯带的开关回显会一起变成恒关。
+        var lbPower = o["powerStatus"]?.ToString();
+        if (lbPower is not null)
+            QuickSwitches[lightKey] = string.Equals(lbPower, "On", StringComparison.OrdinalIgnoreCase);
+        // 判为「无内容」时把整个载荷打出来：三个挑出来的字段看不出服务端到底发了什么，
+        // 而这正是判断某条子灯带是否真实存在时唯一的依据。
+        Logger.WriteLineIfChanged("lb-status-" + topic, lightbarContentPresent
+            ? $"LB {topic}: type={o["type"]?.ToString() ?? "-"} power={lbPower ?? "-"} light={o["brightNess"]?.ToString() ?? "-"}"
+            : $"LB {topic}: no hardware evidence (type/powerStatus empty), raw={o.ToString(Newtonsoft.Json.Formatting.None)}");
+    }
+
+    private void OnKeyboardStatus(JObject o)
+    {
+        KeyboardStatusSeen = true;
+        var kbEffect = o["effect"]?.ToString();
+        if (kbEffect is not null) KeyboardEffect = kbEffect;
+        var kbLight = o["light"]?.ToString();
+        if (kbLight is not null && int.TryParse(kbLight, out int kl)) KeyboardLight = kl;
+        var kbBrightness = o.GetValue("brightNess", StringComparison.OrdinalIgnoreCase)?.ToString();
+        // brightNess 是小数百分比，GCU 恒发点分隔（"62.5"）。走 CurrentCulture 的
+        // 逗号小数 locale 会解析失败并退化到五档旧字段，亮度回显静默错档；
+        // 与本文件 Int/Double/ParseOptionalInt 一律显式 InvariantCulture 的纪律对齐。
+        if (kbBrightness is not null && double.TryParse(kbBrightness, NumberStyles.Float, CultureInfo.InvariantCulture, out double brightness))
+        {
+            int legacyLevel = int.TryParse(kbLight, out int parsedLegacyLevel) ? parsedLegacyLevel : -1;
+            KeyboardBrightness = MechrevoLite.Hardware.KeyboardRgb.MapReportedHardwareBrightness(
+                (int)Math.Round(brightness), legacyLevel);
+        }
+        else if (int.TryParse(kbLight, out int legacyLight))
+            KeyboardBrightness = MechrevoLite.Hardware.KeyboardRgb.MapReportedHardwareBrightness(-1, legacyLight);
+        var kbSpeed = o["speed"]?.ToString();
+        if (kbSpeed is not null && int.TryParse(kbSpeed, out int ks)) KeyboardSpeed = ks;
+        var kbDirection = o["direction"]?.ToString();
+        if (kbDirection is not null) KeyboardDirection = kbDirection;
+        var kbPower = o["powerStatus"]?.ToString();
+        if (kbPower is not null) KeyboardPower = kbPower == "On";
+        // 字段写完之后才计版本：Program.OnHardwareStateChanged 正是按
+        // KeyboardStatusVersion 判断「是否来了新的一帧」再去读亮度和效果的。
+        Interlocked.Increment(ref _keyboardStatusVersion);
+        Logger.WriteLineIfChanged("kb-status", $"KB: effect={KeyboardEffect} light={KeyboardLight} brightness={KeyboardBrightness}% speed={KeyboardSpeed} direction={KeyboardDirection} power={KeyboardPower}");
+    }
+
+    private void OnBtLcStatus(JObject o)
+    {
+        LcStatusSeen = true;
+        string? connS = o.GetValue("connected", StringComparison.OrdinalIgnoreCase)?.ToString();
+        string? connStr = o.GetValue("ConnectString", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (connS is not null || connStr is not null)
+            LcConnectionStateReported = true;
+        if (connS is not null)
+        {
+            LcReportedConnected = OptionalBool(o, "connected") ??
+                string.Equals(connS, "Connected", StringComparison.OrdinalIgnoreCase);
+            if (connStr is null)
+            {
+                LcConnectString = LcReportedConnected ? "Connected" : "Disconnected";
+                LcConnectStringReported = false;
+            }
+        }
+        if (connStr is not null)
+        {
+            LcConnectStringReported = true;
+            LcConnectString = connStr;
+            if (connS is null)
+                LcReportedConnected = string.Equals(connStr, "Connected", StringComparison.OrdinalIgnoreCase);
+        }
+        if (LcConnectionStateReported)
+            LcConnected = LcReportedConnected &&
+                (connStr is null || string.Equals(connStr, "Connected", StringComparison.OrdinalIgnoreCase));
+        if (OptionalBool(o, "AutoConnect") is bool autoConnect) LcAutoConnect = autoConnect;
+        if (OptionalBool(o, "LC_action") is bool actionSupported)
+        {
+            LcActionSupported = actionSupported;
+            LcActionSupportReported = true;
+        }
+        if (OptionalBool(o, "LC_CoolingAuto") is bool coolingAuto) LcCoolingAutoSupported = coolingAuto;
+        LcPumpDuty = OptionalInt(o, "PumpDuty", LcPumpDuty);
+        LcFanDuty = OptionalInt(o, "FanDuty", LcFanDuty);
+        if (OptionalBool(o, "LC_MeterNormal") is bool meterNormal)
+        {
+            LcMeterNormal = meterNormal;
+            if (!meterNormal && LcGcuControllable && LcPumpDuty > 0)
+                Interlocked.Increment(ref _lcConsecutiveMeterFaults);
+            else
+                Interlocked.Exchange(ref _lcConsecutiveMeterFaults, 0);
+        }
+        else if (!LcGcuControllable || LcPumpDuty <= 0)
+        {
+            Interlocked.Exchange(ref _lcConsecutiveMeterFaults, 0);
+        }
+        LcPumpControl = OptionalInt(o, "LC_PumpCtrl", LcPumpControl);
+        LcFanControl = OptionalInt(o, "LC_FanCtrl", LcFanControl);
+        string? fwS = o.GetValue("DevFWVersion", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (!string.IsNullOrWhiteSpace(fwS)) LcFwVersion = fwS;
+        LcLedRed = OptionalInt(o, "LCLED_R", LcLedRed);
+        LcLedGreen = OptionalInt(o, "LCLED_G", LcLedGreen);
+        LcLedBlue = OptionalInt(o, "LCLED_B", LcLedBlue);
+        LcLedRedMinimum = OptionalInt(o, "LCLED_RMinimum", LcLedRedMinimum);
+        LcLedRedMaximum = OptionalInt(o, "LCLED_RMaximum", LcLedRedMaximum);
+        LcLedGreenMinimum = OptionalInt(o, "LCLED_GMinimum", LcLedGreenMinimum);
+        LcLedGreenMaximum = OptionalInt(o, "LCLED_GMaximum", LcLedGreenMaximum);
+        LcLedBlueMinimum = OptionalInt(o, "LCLED_BMinimum", LcLedBlueMinimum);
+        LcLedBlueMaximum = OptionalInt(o, "LCLED_BMaximum", LcLedBlueMaximum);
+        LcHeadLightMode = OptionalInt(o, "LCLED_Mode", LcHeadLightMode);
+        LcFanLightMode = OptionalInt(o, "LCFanLED_Mode", LcFanLightMode);
+        JToken? macListToken = o.GetValue("DeviceMacList", StringComparison.OrdinalIgnoreCase);
+        if (macListToken is JArray macList)
+        {
+            _lcDeviceMacs = macList
+                .Select(mac => mac?.ToString())
+                .Where(mac => !string.IsNullOrWhiteSpace(mac))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        else if (macListToken?.Type == JTokenType.String &&
+            macListToken.ToString() is { Length: > 0 } macText)
+        {
+            string[] parsedMacs = macText.TrimStart().StartsWith("[", StringComparison.Ordinal)
+                ? TryParseMacArray(macText)
+                : macText.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parsedMacs.Length > 0)
+                _lcDeviceMacs = parsedMacs
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+        }
+        var curMac = o.GetValue("DevMACString", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (!string.IsNullOrWhiteSpace(curMac)) LcCurrentMac = curMac;
+        Interlocked.Increment(ref _lcStatusVersion);
+        Interlocked.Exchange(ref _lcStatusReceivedAt, Environment.TickCount64);
+        // 变化才记录：GCU 每 6 秒推一次液冷状态，内容通常完全相同。
+        // 只做频率节流会让这一行在一小时内重复几百次，把日志里真正需要
+        // 排查的内容挤出 2 MB 上限。
+        Logger.WriteLineIfChanged("lc-status", $"LC: reported={LcReportedConnected} controllable={LcGcuControllable} state={LcConnectString} pump={LcPumpDuty} fan={LcFanDuty} pumpCtrl={LcPumpControl} fanCtrl={LcFanControl} auto={LcCoolingAutoSupported} fw={LcFwVersion} macs={LcDeviceMacs.Count} curMac={LcCurrentMac}");
+        RaiseIsolated(LcChanged, nameof(LcChanged));
+    }
+
+    private void OnSystemBatteryProtection(JObject o)
+    {
+        var prot = Int(o, "HealthProtectionStatus");
+        if (prot >= 0) BatteryProtection = prot;
+    }
+
+    private void OnFanTable(JObject o)
+    {
+        FanCurveSeen = true;
+        CurveName = o["Name"]?.ToString() ?? CurveName;
+        bool? tableRespective = OptionalBool(o, "FanControlRespective");
+        bool respectiveChanged = tableRespective.HasValue &&
+            (!FanRespectiveSeen || FanRespective != tableRespective.Value);
+        if (tableRespective.HasValue)
+        {
+            FanRespective = tableRespective.Value;
+            FanRespectiveSeen = true;
+        }
+        // 先在本地数组上完成解析和 fallback，最后才整体发布。
+        // 过去是「整体替换 → 再对已发布的数组做 Array.Copy」，注释声称原子替换，
+        // 但 fallback 分支实际是原地改写：UI 线程在两次 copy 之间读取会看到
+        // 半 0 半默认值的曲线，短暂画出一条错误的线。
+        (byte[] cpuUpT, byte[] cpuDuty) = ParseCurve(o["CPU"] as JArray);
+        (byte[] gpuUpT, byte[] gpuDuty) = ParseCurve(o["GPU"] as JArray);
+        // 表名（M1T1/M2T1/M3T1）选默认曲线；M4T1 等未识别表名（自定义）用 opMode 兜底——
+        // 防偶发直线：Fan/Table 乱序到达时旧表名（如 M4T1）最后到，若不 fallback 则异常数据（恒值）直接显示
+        int fallback = TableNameToMode(CurveName);
+        if (fallback < 0)
+            fallback = OperatingMode switch { 0 => 1, 1 => 0, 2 => 2, _ => 0 };   // opMode→默认曲线数组索引
+        Logger.WriteLineIfChanged("fan-table", $"Fan/Table [{CurveName}] fallbackMode={fallback} cpuDuty={string.Join(",", cpuDuty.Take(8))} uninitialized={IsUninitializedCurve(cpuDuty)}");
+        // 只有全 0 的未初始化表才回退。平缓或恒定曲线可能是用户的有效选择，不能覆盖。
+        if (fallback >= 0 && IsUninitializedCurve(cpuDuty) &&
+            _defaultCpuDuty[fallback] is { } defaultCpuDuty && _defaultCpuUpT[fallback] is { } defaultCpuUpT)
+        {
+            Array.Copy(defaultCpuUpT, cpuUpT, 16);
+            Array.Copy(defaultCpuDuty, cpuDuty, 16);
+            Logger.WriteLine($"fallback CPU -> duty={string.Join(",", cpuDuty.Take(8))} upT={string.Join(",", cpuUpT.Take(8))}");
+        }
+        if (fallback >= 0 && IsUninitializedCurve(gpuDuty) &&
+            _defaultGpuDuty[fallback] is { } defaultGpuDuty && _defaultGpuUpT[fallback] is { } defaultGpuUpT)
+        {
+            Array.Copy(defaultGpuUpT, gpuUpT, 16);
+            Array.Copy(defaultGpuDuty, gpuDuty, 16);
+            Logger.WriteLine($"fallback GPU -> duty={string.Join(",", gpuDuty.Take(8))} upT={string.Join(",", gpuUpT.Take(8))}");
+        }
+        // 现在才发布：UI 线程要么看到完整的旧曲线，要么看到完整的新曲线。
+        CpuCurveUpT = cpuUpT;
+        CpuCurveDuty = cpuDuty;
+        GpuCurveUpT = gpuUpT;
+        GpuCurveDuty = gpuDuty;
+        // 数据指纹：相同曲线不重复触发重画（Fan/Table 周期推送 + 请求响应会导致反复 InitFans → 窗口闪烁）
+        string hash = CurveName + "|" + string.Join(",", CpuCurveDuty) + "|" + string.Join(",", GpuCurveDuty);
+        if (hash != _lastCurveHash)
+        {
+            _lastCurveHash = hash;
+            RaiseIsolated(CurveUpdated, nameof(CurveUpdated));
+        }
+        if (respectiveChanged) RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
+    }
+
+    private void OnGpuDeviceStatus(JObject o)
+    {
+        GpuDeviceStatusSeen = true;
+        var hzArr = o["currentHZList"] as JArray;
+        if (hzArr is not null)
+        {
+            _hzList = hzArr
+                .Select(h => int.TryParse(h?.ToString(), out int value) ? value : 0)
+                .Where(value => value > 0)
+                .Distinct()
+                .OrderByDescending(value => value)
+                .ToArray();
+        }
+        CurrentHz = Int(o, "currentHZ");
+        // DC_HZ 过去用 Value<bool>()，遇到 "1"/"ON" 这类固件写法会抛
+        // FormatException 并中断整个 GPUDevice/Status 分支（连带 currentHZList
+        // 和 currentHZ 一起失效）。改为容错解析，无法识别时保留上一次的已知值。
+        GpuSaveMode = Int(o, "currentSaveingMode");
+        // DcHzSeen 只在真的解析出布尔值时置位，避免把"存在但无法识别"当成已知能力。
+        bool? dcHz = OptionalBool(o, "DC_HZ");
+        if (dcHz.HasValue) { DcHz = dcHz.Value; DcHzSeen = true; }
+    }
+
+    private void OnSettingsDeviceSwitchItemStatus(JObject o)
+    {
+        DeviceSwitchStatusSeen = true;
+        // 这五项过去是「字段存在就置 Seen」：`HasField(...)` 加
+        // `OptionalBool(...) == true`。无法识别的值（固件写了个没见过的记法）
+        // 会静默变成 false 而 Seen 照样置位，于是界面上长出一个点了没反应的开关，
+        // 确认逻辑也永远等不到回读变化——和 LcdOverdriveSeen 修掉的那个完全同型。
+        // 正确写法就在下面 GPUDevice/Status 的 DcHzSeen：解析成功才置位。
+        if (Int(o, "ScreenBrightness") is >= 0 and int screenBrightness)
+        {
+            ScreenBrightness = screenBrightness;
+            ScreenBrightnessSeen = true;
+        }
+        if (OptionalBool(o, "TochpadEnable") is bool touchpadEnabled)
+        {
+            QuickSwitches["touchpad"] = touchpadEnabled;
+            TouchpadSeen = true;
+        }
+        if (OptionalBool(o, "WIFIEnable") is bool wifiEnabled)
+        {
+            QuickSwitches["wifi"] = wifiEnabled;
+            WifiSeen = true;
+        }
+        if (OptionalBool(o, "BTEnable") is bool bluetoothEnabled)
+        {
+            QuickSwitches["bt"] = bluetoothEnabled;
+            BluetoothSeen = true;
+        }
+        if (OptionalBool(o, "WebCamEnable") is bool webcamEnabled)
+        {
+            QuickSwitches["webcam"] = webcamEnabled;
+            WebcamSeen = true;
+        }
+    }
+
+    private void OnSettingStatus(JObject o)
+    {
+        SettingStatusSeen = true;
+        // 局部调光 / 屏幕响应加速。
+        //
+        // 值的判定沿用官方的精确匹配（CCUWinUI L29397-29398 就是
+        // == LOCALDIMMING_ON / == LCDOverdrive_ON），不改成 Contains——
+        // 这两个动作名本身不含 OFF/UNLOCK 之类的否定词，Contains 反而没有依据。
+        //
+        // 但支持位必须看：服务端对不支持的机型照样发这个字段（实测本机
+        // LCDOverdriveSwitch=LCDOverdrive_OFF 同时 LCDOverdriveSupport=NotSupport）。
+        // 过去无条件置 *Seen，于是界面上长出一个点了永远不生效的开关，
+        // 确认逻辑也永远等不到回读变化。官方是拿注册表 ItemSupport 的
+        // LCDOverdriveSupport 当门禁（L29288-29292），这里优先用同帧上报的那份。
+        bool? lcdOverdriveSupport = FirstOptionalBool(o, "LCDOverdriveSupport", "LcdOverdriveSupport");
+        if (lcdOverdriveSupport is not null) LcdOverdriveSupport = lcdOverdriveSupport;
+        bool? localDimmingSupport = FirstOptionalBool(o, "LocalDimmingSupport");
+        if (localDimmingSupport is not null) LocalDimmingSupport = localDimmingSupport;
+
+        var ldS = o["LocalDimmingSwitch"]?.ToString();
+        if (ldS is not null)
+        {
+            LocalDimming = ldS == "LOCALDIMMING_ON";
+            if (LocalDimmingSupport != false) LocalDimmingSeen = true;
+        }
+        var odS = o["LCDOverdriveSwitch"]?.ToString();
+        if (odS is not null)
+        {
+            LcdOverdrive = odS == "LCDOverdrive_ON";
+            if (LcdOverdriveSupport != false) LcdOverdriveSeen = true;
+        }
+        // Fresh GCU status must win over a registry value that can lag a profile change.
+        // The registry remains the fallback for older GCU builds without this field.
+        JToken? ccSwitch = FirstField(o,
+            "ColorCalibrationSwitch", "ColorCalibrationSwitch_Status", "ColorCalibrationStatus");
+        // 注册表读取要单独隔离：TryReadColorCalibrationOn / IsColorCalibrationOn
+        // 在 MQTT 接收线程上做阻塞式注册表 I/O，而这里是 Setting/Status 的中段——
+        // 它一抛，本帧后面的 USB/OSD/WinKey 一族、显卡模式、两个版本号全都丢，
+        // 所有在等的 WaitForStateAsync 只能超时。校色状态读不到时按「未知」处理即可。
+        bool? parsedCcSwitch = null;
+        bool colorCalibrationParsed = false;
+        try
+        {
+            parsedCcSwitch = MechrevoService.ResolveColorCalibrationSwitch(
+                MechrevoService.TryReadColorCalibrationOn(),
+                ParseColorCalibrationSwitch(ccSwitch));
+            if (parsedCcSwitch.HasValue)
+            {
+                ColorCalibrationSwitch = parsedCcSwitch.Value;
+                ColorCalibrationSwitchSeen = true;
+                ColorCalibrationSeen = true;
+                colorCalibrationParsed = true;
+            }
+            else if (!ColorCalibrationSwitchSeen)
+                ColorCalibrationSwitch = MechrevoService.IsColorCalibrationOn();
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLineThrottled("cc-registry",
+                "ColorCalibration registry read failed: " + ex.Message, 5000);
+        }
+
+        JToken? ccMode = FirstField(o,
+            "CurrentColorCalibration", "ColorCalibrationMode", "ColorCalibration");
+        int parsedCcMode = ParseColorCalibrationMode(ccMode);
+        if (parsedCcMode is >= 1 and <= 4)
+        {
+            ColorCalibrationMode = parsedCcMode;
+            ColorCalibrationModeSeen = true;
+            ColorCalibrationSeen = true;
+            colorCalibrationParsed = true;
+        }
+        var ccR = o["ColorCalibrationResultCode"]?.ToString();
+        if (ccR is not null && int.TryParse(ccR, out int ccRV))
+        {
+            ColorCalibrationResult = ccRV;
+            ColorCalibrationSeen = true;
+            colorCalibrationParsed = true;
+        }
+        // 自增条件是「真解析出了值」而不是「字段存在」。
+        // 按字段存在自增会让 ConfirmColorCalibrationAsync 的 freshCalibrationStatus
+        // 误报新鲜——虽然它还 AND 了 stateMatches 不至于伪造成功，
+        // 但一个只在字段存在时跳的版本号本身就不该被当成「状态已更新」的信号。
+        if (colorCalibrationParsed)
+            Interlocked.Increment(ref _colorCalibrationStatusVersion);
+        // CloseTimer 的通知过去在这里裸 ?.Invoke()，位置又在本 case 中段：
+        // 任一订阅者抛异常就会把后面所有字段和三个通知一起丢掉。
+        // 现在只记录变化，事件挪到 case 末尾统一发。
+        int? closeTimerChangedTo = null;
+        var ctS = o["CloseTimer"]?.ToString();
+        if (ctS is not null && int.TryParse(ctS, out int ct) && ct != CloseTimerMinutes)
+        {
+            CloseTimerMinutes = ct;   // 灯效睡眠时间（分钟，0=关闭）——原版 KEYBOARD_LIGHTBAR_TIMER
+            Logger.WriteLine($"CloseTimer -> {ct} 分钟");
+            closeTimerChangedTo = ct;
+        }
+        // 下面这一组的判定全部按官方逐字对齐：官方读的是「状态串里有没有
+        // 那个否定词」，不是把整串跟某个常量比。差别在别的机型上才显出来——
+        // 固件一旦把 USB_CHARGER_STATUS_ON 写成 USB_CHARGER_ON，
+        // 精确匹配就永久判成关闭，而开关在界面上是「点了跳回去」。
+        // 依据：CCUWinUI L73865 / L31146 / L31096 / L31241 / L31192。
+        var usbS = o["UsbCharger"]?.ToString();
+        if (usbS is not null) { UsbCharger = !usbS.Contains("OFF", StringComparison.OrdinalIgnoreCase); UsbChargerSeen = true; }
+        // OSD：官方的 OSDSwitch 语义是「隐藏 OSD」，我们的 QuickSwitches["osd"]
+        // 语义是「显示 OSD」（下发 ("osd", true) => OSD_HIDDEN_OFF），所以取反。
+        var osdS = o["OSD"]?.ToString();
+        if (osdS is not null) { QuickSwitches["osd"] = osdS.Contains("OFF", StringComparison.OrdinalIgnoreCase); OsdSeen = true; }
+        var wkS = o["WinKey"]?.ToString();
+        if (wkS is not null) { QuickSwitches["winkey"] = !wkS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); WinKeySeen = true; }   // true=已锁定（勾选=锁定语义）
+        var fnS = o["FnKey"]?.ToString();
+        if (fnS is not null) { QuickSwitches["fnkey"] = !fnS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); FnKeySeen = true; }   // true=已锁定（勾选=锁定语义）
+        var npS = o["NumPad"]?.ToString();
+        if (npS is not null) { QuickSwitches["numpad"] = !npS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); NumpadSeen = true; }   // true=已锁定（原版勾选语义）
+
+        // 电池 Logo 灯（BATTERYLOGO_TOGGLE_ON/OFF）。官方 L73879-73881 的判定是
+        // !BatteryLogo_Status.Contains("OFF")。这一项此前完全缺失：既没解析也没下发，
+        // 有这条灯的机型在我们这边根本看不到入口。
+        var blS = o["BatteryLogo_Status"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(blS))
+        {
+            QuickSwitches["batterylogo"] = !blS.Contains("OFF", StringComparison.OrdinalIgnoreCase);
+            BatteryLogoSeen = true;
+        }
+
+        // 触摸板切换键：与「触摸板开关」是两件事——这个控制的是 Fn 组合键能否切换触摸板。
+        var tptS = o["TouchpadToggle"]?.ToString();
+        if (tptS is not null) { QuickSwitches["touchpadtoggle"] = !tptS.Contains("OFF", StringComparison.OrdinalIgnoreCase); TouchpadToggleSeen = true; }
+
+        // 单色键盘背光：走 EC 的单色通道，与 RGB 逐键渲染是并列的两套硬件。
+        var sckS = o["SingleColorKBBL"]?.ToString();
+        if (sckS is not null) { QuickSwitches["singlecolorkb"] = !sckS.Contains("OFF", StringComparison.OrdinalIgnoreCase); SingleColorKbSeen = true; }
+
+        // Uni / Omni：官方语义未公开，但两者互斥。只要报了任意一个就认为这台机器有这组开关。
+        var uniS = o["UniSwitch"]?.ToString();
+        var omniS = o["OmniSwitch"]?.ToString();
+        if (uniS is not null) { QuickSwitches["uni"] = !uniS.Contains("OFF", StringComparison.OrdinalIgnoreCase); UniOmniSeen = true; }
+        if (omniS is not null) { QuickSwitches["omni"] = !omniS.Contains("OFF", StringComparison.OrdinalIgnoreCase); UniOmniSeen = true; }
+
+        // 电源指示灯：开关 + 亮度两个字段，亮度是 0..100。
+        //
+        // 开关的值是状态字符串（实测 "PowerLight_ON"），不是布尔也不是 0/1。
+        // 这里曾经用 OptionalBool 解析：ParseFlexibleBool 归一化后做的是**精确**匹配，
+        // "PowerLight_ON" 变成 "POWERLIGHTON" 匹配不上 "ON"，于是永远返回 null，
+        // 开关在界面上恒显示为关、点了也看不出变化。改成与同族开关一致的含 OFF 判定。
+        var plS = o["PowerLightSwitch"]?.ToString();
+        if (plS is not null)
+        {
+            QuickSwitches["powerlight"] = !plS.Contains("OFF", StringComparison.OrdinalIgnoreCase);
+            PowerLightSeen = true;
+        }
+        if (HasField(o, "PowerLightBrightness"))
+        {
+            int plb = Int(o, "PowerLightBrightness");
+            if (plb >= 0) PowerLightBrightness = Math.Clamp(plb, 0, 100);
+        }
+        // 电池页开关状态（原版 MySetting 结构：状态字符串含 OFF 即关；CopilotKey 含 UNLOCK 即开）
+        var hpS = o["HighPerformancePowerModeSwitch"]?.ToString(); if (hpS is not null) { QuickSwitches["highperf"] = !hpS.Contains("OFF", StringComparison.OrdinalIgnoreCase); HighPerformanceSeen = true; }
+        // 这三项过去漏了 OrdinalIgnoreCase，与同族其余十几项不一致：
+        // 固件把值写成小写 off / unlock 就会被判成相反的状态。
+        var acS = o["AcRecoverySwitch_Status"]?.ToString(); if (acS is not null) { QuickSwitches["acrecovery"] = !acS.Contains("OFF", StringComparison.OrdinalIgnoreCase); AcRecoverySeen = true; }
+        var dsS = o["DeepSleepSwitch"]?.ToString(); if (dsS is not null) { QuickSwitches["deepsleep"] = !dsS.Contains("OFF", StringComparison.OrdinalIgnoreCase); DeepSleepSeen = true; }
+        var cpS = o["CopilotKey"]?.ToString(); if (cpS is not null) { QuickSwitches["copilot"] = !cpS.Contains("UNLOCK", StringComparison.OrdinalIgnoreCase); CopilotSeen = true; }
+        var dsT = o["DeepSleepTime"]?.ToString(); if (dsT is not null && int.TryParse(dsT, out int dst)) DeepSleepTime = dst;
+
+        // 显示色彩模式 / 显示特性 / NVIDIA 全局首选显卡：只读记录，不下发。
+        var displayMode = o["DisplayMode"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(displayMode)) DisplayColorMode = displayMode;
+        var displayFeature = o["DisplayFeatureStatus"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(displayFeature))
+            DisplayFeatureOn = !displayFeature.Contains("OFF", StringComparison.OrdinalIgnoreCase);
+        var nvPanel = o["DGpu"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(nvPanel)) NvControlPanelPreference = nvPanel;
+        foreach (string field in DisplayColorParameterFields)
+        {
+            int value = OptionalInt(o, field, int.MinValue);
+            if (value != int.MinValue) _displayColorParameters[field] = value;
+        }
+        if (DisplayColorMode.Length > 0 || DisplayFeatureOn.HasValue ||
+            NvControlPanelPreference.Length > 0 || _displayColorParameters.Count > 0)
+        {
+            Logger.WriteLineIfChanged("display-color",
+                $"Display: mode={(DisplayColorMode.Length > 0 ? DisplayColorMode : "-")} " +
+                $"feature={(DisplayFeatureOn.HasValue ? DisplayFeatureOn.Value ? "On" : "Off" : "-")} " +
+                $"nvPanel={(NvControlPanelPreference.Length > 0 ? NvControlPanelPreference : "-")} " +
+                $"params={{{string.Join(",", _displayColorParameters.Select(p => p.Key + "=" + p.Value))}}}");
+        }
+        var dgpuStatus = FirstField(o,
+            "DiscreteGpuDirectConnectionSwitch_Status", "DGpuDirectConnectionSwitch_Status", "DGPU_DIRECT_STATUS")?.ToString();
+        var igpuStatus = FirstField(o,
+            "IGpuOnlyConnectionSwitch_Status", "IGPUOnlyConnectionSwitch_Status", "IGPU_ONLY_STATUS")?.ToString();
+        bool gpuModeStatusPresent =
+            !string.IsNullOrWhiteSpace(dgpuStatus) || !string.IsNullOrWhiteSpace(igpuStatus);
+        DgpuDirectStatusSupport = FirstOptionalBool(o,
+            "DiscreteGpuDirectConnectionSwitch_Support", "DGpuDirectConnectionSwitch_Support", "DGPU_DIRECT_SUPPORT") ?? DgpuDirectStatusSupport;
+        IgpuOnlyStatusSupport = FirstOptionalBool(o,
+            "IGpuOnlyConnectionSwitch_Support", "IGPUOnlyConnectionSwitch_Support", "IGPU_ONLY_SUPPORT") ?? IgpuOnlyStatusSupport;
+        // Some older GCU versions expose the current switch state but omit the separate
+        // capability bit. A non-empty status proves that this command family is available.
+        // 只有能被解析成具体模式的状态才构成「这套命令族存在」的证据。
+        // 任意非空字符串（"NOT_SUPPORT"/"UNKNOWN"/"NONE"）不算——那会让 UI 暴露
+        // 本机不具备的显卡切换入口，而且会覆盖掉正确的 ItemSupport 静态画像。
+        // 显式上报为 false 的支持位已经在上面写入，?? = 不会覆盖它。
+        if (IsRecognizedDgpuDirectStatus(dgpuStatus)) DgpuDirectStatusSupport ??= true;
+        if (IsRecognizedIgpuOnlyStatus(igpuStatus)) IgpuOnlyStatusSupport ??= true;
+        string? gpuSwitchResult = o.GetValue("CheckDGpuStatusforIGpuOnlyOnSuccess", StringComparison.OrdinalIgnoreCase)?.ToString();
+        bool gpuSwitchResultPresent = !string.IsNullOrWhiteSpace(gpuSwitchResult);
+        if (gpuSwitchResultPresent)
+        {
+            GpuSwitchResult = gpuSwitchResult!.Contains('1') ? 1
+                : gpuSwitchResult.Contains('2') ? 2
+                : 0;
+            GpuSwitchResultReported = true;
+            // 版本号不在这里自增：GpuMode 要到下面才发布，中间还有
+            // ResolveGpuModeStatus 与 IgpuSwitchBlocked。热切换的确认谓词
+            // （SwitchGpuMode.TargetReached）会同时看 CurrentGpuMode 与
+            // GpuSwitchResultVersion，先跳版本号就构成「新结果 + 旧模式」。
+            // 目前它靠谓词里 `if (CurrentGpuMode != mode) return false;` 短路兜住，
+            // 但 Setting/Status 应该只有一个 release 点。
+        }
+        int newGpu = ResolveGpuModeStatus(GpuMode, dgpuStatus, igpuStatus);
+        string? cannotSwitch = FirstField(o, "IGpuCannotBeSwitchNowVisibility")?.ToString();
+        if (!string.IsNullOrWhiteSpace(cannotSwitch))
+            IgpuSwitchBlocked = newGpu != MechrevoService.GpuDgpu &&
+                !cannotSwitch.Contains("false", StringComparison.OrdinalIgnoreCase);
+        // 版本号必须在字段写完之后才自增（release 语义）。过去它在 case 中段自增，
+        // 按版本号轮询的调用方会看到「新版本号 + 旧字段值」，表现为
+        // 「明明落地了却确认失败」的偶发误判。GpuMode 也一样：先赋值，再计版本。
+        bool gpuModeChanged = newGpu != GpuMode;
+        if (gpuModeChanged) GpuMode = newGpu;
+        if (gpuSwitchResultPresent) Interlocked.Increment(ref _gpuSwitchResultVersion);
+        if (gpuModeStatusPresent) Interlocked.Increment(ref _gpuModeStatusVersion);
+        Interlocked.Increment(ref _settingStatusVersion);
+        if (gpuModeChanged)
+            Logger.WriteLine($"GpuMode -> {newGpu} (dgpu={dgpuStatus ?? "-"}, igpu={igpuStatus ?? "-"})");
+        // 两个事件都收进 RaiseIsolated 并放到 case 最后：过去是裸 ?.Invoke()，
+        // 订阅者抛异常会让本帧后面的 Capabilities/State/Data 通知全部不发。
+        if (closeTimerChangedTo is int closeTimerMinutes)
+            RaiseIsolated(CloseTimerChanged, nameof(CloseTimerChanged), closeTimerMinutes);
+        if (gpuModeChanged) RaiseIsolated(GpuModeChanged, nameof(GpuModeChanged));
+    }
+
+    private void OnFanStatus(JObject o)
+    {
+        FanStatusSeen = true;
+        // IsAC 过去用 Value<bool>()，是本 case 自增版本号后的第一个赋值。
+        // 这个协议在同一帧里大量使用字符串型布尔（GPU_DynamicBoostSwitch=="1" 等），
+        // 一旦 IsAC 也发成 "1" 就会抛异常，导致模式/PL1/PL2/TCC/TGP/超频回读全部失效。
+        IsAC = OptionalBool(o, "IsAC") ?? IsAC;
+        // FanBoostEnable 过去走 Int()>0：固件发 JSON 布尔 true 时 int 解析失败得到 0，
+        // 于是能力被判成"支持"而状态永远显示"关闭"。改走统一的布尔解析，
+        // 且只有真的解析出布尔值才认为看见过这项能力。
+        bool? fanBoost = OptionalBool(o, "FanBoostEnable");
+        if (fanBoost.HasValue) { FanBoost = fanBoost.Value; FanBoostSeen = true; }
+        var newMode = Int(o, "OperatingMode");
+        // 事件延后到 case 末尾统一发。过去这里是裸 ModeChanged?.Invoke()，
+        // 位置在本 case 中段——订阅者抛异常会把后面的功耗墙、温度墙、TGP、
+        // 超频回读连同版本号一起丢掉，而那些字段是本帧最主要的内容。
+        int? modeChangedTo = null;
+        if (newMode != OperatingMode && newMode >= 0)
+        {
+            // 期望模式与截止时刻必须原子地一起取，否则会读到「旧期望 + 新截止」的组合。
+            (bool pending, int pendingMode) = GetModeSwitchPendingState();
+            bool expectedPendingMode = pending && pendingMode == newMode;
+            if (pending && pendingMode >= 0 && newMode != pendingMode)
+            {
+                Logger.WriteLineThrottled("stale-op-mode", $"Ignored stale opMode {newMode}; pending={pendingMode}", 500);
+            }
+            else
+            {
+                Logger.WriteLine($"opMode {OperatingMode}->{newMode} pending={pending} expected={expectedPendingMode}");
+                OperatingMode = newMode;
+                // A slow GCU can report the confirmed target after the
+                // service timeout. Notify the UI on that first target
+                // packet, while keeping the pending window active so
+                // queued pre-switch packets are still rejected.
+                if (!pending || expectedPendingMode) modeChangedTo = newMode;
+            }
+        }
+        int genericPl1 = Int(o, "CPU_PL1");
+        int genericPl2 = Int(o, "CPU_PL2");
+        // AMD 平台判定过去用 HasField：键存在即算，值为 0/null/无法解析也算。
+        // Intel 机型上只要 GCU 报文里带了 CPU_AmdSPL: 0，就会被永久判成 AMD 平台，
+        // 于是功耗墙改用 CpuAmdSPL/CpuAmdSPPT 键下发、被 GCU 忽略、确认永久失败。
+        // 真实的功耗墙不可能是 0 或负数，所以只有「可用值」才构成平台证据。
+        bool amdPowerFields = Capabilities.AmdPlatform ||
+            HasUsablePowerValue(o, "CPU_AmdSPL") ||
+            HasUsablePowerValue(o, "CPU_AmdSPPT") ||
+            HasUsablePowerValue(o, "CPU_AmdFPPT");
+        if (amdPowerFields) AmdPowerStatusSeen = true;
+        // 同理，只latch 可用值：0 一旦被记住就再也回不到"未知"，
+        // 而 OptionalInt 的 fallback 是上一次的值（部分帧不该擦除已知值）。
+        CpuAmdSpl = OptionalUsablePowerValue(o, "CPU_AmdSPL", CpuAmdSpl);
+        CpuAmdSppt = OptionalUsablePowerValue(o, "CPU_AmdSPPT", CpuAmdSppt);
+        CpuAmdFppt = OptionalUsablePowerValue(o, "CPU_AmdFPPT", CpuAmdFppt);
+        // 只有在确认是 AMD 功耗字段体系时才让 AMD 值接管 Pl1/Pl2，
+        // 否则 Intel 机型上一个伪造的 0 会永久劫持显示值并丢弃真实的 CPU_PL1。
+        Pl1 = UsesAmdPowerFields && CpuAmdSpl > 0 ? CpuAmdSpl : genericPl1;
+        Pl2 = UsesAmdPowerFields && CpuAmdSppt > 0 ? CpuAmdSppt : genericPl2;
+        TccOffset = Int(o, "CPU_TccOffset");
+        if (HasField(o, "CPU_TccOffset") || HasField(o, "CPU_TccOffsetMinimum") ||
+            HasField(o, "CPU_TccOffsetMaximum") || HasField(o, "CPU_TccOffsetSwitch") ||
+            HasField(o, "CPU_AmdTccTarget"))
+            TccStatusSeen = true;
+        Pl1Minimum = OptionalInt(o, Pl1Minimum,
+            "CPU_AmdSPLMinimum", "CPU_AmdSPLMin", "CPU_AmdSPL_Minimum", "CPU_AmdSPL_Min", "CPU_PL1Minimum");
+        Pl1Maximum = OptionalInt(o, Pl1Maximum,
+            "CPU_AmdSPLMaximum", "CPU_AmdSPLMax", "CPU_AmdSPL_Maximum", "CPU_AmdSPL_Max", "CPU_PL1Maximum");
+        Pl2Minimum = OptionalInt(o, Pl2Minimum,
+            "CPU_AmdSPPTMinimum", "CPU_AmdSPPTMin", "CPU_AmdSPPT_Minimum", "CPU_AmdSPPT_Min", "CPU_PL2Minimum");
+        Pl2Maximum = OptionalInt(o, Pl2Maximum,
+            "CPU_AmdSPPTMaximum", "CPU_AmdSPPTMax", "CPU_AmdSPPT_Maximum", "CPU_AmdSPPT_Max", "CPU_PL2Maximum");
+        TccRawMinimum = OptionalInt(o, "CPU_TccOffsetMinimum", TccRawMinimum);
+        TccRawMaximum = OptionalInt(o, "CPU_TccOffsetMaximum", TccRawMaximum);
+        GpuTgpMinimum = OptionalInt(o, "GPU_ConfigurableTGPMinimum", GpuTgpMinimum);
+        GpuTgpMaximum = OptionalInt(o, "GPU_ConfigurableTGPMaximum", GpuTgpMaximum);
+        GpuDbMinimum = OptionalInt(o, "GPU_DynamicBoostMinimum", GpuDbMinimum);
+        GpuDbMaximum = OptionalInt(o, "GPU_DynamicBoostMaximum", GpuDbMaximum);
+        UpdateGpuOffsetRanges(o);
+        TableName = o["FAN_TableName"]?.ToString() ?? TableName;
+        var cpi = o["CustomProfileIndex"]?.ToString();
+        if (cpi is not null && int.TryParse(cpi, out int cpiV)) CustomProfileIndex = cpiV;
+        // TGP 与 Dynamic Boost 的目标值同样只接受 > 0：GCU 在这两项关闭时
+        // 会报 0，一旦写进来就被当成「用户设定的目标值 0 W」，
+        // 而 Pl1/Pl2 早就用 `CpuAmdSpl > 0` 挡住了同一件事。
+        int reportedTgp = OptionalUsablePowerValue(o, "GPU_ConfigurableTGPTarget", -1);
+        if (reportedTgp > 0) GpuTgp = reportedTgp;
+        var dbS = o["GPU_DynamicBoostSwitch"]?.ToString();
+        if (dbS is not null) GpuDbSwitch = dbS == "1";
+        int reportedDb = OptionalUsablePowerValue(o, "GPU_DynamicBoost", -1);
+        if (reportedDb > 0) GpuDb = reportedDb;
+        var tccS = o["CPU_TccOffsetSwitch"]?.ToString();
+        if (tccS is not null) TccSwitch = tccS == "1";
+        var tj = o["TjMax"]?.ToString();
+        if (tj is not null && int.TryParse(tj, out int tjV) && tjV > 0) TjMax = tjV;
+        int amdTccTarget = OptionalInt(o, "CPU_AmdTccTarget", -1);
+        if (Capabilities.AmdPlatform)
+        {
+            TccMinimum = 85;
+            TccMaximum = TccRawMaximum > 0 ? TccRawMaximum : 95;
+            if (TccMinimum >= TccMaximum) TccMinimum = Math.Max(0, TccMaximum - 10);
+        }
+        else
+        {
+            int tjMax = TjMax > 0 ? TjMax : 100;
+            // New GCU versions may expose 0/0 as an unavailable raw-offset
+            // range. Official CCU still presents the Intel target range as
+            // 75..95 C; interpreting 0/0 literally collapses it to 95/95.
+            bool collapsedZeroRange = TccRawMinimum == 0 && TccRawMaximum == 0;
+            int deviceMinimum = !collapsedZeroRange && TccRawMaximum >= 0
+                ? tjMax - TccRawMaximum : 75;
+            int deviceMaximum = !collapsedZeroRange && TccRawMinimum >= 0
+                ? tjMax - TccRawMinimum : 95;
+            TccMinimum = Math.Clamp(deviceMinimum, 75, 95);
+            TccMaximum = Math.Clamp(deviceMaximum, 75, 95);
+            if (TccMinimum > TccMaximum) TccMinimum = TccMaximum;
+        }
+        int reportedTarget = amdTccTarget >= 0 ? amdTccTarget : TccOffset >= 0 ? TccTargetFromRaw(TccOffset) : -1;
+        TccTarget = reportedTarget >= 0 ? Math.Clamp(reportedTarget, TccMinimum, TccMaximum) : -1;
+        var pl4d = o["CPU_PL4_Double_Flag"]?.ToString();
+        if (pl4d is not null) Pl4Double = pl4d == "1";
+
+        // PL4 必须在 Pl4Double 之后换算：官方对这类机型把线上值乘 2 当面向用户的瓦数。
+        //
+        // 只 latch 可用值（> 0），与 CpuAmdSpl 那一族同一纪律：
+        // OptionalInt 的 fallback 是上一次的值，所以 0 一旦被记住就再也回不到
+        // 「未知」，而下面 `_pl4Raw >= 0` 会让它通过所有有效性守卫——
+        // 界面上就是一个「已知的 0 W」。上下限同理：0/0 会把滑条量程永久压成 0..0。
+        // 真实的功耗墙不可能是 0 或负数。
+        _pl4Raw = OptionalUsablePowerValue(o, "CPU_PL4", _pl4Raw);
+        _pl4RawMinimum = FirstUsablePowerValue(o, _pl4RawMinimum,
+            "CPU_PL4Minimum", "CPU_PL4Min", "CPU_PL4_Minimum", "CPU_PL4_Min");
+        _pl4RawMaximum = FirstUsablePowerValue(o, _pl4RawMaximum,
+            "CPU_PL4Maximum", "CPU_PL4Max", "CPU_PL4_Maximum", "CPU_PL4_Max");
+        int pl4Scale = Pl4Double ? 2 : 1;
+        Pl4 = _pl4Raw >= 0 ? _pl4Raw * pl4Scale : -1;
+        Pl4Minimum = _pl4RawMinimum >= 0 ? _pl4RawMinimum * pl4Scale : -1;
+        Pl4Maximum = _pl4RawMaximum >= 0 ? _pl4RawMaximum * pl4Scale : -1;
+
+        // 风扇转换灵敏度：开关与数值分开上报，两者任一出现就说明机型支持这一项。
+        // 这一项是自定义模式的风扇调参，不是系统快捷开关，所以不进 QuickSwitches：
+        // 它和 PL1/PL2/温度墙一样由 CustomModeForm 的批量提交路径读写。
+        bool? fanSwitchEnabled = FirstOptionalBool(o, "FAN_FanSwitchSpeedEnabled", "FanSwitchSpeedEnabled");
+        if (fanSwitchEnabled is not null)
+        {
+            FanSwitchSpeedEnabled = fanSwitchEnabled.Value;
+            FanSwitchSpeedSeen = true;
+        }
+        int fanSwitchSpeed = OptionalInt(o, -1, "FAN_FanSwitchSpeed", "FanSwitchSpeed");
+        if (fanSwitchSpeed >= 0)
+        {
+            FanSwitchSpeed = fanSwitchSpeed;
+            FanSwitchSpeedSeen = true;
+        }
+        int fanSwitchMin = OptionalInt(o, -1,
+            "FAN_FanSwitchSpeedMinimum", "FAN_FanSwitchSpeedMin", "FanSwitchSpeedMinimum");
+        int fanSwitchMax = OptionalInt(o, -1,
+            "FAN_FanSwitchSpeedMaximum", "FAN_FanSwitchSpeedMax", "FanSwitchSpeedMaximum");
+        if (fanSwitchMin >= 0) FanSwitchSpeedMinimum = fanSwitchMin;
+        if (fanSwitchMax >= 0) FanSwitchSpeedMaximum = fanSwitchMax;
+
+        // 游戏白名单：官方用它在检测到白名单进程时自动切模式。
+        // 值是 JSON 数字 0/1（实测），ParseFlexibleBool 能正确处理。
+        // 只有真解析出布尔值才置 Seen——这一项在 SupportsQuickSwitch 里
+        // 没有任何别的门禁兜底，无法识别的值会直接变成一个假开关。
+        if (OptionalBool(o, "GameWhitelistSwitch") is bool gameWhitelist)
+        {
+            QuickSwitches["gamewhitelist"] = gameWhitelist;
+            GameWhitelistSeen = true;
+        }
+
+        // CPU 高级性能 / 超频菜单总闸。
+        //
+        // 状态字段名是 CPU_PerformanceAndOverClockMenuSwitch——**带下划线**。
+        // 这里曾经写成 CPUPerformanceAndOverClockMenuSwitch（那是 GCUService 内部
+        // 结构体的成员名，没有被序列化成这个名字发出来），于是 HasField 永远为假、
+        // CpuAdvancedPerformanceSeen 恒 false，整项在界面上从来没出现过。
+        // 实测载荷：CPU_PerformanceAndOverClockMenuSwitch=1（官方 CCUWinUI L52738
+        // 读的也是 MyRamFan1p5.CPU_PerformanceAndOverClockMenuSwitch == "1"）。
+        // 旧名留作别名，避免老固件真用了那个名字时又漏掉。
+        JToken? cpuAdvPerf = FirstField(o,
+            "CPU_PerformanceAndOverClockMenuSwitch", "CPUPerformanceAndOverClockMenuSwitch");
+        if (cpuAdvPerf is not null)
+        {
+            QuickSwitches["cpuadvperf"] = ParseFlexibleBool(cpuAdvPerf.ToString()) == true;
+            CpuAdvancedPerformanceSeen = true;
+        }
+        // 超频总开关的支持位。官方门禁是 IsOcSettingsSupport || HWOCSupport
+        // （CCUWinUI L52736），前者来自注册表 ItemSupport\OcSettingsSupport、
+        // 后者来自 LCHWOC/Status 的 Support 且默认 true。Fan/Status 同帧也带了
+        // OcSupport（实测 True），它是这台机器上唯一随状态刷新的那份证据，
+        // 所以一并解析——只靠构造时读一次注册表会漏掉 BIOS 里开了但注册表没写的机型。
+        bool? ocSupport = FirstOptionalBool(o, "OcSupport", "OcSettingsSupport");
+        if (ocSupport is not null) OverclockMenuSupport = ocSupport;
+
+        // GPU Whisper（静音）模式：**只读**，不提供开关入口。
+        //
+        // 服务端确实完整上报这一族（开发机实测 GPU_WhisperModeSupport=true、
+        // GPU_WhisperModeSwitch="0"、GPU_WhisperModeSetting="0"、
+        // GPU_WhisperModeMinFps_QUIETER/_QUIET/_BALANCED="30"/"40"/"60"、
+        // MinFpsMaximum/Minimum="60"/"30"），但官方 5.56 界面里
+        // GpuWhisperModeSwitch / GpuWhisperModeSetting 只有属性声明、
+        // **没有任何下发点**，所以拿不到命令的真实形状。
+        //
+        // 曾经按猜测实现过一个开关（走 Fan/Control 的 SET_OPERATING_MODE_DETAIL），
+        // 真机验证证伪：下发后回读毫无变化。留着就是一个点了没反应的空头开关，
+        // 所以入口已撤掉，这里只保留状态解析供诊断与将来接线用。
+        //
+        // 另外注意 Switch 与 Setting 是两件事：Switch 是开关，
+        // Setting 是静音档位（对应三档 MinFps），此前误把 Setting 当开关读。
+        bool? whisperSupport = OptionalBool(o, "GPU_WhisperModeSupport");
+        if (whisperSupport is not null) WhisperModeSupport = whisperSupport;
+        if (HasField(o, "GPU_WhisperModeSwitch"))
+        {
+            WhisperMode = OptionalBool(o, "GPU_WhisperModeSwitch") == true;
+            WhisperModeSeen = true;
+        }
+        WhisperModeLevel = OptionalInt(o, WhisperModeLevel, "GPU_WhisperModeSetting");
+        // GCU firmware revisions are inconsistent here: some use the
+        // OC suffix and numeric 0/1 values, while others omit the
+        // suffix and return JSON booleans. Parse all known variants
+        // through the same case-insensitive helpers so a valid
+        // write is not reported as unconfirmed solely because of
+        // the status schema used by the model.
+        bool? ocSwitch = FirstOptionalBool(o,
+            "OverClockingSwitch", "OverclockingSwitch", "GPU_OverClockingSwitch", "GPU_OverclockingSwitch");
+        if (ocSwitch.HasValue) OcSwitch = ocSwitch.Value;
+        GpuCoreClockOffset = OptionalInt(o, GpuCoreClockOffset,
+            "GPU_CoreClockOffsetOC", "GPU_CoreClockOffset", "GpuCoreClockOffsetOC", "GpuCoreClockOffset",
+            "GPU_CoreOffsetOC", "GPU_CoreOffset", "GpuCoreOffsetOC", "GpuCoreOffset");
+        GpuMemClockOffset = OptionalInt(o, GpuMemClockOffset,
+            "GPU_MemoryClockOffsetOC", "GPU_MemoryClockOffset", "GpuMemoryClockOffsetOC", "GpuMemoryClockOffset",
+            "GPU_MemoryOffsetOC", "GPU_MemoryOffset", "GpuMemoryOffsetOC", "GpuMemoryOffset");
+        // 过去这里是裸字符串比较（只认 "True"/"true"/"1"），"ON"/"ENABLE" 会被判成
+        // false，而且无论能否识别都把 FanRespectiveSeen 置位——SupportsFanRespective
+        // 完全依赖这个标志，于是能力被误报为支持而状态永远是关闭。
+        bool? fanRespective = OptionalBool(o, "FanControlRespective");
+        if (fanRespective.HasValue) { FanRespective = fanRespective.Value; FanRespectiveSeen = true; }
+        // 字段全部写完之后才计版本。过去它在 case 第一行自增，于是解析中途抛异常时
+        // 外部按 FanStatusVersion 轮询的代码会认为「来了一帧新状态」，
+        // 而模式、功耗墙、TCC、TGP、超频回读全是旧值。
+        Interlocked.Increment(ref _fanStatusVersion);
+        if (modeChangedTo is int changedMode)
+            RaiseIsolated(ModeChanged, nameof(ModeChanged), changedMode);
+        RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
+    }
+
+    private void OnLchwocStatus(JObject o)
+    {
+        LchwocStatusSeen = true;
+        bool? support = OptionalBool(o, "Support");
+        if (support.HasValue)
+        {
+            LchwocSupportReported = support.Value;
+            LchwocSupport = support.Value;
+        }
+        bool? enabled = OptionalBool(o, "Enable");
+        if (enabled.HasValue) LchwocEnable = enabled.Value;
+
+        // Older GCU builds put some HWOC values on this topic instead of Fan/Status.
+        UpdateGpuOffsetRanges(o);
+        GpuCoreClockOffset = OptionalInt(o, GpuCoreClockOffset,
+            "GPU_CoreClockOffsetOC", "GPU_CoreClockOffset", "GpuCoreClockOffsetOC", "GpuCoreClockOffset",
+            "GPU_CoreOffsetOC", "GPU_CoreOffset", "GpuCoreOffsetOC", "GpuCoreOffset");
+        GpuMemClockOffset = OptionalInt(o, GpuMemClockOffset,
+            "GPU_MemoryClockOffsetOC", "GPU_MemoryClockOffset", "GpuMemoryClockOffsetOC", "GpuMemoryClockOffset",
+            "GPU_MemoryOffsetOC", "GPU_MemoryOffset", "GpuMemoryOffsetOC", "GpuMemoryOffset");
+        bool? lchwocSwitch = FirstOptionalBool(o,
+            "OverClockingSwitch", "OverclockingSwitch", "GPU_OverClockingSwitch", "GPU_OverclockingSwitch");
+        if (lchwocSwitch.HasValue) OcSwitch = lchwocSwitch.Value;
+        Logger.WriteLineIfChanged("hwoc-status", $"HWOC: support={LchwocSupportReported?.ToString() ?? "unknown"} enable={LchwocEnable}");
+        RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
     }
 
     internal async Task<bool> WaitForStateAsync(
