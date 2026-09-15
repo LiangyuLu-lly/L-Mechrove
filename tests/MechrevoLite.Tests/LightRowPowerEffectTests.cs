@@ -57,6 +57,13 @@ public class LightRowPowerEffectTests
             entry.Payload.TryGetValue("function", out object? function) && Equals(function, "SetEffectALL") &&
             (effect is null || entry.Payload.TryGetValue("effect", out object? value) && Equals(value, effect)));
 
+    static int PowerCount(
+        IEnumerable<(string Topic, Dictionary<string, object> Payload)> written, string topic, int? on = null) =>
+        written.Count(entry =>
+            entry.Topic == topic &&
+            entry.Payload.TryGetValue("powerstatus", out object? power) &&
+            (on is null || Convert.ToInt32(power) == on));
+
     static async Task WaitUntil(Func<bool> condition)
     {
         for (int attempt = 0; attempt < 250 && !condition(); attempt++)
@@ -87,12 +94,17 @@ public class LightRowPowerEffectTests
         readonly MechrevoService? _previousService;
         readonly KeyboardRgb? _previousRgb;
 
-        public LightRowHarness(string topic, string effect, bool powerOn)
+        /// <param name="secondChannel">可选副通道种子：两条灯行各自存档一条通道，
+        /// 用于断言它们互不串台（topic、订阅出版、存档全独立）。</param>
+        public LightRowHarness(string topic, string effect, bool powerOn,
+            (string Topic, string Effect, bool PowerOn)? secondChannel = null)
         {
             _previousOverride = Environment.GetEnvironmentVariable(LightingSettingsStore.ConfigDirectoryOverrideVariable);
             _directory = TempConfigDirectory();
             Environment.SetEnvironmentVariable(LightingSettingsStore.ConfigDirectoryOverrideVariable, _directory);
             LightingSettingsStore.Save(topic, new LightChannelSettings(effect, 4, 1, Color.White.ToArgb(), powerOn));
+            if (secondChannel is { } second)
+                LightingSettingsStore.Save(second.Topic, new LightChannelSettings(second.Effect, 4, 1, Color.White.ToArgb(), second.PowerOn));
 
             (Hardware, Written) = NewHardware();
             _previousAudit = Program.UiAuditMode;
@@ -175,5 +187,99 @@ public class LightRowPowerEffectTests
         Assert.Equal(1, EffectAllCount(harness.Written, LogoTopic, "Breathing"));
         Assert.Equal(1, EffectAllCount(harness.Written, LogoTopic));
         Assert.True(LightingSettingsStore.Load(LogoTopic, "Single").PowerOn);
+    }
+
+    // ---------- 通道接线锁：两行各绑各的 topic / 存档，互不串台 ----------
+
+    /// <summary>
+    /// 两行引用的具名主题常量必须逐字节等于固件实际主题（接线锁用例的出版过滤同值）。
+    /// 常量改错、或两行换用对方常量时，这里与上面的接线锁一起失败。
+    /// </summary>
+    [Fact]
+    public void LightRowTopics_MatchFirmwareTopics()
+    {
+        Assert.Equal(LightbarTopic, MqttTopics.LightbarCtrl);
+        Assert.Equal(LogoTopic, MqttTopics.LogoLightCtrl);
+    }
+
+    /// <summary>
+    /// 灯条行只对 HidLightbar/Ctrl 出版（电源一次 + 存档效果一次），Logo 通道零出版、
+    /// 零存档写入、开关不被联动。两行构造若把 topic/状态传串，本用例必须失败。
+    /// </summary>
+    [Fact]
+    public async Task LightbarToggle_PublishesOnlyToLightbarTopic()
+    {
+        using var harness = new LightRowHarness(LightbarTopic, "Breathing", powerOn: false,
+            secondChannel: (LogoTopic, "Mix", false));
+        var lightbarSwitch = SwitchOf(Row(harness.Form, "rowLightbar"));
+        var logoSwitch = SwitchOf(Row(harness.Form, "rowLogo"));
+        Assert.False(lightbarSwitch.Checked, "前置：通道关闭时灯条开关应为未勾选。");
+        Assert.False(logoSwitch.Checked, "前置：通道关闭时 Logo 开关应为未勾选。");
+
+        lightbarSwitch.Checked = true;
+
+        await WaitUntil(() => EffectAllCount(harness.Written, LightbarTopic, "Breathing") >= 1);
+        await Task.Delay(250);   // 收敛窗口：确认没有第二次补发/串通道出版
+
+        Assert.Equal(1, PowerCount(harness.Written, LightbarTopic, on: 1));
+        Assert.Equal(1, EffectAllCount(harness.Written, LightbarTopic, "Breathing"));
+        Assert.Equal(1, EffectAllCount(harness.Written, LightbarTopic));
+        Assert.Equal(0, PowerCount(harness.Written, LogoTopic));
+        Assert.Equal(0, EffectAllCount(harness.Written, LogoTopic));
+        Assert.False(logoSwitch.Checked, "灯条切换不得联动 Logo 开关。");
+        Assert.False(LightingSettingsStore.Load(LogoTopic, "Single").PowerOn, "灯条切换不得写 Logo 通道存档。");
+        Assert.True(LightingSettingsStore.Load(LightbarTopic, "Single").PowerOn);
+    }
+
+    /// <summary>Logo 行只对 HidLightbar_Logo/Ctrl 出版；灯条通道零出版、零存档写入。</summary>
+    [Fact]
+    public async Task LogoToggle_PublishesOnlyToLogoTopic()
+    {
+        using var harness = new LightRowHarness(LogoTopic, "Mix", powerOn: false,
+            secondChannel: (LightbarTopic, "Breathing", false));
+        var lightbarSwitch = SwitchOf(Row(harness.Form, "rowLightbar"));
+        var logoSwitch = SwitchOf(Row(harness.Form, "rowLogo"));
+        Assert.False(lightbarSwitch.Checked, "前置：通道关闭时灯条开关应为未勾选。");
+        Assert.False(logoSwitch.Checked, "前置：通道关闭时 Logo 开关应为未勾选。");
+
+        logoSwitch.Checked = true;
+
+        await WaitUntil(() => EffectAllCount(harness.Written, LogoTopic, "Mix") >= 1);
+        await Task.Delay(250);   // 收敛窗口：确认没有第二次补发/串通道出版
+
+        Assert.Equal(1, PowerCount(harness.Written, LogoTopic, on: 1));
+        Assert.Equal(1, EffectAllCount(harness.Written, LogoTopic, "Mix"));
+        Assert.Equal(1, EffectAllCount(harness.Written, LogoTopic));
+        Assert.Equal(0, PowerCount(harness.Written, LightbarTopic));
+        Assert.Equal(0, EffectAllCount(harness.Written, LightbarTopic));
+        Assert.False(lightbarSwitch.Checked, "Logo 切换不得联动灯条开关。");
+        Assert.False(LightingSettingsStore.Load(LightbarTopic, "Single").PowerOn, "Logo 切换不得写灯条通道存档。");
+        Assert.True(LightingSettingsStore.Load(LogoTopic, "Single").PowerOn);
+    }
+
+    /// <summary>
+    /// 通道关闭时改选效果只落本通道存档、不出版、不碰另一通道存档——
+    /// 两行各有各的存档与开关状态，不存在共享门。
+    /// </summary>
+    [Fact]
+    public async Task LightbarCombo_WhileOff_TouchesOnlyTheLightbarStore()
+    {
+        using var harness = new LightRowHarness(LightbarTopic, "Breathing", powerOn: false,
+            secondChannel: (LogoTopic, "Mix", false));
+        var lightbarCombo = ComboOf(Row(harness.Form, "rowLightbar"));
+
+        int target = Array.FindIndex(LightForm.LightbarEffects, e => e.Effect == "Wave");
+        Assert.True(target >= 0, "灯条效果目录应包含 Wave。");
+        lightbarCombo.SelectedIndex = target;
+
+        await WaitUntil(() => LightingSettingsStore.Load(LightbarTopic, "Single").Effect == "Wave");
+        await Task.Delay(100);   // 收敛窗口：确认不出版
+
+        Assert.Equal("Wave", LightingSettingsStore.Load(LightbarTopic, "Single").Effect);
+        Assert.Equal("Mix", LightingSettingsStore.Load(LogoTopic, "Single").Effect);
+        Assert.Equal(0, EffectAllCount(harness.Written, LightbarTopic));
+        Assert.Equal(0, EffectAllCount(harness.Written, LogoTopic));
+        Assert.Equal(0, PowerCount(harness.Written, LightbarTopic));
+        Assert.Equal(0, PowerCount(harness.Written, LogoTopic));
     }
 }

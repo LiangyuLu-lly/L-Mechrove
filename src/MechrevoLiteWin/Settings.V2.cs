@@ -460,37 +460,41 @@ public partial class SettingsForm
             };
             body.Controls.Add(row, 0, 0);
         }
-        // —— 灯条行 ——
+        // 灯条 / Logo 两行共用同一构造助手：唯一差异 = 通道（topic / 名称 / 效果目录）与行号。
+        // 事件语义必须与原逐行块一致：控件存档字段在事件接线前赋值（构造期不触发），
+        // 关通道改选只持久化；电源确认后按存档效果补发一次。
+        void BuildLightChannelRow(string rowName, string label, string topic, string title,
+            (string Effect, string Name)[] effects, int gridRow, Action<RCheckBox, ComboBox> storeControls)
         {
-            var row = MakeRow("rowLightbar");
-            FillRow(row, "灯条", out var sw, out var effectCombo, () => OpenLightForm(MqttTopics.LightbarCtrl, "灯条灯效", LightForm.LightbarEffects));
-            _lbPowerSw = sw; _lbEffectCombo = effectCombo;
-            foreach (var (_, fxName) in LightForm.LightbarEffects)
+            var row = MakeRow(rowName);
+            FillRow(row, label, out var sw, out var effectCombo, () => OpenLightForm(topic, title, effects));
+            storeControls(sw, effectCombo);
+            foreach (var (_, fxName) in effects)
                 effectCombo.Items.Add(new KeyValuePair<string, string>(fxName, fxName));
-            string savedLb = LightingSettingsStore.Load(MqttTopics.LightbarCtrl, LightForm.LightbarEffects[0].Effect).Effect;
-            int lbIdx = Array.FindIndex(LightForm.LightbarEffects, e => e.Effect == savedLb);
-            effectCombo.SelectedIndex = lbIdx >= 0 ? lbIdx : 0;
+            string saved = LightingSettingsStore.Load(topic, effects[0].Effect).Effect;
+            int savedIdx = Array.FindIndex(effects, e => e.Effect == saved);
+            effectCombo.SelectedIndex = savedIdx >= 0 ? savedIdx : 0;
             effectCombo.SelectedIndexChanged += async (_, _) =>
             {
                 if (_syncingEffectCombos || Program.UiAuditMode) return;
                 int idx = effectCombo.SelectedIndex;
-                if (idx < 0 || idx >= LightForm.LightbarEffects.Length) return;
-                string effectId = LightForm.LightbarEffects[idx].Effect;
-                var settings = LightingSettingsStore.Load(MqttTopics.LightbarCtrl, LightForm.LightbarEffects[0].Effect);
+                if (idx < 0 || idx >= effects.Length) return;
+                string effectId = effects[idx].Effect;
+                var settings = LightingSettingsStore.Load(topic, effects[0].Effect);
                 // 通道关闭时只记住选择：此时下发效果会先闪一次，等电源打开时固件又按上电
                 // 默认效果初始化，用户看到的最终态就不是刚选的这个。
                 if (!sw.Checked)
                 {
-                    LightingSettingsStore.Save(MqttTopics.LightbarCtrl, settings with { Effect = effectId });
+                    LightingSettingsStore.Save(topic, settings with { Effect = effectId });
                     return;
                 }
                 if (Program.service is null || Program.hw is not { IsConnected: true }) return;
                 sw.Enabled = false;
-                bool ok = await Program.service.SetLightEffect(MqttTopics.LightbarCtrl, effectId,
+                bool ok = await Program.service.SetLightEffect(topic, effectId,
                     settings.Light, settings.Speed, "None",
                     effectId == "Single" ? Color.FromArgb(settings.ColorArgb) : null, save: true);
                 sw.Enabled = true;
-                if (ok) LightingSettingsStore.Save(MqttTopics.LightbarCtrl, settings with { Effect = effectId });
+                if (ok) LightingSettingsStore.Save(topic, settings with { Effect = effectId });
             };
             sw.CheckedChanged += async (_, _) =>
             {
@@ -500,85 +504,33 @@ public partial class SettingsForm
                 {
                     bool requested = sw.Checked;
                     sw.Enabled = false;
-                    bool ok = await Program.service.SetLightPower(MqttTopics.LightbarCtrl, requested);
+                    bool ok = await Program.service.SetLightPower(topic, requested);
                     sw.Enabled = true;
                     if (ok)
                     {
-                        LightingSettingsStore.SavePower(MqttTopics.LightbarCtrl, requested);
+                        LightingSettingsStore.SavePower(topic, requested);
                         // 固件上电只显示默认的常亮；电源确认后按存档效果补发一次，
                         // 否则用户选的效果会丢。下发前再确认电源仍开着。
                         if (requested)
                         {
-                            var applied = LightingSettingsStore.Load(MqttTopics.LightbarCtrl, LightForm.LightbarEffects[0].Effect);
-                            _ = Program.ApplyLightChannelEffectAsync(MqttTopics.LightbarCtrl, applied,
+                            var applied = LightingSettingsStore.Load(topic, effects[0].Effect);
+                            _ = Program.ApplyLightChannelEffectAsync(topic, applied,
                                 shouldApply: () => LightingSettingsStore.Load(
-                                    MqttTopics.LightbarCtrl, LightForm.LightbarEffects[0].Effect).PowerOn);
+                                    topic, effects[0].Effect).PowerOn);
                         }
                     }
                     else { _syncingSwitches = true; sw.Checked = !requested; _syncingSwitches = false; }
                 }
             };
-            body.Controls.Add(row, 0, 1);
+            body.Controls.Add(row, 0, gridRow);
         }
+
+        // —— 灯条行 ——
+        BuildLightChannelRow("rowLightbar", "灯条", MqttTopics.LightbarCtrl, "灯条灯效",
+            LightForm.LightbarEffects, 1, (sw, effectCombo) => { _lbPowerSw = sw; _lbEffectCombo = effectCombo; });
         // —— Logo 行 ——
-        {
-            var row = MakeRow("rowLogo");
-            FillRow(row, "Logo", out var sw, out var effectCombo, () => OpenLightForm(MqttTopics.LogoLightCtrl, "Logo灯效", LightForm.LogoEffects));
-            _logoPowerSw = sw; _logoEffectCombo = effectCombo;
-            foreach (var (_, fxName) in LightForm.LogoEffects)
-                effectCombo.Items.Add(new KeyValuePair<string, string>(fxName, fxName));
-            string savedLogo = LightingSettingsStore.Load(MqttTopics.LogoLightCtrl, LightForm.LogoEffects[0].Effect).Effect;
-            int logoIdx = Array.FindIndex(LightForm.LogoEffects, e => e.Effect == savedLogo);
-            effectCombo.SelectedIndex = logoIdx >= 0 ? logoIdx : 0;
-            effectCombo.SelectedIndexChanged += async (_, _) =>
-            {
-                if (_syncingEffectCombos || Program.UiAuditMode) return;
-                int idx = effectCombo.SelectedIndex;
-                if (idx < 0 || idx >= LightForm.LogoEffects.Length) return;
-                string effectId = LightForm.LogoEffects[idx].Effect;
-                var settings = LightingSettingsStore.Load(MqttTopics.LogoLightCtrl, LightForm.LogoEffects[0].Effect);
-                // 通道关闭时只记住选择：下发会先闪一次，且电源打开时固件又按上电默认效果初始化。
-                if (!sw.Checked)
-                {
-                    LightingSettingsStore.Save(MqttTopics.LogoLightCtrl, settings with { Effect = effectId });
-                    return;
-                }
-                if (Program.service is null || Program.hw is not { IsConnected: true }) return;
-                sw.Enabled = false;
-                bool ok = await Program.service.SetLightEffect(MqttTopics.LogoLightCtrl, effectId,
-                    settings.Light, settings.Speed, "None",
-                    effectId == "Single" ? Color.FromArgb(settings.ColorArgb) : null, save: true);
-                sw.Enabled = true;
-                if (ok) LightingSettingsStore.Save(MqttTopics.LogoLightCtrl, settings with { Effect = effectId });
-            };
-            sw.CheckedChanged += async (_, _) =>
-            {
-                if (_syncingSwitches) return;
-                _lastQuickSwitchUi = DateTime.Now;
-                if (Program.service is not null && Program.hw is { IsConnected: true })
-                {
-                    bool requested = sw.Checked;
-                    sw.Enabled = false;
-                    bool ok = await Program.service.SetLightPower(MqttTopics.LogoLightCtrl, requested);
-                    sw.Enabled = true;
-                    if (ok)
-                    {
-                        LightingSettingsStore.SavePower(MqttTopics.LogoLightCtrl, requested);
-                        // 固件上电只显示默认的常亮；电源确认后按存档效果补发一次，
-                        // 否则用户选的效果会丢。下发前再确认电源仍开着。
-                        if (requested)
-                        {
-                            var applied = LightingSettingsStore.Load(MqttTopics.LogoLightCtrl, LightForm.LogoEffects[0].Effect);
-                            _ = Program.ApplyLightChannelEffectAsync(MqttTopics.LogoLightCtrl, applied,
-                                shouldApply: () => LightingSettingsStore.Load(
-                                    MqttTopics.LogoLightCtrl, LightForm.LogoEffects[0].Effect).PowerOn);
-                        }
-                    }
-                    else { _syncingSwitches = true; sw.Checked = !requested; _syncingSwitches = false; }
-                }
-            };
-            body.Controls.Add(row, 0, 2);
-        }
+        BuildLightChannelRow("rowLogo", "Logo", MqttTopics.LogoLightCtrl, "Logo灯效",
+            LightForm.LogoEffects, 2, (sw, effectCombo) => { _logoPowerSw = sw; _logoEffectCombo = effectCombo; });
 
         _lightGroup?.SetContent(body);
 
