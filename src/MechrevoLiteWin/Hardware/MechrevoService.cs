@@ -784,7 +784,10 @@ public class MechrevoService
                     if (value is not null) return value;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("Color calibration registry read failed: value=" + valueName + " view=" + view + " " + ex.GetType().Name + " " + ex.Message);
+            }
         }
         return null;
     }

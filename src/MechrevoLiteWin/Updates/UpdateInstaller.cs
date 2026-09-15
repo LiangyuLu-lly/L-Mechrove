@@ -455,6 +455,10 @@ internal static class UpdateInstaller
 
     static void TryDelete(string path)
     {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"临时文件删除失败：{path} —— {ex.GetType().Name} {ex.Message}");
+        }
     }
 }

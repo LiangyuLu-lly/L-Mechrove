@@ -58,7 +58,10 @@ namespace PawnIO
                     return (name, caption);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("CPU registry read failed: " + CpuRegKey + " " + ex.GetType().Name + " " + ex.Message);
+            }
 
             return (string.Empty, string.Empty);
         }

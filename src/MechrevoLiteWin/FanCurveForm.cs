@@ -244,7 +244,7 @@ public class FanCurveForm : RForm
             _gpuPanel.Load(hw.GpuCurveUpT, hw.GpuCurveDuty);
             _status.Text = "表：" + (string.IsNullOrEmpty(hw.TableName) ? "未知" : hw.TableName);
         }
-        catch { }
+        catch (Exception ex) { Logger.WriteLine("Fan curve refresh failed: " + ex.GetType().Name + " " + ex.Message); }
     }
 
     void OnCustomChanged()
@@ -270,7 +270,7 @@ public class FanCurveForm : RForm
                     _initialIndependentControlRequested = true;
             }
         }
-        catch { }
+        catch (Exception ex) { Logger.WriteLine("Fan respective UI sync failed: " + ex.GetType().Name + " " + ex.Message); }
     }
 
     async Task EnableIndependentControlOnOpenAsync()

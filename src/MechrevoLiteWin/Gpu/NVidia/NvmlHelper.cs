@@ -84,7 +84,10 @@ public static class NvmlHelper
                 int rc = nvmlShutdown();
                 Logger.WriteLine($"NVML Shutdown: {rc}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.WriteLine($"NVML shutdown failed: {ex.GetType().Name} {ex.Message}");
+            }
             _init = false;
             Interlocked.Exchange(ref _lastInitAttempt, 0);
         }

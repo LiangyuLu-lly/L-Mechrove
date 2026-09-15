@@ -243,7 +243,10 @@ namespace MechrevoLite.UI
                     System.Windows.Forms.Automation.AutomationNotificationProcessing.MostRecent,
                     text);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("Slider accessibility announcement failed: " + ex.GetType().Name + " " + ex.Message);
+            }
         }
     }
 }

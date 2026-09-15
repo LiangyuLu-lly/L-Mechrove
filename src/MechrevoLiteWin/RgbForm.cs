@@ -293,7 +293,7 @@ public class RgbForm : RForm
                             });
                     });
                 }
-                catch { }
+                catch (Exception ex) { Logger.WriteLine("RGB connect status UI update failed: " + ex.GetType().Name + " " + ex.Message); }
             });
         }
         else

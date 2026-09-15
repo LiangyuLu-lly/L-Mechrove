@@ -113,7 +113,10 @@ internal sealed class BrightnessCommitQueue : IDisposable
         catch (Exception ex)
         {
             try { _onError?.Invoke(ex); }
-            catch { }
+            catch (Exception callbackEx)
+            {
+                Logger.WriteLine("Brightness commit error callback failed: " + callbackEx.GetType().Name + " " + callbackEx.Message);
+            }
         }
         finally
         {
