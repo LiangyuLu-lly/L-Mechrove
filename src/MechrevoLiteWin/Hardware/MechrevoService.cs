@@ -200,8 +200,8 @@ public class MechrevoService
             // 这时解除反而会让在途的切换前旧包被当成新状态接受。
             try
             {
-                await _hw.Publish("Fan/Control", fanPayload).ConfigureAwait(false);
-                await _hw.Publish("LCHWOC/Control", overclockPayload).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.FanControl, fanPayload).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.LchwocControl, overclockPayload).ConfigureAwait(false);
             }
             catch
             {
@@ -216,7 +216,7 @@ public class MechrevoService
 
             if (!ok)
             {
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
                 ok = await _hw.WaitForStateAsync(
                     () => CurrentMode == mode,
                     TimeSpan.FromMilliseconds(700),
@@ -225,7 +225,7 @@ public class MechrevoService
 
             if (!ok)
             {
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
                 ok = await _hw.WaitForStateAsync(
                     () => CurrentMode == mode,
                     TimeSpan.FromMilliseconds(1000),
@@ -242,7 +242,7 @@ public class MechrevoService
 
             MechrevoLite.Mode.ModeControl.SyncExternalModeStatic(mode);
             ModeChanged?.Invoke(mode);
-            await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" }).ConfigureAwait(false);
+            await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" }).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)
@@ -280,10 +280,10 @@ public class MechrevoService
             try
             {
                 // ProfileIndex 是 JSON 数字，与官方 ModeSwitchCommand 一致。
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "OPERATING_CUSTOM_MODE", ["ProfileIndex"] = index });
-                await _hw.Publish("LCHWOC/Control", new Dictionary<string, object> { ["IsCustomRun"] = true });
-                await _hw.Publish("LCHWOC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });   // 请求超频通道状态（原版页面激活时的序列）
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "OPERATING_CUSTOM_MODE", ["ProfileIndex"] = index });
+                await _hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["IsCustomRun"] = true });
+                await _hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });   // 请求超频通道状态（原版页面激活时的序列）
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
             }
             catch
             {
@@ -295,7 +295,7 @@ public class MechrevoService
                 TimeSpan.FromMilliseconds(250));
             if (!confirmed)
             {
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 confirmed = await _hw.WaitForStateAsync(
                     () => _hw.OperatingMode == 3 && _hw.CustomProfileIndex == index,
                     TimeSpan.FromMilliseconds(900));
@@ -304,7 +304,7 @@ public class MechrevoService
             if (confirmed)
             {
                 long initialFanStatus = _hw.FanStatusVersion;
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 await _hw.WaitForStateAsync(
                     () => _hw.CustomProfileIndex == index && _hw.FanStatusVersion > initialFanStatus,
                     TimeSpan.FromMilliseconds(900));
@@ -412,7 +412,7 @@ public class MechrevoService
                     wireValue = _hw.Pl4ToWire(pl4Watts);
                 else if (kv.Key == "FanSwitchSpeed" && int.TryParse(kv.Value, out int switchSpeedMs))
                     wireValue = _hw.QuantiseFanSwitchSpeed(switchSpeedMs).ToString();
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL", [wireKey] = wireValue });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL", [wireKey] = wireValue });
                 if (i + 1 < gcuEntries.Length) await Task.Delay(120);
             }
 
@@ -424,7 +424,7 @@ public class MechrevoService
                     TimeSpan.FromMilliseconds(400));
             if (!confirmed)
             {
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 confirmed = await _hw.WaitForStateAsync(
                     () => gcuConfirmationEntries.All(field => GcuCustomFieldMatches(field.Key, field.Value)),
                     TimeSpan.FromMilliseconds(2200));
@@ -448,7 +448,7 @@ public class MechrevoService
                     bool gcuConfirmed = DriverConfirm();
                     if (!gcuConfirmed)
                     {
-                        await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                        await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                         gcuConfirmed = await _hw.WaitForStateAsync(
                             DriverConfirm,
                             TimeSpan.FromMilliseconds(6000));
@@ -563,7 +563,7 @@ public class MechrevoService
         try
         {
             if (_hw is not { IsConnected: true } || !_hw.SupportsFanRespective) return false;
-            await _hw.Publish("Fan/Control", new Dictionary<string, object>
+            await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
             {
                 ["Action"] = "SET_FAN_CONTROL_RESPECTIVE",
                 ["Name"] = string.IsNullOrEmpty(_hw.TableName) ? _hw.CurveName : _hw.TableName,
@@ -579,7 +579,7 @@ public class MechrevoService
             // 带 FanControlRespective 的 Fan/Table。
             for (int attempt = 0; !confirmed && attempt < 3; attempt++)
             {
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
                 confirmed = await _hw.WaitForStateAsync(
                     () => _hw.FanRespective == on,
                     TimeSpan.FromMilliseconds(attempt == 0 ? 600 : 800));
@@ -623,14 +623,14 @@ public class MechrevoService
                 string action = ColorCalibrationAction(mode);
                 // Official CCU sends the selected profile directly. Sending a separate
                 // COLOR_CALIBRATION_ON first races the profile command and clears the UI switch.
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = action });
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = action });
                 Logger.WriteLine($"SetColorCalibration(mode {mode}) -> {action}");
             }
             else
             {
                 string file = ColorCalibrationFileName(currentMode);
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "COLOR_CALIBRATION_OFF", ["FileName"] = file });
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "DISPLAY_FEATURE_STATUS_ON" });
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "COLOR_CALIBRATION_OFF", ["FileName"] = file });
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "DISPLAY_FEATURE_STATUS_ON" });
                 Logger.WriteLine($"SetColorCalibration(off) FileName={file}");
             }
 
@@ -671,7 +671,7 @@ public class MechrevoService
 
             await Task.Delay(120).ConfigureAwait(false);
             if (++poll % 4 == 0)
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
         }
         return false;
     }
@@ -847,7 +847,7 @@ public class MechrevoService
         try
         {
             if (_hw is not { IsConnected: true }) return false;
-            await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "SET_CUSTOM_PROFILE_OSD_STRING", ["ProfileName"] = name });
+            await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "SET_CUSTOM_PROFILE_OSD_STRING", ["ProfileName"] = name });
             return true;
         }
         catch (Exception ex) { Logger.WriteLine("SetCustomProfileName fail: " + ex.Message); return false; }
@@ -895,14 +895,14 @@ public class MechrevoService
             {
                 requestCts.Token.ThrowIfCancellationRequested();
                 sentActions.Add(payload["Action"].ToString() ?? "?");
-                await _hw.Publish("Setting/Control", payload).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
             }
             Logger.WriteLine($"GPU restart route payloads [{string.Join(" -> ", sentActions)}] sent for target={mode}");
 
             await Task.Delay(800, requestCts.Token).ConfigureAwait(false);
             AppConfig.Flush();
             requestCts.Token.ThrowIfCancellationRequested();
-            await _hw.Publish("Setting/Control", new Dictionary<string, object>
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
             {
                 ["Action"] = "DGPU_DIRECT_CONNECT_RESTART",
             }).ConfigureAwait(false);
@@ -959,7 +959,7 @@ public class MechrevoService
         {
             if (!_hw.IsConnected) return GpuModeStatusReadback.Unavailable;
             long versionBeforeRequest = _hw.GpuModeStatusVersion;
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
             bool refreshed = await _hw.WaitForStateAsync(
                 () => _hw.GpuModeStatusVersion > versionBeforeRequest,
                 TimeSpan.FromMilliseconds(1500)).ConfigureAwait(false);
@@ -1039,17 +1039,17 @@ public class MechrevoService
             if (mode == GpuDgpu)
             {
                 // 直连是独立 MUX 层；进入直连前先退出核显-only。
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" }).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" }).ConfigureAwait(false);
                 await Task.Delay(300, requestCts.Token).ConfigureAwait(false);
             }
             requestCts.Token.ThrowIfCancellationRequested();
             gpuModeStatusVersion = _hw.GpuModeStatusVersion;
             hotSwitchResultVersion = _hw.GpuSwitchResultVersion;
-            await _hw.Publish("Setting/Control", payload).ConfigureAwait(false);
+            await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
             if (leavingDirect && !muxTargetRequest)
             {
                 await Task.Delay(300, requestCts.Token).ConfigureAwait(false);
-                await _hw.Publish("Setting/Control", new Dictionary<string, object>
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
                 {
                     ["Action"] = mode == GpuIGpu
                         ? "DGPU_DIRECT_CONNECT_TOGGLE_IGPU"
@@ -1060,7 +1060,7 @@ public class MechrevoService
             {
                 // 从纯集显离开时，MUX 需要重新启用独显通路（官方流程：发 DGPU_DIRECT_CONNECT_TOGGLE_OFF）
                 await Task.Delay(300, requestCts.Token).ConfigureAwait(false);
-                await _hw.Publish("Setting/Control", new Dictionary<string, object>
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
                 {
                     ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF",
                 }).ConfigureAwait(false);
@@ -1079,7 +1079,7 @@ public class MechrevoService
             for (int attempt = 0; attempt < confirmationAttempts && !confirmed; attempt++)
             {
                 requestCts.Token.ThrowIfCancellationRequested();
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
                 confirmed = await _hw.WaitForStateAsync(
                     TargetReached,
                     confirmationPollDelay,
@@ -1090,7 +1090,7 @@ public class MechrevoService
                 if (!confirmed && retryTarget)
                 {
                     // The official console retries the iGPU request every fourth poll.
-                    await _hw.Publish("Setting/Control", payload).ConfigureAwait(false);
+                    await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
                 }
             }
 
@@ -1127,7 +1127,7 @@ public class MechrevoService
                 await Task.Delay(800, requestCts.Token).ConfigureAwait(false);
                 AppConfig.Flush();
                 requestCts.Token.ThrowIfCancellationRequested();
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "DGPU_DIRECT_CONNECT_RESTART" }).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "DGPU_DIRECT_CONNECT_RESTART" }).ConfigureAwait(false);
                 Logger.WriteLine("SwitchGpuMode 已发送自动重启命令");
             }
             return true;
@@ -1169,12 +1169,12 @@ public class MechrevoService
                 _ => 0,
             };
             Logger.WriteLine($"Hot switch not confirmed; rolling back to pre-switch mode {modeBeforeSwitch} (status={rollbackStatus})");
-            await _hw.Publish("Setting/Control", new Dictionary<string, object>
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
             {
                 ["Action"] = "IGPUONLYCONNECTIONSWITCH_STATUS",
                 ["Status"] = rollbackStatus,
             }).ConfigureAwait(false);
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
             await _hw.WaitForStateAsync(
                 () => CurrentGpuMode != GpuIGpu,
                 TimeSpan.FromMilliseconds(2500),
@@ -1196,7 +1196,7 @@ public class MechrevoService
     {
         try
         {
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GPU_POWERSAVEINGMODE" });
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GPU_POWERSAVEINGMODE" });
             Logger.WriteLine("SwitchGpuPowerSaving 已发送");
             return true;
         }
@@ -1209,7 +1209,7 @@ public class MechrevoService
         try
         {
             if (!_hw.DcHzSeen) return false;
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GPU_DC_HZ", ["Enable"] = on });
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GPU_DC_HZ", ["Enable"] = on });
             bool confirmed = await ConfirmSettingAsync(() => _hw.DcHzSeen && _hw.DcHz == on);
             Logger.WriteLine($"SwitchAutoRefreshRate({on}) confirmed={confirmed}");
             return confirmed;
@@ -1223,7 +1223,7 @@ public class MechrevoService
         try
         {
             if (!_hw.SupportsLocalDimming) return false;
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = on ? "LOCALDIMMING_ON" : "LOCALDIMMING_OFF" });
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = on ? "LOCALDIMMING_ON" : "LOCALDIMMING_OFF" });
             bool confirmed = await ConfirmSettingAsync(() => _hw.LocalDimmingSeen && _hw.LocalDimming == on);
             Logger.WriteLine($"SwitchLocalDimming({on}) confirmed={confirmed}");
             return confirmed;
@@ -1237,7 +1237,7 @@ public class MechrevoService
         try
         {
             if (!_hw.SupportsLcdOverdrive) return false;
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = on ? "LCDOverdrive_ON" : "LCDOverdrive_OFF" });
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = on ? "LCDOverdrive_ON" : "LCDOverdrive_OFF" });
             bool confirmed = await ConfirmSettingAsync(() => _hw.LcdOverdriveSeen && _hw.LcdOverdrive == on);
             Logger.WriteLine($"SwitchLcdOverdrive({on}) confirmed={confirmed}");
             return confirmed;
@@ -1250,7 +1250,7 @@ public class MechrevoService
         try
         {
             if (!_hw.SupportsDisplayRefresh || !_hw.HzList.Contains(hz)) return false;
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GPU_HZSETTING", ["Hz"] = hz.ToString() });
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GPU_HZSETTING", ["Hz"] = hz.ToString() });
             bool confirmed = await ConfirmSettingAsync(() => _hw.CurrentHz == hz);
             Logger.WriteLine($"SwitchRefreshRate({hz}) confirmed={confirmed}");
             return confirmed;
@@ -1263,7 +1263,7 @@ public class MechrevoService
         try
         {
             if (!_hw.UsbChargerSeen) return false;
-            await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = on ? "USB_CHARGER_ON" : "USB_CHARGER_OFF" });
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = on ? "USB_CHARGER_ON" : "USB_CHARGER_OFF" });
             bool confirmed = await ConfirmSettingAsync(() => _hw.UsbCharger == on);
             Logger.WriteLine($"SwitchUsbCharger({on}) confirmed={confirmed}");
             return confirmed;
@@ -1312,7 +1312,7 @@ public class MechrevoService
                 // 只发 Action 的话服务端拿不到亮度，会按 0 处理，等于开灯的同时把它调暗到看不见。
                 if (key == "powerlight" && _hw.PowerLightBrightness >= 0)
                     payload["Brightness"] = _hw.PowerLightBrightness;
-                await _hw.Publish("Setting/Control", payload);
+                await _hw.Publish(MqttTopics.SettingControl, payload);
                 confirmed = await ConfirmSettingAsync(
                     () => _hw.QuickSwitches.TryGetValue(key, out bool actual) && actual == on,
                     statusVersionBeforeCommand);
@@ -1376,12 +1376,12 @@ public class MechrevoService
         {
             if (!_hw.SupportsQuickSwitch(key)) return false;
             long versionBefore = _hw.FanStatusVersion;
-            await _hw.Publish("Fan/Control", payload);
+            await _hw.Publish(MqttTopics.FanControl, payload);
             bool Matches() => _hw.QuickSwitches.TryGetValue(key, out bool actual) && actual == on;
             bool confirmed = Matches() && _hw.FanStatusVersion > versionBefore;
             for (int attempt = 0; attempt < 3 && !confirmed; attempt++)
             {
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 confirmed = await _hw.WaitForStateAsync(
                     () => Matches() && _hw.FanStatusVersion > versionBefore,
                     TimeSpan.FromMilliseconds(attempt == 0 ? 500 : 800));
@@ -1447,7 +1447,7 @@ public class MechrevoService
             if (!_hw.SupportsPowerLightBrightness) return false;
             int target = Math.Clamp(brightness, 0, 100);
             long versionBefore = _hw.SettingStatusVersion;
-            await _hw.Publish("Setting/Control", new Dictionary<string, object>
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
             {
                 ["Action"] = "PowerLight_Brightness",
                 ["Brightness"] = target,
@@ -1487,7 +1487,7 @@ public class MechrevoService
 
             for (int attempt = 0; attempt < 3; attempt++)
             {
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 if (await _hw.WaitForStateAsync(
                     IsConfirmedAfterCommand,
                     TimeSpan.FromMilliseconds(attempt == 0 ? 500 : 700))) return true;
@@ -1517,9 +1517,9 @@ public class MechrevoService
         {
             if (!_hw.SupportsKeyboard && !_hw.SupportsLightbar) return false;
             if (minutes <= 0)
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "KEYBOARD_LIGHTBAR_TIMER_OFF" });
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "KEYBOARD_LIGHTBAR_TIMER_OFF" });
             else
-                await _hw.Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "KEYBOARD_LIGHTBAR_TIMER_ON", ["Mins"] = minutes });
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "KEYBOARD_LIGHTBAR_TIMER_ON", ["Mins"] = minutes });
             return true;
         }
         catch (Exception ex) { Logger.WriteLine("PublishKeyboardCloseTimer fail: " + ex.Message); return false; }
@@ -1619,7 +1619,7 @@ public class MechrevoService
         string operation)
     {
         long statusVersionBeforeCommand = _hw.LcStatusVersion;
-        await _hw.Publish("BT_LC/Control", command);
+        await _hw.Publish(MqttTopics.BtLcControl, command);
         bool confirmed = await ConfirmLiquidCoolingStateAsync(
             statusVersionBeforeCommand, targetReached, operation);
         Logger.WriteLine($"{operation} confirmed={confirmed}");
@@ -1644,7 +1644,7 @@ public class MechrevoService
             if (IsConfirmedAfterCommand()) return true;
 
             long statusVersionBeforeQuery = _hw.LcStatusVersion;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
             bool receivedFreshStatus = await _hw.WaitForStateAsync(
                 () => _hw.LcStatusVersion > statusVersionBeforeQuery,
                 TimeSpan.FromMilliseconds(attempt == 0 ? 500 : 700));
@@ -1664,7 +1664,7 @@ public class MechrevoService
             // BT_LC is a runtime-discovered subsystem on several models. Do not reject the
             // initial discovery request merely because an older ItemSupport profile lacks it.
             if (!_hw.IsConnected) return false;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "Connect" });
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "Connect" });
             Logger.WriteLine("LcConnect 已发送");
             return true;
         });
@@ -1674,7 +1674,7 @@ public class MechrevoService
         RunLiquidCoolingAsync("RefreshLiquidCoolingStatus", LiquidCoolingQueryLockTimeout, async () =>
         {
             if (!_hw.IsConnected) return false;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
             return true;
         });
 
@@ -1683,7 +1683,7 @@ public class MechrevoService
         RunLiquidCoolingAsync("LcDisconnect", LiquidCoolingWriteLockTimeout, async () =>
         {
             if (!_hw.SupportsLiquidCooling) return false;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "Disconnect" });
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "Disconnect" });
             Logger.WriteLine("LcDisconnect 已发送");
             return true;
         });
@@ -1693,7 +1693,7 @@ public class MechrevoService
         RunLiquidCoolingAsync($"LcSelectDevice({mac})", LiquidCoolingWriteLockTimeout, async () =>
         {
             if (!_hw.SupportsLiquidCooling || string.IsNullOrWhiteSpace(mac)) return false;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "DeviceMacSetting", ["DeviceMac"] = mac });
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "DeviceMacSetting", ["DeviceMac"] = mac });
             Logger.WriteLine($"LcSelectDevice({mac}) 已发送");
             return true;
         });
@@ -1703,7 +1703,7 @@ public class MechrevoService
         RunLiquidCoolingAsync("LcClearMac", LiquidCoolingWriteLockTimeout, async () =>
         {
             if (!_hw.SupportsLiquidCooling) return false;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "ClearDevMAC" });
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "ClearDevMAC" });
             Logger.WriteLine("LcClearMac 已发送");
             return true;
         });
@@ -1837,7 +1837,7 @@ public class MechrevoService
         int red = ClampLcColor(color.R, _hw.LcLedRedMinimum, _hw.LcLedRedMaximum);
         int green = ClampLcColor(color.G, _hw.LcLedGreenMinimum, _hw.LcLedGreenMaximum);
         int blue = ClampLcColor(color.B, _hw.LcLedBlueMinimum, _hw.LcLedBlueMaximum);
-        await _hw.Publish("BT_LC/Control", new Dictionary<string, object>
+        await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object>
         {
             ["Action"] = "LEDControl",
             ["LCLED_R"] = red.ToString(),
@@ -1869,7 +1869,7 @@ public class MechrevoService
         try
         {
             if (!CanControlLiquidCooling) return false;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object>
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object>
             {
                 ["Action"] = action,
                 ["LedMode"] = ledMode,
@@ -1923,7 +1923,7 @@ public class MechrevoService
         RunLiquidCoolingAsync("LcInputWater", LiquidCoolingWriteLockTimeout, async () =>
         {
             if (!_hw.SupportsLiquidCooling) return false;
-            await _hw.Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "InputWater" });
+            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "InputWater" });
             Logger.WriteLine("LcInputWater 已发送");
             return true;
         });
@@ -1932,7 +1932,7 @@ public class MechrevoService
     /// effect=效果名（Single/Breathing/Wave/Rainbow...），light=亮度 0-4，speed=速度，direction=方向。</summary>
     public Task<bool> SetKeyboardEffect(string effect, int light = 4, int speed = 1, string direction = "None",
         Color? singleColor = null, bool save = false)
-        => SetLightEffect("Keyboard/Ctrl", effect, light, speed, direction, singleColor, save);
+        => SetLightEffect(MqttTopics.KeyboardCtrl, effect, light, speed, direction, singleColor, save);
 
     /// <summary>通用灯效命令（键盘/灯条/Logo 灯共用 MyKeyBoard 载荷结构，仅 topic 不同）。
     /// save=true 时 nv_save=SAVE——效果一次性写入固件 NVRAM（重启/断电后保持）。</summary>
@@ -1980,7 +1980,7 @@ public class MechrevoService
 
     /// <summary>键盘灯开关（原版 SetPower powerstatus 0/1）。</summary>
     public Task<bool> SetKeyboardPower(bool on)
-        => SetLightPower("Keyboard/Ctrl", on);
+        => SetLightPower(MqttTopics.KeyboardCtrl, on);
 
     /// <summary>
     /// 灯效通道上电/断电的「只下发」语义：返回命令是否成功发布，**不等待厂商回读**。
@@ -2014,7 +2014,7 @@ public class MechrevoService
         {
             if (!SupportsLightTopic(topic)) return false;
             string? lightKey = LightTopicToQuickSwitchKey(topic);
-            bool IsConfirmed() => topic.StartsWith("Keyboard/", StringComparison.OrdinalIgnoreCase)
+            bool IsConfirmed() => topic.StartsWith(MqttTopics.KeyboardPrefix, StringComparison.OrdinalIgnoreCase)
                 ? _hw.KeyboardPower == on
                 : lightKey is not null &&
                   _hw.QuickSwitches.TryGetValue(lightKey, out bool actual) && actual == on;
@@ -2052,7 +2052,7 @@ public class MechrevoService
             if (!_hw.DeepSleepSeen || secs != 0 && secs is not (900 or 1200 or 1500 or 1800)) return false;
             var payload = new Dictionary<string, object> { ["Action"] = on ? "DEEPSLEEP_ON" : "DEEPSLEEP_OFF" };
             if (on && secs > 0) payload["Secs"] = secs.ToString();
-            await _hw.Publish("Setting/Control", payload);
+            await _hw.Publish(MqttTopics.SettingControl, payload);
             bool confirmed = await ConfirmSettingAsync(() =>
                 _hw.QuickSwitches.TryGetValue("deepsleep", out bool actual) && actual == on
                 && (!on || secs <= 0 || _hw.DeepSleepTime == secs));
@@ -2071,7 +2071,7 @@ public class MechrevoService
             if (_hw is not { IsConnected: true } || _hw.Capabilities.SilentTurboAvailability != FeatureAvailability.Supported) return false;
             if (IsSilentTurboActive == silent) return true;
             var action = silent ? "SET_CPU_CORE_OFFSET_SILENT" : "SET_CPU_CORE_OFFSET_EXTREME";
-            await _hw.Publish("Fan/Control", new Dictionary<string, object>
+            await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
             {
                 ["Action"] = action,
                 [silent ? "SILENT" : "EXTREME"] = 1,
@@ -2112,11 +2112,11 @@ public class MechrevoService
         try
         {
             if (!_hw.SupportsFanBoost) return false;
-            await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = enable ? "FAN_BOOST_ON" : "FAN_BOOST_OFF" });
+            await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = enable ? "FAN_BOOST_ON" : "FAN_BOOST_OFF" });
             if (await _hw.WaitForStateAsync(() => _hw.FanBoost == enable, TimeSpan.FromMilliseconds(180))) return true;
             for (int attempt = 0; attempt < 3; attempt++)
             {
-                await _hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 if (await _hw.WaitForStateAsync(
                     () => _hw.FanBoost == enable,
                     TimeSpan.FromMilliseconds(attempt == 0 ? 500 : 700))) return true;
@@ -2138,7 +2138,7 @@ public class MechrevoService
 
     bool SupportsLightTopic(string topic)
     {
-        if (topic.StartsWith("Keyboard/", StringComparison.OrdinalIgnoreCase)) return _hw.SupportsKeyboard;
+        if (topic.StartsWith(MqttTopics.KeyboardPrefix, StringComparison.OrdinalIgnoreCase)) return _hw.SupportsKeyboard;
         return LightTopicToQuickSwitchKey(topic) switch
         {
             "logolight" => _hw.SupportsLogoLight,
@@ -2161,7 +2161,7 @@ public class MechrevoService
     internal static string? LightTopicToQuickSwitchKey(string topic)
     {
         if (topic.Contains("Logo", StringComparison.OrdinalIgnoreCase)) return "logolight";
-        if (topic.StartsWith("HidLightbar/", StringComparison.OrdinalIgnoreCase)) return "lightbar";
+        if (topic.StartsWith(MqttTopics.LightbarPrefix, StringComparison.OrdinalIgnoreCase)) return "lightbar";
         return null;
     }
 }

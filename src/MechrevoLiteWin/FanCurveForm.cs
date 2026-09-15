@@ -220,7 +220,7 @@ public class FanCurveForm : RForm
             {
                 try
                 {
-                    await Program.hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
+                    await Program.hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
                     await EnableIndependentControlOnOpenAsync();
                 }
                 catch (Exception ex) { Logger.WriteLine("Fan curve initial refresh failed: " + ex.Message); }
@@ -322,7 +322,7 @@ public class FanCurveForm : RForm
                 int[] gpu = _gpuPanel.Duties.ToArray();
                 if (sendCpu) await Program.hw.SetFanCurve(0, cpu);
                 if (sendGpu) await Program.hw.SetFanCurve(1, gpu);
-                await Program.hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
+                await Program.hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
                 await Task.Delay(700);
                 bool confirmed = (!sendCpu || CurveMatches(cpu, Program.hw.CpuCurveDuty, Program.hw.CpuCurveUpT))
                     && (!sendGpu || CurveMatches(gpu, Program.hw.GpuCurveDuty, Program.hw.GpuCurveUpT));

@@ -304,7 +304,7 @@ public class RgbForm : RForm
                 // 仅睡眠断电时补开灯；正常切换不动电源，避免与固件上电时的默认效果竞争。
                 if (Program.service is not null && Program.hw is { IsConnected: true } && !Program.hw.KeyboardPower)
                 {
-                    await Program.service.SetLightPower("Keyboard/Ctrl", true);
+                    await Program.service.SetLightPower(MqttTopics.KeyboardCtrl, true);
                     if (gen != _applyGen) return;
                 }
                 _rgb.ReInitCustomMode();   // 固件效果模式下会忽略 HID 帧——重新进入自定义帧模式

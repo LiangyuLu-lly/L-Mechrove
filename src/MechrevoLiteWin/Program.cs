@@ -818,7 +818,7 @@ namespace MechrevoLite
 
         internal static void OnHardwareStateChanged(string topic)
         {
-            if (!string.Equals(topic, "Keyboard/Status", StringComparison.Ordinal) ||
+            if (!string.Equals(topic, MqttTopics.KeyboardStatus, StringComparison.Ordinal) ||
                 Volatile.Read(ref _exitStarted) != 0 || rgb is null || !rgb.KbPowerOn ||
                 !rgb.IsConnected || hw is null ||
                 Volatile.Read(ref _lightingIdleSuspended) != 0)
@@ -996,8 +996,8 @@ namespace MechrevoLite
             if (rgb.KbPowerOn)
             {
                 // 熄灭同样只下发不等回读：键盘本地效果已在上面立即停掉，外置关灯紧随同一轮发出。
-                bool issued = await service.PublishLightPower("Keyboard/Ctrl", false).ConfigureAwait(false);
-                service.ObserveLightPower("Keyboard/Ctrl", false);
+                bool issued = await service.PublishLightPower(MqttTopics.KeyboardCtrl, false).ConfigureAwait(false);
+                service.ObserveLightPower(MqttTopics.KeyboardCtrl, false);
                 if (issued) Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 1);
             }
             await SetExternalLightingPowerAsync(on: false, restoreEffect: false, useTemporarySnapshot: false)
@@ -1020,8 +1020,8 @@ namespace MechrevoLite
         /// </summary>
         static readonly (string Topic, string SwitchKey, Func<bool> Supported)[] ExternalLightChannels =
         [
-            ("HidLightbar/Ctrl", "lightbar", () => hw.SupportsLightbar),
-            ("HidLightbar_Logo/Ctrl", "logolight", () => hw.SupportsLogoLight),
+            (MqttTopics.LightbarCtrl, "lightbar", () => hw.SupportsLightbar),
+            (MqttTopics.LogoLightCtrl, "logolight", () => hw.SupportsLogoLight),
         ];
 
         static void CaptureExternalPowerBeforeTemporarySuspend()
@@ -1145,8 +1145,8 @@ namespace MechrevoLite
                     if (hw is not { IsConnected: true } || service is null) return false;
                     // 只下发不等回读：键盘本就该灭（StopCurrentEffect 已就地生效），回读未确认不得
                     // 把这条通道判成失败、把整个周期拖进 20 轮重发。
-                    bool issued = await service.PublishLightPower("Keyboard/Ctrl", false).ConfigureAwait(false);
-                    service.ObserveLightPower("Keyboard/Ctrl", false);
+                    bool issued = await service.PublishLightPower(MqttTopics.KeyboardCtrl, false).ConfigureAwait(false);
+                    service.ObserveLightPower(MqttTopics.KeyboardCtrl, false);
                     if (issued)
                     {
                         Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 0);
@@ -1176,8 +1176,8 @@ namespace MechrevoLite
                         ArmKeyboardEffectProtect();
                         // 只下发不等回读：GCU 键盘电源回读本机长期 not confirmed，等待它会凭空给
                         // 本地 HID 效果加上约 2 秒延迟，与外置通道错开。命令成功发布即继续。
-                        bool issued = await service.PublishLightPower("Keyboard/Ctrl", true).ConfigureAwait(false);
-                        service.ObserveLightPower("Keyboard/Ctrl", true);
+                        bool issued = await service.PublishLightPower(MqttTopics.KeyboardCtrl, true).ConfigureAwait(false);
+                        service.ObserveLightPower(MqttTopics.KeyboardCtrl, true);
                         if (issued) await Task.Delay(KeyboardPowerSettleMs).ConfigureAwait(false);
                         else Logger.WriteLine("RGB 自动恢复：键盘电源未能下发，继续恢复本地 HID 效果");
                     }
@@ -1583,7 +1583,7 @@ namespace MechrevoLite
                 // hw.Dispose() 会断开会话，CleanSession=true 让未完成的 PUBREL 被丢弃，
                 // 命令等于没发——正是这段代码要解决的问题。停推流丢一次的代价
                 // 远低于为一个清理动作卡住退出。
-                var publish = connected.Publish("System/Control",
+                var publish = connected.Publish(MqttTopics.SystemControl,
                     new Dictionary<string, object> { ["Action"] = "System_OFF" },
                     MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce);
                 if (!publish.Wait(TimeSpan.FromMilliseconds(700)))
@@ -1620,7 +1620,7 @@ namespace MechrevoLite
                 await chargeHw.SetBatteryProtection(mode);
                 for (int i = 0; i < 10; i++)
                 {
-                    await chargeHw.Publish("BatteryProtection/Control", new Dictionary<string, object> { ["Report"] = "GET" });
+                    await chargeHw.Publish(MqttTopics.BatteryProtectionControl, new Dictionary<string, object> { ["Report"] = "GET" });
                     await Task.Delay(300);
                     if (chargeHw.BatteryProtection == mode)
                     {

@@ -513,8 +513,8 @@ public class CustomModeForm : RForm
             _status.Text = "恢复中…";
             await Task.Run(async () =>
             {
-                await Program.hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "RESTORE_OPERATING_MODE_DETAIL" });
-                await Program.hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "RESTORE_FAN_SPEED_CURVE_SETTING", ["Name"] = Program.hw.TableName });
+                await Program.hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "RESTORE_OPERATING_MODE_DETAIL" });
+                await Program.hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "RESTORE_FAN_SPEED_CURVE_SETTING", ["Name"] = Program.hw.TableName });
             });
             _status.Text = "已发送恢复命令";
         };
@@ -841,8 +841,8 @@ public class CustomModeForm : RForm
             // thread. Retry whenever the form becomes visible so late driver/GPU
             // initialization does not permanently hide the OC controls.
             await Task.Run(hw.EnsureDirectGpuOverclock);
-            await hw.Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-            await hw.Publish("LCHWOC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            await hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            await hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
         }
         catch (Exception ex) { Logger.WriteLine("Custom mode status refresh failed: " + ex.Message); }
         finally

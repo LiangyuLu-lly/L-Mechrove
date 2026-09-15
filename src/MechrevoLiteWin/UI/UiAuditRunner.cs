@@ -168,8 +168,8 @@ internal static class UiAuditRunner
             // ColorCalibration 表单已删（2026-09-14：P3/AdobeRGB 不生效，弹窗改为屏幕行头内联下拉）。
             ("FirstRunGuide", () => new FirstRunGuideForm(), null),
             ("KeyboardRgb", () => new RgbForm(new KeyboardRgb()), null),
-            ("Lightbar", () => new LightForm("HidLightbar/Ctrl", "灯条灯效", LightForm.LightbarEffects), null),
-            ("LogoLight", () => new LightForm("HidLightbar_Logo/Ctrl", "Logo灯效", LightForm.LogoEffects), null),
+            ("Lightbar", () => new LightForm(MqttTopics.LightbarCtrl, "灯条灯效", LightForm.LightbarEffects), null),
+            ("LogoLight", () => new LightForm(MqttTopics.LogoLightCtrl, "Logo灯效", LightForm.LogoEffects), null),
             ("Donate", () => new DonateForm(), null),
             ("ColorPicker", () => new RColorPicker(Color.FromArgb(50, 219, 190), true), null),
             // 设置弹窗此前漏采：宿主面板在主窗里是游离（未挂树）控件，只有 ⚙ 弹窗托管时才参与布局，
@@ -339,15 +339,15 @@ internal static class UiAuditRunner
                         auditHardware = new MechrevoHw(null, factory.Capabilities);
                         if (factory.Name == "CustomMode")
                         {
-                            auditHardware.HandleMessage("Fan/Status", """
+                            auditHardware.HandleMessage(MqttTopics.FanStatus, """
                                 {"GPU_CoreClockOffsetMinimumHWOC":-500,"GPU_CoreClockOffsetMaximumHWOC":500,
                                  "GPU_MemoryClockOffsetMinimumHWOC":-500,"GPU_MemoryClockOffsetMaximumHWOC":500,
                                  "GPU_CoreClockOffsetOC":500,"GPU_MemoryClockOffsetOC":-500,"OverClockingSwitch":1}
                                 """);
-                            auditHardware.HandleMessage("LCHWOC/Status", "{\"Support\":true,\"Enable\":true}");
+                            auditHardware.HandleMessage(MqttTopics.LchwocStatus, "{\"Support\":true,\"Enable\":true}");
                         }
                         if (factory.Name == "FanCurve")
-                            auditHardware.HandleMessage("Fan/Status", "{\"FanControlRespective\":true}");
+                            auditHardware.HandleMessage(MqttTopics.FanStatus, "{\"FanControlRespective\":true}");
                         Program.hw = auditHardware;
                     }
                     form = factory.Create();

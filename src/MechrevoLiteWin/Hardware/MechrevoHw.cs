@@ -1071,11 +1071,11 @@ public class MechrevoHw : IDisposable
     /// </summary>
     internal static readonly string[] SubscribedTopicFilters =
     {
-        "System/#", "Fan/#", "Setting/#", "Settings/#", "Customize/#", "GPUDevice/#",
-        "BT_LC/#",            // 液冷系统
-        "Keyboard/#",         // 键盘灯状态
-        "HidLightbar/#", "HidLightbar_Logo/#",
-        "LCHWOC/#",           // GPU 超频通道状态
+        MqttTopics.SystemFilter, MqttTopics.FanFilter, MqttTopics.SettingFilter, MqttTopics.SettingsFilter, MqttTopics.CustomizeFilter, MqttTopics.GpuDeviceFilter,
+        MqttTopics.BtLcFilter,            // 液冷系统
+        MqttTopics.KeyboardFilter,         // 键盘灯状态
+        MqttTopics.LightbarFilter, MqttTopics.LogoLightFilter,
+        MqttTopics.LchwocFilter,           // GPU 超频通道状态
     };
 
     /// <summary>
@@ -1094,16 +1094,16 @@ public class MechrevoHw : IDisposable
     /// </summary>
     internal async Task RequestInitialStateAsync()
     {
-        await Publish("System/Control", new Dictionary<string, object> { ["Action"] = "System_ON" });
-        await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-        await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
-        await Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-        await Publish("LCHWOC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-        await Publish("Keyboard/Ctrl", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-        await Publish("HidLightbar/Ctrl", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-        await Publish("HidLightbar_Logo/Ctrl", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-        await Publish("BT_LC/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-        await Publish("BatteryProtection/Control", new Dictionary<string, object> { ["Report"] = "GET" });   // 初始电池档回读（否则三档高亮不显示）
+        await Publish(MqttTopics.SystemControl, new Dictionary<string, object> { ["Action"] = "System_ON" });
+        await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
+        await Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.KeyboardCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.LightbarCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.LogoLightCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.BatteryProtectionControl, new Dictionary<string, object> { ["Report"] = "GET" });   // 初始电池档回读（否则三档高亮不显示）
     }
 
     /// <summary>
@@ -1222,24 +1222,24 @@ public class MechrevoHw : IDisposable
             var o = JObject.Parse(payload);
             switch (topic)
             {
-                case "System/CpuInfo":
+                case MqttTopics.SystemCpuInfo:
                     CpuTemp = Int(o, "CpuTemperature");
                     CpuUsage = Int(o, "CpuUsage");
                     CpuFrequency = Int(o, "CpuFrequency");
                     Interlocked.Exchange(ref _cpuInfoReceivedAt, Environment.TickCount64);
                     break;
-                case "System/GpuInfo":
+                case MqttTopics.SystemGpuInfo:
                     GpuTemp = Int(o, "GpuTemperature");
                     GpuUsage = Int(o, "GpuUsage");
                     GpuCoreFreq = Int(o, "GpuCoreFreq");
                     VramUsedMb = Int(o, "GpuMem");
                     Interlocked.Exchange(ref _gpuInfoReceivedAt, Environment.TickCount64);
                     break;
-                case "System/MemoryInfo":
+                case MqttTopics.SystemMemoryInfo:
                     RamUsage = Int(o, "MemoryUsage");
                     RamUsedGb = Double(o, "TotalUsingMemory", RamUsedGb);
                     break;
-                case "System/FanInfo":
+                case MqttTopics.SystemFanInfo:
                     CpuFanDuty = Int(o, "CpuFanDuty");
                     GpuFanDuty = Int(o, "GpuFanDuty");
                     CpuFanRpm = Int(o, "CpuFanRpm");
@@ -1258,7 +1258,7 @@ public class MechrevoHw : IDisposable
                     // 而且它由 GCUService 随风扇表自动管理（MyFanTableCtrl 内部调用），
                     // 官方控制台自己也没有读数和控制入口。详见 docs/hardware/README.md。
                     break;
-                case "System/BatteryInfo":
+                case MqttTopics.SystemBatteryInfo:
                     BatteryPercent = Int(o, "BatteryLifePercent");
                     // 电池健康信息：循环次数与设计容量。官方 UI 不展示这两项，
                     // 但推流里一直带着，比 powercfg /batteryreport 实时得多。
@@ -1269,14 +1269,14 @@ public class MechrevoHw : IDisposable
                     Logger.WriteLineIfChanged("battery-info",
                         $"BatteryInfo percent={BatteryPercent} cycles={BatteryCycleCount} capacity={BatteryCapacityText} abnormal={BatteryAbnormal}");
                     break;
-                case "System/NetworkInfo":
+                case MqttTopics.SystemNetworkInfo:
                     // 官方推流里的网络吞吐。此前完全没订阅，Overlay 想显示网速只能自己数网卡。
                     // 服务端给的是带单位的字符串（"232 Kbps" / "3.9 Mbps"），原样保留供展示。
                     NetworkDownload = o["NetworkDownload"]?.ToString() ?? NetworkDownload;
                     NetworkUpload = o["NetworkUpload"]?.ToString() ?? NetworkUpload;
                     NetworkInfoSeen = true;
                     break;
-                case "System/HardwareInfo":
+                case MqttTopics.SystemHardwareInfo:
                     // 机型/固件铭牌。含 EC 固件版本——排查固件差异类问题时这是关键信息，
                     // 而它此前只在官方 UI 里可见。
                     HardwareInfoSeen = true;
@@ -1284,7 +1284,7 @@ public class MechrevoHw : IDisposable
                     if (!string.IsNullOrWhiteSpace(ecVersion)) EcFirmwareVersion = ecVersion;
                     Logger.WriteLineIfChanged("hardware-info", "HardwareInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
                     break;
-                case "System/FanErrorInfo":
+                case MqttTopics.SystemFanErrorInfo:
                     // 风扇异常告警。官方用它弹提示；此前未订阅，风扇故障对用户完全不可见。
                     FanErrorSeen = true;
                     bool anyFanError = false;
@@ -1297,8 +1297,8 @@ public class MechrevoHw : IDisposable
                     FanError = anyFanError;
                     Logger.WriteLineIfChanged("fan-error", "FanErrorInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
                     break;
-                case "HidLightbar/Status":
-                case "HidLightbar_Logo/Status":
+                case MqttTopics.LightbarStatus:
+                case MqttTopics.LogoLightStatus:
                     // 主题到过不等于这条灯带存在：开发机曾实测过服务端对不存在的灯带
                     // 也推一个 type / powerStatus / brightNess 全空的空状态。
                     // 只认「载荷带了可识别的灯带内容」。
@@ -1306,7 +1306,7 @@ public class MechrevoHw : IDisposable
                     string lightKey;
                     switch (topic)
                     {
-                        case "HidLightbar_Logo/Status":
+                        case MqttTopics.LogoLightStatus:
                             LogoLightStatusSeen |= lightbarContentPresent;
                             lightKey = "logolight";
                             break;
@@ -1333,7 +1333,7 @@ public class MechrevoHw : IDisposable
                         ? $"LB {topic}: type={o["type"]?.ToString() ?? "-"} power={lbPower ?? "-"} light={o["brightNess"]?.ToString() ?? "-"}"
                         : $"LB {topic}: no hardware evidence (type/powerStatus empty), raw={o.ToString(Newtonsoft.Json.Formatting.None)}");
                     break;
-                case "Keyboard/Status":
+                case MqttTopics.KeyboardStatus:
                     {
                         KeyboardStatusSeen = true;
                         var kbEffect = o["effect"]?.ToString();
@@ -1364,7 +1364,7 @@ public class MechrevoHw : IDisposable
                         Logger.WriteLineIfChanged("kb-status", $"KB: effect={KeyboardEffect} light={KeyboardLight} brightness={KeyboardBrightness}% speed={KeyboardSpeed} direction={KeyboardDirection} power={KeyboardPower}");
                         break;
                     }
-                case "BT_LC/Status":
+                case MqttTopics.BtLcStatus:
                     {
                         LcStatusSeen = true;
                         string? connS = o.GetValue("connected", StringComparison.OrdinalIgnoreCase)?.ToString();
@@ -1459,11 +1459,11 @@ public class MechrevoHw : IDisposable
                         RaiseIsolated(LcChanged, nameof(LcChanged));
                         break;
                     }
-                case "System/BatteryProtection":
+                case MqttTopics.SystemBatteryProtection:
                     var prot = Int(o, "HealthProtectionStatus");
                     if (prot >= 0) BatteryProtection = prot;
                     break;
-                case "Fan/Table":
+                case MqttTopics.FanTable:
                     FanCurveSeen = true;
                     CurveName = o["Name"]?.ToString() ?? CurveName;
                     bool? tableRespective = OptionalBool(o, "FanControlRespective");
@@ -1515,7 +1515,7 @@ public class MechrevoHw : IDisposable
                     }
                     if (respectiveChanged) RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
                     break;
-                case "GPUDevice/Status":
+                case MqttTopics.GpuDeviceStatus:
                     GpuDeviceStatusSeen = true;
                     var hzArr = o["currentHZList"] as JArray;
                     if (hzArr is not null)
@@ -1536,7 +1536,7 @@ public class MechrevoHw : IDisposable
                     bool? dcHz = OptionalBool(o, "DC_HZ");
                     if (dcHz.HasValue) { DcHz = dcHz.Value; DcHzSeen = true; }
                     break;
-                case "Settings/DeviceSwitchItemStatus":
+                case MqttTopics.SettingsDeviceSwitchItemStatus:
                     DeviceSwitchStatusSeen = true;
                     // 这五项过去是「字段存在就置 Seen」：`HasField(...)` 加
                     // `OptionalBool(...) == true`。无法识别的值（固件写了个没见过的记法）
@@ -1569,7 +1569,7 @@ public class MechrevoHw : IDisposable
                         WebcamSeen = true;
                     }
                     break;
-                case "Setting/Status":
+                case MqttTopics.SettingStatus:
                     SettingStatusSeen = true;
                     // 局部调光 / 屏幕响应加速。
                     //
@@ -1808,7 +1808,7 @@ public class MechrevoHw : IDisposable
                         RaiseIsolated(CloseTimerChanged, nameof(CloseTimerChanged), closeTimerMinutes);
                     if (gpuModeChanged) RaiseIsolated(GpuModeChanged, nameof(GpuModeChanged));
                     break;
-                case "Fan/Status":
+                case MqttTopics.FanStatus:
                     FanStatusSeen = true;
                     // IsAC 过去用 Value<bool>()，是本 case 自增版本号后的第一个赋值。
                     // 这个协议在同一帧里大量使用字符串型布尔（GPU_DynamicBoostSwitch=="1" 等），
@@ -2051,7 +2051,7 @@ public class MechrevoHw : IDisposable
                         RaiseIsolated(ModeChanged, nameof(ModeChanged), changedMode);
                     RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
                     break;
-                case "LCHWOC/Status":
+                case MqttTopics.LchwocStatus:
                     {
                         LchwocStatusSeen = true;
                         bool? support = OptionalBool(o, "Support");
@@ -2084,9 +2084,9 @@ public class MechrevoHw : IDisposable
             // 订阅者抛异常，StateChanged 就永远不会触发 → 所有 WaitForStateAsync 只能超时、
             // UI 停更，异常还会被上面那个 catch 吞掉。NotifyConnectionReady 早就是这么写的，
             // 这里只是把同样的纪律补齐。
-            if (topic is "HidLightbar/Status" or "HidLightbar_Logo/Status" or "Keyboard/Status" or
-                "BT_LC/Status" or "Fan/Table" or "GPUDevice/Status" or "Settings/DeviceSwitchItemStatus" or
-                "Setting/Status" or "Fan/Status" or "LCHWOC/Status")
+            if (topic is MqttTopics.LightbarStatus or MqttTopics.LogoLightStatus or MqttTopics.KeyboardStatus or
+                MqttTopics.BtLcStatus or MqttTopics.FanTable or MqttTopics.GpuDeviceStatus or MqttTopics.SettingsDeviceSwitchItemStatus or
+                MqttTopics.SettingStatus or MqttTopics.FanStatus or MqttTopics.LchwocStatus)
             {
                 // 能力判定变化时记一行。日志里原本只有静态画像，而界面显示什么取决于
                 // 「静态位 + 服务端报过的字段」合并后的结论——缺这一行，排查
@@ -2271,10 +2271,10 @@ public class MechrevoHw : IDisposable
         try
         {
             // 实测：缺少 ProfileIndex 字段时服务端切换后回滚——载荷必须对齐原版 {Action, ProfileIndex}
-            await Publish("Fan/Control", fanPayload);
+            await Publish(MqttTopics.FanControl, fanPayload);
             // 超频通道的运行标记：不发这一条，从自定义模式切回普通模式时
             // 硬件那边还留在「自定义运行」，超频参数不复位。
-            await Publish("LCHWOC/Control", overclockPayload);
+            await Publish(MqttTopics.LchwocControl, overclockPayload);
         }
         catch
         {
@@ -2283,10 +2283,10 @@ public class MechrevoHw : IDisposable
         }
         if (!await WaitForStateAsync(() => OperatingMode == expectedOpMode, TimeSpan.FromMilliseconds(180)))
         {
-            await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
             await WaitForStateAsync(() => OperatingMode == expectedOpMode, TimeSpan.FromMilliseconds(900));
         }
-        await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
+        await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
     }
 
     // SetGpuPowerSaving / SetDisconnectMonitor / SetDcOnce 也一并删除：
@@ -2320,11 +2320,11 @@ public class MechrevoHw : IDisposable
         try
         {
             if (BatteryProtection == mode) return true;
-            await Publish("BatteryProtection/Control", new Dictionary<string, object> { ["Action"] = action });
+            await Publish(MqttTopics.BatteryProtectionControl, new Dictionary<string, object> { ["Action"] = action });
             if (await WaitForStateAsync(() => BatteryProtection == mode, TimeSpan.FromMilliseconds(180))) return true;
             for (int attempt = 0; attempt < 3; attempt++)
             {
-                await Publish("BatteryProtection/Control", new Dictionary<string, object> { ["Report"] = "GET" });
+                await Publish(MqttTopics.BatteryProtectionControl, new Dictionary<string, object> { ["Report"] = "GET" });
                 if (await WaitForStateAsync(
                     () => BatteryProtection == mode,
                     TimeSpan.FromMilliseconds(attempt == 0 ? 500 : 700))) return true;
@@ -2357,14 +2357,14 @@ public class MechrevoHw : IDisposable
             bool leavingDirect = GpuMode == MechrevoService.GpuDgpu && mode != MechrevoService.GpuDgpu;
             if (mode == MechrevoService.GpuDgpu)
             {
-                await Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" });
+                await Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" });
                 await Task.Delay(300);
             }
-            await Publish("Setting/Control", payload);
+            await Publish(MqttTopics.SettingControl, payload);
             if (leavingDirect && !useMuxTarget)
             {
                 await Task.Delay(300);
-                await Publish("Setting/Control", new Dictionary<string, object>
+                await Publish(MqttTopics.SettingControl, new Dictionary<string, object>
                 {
                     ["Action"] = mode == MechrevoService.GpuIGpu
                         ? "DGPU_DIRECT_CONNECT_TOGGLE_IGPU"
@@ -2376,11 +2376,11 @@ public class MechrevoHw : IDisposable
             if (await WaitForStateAsync(TargetReached, TimeSpan.FromMilliseconds(1200))) return true;
             for (int attempt = 0; attempt < 7; attempt++)
             {
-                await Publish("Setting/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                await Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 if (await WaitForStateAsync(
                     TargetReached,
                     TimeSpan.FromMilliseconds(1800))) return true;
-                if (attempt is 1 or 3 or 5) await Publish("Setting/Control", payload);
+                if (attempt is 1 or 3 or 5) await Publish(MqttTopics.SettingControl, payload);
             }
             Logger.WriteLine($"SetGpuMode not confirmed: expected={mode} actual={GpuMode}");
             return false;
@@ -2401,7 +2401,7 @@ public class MechrevoHw : IDisposable
         };
         for (int i = 0; i < 16; i++)
             payload[$"T{i}"] = safeDuties[i].ToString();
-        await Publish("Fan/Control", payload);
+        await Publish(MqttTopics.FanControl, payload);
     }
 
     public static int[] NormalizeFanCurve(IReadOnlyList<int> duties, IReadOnlyList<byte> temperatures)
@@ -2443,11 +2443,11 @@ public class MechrevoHw : IDisposable
             // The vendor service applies multi-field payloads inconsistently, so write one field per command.
             string pl1Key = UsesAmdPowerFields ? "CpuAmdSPL" : "PL1";
             string pl2Key = UsesAmdPowerFields ? "CpuAmdSPPT" : "PL2";
-            await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL", [pl1Key] = pl1.ToString() });
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL", [pl1Key] = pl1.ToString() });
             await Task.Delay(120);
-            await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL", [pl2Key] = pl2.ToString() });
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL", [pl2Key] = pl2.ToString() });
             if (Pl1 == pl1 && Pl2 == pl2) return true;
-            await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
             return await WaitForStateAsync(() => Pl1 == pl1 && Pl2 == pl2, TimeSpan.FromMilliseconds(700));
         }
         finally { _controlLock.Release(); }
@@ -2473,13 +2473,13 @@ public class MechrevoHw : IDisposable
         await _controlLock.WaitAsync();
         try
         {
-            await Publish("Fan/Control", new Dictionary<string, object>
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object>
             {
                 ["Action"] = "SET_OPERATING_MODE_DETAIL",
                 ["PL4"] = wire.ToString(),
             });
             if (Pl4 == effective) return true;
-            await Publish("Fan/Control", new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
             return await WaitForStateAsync(() => Pl4 == effective, TimeSpan.FromMilliseconds(700));
         }
         finally { _controlLock.Release(); }
@@ -3371,9 +3371,9 @@ public class MechrevoHw : IDisposable
     }
 
     static bool IsTelemetryTopic(string topic) => topic is
-        "System/CpuInfo" or
-        "System/GpuInfo" or
-        "System/MemoryInfo" or
-        "System/FanInfo" or
-        "System/BatteryInfo";
+        MqttTopics.SystemCpuInfo or
+        MqttTopics.SystemGpuInfo or
+        MqttTopics.SystemMemoryInfo or
+        MqttTopics.SystemFanInfo or
+        MqttTopics.SystemBatteryInfo;
 }

@@ -65,8 +65,8 @@ internal static class FunctionVerifier
         var rawPayloads = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         hw.RawMessageObserved += (topic, payload) =>
         {
-            if (topic is "Setting/Status" or "Fan/Status" or "Keyboard/Status" or
-                "Settings/DeviceSwitchItemStatus" or "WhisperMode/Status" or "GPUDevice/Status")
+            if (topic is MqttTopics.SettingStatus or MqttTopics.FanStatus or MqttTopics.KeyboardStatus or
+                MqttTopics.SettingsDeviceSwitchItemStatus or MqttTopics.WhisperModeStatus or MqttTopics.GpuDeviceStatus)
                 rawPayloads[topic] = payload;
         };
 
@@ -205,8 +205,8 @@ internal static class FunctionVerifier
         "gamewhitelist" => service.SwitchGameWhitelist(on),
         "cpuadvperf" => service.SwitchCpuAdvancedPerformance(on),
         "uni" or "omni" => service.SwitchUniOmni(key, on),
-        "lightbar" => service.SetLightPower("HidLightbar/Ctrl", on),
-        "logolight" => service.SetLightPower("HidLightbar_Logo/Ctrl", on),
+        "lightbar" => service.SetLightPower(MqttTopics.LightbarCtrl, on),
+        "logolight" => service.SetLightPower(MqttTopics.LogoLightCtrl, on),
         _ => service.SwitchQuick(key, on),
     };
 
