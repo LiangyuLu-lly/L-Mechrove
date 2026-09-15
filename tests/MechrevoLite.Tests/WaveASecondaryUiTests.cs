@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Drawing;
+using System.Globalization;
 using System.Reflection;
 using System.Windows.Forms;
 using MechrevoLite.UI;
@@ -19,18 +20,29 @@ public class RColorPickerTests
     [Fact]
     public void RColorPicker_UsesChineseCaptions()
     {
-        using var picker = new RColorPicker(Color.Red, allowRandom: false);
+        // 断言的是 zh-CN 卫星资源（Strings.zh-CN.resx），必须钉住 UI 文化，
+        // 否则非 zh-CN 宿主上 ResourceManager 落到中性英文资源，测试误报。
+        CultureInfo originalUICulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("zh-CN");
+            using var picker = new RColorPicker(Color.Red, allowRandom: false);
 
-        Assert.Equal("颜色", picker.Text);
+            Assert.Equal("颜色", picker.Text);
 
-        var labels = picker.Controls.OfType<Label>().ToList();
-        Assert.Contains(labels, l => l.Text == "十六进制");
+            var labels = picker.Controls.OfType<Label>().ToList();
+            Assert.Contains(labels, l => l.Text == "十六进制");
 
-        var buttons = picker.Controls.OfType<RButton>().ToList();
-        Assert.Contains(buttons, b => b.Text == "确定");
-        Assert.Contains(buttons, b => b.Text == "取消");
-        Assert.DoesNotContain(buttons, b => b.Text is "OK" or "Cancel");
-        Assert.DoesNotContain(labels, l => l.Text == "Hex");
+            var buttons = picker.Controls.OfType<RButton>().ToList();
+            Assert.Contains(buttons, b => b.Text == "确定");
+            Assert.Contains(buttons, b => b.Text == "取消");
+            Assert.DoesNotContain(buttons, b => b.Text is "OK" or "Cancel");
+            Assert.DoesNotContain(labels, l => l.Text == "Hex");
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalUICulture;
+        }
     }
 
     /// <summary>
