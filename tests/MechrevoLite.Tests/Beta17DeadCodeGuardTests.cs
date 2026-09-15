@@ -6,6 +6,10 @@ namespace MechrevoLite.Tests;
 /// 这些符号在 beta17 中被证明不可达后删除：外围设备面板挂在恒空的 AllPeripherals() 上、
 /// FnLock 与键盘下拉的处理器从未被 += 订阅、fahrenheit 键零写入路径（owner 决定锁定摄氏）。
 /// 删除本身不会留下编译期痕迹，重新“填空”也不会报错——这条测试就是红的那一次提醒。
+///
+/// Wave B（owner U1）追加四个零写入路径配置键：disable_osd / theme(flat) / topmost / sensors_always。
+/// theme、topmost 用带引号或带赋值前缀的精确串匹配，避免命中 darkTheme / HWND_TOPMOST 一类正常符号；
+/// topmost 只锁 Settings.cs 的读取点，Program.cs 的同键读取点由另一任务保留。
 /// </summary>
 public class Beta17DeadCodeGuardTests
 {
@@ -18,6 +22,11 @@ public class Beta17DeadCodeGuardTests
         ("IsFahrenheit", "fahrenheit 配置键零写入路径，温度锁定摄氏（owner 决定）"),
         ("_dashboardPageHost", "从未被赋值的死字段，beta17 已删"),
         ("_lightingActionTable", "从未被赋值的死字段，beta17 已删"),
+        ("disable_osd", "OSD 关闭键零写入路径，ToastForm 早退读取点已删（beta17 U1）"),
+        ("sensors_always", "传感器常开键零写入路径，读取点已删并收敛为 false 默认（beta17 U1）"),
+        ("TopMost = AppConfig.Is(\"topmost\")", "置顶键零写入路径，Settings.cs 三处读取点已删；Program.cs 同键读取点归另一任务（beta17 U1）"),
+        ("AppConfig.GetString(\"theme\")", "flat 主题键零写入路径，RForm 读取点已删（beta17 U1）"),
+        ("flatTheme", "flat 主题标志已删，RComboBox 不可达分支一并收敛（beta17 U1）"),
     };
 
     [Fact]

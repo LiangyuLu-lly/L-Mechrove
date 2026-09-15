@@ -34,8 +34,6 @@ namespace MechrevoLite.UI
         public static Color chartMain;
         public static Color chartGrid;
 
-        public static bool flatTheme = false;
-
         [DllImport("UXTheme.dll", SetLastError = true, EntryPoint = "#138")]
         public static extern bool CheckSystemDarkModeStatus();
 
@@ -68,8 +66,6 @@ namespace MechrevoLite.UI
         }
         public static void InitColors(bool darkTheme)
         {
-            flatTheme = AppConfig.GetString("theme")?.ToLower() == "flat";
-
             if (darkTheme)
             {
                 buttonMain = UiVisualStyle.SurfaceRaised;

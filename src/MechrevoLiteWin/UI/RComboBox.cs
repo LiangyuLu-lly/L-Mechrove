@@ -256,11 +256,7 @@ namespace MechrevoLite.UI
                     if (DropDownStyle == ComboBoxStyle.DropDown)
                         using (var b = new SolidBrush(innerBorderColor))
                             g.FillRectangle(b, innerInnerBorder);
-                    if (RForm.flatTheme)
-                        using (var p = new Pen(BackColor))
-                            DrawRoundedRectangle(g, p, outerBorder, outerRadius, outerRadius);
-                    else
-                        ControlHelper.DrawGradientBorder(g, outerBorder, outerBorderColor, outerRadius);
+                    ControlHelper.DrawGradientBorder(g, outerBorder, outerBorderColor, outerRadius);
                 }
                 if (shoulEndPaint)
                     EndPaint(Handle, ref ps);

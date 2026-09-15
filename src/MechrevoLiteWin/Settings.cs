@@ -1877,7 +1877,6 @@ namespace MechrevoLite
 
 
         private readonly System.Timers.Timer _sensorTimer;
-        private static readonly bool sensorsAlways = AppConfig.Is("sensors_always");
         private readonly System.Windows.Forms.Timer batteryTimer = new() { Interval = 200 };
 
         public Updates? updatesForm;
@@ -2210,7 +2209,6 @@ namespace MechrevoLite
 
             _sensorTimer = new System.Timers.Timer(AppConfig.Get("sensor_timer", 1000));
             _sensorTimer.Elapsed += OnTimedEvent;
-            _sensorTimer.Enabled = !Program.UiAuditMode && sensorsAlways;
             InitQuickSwitchRefresh();
 
             labelCharge.MouseEnter += PanelBattery_MouseEnter;
@@ -2231,7 +2229,6 @@ namespace MechrevoLite
                 ? _deviceCapabilities.SystemFamily
                 : _deviceCapabilities.Model;
             Text = "L-Mechrevo " + (ProcessHelper.IsUserAdministrator() ? "—" : "-") + " " + modelLabel;
-            TopMost = AppConfig.Is("topmost");
 
             buttonFnLock.Visible = false;   // FnLock 为华硕残留空实现（InputDispatcher 存根），入口隐藏
 
@@ -3374,7 +3371,7 @@ namespace MechrevoLite
         private void SettingsForm_VisibleChanged(object? sender, EventArgs e)
         {
             if (Program.UiAuditMode) return;
-            _sensorTimer.Enabled = this.Visible || sensorsAlways;
+            _sensorTimer.Enabled = this.Visible;
             if (this.Visible)
             {
                 Task.Run((Action)RefreshPeripheralsBattery);
@@ -4087,9 +4084,6 @@ namespace MechrevoLite
                 WindowState = FormWindowState.Normal;
                 if (workingArea is not null) ApplyResponsiveBounds(workingArea);
                 PerformLayout();
-                // Apply the final Z-order before making the native window visible. Changing
-                // TopMost after Show() gives DWM another visible frame during tray restores.
-                TopMost = AppConfig.Is("topmost");
                 Show();
                 if (firstPresentation)
                 {
@@ -4100,10 +4094,6 @@ namespace MechrevoLite
                     Opacity = 1;
                     _hasPresentedWindow = true;
                 }
-            }
-            else
-            {
-                TopMost = AppConfig.Is("topmost");
             }
             Activate();
         }
@@ -4426,7 +4416,7 @@ namespace MechrevoLite
 
         public void RefreshSensors(bool force = false)
         {
-            int throttle = (!Visible && sensorsAlways) ? 6000 : 2000;
+            int throttle = 2000;
             if (!force && Math.Abs(DateTimeOffset.Now.ToUnixTimeMilliseconds() - lastRefresh) < throttle) return;
             lastRefresh = DateTimeOffset.Now.ToUnixTimeMilliseconds();
 
