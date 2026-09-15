@@ -314,10 +314,10 @@ internal sealed class UpdateForm : RForm
         try
         {
             var progress = new Progress<int>(p => _progress.Value = Math.Clamp(p, 0, 100));
-            string? package = await UpdateInstaller.DownloadAsync(info, progress);
-            if (package is null)
+            DownloadResult download = await UpdateInstaller.DownloadAsync(info, progress);
+            if (download.Path is not { } package)
             {
-                _status.Text = "下载失败。可以点『打开下载页』手动下载。";
+                _status.Text = download.Reason ?? "下载失败。可以点『打开下载页』手动下载。";
                 _status.ForeColor = UiVisualStyle.Danger;
                 return;
             }

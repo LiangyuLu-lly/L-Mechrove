@@ -88,7 +88,7 @@ public class UpdateClientEndToEndTests
             Assert.Equal(sha256, info.Sha256);
             Assert.True(info.HasVerifiablePackage);
 
-            string? downloaded = await UpdateInstaller.DownloadAsync(info);
+            string? downloaded = (await UpdateInstaller.DownloadAsync(info)).Path;
             Assert.NotNull(downloaded);
             Assert.True(File.Exists(downloaded), "更新包应已下载：" + downloaded);
 
@@ -173,7 +173,7 @@ public class UpdateClientEndToEndTests
             Assert.NotNull(info);
             Assert.True(info!.UpdateAvailable);
 
-            string? downloaded = await UpdateInstaller.DownloadAsync(info);
+            string? downloaded = (await UpdateInstaller.DownloadAsync(info)).Path;
             Assert.NotNull(downloaded);
 
             PackageVerification verification = UpdateInstaller.Verify(downloaded!, info);
@@ -196,6 +196,189 @@ public class UpdateClientEndToEndTests
             TryDeleteDirectory(sandbox);
         }
     }
+
+    /// <summary>
+    /// 已知缺陷回归（beta17 / T0.1）：老实现把包写到"每个版本固定一个文件名"的路径，一旦该
+    /// 文件被占用（现场：2.22 MB / 74 MB 的残留分片），每次重试都以同一个 FileShare.None
+    /// 打开失败，用户永久无法更新；失败又被 TryDelete 静默吞掉。
+    /// 新实现每次尝试使用独立子目录，旧文件锁死也不影响新尝试。
+    /// </summary>
+    [Fact]
+    public async Task LockedLegacyPackagePathDoesNotBlockANewDownload()
+    {
+        string clientVersion = InformationalVersionOfMechrevoAssembly();
+        string serverLatest = Regex.Replace(clientVersion, @"(\d+)(?!.*\d)", m => (int.Parse(m.Value) + 1).ToString());
+        string sandbox = ResolveSandbox();
+        Directory.CreateDirectory(sandbox);
+
+        string sourcePackage = Path.Combine(sandbox, "source", $"L-Mechrevo-{serverLatest}.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(sourcePackage)!);
+        using (ZipArchive archive = ZipFile.Open(sourcePackage, ZipArchiveMode.Create))
+        using (Stream exe = archive.CreateEntry("L-Mechrevo-test.exe").Open())
+            exe.Write(Encoding.ASCII.GetBytes("MZ-mechrevo-update-payload"));
+        byte[] packageBytes = File.ReadAllBytes(sourcePackage);
+        string sha256 = Convert.ToHexString(SHA256.HashData(packageBytes));
+
+        var requests = new ConcurrentQueue<string>();
+        (HttpListener listener, string baseUrl) = StartLoopbackListener();
+        string manifestJson =
+            "{\"ok\":true,\"data\":{\"current_version\":\"" + clientVersion + "\",\"latest_version\":\"" + serverLatest +
+            "\",\"channel\":\"beta\",\"update_available\":true,\"filename\":\"L-Mechrevo-" + serverLatest +
+            ".zip\",\"size\":" + packageBytes.Length + ",\"sha256\":\"" + sha256 + "\",\"download_url\":\"" + baseUrl +
+            "/pkg/L-Mechrevo-" + serverLatest + ".zip\"}}";
+
+        var serverStop = new CancellationTokenSource();
+        Task serverTask = Task.Run(() => ServeStub(listener, manifestJson, packageBytes, requests, serverStop.Token));
+
+        string? oldTmp = Environment.GetEnvironmentVariable("TMP");
+        string? oldTemp = Environment.GetEnvironmentVariable("TEMP");
+        string isolatedTemp = Path.Combine(sandbox, "sys-temp");
+        Directory.CreateDirectory(isolatedTemp);
+
+        UpdateChecker.BaseUrlOverride = baseUrl;
+        UpdateChecker.HttpGetOverride = null;
+        FileStream? legacyLock = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("TMP", isolatedTemp);
+            Environment.SetEnvironmentVariable("TEMP", isolatedTemp);
+
+            UpdateInfo? info = await UpdateChecker.CheckAsync(force: true);
+            Assert.NotNull(info);
+            Assert.True(info!.UpdateAvailable);
+
+            // 现场等价条件：老实现的固定路径上有一个"谁也写不进去"的残留包。
+            string legacyPath = Path.Combine(
+                UpdateInstaller.TempRoot, info.LatestVersion!, UpdateInstaller.PackageFileName(info));
+            Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+            File.WriteAllBytes(legacyPath, new byte[2 * 1024 * 1024]);
+            legacyLock = new FileStream(legacyPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            // 前提自检：这个路径确实处于"无法再打开写入"的状态（否则测试没有复现缺陷条件）。
+            Assert.Throws<IOException>(
+                () => new FileStream(legacyPath, FileMode.Create, FileAccess.Write, FileShare.None).Dispose());
+
+            string? downloaded = await DownloadedPathOrNullAsync(info);
+
+            // 桩服务器确实被请求过：失败只可能是落盘冲突，不是网络/桩的问题。
+            Assert.Contains(requests, r => r.Contains("/pkg/"));
+            Assert.True(downloaded is not null,
+                "固定旧路径被占用时下载仍须成功（新实现应改走每次尝试的唯一路径）；" +
+                "实际返回 null，说明重试仍然撞在同一个被锁定的路径上。legacy=" + legacyPath);
+            Assert.True(File.Exists(downloaded), "下载文件应存在：" + downloaded);
+            Assert.NotEqual(Path.GetFullPath(legacyPath), Path.GetFullPath(downloaded!));
+            Assert.Equal(sha256, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(downloaded!))));
+        }
+        finally
+        {
+            legacyLock?.Dispose();
+            UpdateChecker.BaseUrlOverride = null;
+            Environment.SetEnvironmentVariable("TMP", oldTmp);
+            Environment.SetEnvironmentVariable("TEMP", oldTemp);
+            serverStop.Cancel();
+            listener.Stop();
+            listener.Close();
+            await serverTask;
+            serverStop.Dispose();
+            TryDeleteDirectory(sandbox);
+        }
+    }
+
+    /// <summary>
+    /// T0.1 配套：下载开始时会清理历史残留（上一个版本的目录、老实现的固定路径包），
+    /// 但绝不碰 updater 暂存目录——更新器进程正从那里运行。
+    /// </summary>
+    [Fact]
+    public async Task StaleArtifactsFromEarlierAttemptsAreCleanedUpButUpdaterStagingIsKept()
+    {
+        string clientVersion = InformationalVersionOfMechrevoAssembly();
+        string serverLatest = Regex.Replace(clientVersion, @"(\d+)(?!.*\d)", m => (int.Parse(m.Value) + 1).ToString());
+        string sandbox = ResolveSandbox();
+        Directory.CreateDirectory(sandbox);
+
+        string sourcePackage = Path.Combine(sandbox, "source", $"L-Mechrevo-{serverLatest}.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(sourcePackage)!);
+        using (ZipArchive archive = ZipFile.Open(sourcePackage, ZipArchiveMode.Create))
+        using (Stream exe = archive.CreateEntry("L-Mechrevo-test.exe").Open())
+            exe.Write(Encoding.ASCII.GetBytes("MZ-mechrevo-update-payload"));
+        byte[] packageBytes = File.ReadAllBytes(sourcePackage);
+        string sha256 = Convert.ToHexString(SHA256.HashData(packageBytes));
+
+        var requests = new ConcurrentQueue<string>();
+        (HttpListener listener, string baseUrl) = StartLoopbackListener();
+        string manifestJson =
+            "{\"ok\":true,\"data\":{\"current_version\":\"" + clientVersion + "\",\"latest_version\":\"" + serverLatest +
+            "\",\"channel\":\"beta\",\"update_available\":true,\"filename\":\"L-Mechrevo-" + serverLatest +
+            ".zip\",\"size\":" + packageBytes.Length + ",\"sha256\":\"" + sha256 + "\",\"download_url\":\"" + baseUrl +
+            "/pkg/L-Mechrevo-" + serverLatest + ".zip\"}}";
+
+        var serverStop = new CancellationTokenSource();
+        Task serverTask = Task.Run(() => ServeStub(listener, manifestJson, packageBytes, requests, serverStop.Token));
+
+        string? oldTmp = Environment.GetEnvironmentVariable("TMP");
+        string? oldTemp = Environment.GetEnvironmentVariable("TEMP");
+        string isolatedTemp = Path.Combine(sandbox, "sys-temp");
+        Directory.CreateDirectory(isolatedTemp);
+
+        UpdateChecker.BaseUrlOverride = baseUrl;
+        UpdateChecker.HttpGetOverride = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("TMP", isolatedTemp);
+            Environment.SetEnvironmentVariable("TEMP", isolatedTemp);
+
+            UpdateInfo? info = await UpdateChecker.CheckAsync(force: true);
+            Assert.NotNull(info);
+            Assert.True(info!.UpdateAvailable);
+
+            string tempRoot = UpdateInstaller.TempRoot;
+            // 上一个版本的残留（现场等价：2.22 MB 的分片）。
+            string staleVersionDirectory = Path.Combine(tempRoot, "0.289.0-beta16");
+            string staleVersionPackage = Path.Combine(staleVersionDirectory, "L-Mechrevo-0.289.0-beta16.zip");
+            // 当前版本用老实现留下的固定路径包。
+            string staleFixedPath = Path.Combine(tempRoot, info.LatestVersion!, UpdateInstaller.PackageFileName(info));
+            // 上次的解压目录。
+            string staleExtracted = Path.Combine(tempRoot, info.LatestVersion!, "extracted");
+            // updater 暂存目录（更新器进程自己的副本）——清理必须避开它。
+            string updaterExe = Path.Combine(tempRoot, "updater", "L-Mechrevo.exe");
+
+            WritePartialFile(staleVersionPackage, 2 * 1024 * 1024);
+            WritePartialFile(staleFixedPath, 4096);
+            WritePartialFile(updaterExe, 128);
+            Directory.CreateDirectory(staleExtracted);
+            File.WriteAllBytes(Path.Combine(staleExtracted, "L-Mechrevo-old.exe"), new byte[16]);
+
+            string? downloaded = await DownloadedPathOrNullAsync(info);
+
+            Assert.True(downloaded is not null, "历史残留不得阻止新下载：" + downloaded);
+            Assert.True(File.Exists(downloaded), "下载文件应存在：" + downloaded);
+            Assert.False(Directory.Exists(staleVersionDirectory), "上一个版本的目录应被清理");
+            Assert.False(File.Exists(staleFixedPath), "当前版本的老固定路径包应被清理");
+            Assert.False(Directory.Exists(staleExtracted), "上次的解压目录应被清理");
+            Assert.True(File.Exists(updaterExe), "updater 暂存目录不能删（更新器进程正在使用）");
+        }
+        finally
+        {
+            UpdateChecker.BaseUrlOverride = null;
+            Environment.SetEnvironmentVariable("TMP", oldTmp);
+            Environment.SetEnvironmentVariable("TEMP", oldTemp);
+            serverStop.Cancel();
+            listener.Stop();
+            listener.Close();
+            await serverTask;
+            serverStop.Dispose();
+            TryDeleteDirectory(sandbox);
+        }
+    }
+
+    static void WritePartialFile(string path, int size)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, new byte[size]);
+    }
+
+    /// <summary>只关心落盘路径的取路径辅助：失败返回 null（失败原因由 DownloadResult 携带）。</summary>
+    static async Task<string?> DownloadedPathOrNullAsync(UpdateInfo info) =>
+        (await UpdateInstaller.DownloadAsync(info)).Path;
 
     static void ServeStub(HttpListener listener, string manifestJson, byte[] packageBytes,
         ConcurrentQueue<string> requests, CancellationToken token)

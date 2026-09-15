@@ -59,10 +59,11 @@ internal static class UpdateSelfTest
         }
 
         Logger.WriteLine("更新自测：决定=接受，开始下载并强校验");
-        string? package = UpdateInstaller.DownloadAsync(info).GetAwaiter().GetResult();
-        if (package is null)
+        DownloadResult download = UpdateInstaller.DownloadAsync(info).GetAwaiter().GetResult();
+        if (download.Path is not { } package)
         {
-            Logger.WriteLine("更新自测：决定=拒绝（下载失败）");
+            Logger.WriteLine($"更新自测：决定=拒绝（下载失败：{download.Reason ?? "原因未知"}）");
+            Console.WriteLine($"download failed: {download.Reason ?? "unknown"}");
             return 2;
         }
 

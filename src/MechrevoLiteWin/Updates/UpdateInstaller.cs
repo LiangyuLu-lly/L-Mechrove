@@ -9,6 +9,9 @@ namespace MechrevoLite.Update;
 /// <summary>更新包校验结果。<see cref="Ok"/> 为 false 时 <see cref="Reason"/> 是给用户看的原因。</summary>
 internal sealed record PackageVerification(bool Ok, string Reason);
 
+/// <summary>一次下载尝试的结果：成功时 <see cref="Path"/> 非空；失败时 <see cref="Reason"/> 是给用户看的原因。</summary>
+internal sealed record DownloadResult(string? Path, string? Reason);
+
 /// <summary>
 /// 更新包的下载、校验、解压与替换安装。
 ///
@@ -42,31 +45,40 @@ internal static class UpdateInstaller
     }
 
     /// <summary>
-    /// 下载更新包到临时目录，边下边算 SHA-256。失败返回 null（调用方提示改用下载页）。
+    /// 下载更新包到临时目录，边下边算 SHA-256。
+    ///
+    /// 每次尝试写入独立子目录（<c>TempRoot/&lt;版本&gt;/attempt-&lt;guid&gt;/</c>），并顺手清理历史
+    /// 残留：旧尝试或旧版本留下的锁定/损坏文件不会再让后续重试永久失败。写入句柄在离开
+    /// 块作用域时必然释放，删除路径绝不会撞上自己还开着的文件。失败时
+    /// <see cref="DownloadResult.Reason"/> 是可直接展示给用户的原因。
     /// </summary>
-    internal static async Task<string?> DownloadAsync(UpdateInfo info, IProgress<int>? progress = null, CancellationToken ct = default)
+    internal static async Task<DownloadResult> DownloadAsync(UpdateInfo info, IProgress<int>? progress = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(info.DownloadUrl)) return null;
+        if (string.IsNullOrWhiteSpace(info.DownloadUrl))
+            return new DownloadResult(null, "服务端没有提供下载地址");
         if (!UpdatePolicy.TryAcceptDownloadUrl(info.DownloadUrl, out Uri? uri, out string urlReason))
         {
             Logger.WriteLine($"更新包下载被拒：{urlReason}");
-            return null;
+            return new DownloadResult(null, urlReason);
         }
         // 没有合法 sha256 就绝不下载：静态后端下无法确认来源与完整性。
         if (!UpdatePolicy.IsValidSha256(info.Sha256))
         {
             Logger.WriteLine("更新包下载被拒：服务端未提供有效的 SHA-256 校验值");
-            return null;
+            return new DownloadResult(null, "服务端未提供有效的 SHA-256 校验值，拒绝下载");
         }
 
-        string directory = Path.Combine(TempRoot, info.LatestVersion ?? "unknown");
-        Directory.CreateDirectory(directory);
-        string filePath = Path.Combine(directory, PackageFileName(info));
+        string attemptDirectory = Path.Combine(
+            TempRoot, info.LatestVersion ?? "unknown", "attempt-" + Guid.NewGuid().ToString("N"));
+        string filePath = Path.Combine(attemptDirectory, PackageFileName(info));
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(UpdateHttp.DownloadTimeout);
         try
         {
+            Directory.CreateDirectory(attemptDirectory);
+            CleanStaleTempArtifacts(attemptDirectory);
+
             using var response = await UpdateHttp.Download
                 .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
@@ -74,37 +86,53 @@ internal static class UpdateInstaller
             if (contentLength is long declared && declared > UpdateChecker.MaxPackageBytes)
             {
                 Logger.WriteLine($"更新包过大（声明 {declared} 字节），已放弃");
-                return null;
+                return new DownloadResult(null, $"更新包超过体积上限（声明 {declared} 字节）");
             }
 
             await using Stream source = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-            await using var target = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-            byte[] buffer = new byte[81920];
             long total = 0;
-            int read;
-            while ((read = await source.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
+            bool tooLarge = false;
+            // 显式块作用域：写出句柄在这里退出时释放；后面的删除/失败处理不会自锁。
+            await using (var target = new FileStream(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                total += read;
-                if (total > UpdateChecker.MaxPackageBytes)
+                byte[] buffer = new byte[81920];
+                int read;
+                while ((read = await source.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
                 {
-                    Logger.WriteLine("更新包超过体积上限，已中止下载");
-                    target.Close();
-                    TryDelete(filePath);
-                    return null;
+                    total += read;
+                    if (total > UpdateChecker.MaxPackageBytes)
+                    {
+                        tooLarge = true;
+                        break;
+                    }
+                    await target.WriteAsync(buffer.AsMemory(0, read), timeout.Token).ConfigureAwait(false);
+                    if (contentLength is long length && length > 0)
+                        progress?.Report((int)Math.Clamp(total * 100 / length, 0, 100));
                 }
-                await target.WriteAsync(buffer.AsMemory(0, read), timeout.Token).ConfigureAwait(false);
-                if (contentLength is long length && length > 0)
-                    progress?.Report((int)Math.Clamp(total * 100 / length, 0, 100));
             }
+
+            if (tooLarge)
+            {
+                Logger.WriteLine("更新包超过体积上限，已中止下载");
+                DeleteFileLogged(filePath);
+                return new DownloadResult(null, "更新包超过体积上限，已中止下载");
+            }
+
             progress?.Report(100);
             Logger.WriteLine($"更新包已下载：{filePath}（{total} 字节）");
-            return filePath;
+            return new DownloadResult(filePath, null);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.WriteLine("更新包下载已取消（超时或调用方取消）");
+            DeleteFileLogged(filePath);
+            return new DownloadResult(null, "下载已取消或超时");
         }
         catch (Exception ex)
         {
             Logger.WriteLine($"更新包下载失败：{ex.GetType().Name} {ex.Message}");
-            TryDelete(filePath);
-            return null;
+            DeleteFileLogged(filePath);
+            return new DownloadResult(null, "下载失败：" + ex.Message);
         }
     }
 
@@ -331,6 +359,98 @@ internal static class UpdateInstaller
     {
         using FileStream stream = File.OpenRead(filePath);
         return Convert.ToHexString(SHA256.HashData(stream));
+    }
+
+    /// <summary>
+    /// 清理历史下载残留：其他版本的目录、当前版本目录里除本次尝试之外的内容。保留
+    /// <paramref name="activeAttemptDirectory"/>（正在写入）与 <c>TempRoot\updater</c>
+    /// （更新器进程正在使用）。删除是 best-effort，但删不掉的会逐条记录，绝不静默吞掉。
+    /// </summary>
+    internal static void CleanStaleTempArtifacts(string activeAttemptDirectory)
+    {
+        if (!Directory.Exists(TempRoot)) return;
+        string active = FullPathNoTrailingSeparator(activeAttemptDirectory);
+        string? activeVersionDirectory = Path.GetDirectoryName(active);
+        string updaterDirectory = Path.Combine(TempRoot, "updater");
+
+        foreach (string versionDirectory in GetDirectoriesOrEmpty(TempRoot))
+        {
+            if (IsSamePath(versionDirectory, updaterDirectory)) continue;
+
+            if (activeVersionDirectory is null || !IsSamePath(versionDirectory, activeVersionDirectory))
+            {
+                DeleteDirectoryLogged(versionDirectory);
+                continue;
+            }
+
+            // 当前版本的目录：本次尝试目录之外的内容都已过期（含老实现的固定路径包）。
+            foreach (string child in GetDirectoriesOrEmpty(versionDirectory))
+                if (!IsSamePath(child, active)) DeleteDirectoryLogged(child);
+            foreach (string file in GetFilesOrEmpty(versionDirectory))
+                DeleteFileLogged(file);
+        }
+
+        foreach (string file in GetFilesOrEmpty(TempRoot))
+            DeleteFileLogged(file);
+    }
+
+    static string FullPathNoTrailingSeparator(string path) =>
+        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    static bool IsSamePath(string left, string right) =>
+        string.Equals(FullPathNoTrailingSeparator(left), FullPathNoTrailingSeparator(right), StringComparison.OrdinalIgnoreCase);
+
+    static string[] GetDirectoriesOrEmpty(string root)
+    {
+        try { return Directory.GetDirectories(root); }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"更新临时目录清理：无法枚举 {root} —— {ex.GetType().Name} {ex.Message}");
+            return Array.Empty<string>();
+        }
+    }
+
+    static string[] GetFilesOrEmpty(string root)
+    {
+        try { return Directory.GetFiles(root); }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"更新临时目录清理：无法枚举 {root} —— {ex.GetType().Name} {ex.Message}");
+            return Array.Empty<string>();
+        }
+    }
+
+    static string[] GetFilesRecursiveOrEmpty(string root)
+    {
+        try { return Directory.GetFiles(root, "*", SearchOption.AllDirectories); }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"更新临时目录清理：无法枚举 {root} —— {ex.GetType().Name} {ex.Message}");
+            return Array.Empty<string>();
+        }
+    }
+
+    static void DeleteDirectoryLogged(string directory)
+    {
+        foreach (string file in GetFilesRecursiveOrEmpty(directory))
+            DeleteFileLogged(file);
+        try
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"更新临时目录清理：无法删除 {directory} —— {ex.GetType().Name} {ex.Message}");
+        }
+    }
+
+    static void DeleteFileLogged(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"临时文件删除失败：{path} —— {ex.GetType().Name} {ex.Message}");
+        }
     }
 
     static void TryDelete(string path)

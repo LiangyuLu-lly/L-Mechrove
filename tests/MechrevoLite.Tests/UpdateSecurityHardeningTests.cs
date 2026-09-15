@@ -39,7 +39,7 @@ public class UpdateSecurityHardeningTests
 
         Assert.False(UpdatePolicy.TryAcceptOffer(info, out string reason));
         Assert.Contains("SHA-256", reason);
-        Assert.Null(await UpdateInstaller.DownloadAsync(info));
+        Assert.Null((await UpdateInstaller.DownloadAsync(info)).Path);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class UpdateSecurityHardeningTests
 
         Assert.False(UpdatePolicy.TryAcceptOffer(info, out string reason));
         Assert.Contains("SHA-256", reason);
-        Assert.Null(await UpdateInstaller.DownloadAsync(info));
+        Assert.Null((await UpdateInstaller.DownloadAsync(info)).Path);
     }
 
     // ---------------------------------------------------------------- 下载 host 白名单
@@ -74,7 +74,35 @@ public class UpdateSecurityHardeningTests
 
         Assert.False(UpdatePolicy.TryAcceptOffer(info, out string reason));
         Assert.Contains("允许列表", reason);
-        Assert.Null(await UpdateInstaller.DownloadAsync(info));
+        Assert.Null((await UpdateInstaller.DownloadAsync(info)).Path);
+    }
+
+    /// <summary>
+    /// T0.1 加固：DownloadAsync 改为返回 DownloadResult 后，拒绝语义必须原样保留，
+    /// 且失败原因可读（UI 能解释为什么下不了）。
+    /// </summary>
+    [Fact]
+    public async Task RefusalsStayFailClosedAndCarryAReadableReason()
+    {
+        DownloadResult noSha = await UpdateInstaller.DownloadAsync(
+            Offer("https://github.com/LiangyuLu-lly/L-Mechrevo/releases/download/v1/pkg.zip", null));
+        Assert.Null(noSha.Path);
+        Assert.Contains("SHA-256", noSha.Reason!);
+
+        DownloadResult nonHexSha = await UpdateInstaller.DownloadAsync(
+            Offer("https://github.com/LiangyuLu-lly/L-Mechrevo/releases/download/v1/pkg.zip", new string('z', 64)));
+        Assert.Null(nonHexSha.Path);
+        Assert.Contains("SHA-256", nonHexSha.Reason!);
+
+        DownloadResult nonAllowlisted = await UpdateInstaller.DownloadAsync(
+            Offer("https://evil.example.com/pkg.zip", Sha, size: 123));
+        Assert.Null(nonAllowlisted.Path);
+        Assert.Contains("允许列表", nonAllowlisted.Reason!);
+
+        DownloadResult plainHttp = await UpdateInstaller.DownloadAsync(
+            Offer("http://evil.example.com/pkg.zip", Sha, size: 123));
+        Assert.Null(plainHttp.Path);
+        Assert.Contains("HTTPS", plainHttp.Reason!);
     }
 
     [Fact]
