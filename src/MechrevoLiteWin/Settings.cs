@@ -3359,7 +3359,6 @@ namespace MechrevoLite
             if (lastBatteryRefresh == 0 || Math.Abs(DateTimeOffset.Now.ToUnixTimeMilliseconds() - lastBatteryRefresh) > 15 * 60_000)
             {
                 lastBatteryRefresh = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-                HardwareControl.RefreshBatteryHealth();
             }
 
             if (HardwareControl.batteryHealth != -1)

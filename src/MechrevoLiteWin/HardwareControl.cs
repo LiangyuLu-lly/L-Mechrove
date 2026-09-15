@@ -166,7 +166,6 @@ public static class HardwareControl
     public static int GetCPUTemp() => cpuTemp;
     public static void KillGPUApps() { }
     public static void ResetCPUPowerCounter() => cpuPowerSampler?.Reset();
-    public static void RefreshBatteryHealth() { }
     public static void DisposeGpuControl() { }
     public static void RecreateGpuControl() { }
     public static IGpuControl? GpuControl => null;

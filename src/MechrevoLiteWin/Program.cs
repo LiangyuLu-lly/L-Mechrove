@@ -1426,8 +1426,6 @@ namespace MechrevoLite
             _ = ReconcileLightingPowerAsync();
         }
 
-        public static void OnChargerEvent() => SchedulePowerCheck();
-
         private static void SystemEvents_PowerModeChanged(object sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode == PowerModes.Suspend)
@@ -1474,7 +1472,7 @@ namespace MechrevoLite
             {
                 // If helper window is not on top, this just focuses on the app again
                 // Pressing the ghelper button again will hide the app
-                if (checkForFocus && !settingsForm.HasAnyFocus(trayClick) && !AppConfig.Is("topmost"))
+                if (checkForFocus && !settingsForm.HasAnyFocus(trayClick))
                 {
                     settingsForm.ShowAll();
                 }
