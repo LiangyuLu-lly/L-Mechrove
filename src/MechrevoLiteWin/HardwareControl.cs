@@ -144,8 +144,6 @@ public static class HardwareControl
     static bool IsUsablePower(float? power) =>
         power is > 0 && float.IsFinite(power.Value);
 
-    public static bool IsUsedGPU(int threshold = 10) => false;
-
     public static bool readFans;
     public static bool readUsage;
     public static bool readMemory;

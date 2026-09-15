@@ -408,13 +408,8 @@ namespace MechrevoLite.Gpu
                 if (eco == 0)
                     if ((GpuAuto && !IsPlugged()) || (ForceGPU && GpuMode == AsusACPI.GPUModeEco))
                     {
-
-                        if (HardwareControl.IsUsedGPU())
-                        {
-                            DialogResult dialogResult = MessageBox.Show(Properties.Strings.AlertDGPU, Properties.Strings.AlertDGPUTitle, MessageBoxButtons.YesNo);
-                            if (dialogResult == DialogResult.No) return false;
-                        }
-
+                        // beta17 移除：此处曾有「GPU 正在被占用，是否仍切换?」确认框，但其判定 IsUsedGPU() 被硬编码为恒 false，从未触发过，属死代码；
+                        // 若将来引入真实的占用判定，需有意重新加回该确认门。
                         ScheduleGpuEco(1, delay);
                         return true;
                     }
