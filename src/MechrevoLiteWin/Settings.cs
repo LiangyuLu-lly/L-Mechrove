@@ -58,14 +58,11 @@ namespace MechrevoLite
         public GPUModeControl gpuControl;
         AutoUpdateControl updateControl;
 
-        AsusMouseSettings? mouseSettings;
-
         Label? _batteryLimitValue;
         RButton? buttonSilentTurbo;   // 静音狂暴（Turbo 静音子模式）
         RButton? buttonCustomMode;    // 自定义性能模式入口（打开 CustomModeForm）
         CustomModeForm? customModeForm;
         TableLayoutPanel? _dashboard;
-        Panel? _dashboardPageHost;
         BufferedPanel? _dashboardScroll;
         BufferedTableLayoutPanel? _dashboardStack;
         RScrollBar? _dashboardScrollBar;
@@ -192,7 +189,6 @@ namespace MechrevoLite
 
         PictureBox BuildHeadIcon(UiGlyph.Kind kind)
         {
-            int D(int value) => ResponsiveLayout.LogicalToDevice(this, value);
             var pic = new PictureBox
             {
                 Name = "headIcon_" + kind,
@@ -242,7 +238,6 @@ namespace MechrevoLite
             InitTheme();
             InitContextMenuTheme();
             if (_dashboard is not null) _dashboard.BackColor = UiVisualStyle.Window;
-            if (_dashboardPageHost is not null) _dashboardPageHost.BackColor = UiVisualStyle.Window;
             if (_dashboardStack is not null) _dashboardStack.BackColor = UiVisualStyle.Window;
             if (_liquidGroup is not null) _liquidGroup.BackColor = UiVisualStyle.Window;
             if (_quickGroup is not null) _quickGroup.BackColor = UiVisualStyle.Window;
@@ -302,14 +297,10 @@ namespace MechrevoLite
         CheckBox[] _quickSwitches = Array.Empty<CheckBox>();
         CheckBox? _usbChargerBox;
         CheckBox? _fanBoostBox;   // 风扇增强（从性能面板移入快捷开关）
-        // 灯效入口：数量随机型变（键盘/灯条/Logo/铰链/同步），列数在 ReflowLightingActions 里按可见数算
-        Button[] _lightingActionButtons = Array.Empty<Button>();
-        TableLayoutPanel? _lightingActionTable;
-        // 三个单行按钮条各自的「上次实际铺的布局」。相同就不动控件树——
+        // 两个单行按钮条各自的「上次实际铺的布局」。相同就不动控件树——
         // Controls.Clear() 加重加会让按钮闪一下，而这几个重排是被周期性调用的。
         string _lastPerformanceLayout = "";
         string _lastGpuLayout = "";
-        string _lastLightingLayout = "";
         // 电源指示灯亮度：与开关同一条官方命令族，界面上也放在开关旁边
         /// <summary>
         /// 亮度档位。官方是连续滑块（0..100），这里用离散档避免拖动过程中把
@@ -415,7 +406,6 @@ namespace MechrevoLite
         void BuildQuickSwitchPanel()
         {
             if (Controls.ContainsKey("panelQuickSwitch")) return;
-            int D(int value) => ResponsiveLayout.LogicalToDevice(this, value);
             // 卡片化 + 分组（docs/ui-consistency-pass.md §2.6/§2.7）。替换掉的原实现是
             // 「固定 180 高 + 绝对坐标 + 一个平铺 27 项的 FlowLayoutPanel」：卡片没有描边圆角
             // （普通 Panel 拿不到 CardStyle），末行只剩两三顶、右侧一片空洞，而且行内混着
@@ -2227,14 +2217,6 @@ namespace MechrevoLite
             labelCharge.MouseLeave += PanelBattery_MouseLeave;
             labelBattery.Click += LabelBattery_Click;
 
-            buttonPeripheral1.Click += ButtonPeripheral_Click;
-            buttonPeripheral2.Click += ButtonPeripheral_Click;
-            buttonPeripheral3.Click += ButtonPeripheral_Click;
-
-            buttonPeripheral1.MouseEnter += ButtonPeripheral_MouseEnter;
-            buttonPeripheral2.MouseEnter += ButtonPeripheral_MouseEnter;
-            buttonPeripheral3.MouseEnter += ButtonPeripheral_MouseEnter;
-
             buttonBatteryFull.MouseEnter += ButtonBatteryFull_MouseEnter;
             buttonBatteryFull.MouseLeave += ButtonBatteryFull_MouseLeave;
             buttonBatteryFull.Click += ButtonBatteryFull_Click;
@@ -3048,20 +3030,6 @@ namespace MechrevoLite
         {
             foreach (Control control in buttons) control.Margin = Padding.Empty;
             UiVisualStyle.ApplySegmentGroup(buttons.OfType<RButton>().ToArray());
-        }
-
-        /// <summary>
-        /// 把可见的灯效入口按钮平均铺满一行。列数按当前可见数量算，
-        /// 这样只支持三种灯的机器不会留出空格子，支持五种的也不会挤成两行。
-        /// </summary>
-        void ReflowLightingActions()
-        {
-            if (_lightingActionTable is null) return;
-            var visible = _lightingActionButtons.Where(button => button.Visible).Cast<Control>().ToList();
-            // 同 ReflowPerformanceButtons：不加守卫就是每三秒闪一次。
-            if (!ReflowSingleRow(_lightingActionTable, visible, ref _lastLightingLayout)) return;
-            for (int i = 0; i < visible.Count; i++)
-                visible[i].Margin = new Padding(i == 0 ? 0 : 4, 0, 0, 0);
         }
 
         /// <summary>
@@ -3960,13 +3928,6 @@ namespace MechrevoLite
 
         // CycleAuraMode(int) 已删除：同样只能由 ASUS 热键派发触发，零调用方。
 
-        private void ComboKeyboard_SelectedValueChanged(object? sender, EventArgs e)
-        {
-            AppConfig.Set("aura_mode", (int)comboKeyboard.SelectedValue);
-            SetAura();
-        }
-
-
         private void Button120Hz_Click(object? sender, EventArgs e)
         {
             ScreenControl.SetAutoRefresh(0);
@@ -4110,7 +4071,6 @@ namespace MechrevoLite
         {
             this.Hide();
             if (updatesForm != null && updatesForm.Text != "") updatesForm.Close();
-            if (mouseSettings != null && mouseSettings.Text != "") mouseSettings.Close();
             MemoryHelper.TrimAfter();
         }
 
@@ -5053,105 +5013,14 @@ namespace MechrevoLite
 
         public void UpdateKeyboardLabel()
         {
-            labelKeyboard.Text = Properties.Strings.LaptopKeyboard + (PeripheralsProvider.IsAuraSync ? " +" : "");
-        }
-
-
-        private void ButtonPeripheral_MouseEnter(object? sender, EventArgs e)
-        {
-            int index = 0;
-            if (sender == buttonPeripheral2) index = 1;
-            if (sender == buttonPeripheral3) index = 2;
-            IPeripheral iph = PeripheralsProvider.AllPeripherals().ElementAt(index);
-
-
-            if (iph is null)
-            {
-                return;
-            }
-
-            if (!iph.IsDeviceReady)
-            {
-                //Refresh battery on hover if the device is marked as "Not Ready"
-                iph.ReadBattery();
-            }
-        }
-
-        private void ButtonPeripheral_Click(object? sender, EventArgs e)
-        {
-            if (mouseSettings is not null)
-            {
-                mouseSettings.Close();
-                return;
-            }
-
-            int index = 0;
-            if (sender == buttonPeripheral2) index = 1;
-            if (sender == buttonPeripheral3) index = 2;
-
-            IPeripheral iph = PeripheralsProvider.AllPeripherals().ElementAt(index);
-
-            if (iph is null)
-            {
-                //Can only happen when the user hits the button in the exact moment a device is disconnected.
-                return;
-            }
-
-            if (iph.DeviceType() == PeripheralType.Mouse)
-            {
-                AsusMouse? am = iph as AsusMouse;
-                if (am is null || !am.IsDeviceReady)
-                {
-                    //Should not happen if all device classes are implemented correctly. But better safe than sorry.
-                    return;
-                }
-                mouseSettings = new AsusMouseSettings(am);
-                mouseSettings.TopMost = AppConfig.Is("topmost");
-                mouseSettings.FormClosed += MouseSettings_FormClosed;
-                mouseSettings.Disposed += MouseSettings_Disposed;
-                if (!mouseSettings.IsDisposed)
-                {
-                    mouseSettings.Show();
-                }
-                else
-                {
-                    mouseSettings = null;
-                }
-
-            }
-        }
-
-        private void MouseSettings_Disposed(object? sender, EventArgs e)
-        {
-            mouseSettings = null;
-        }
-
-        private void MouseSettings_FormClosed(object? sender, FormClosedEventArgs e)
-        {
-            mouseSettings = null;
+            labelKeyboard.Text = Properties.Strings.LaptopKeyboard;
         }
 
         public void VisualiseFnLock()
         {
-
-            if (AppConfig.Is("fn_lock"))
-            {
-                buttonFnLock.BackColor = colorStandard;
-                buttonFnLock.ForeColor = SystemColors.ControlLightLight;
-                buttonFnLock.AccessibleName = "Fn-Lock on";
-            }
-            else
-            {
-                buttonFnLock.BackColor = buttonSecond;
-                buttonFnLock.ForeColor = SystemColors.ControlDark;
-                buttonFnLock.AccessibleName = "Fn-Lock off";
-            }
-        }
-
-
-        private void ButtonFnLock_Click(object? sender, EventArgs e)
-        {
-            InputDispatcher.ToggleFnLock();
+            buttonFnLock.BackColor = buttonSecond;
+            buttonFnLock.ForeColor = SystemColors.ControlDark;
+            buttonFnLock.AccessibleName = "Fn-Lock off";
         }
 
     }

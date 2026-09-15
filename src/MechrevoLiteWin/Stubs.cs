@@ -31,7 +31,6 @@ public class InputDispatcher : IDisposable
     public static void AutoKeyboard() { }
     public static void StartupBacklight() { }
     public static void InitFNLock() { }
-    public static void ToggleFnLock() { }
     public static int GetBacklight() => 0;
     public static bool lidClose;
 }
@@ -41,12 +40,6 @@ public class AutoUpdateControl
     public AutoUpdateControl(SettingsForm settingsForm) { }
     public void CheckForUpdates() { }
     public void Update() { }
-}
-
-public class AsusMouseSettings : Form
-{
-    public AsusMouseSettings(object? mouse = null) { }
-    public AsusMouseSettings() { }
 }
 
 public class Updates : Form
@@ -89,17 +82,11 @@ public static class Aura
 
 public static class PeripheralsProvider
 {
-    public static List<IPeripheral> AllPeripherals() => new();
-    public static bool IsAnyPeripheralConnect() => false;
-    public static bool IsAuraSync => false;
-    public static void RefreshBatteryForAllDevices() { }
     public static void RefreshBatteryForAllDevices(bool force) { }
     public static void RegisterForDeviceEvents() { }
     public static void UnregisterForDeviceEvents() { }
     public static void DetectAllAsusMice() { }
 }
-
-public enum PeripheralType { Mouse, Keyboard, Headset, Pad }
 
 public enum AuraMode
 {
@@ -109,28 +96,6 @@ public enum AuraMode
     Custom = 14, AuraStatic = 0, AuraBreathe = 2, AuraStrobe = 3, AuraColorCycle = 1,
     AuraRainbow = 4, AuraComposition = 10, AuraWave = 8, AuraStar = 5, AuraRain = 6,
     AuraHighlight = 7, AuraMarquee = 9, AuraNative = 11
-}
-public interface IPeripheral
-{
-    int Battery { get; }
-    bool IsDeviceReady { get; }
-    bool Charging { get; }
-    PeripheralType Type { get; }
-    PeripheralType DeviceType();
-    string GetDisplayName();
-    bool HasBattery();
-    void ReadBattery();
-}
-public class AsusMouse : IPeripheral
-{
-    public int Battery => 0;
-    public bool IsDeviceReady => false;
-    public bool Charging => false;
-    public PeripheralType Type => PeripheralType.Mouse;
-    public PeripheralType DeviceType() => PeripheralType.Mouse;
-    public string GetDisplayName() => "";
-    public bool HasBattery() => false;
-    public void ReadBattery() { }
 }
 
 public static class KeyboardHook
