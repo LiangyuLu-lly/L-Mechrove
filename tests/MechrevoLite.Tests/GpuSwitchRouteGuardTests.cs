@@ -53,6 +53,50 @@ public class GpuSwitchRouteGuardTests
         finally { MechrevoService.GpuRestartRouteOverride = null; }
     }
 
+    /// <summary>
+    /// 自动重启路径（<see cref="MechrevoService.SwitchGpuMode"/> 的 <c>autoRestart</c> 分支）
+    /// 过去绕过空路由守卫，直接发布 DGPU_DIRECT_CONNECT_RESTART：真机上这就是「空路由白重启」。
+    /// 与手动路径同一条契约——空路由必须放弃重启、报告失败，绝不发布重启指令。
+    /// </summary>
+    [Fact]
+    public async Task EmptyRestartRoute_AutoRestartPath_NeverPublishesRestart()
+    {
+        var actions = new List<string>();
+        Func<int, bool, IReadOnlyList<Dictionary<string, object>>> empty =
+            (_, _) => Array.Empty<Dictionary<string, object>>();
+        MechrevoHw? hardware = null;
+        hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic == "Setting/Control" && payload is IDictionary<string, object> values &&
+                values.TryGetValue("Action", out object? action))
+            {
+                string name = action?.ToString() ?? "";
+                actions.Add(name);
+                if (name == "IGPU_ONLY_CONNECT_RB_ON")
+                    hardware!.HandleMessage("Setting/Status",
+                        "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_ON\"}");
+            }
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = false });
+
+        try
+        {
+            MechrevoService.GpuRestartRouteOverride = empty;
+            using (hardware)
+            {
+                hardware.HandleMessage("Setting/Status",
+                    "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}");
+                var service = new MechrevoService(hardware);
+
+                bool confirmed = await service.SwitchGpuMode(MechrevoService.GpuIGpu, autoRestart: true);
+
+                Assert.False(confirmed);
+                Assert.DoesNotContain("DGPU_DIRECT_CONNECT_RESTART", actions);
+            }
+        }
+        finally { MechrevoService.GpuRestartRouteOverride = null; }
+    }
+
     /// <summary>完整路由：目标写入齐全，重启指令恰好一次且位于最后。</summary>
     [Fact]
     public async Task CompleteRestartRoute_PublishesTargetPayloadsThenExactlyOneRestart()

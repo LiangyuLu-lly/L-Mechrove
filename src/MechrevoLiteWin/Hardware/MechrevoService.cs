@@ -919,38 +919,8 @@ public class MechrevoService
                 $"RequestGpuModeRestartAsync({mode})", requestCts.Token).ConfigureAwait(false);
             if (!lockTaken) return GpuRestartRequestOutcome.Failed;
 
-            IReadOnlyList<Dictionary<string, object>> route = GpuRestartRouteOverride is { } factory
-                ? factory(mode, _hw.SupportsDgpuDirect)
-                : CreateGpuRestartTargetPayloads(mode, _hw.SupportsDgpuDirect);
-            // Fail closed：空路由意味着没有任何模式会被写进 EC。过去这里仍会发布
-            // DGPU_DIRECT_CONNECT_RESTART，GCU 照单重启一次——模式没变，用户白重启
-            // （真机证据：40 系 target=0/1 时 `GPU restart route payloads [] sent`）。宁可不动，也不空转重启。
-            if (route.Count == 0)
-            {
-                Logger.WriteLine(
-                    $"GPU restart route is empty for target={mode} " +
-                    $"(supportsDgpuDirect={_hw.SupportsDgpuDirect}, supportsIgpuOnly={_hw.SupportsIgpuOnly}); " +
-                    "refusing to publish DGPU_DIRECT_CONNECT_RESTART so the machine is not rebooted for nothing.");
-                return GpuRestartRequestOutcome.Unsupported;
-            }
-            List<string> sentActions = new();
-            foreach (Dictionary<string, object> payload in route)
-            {
-                requestCts.Token.ThrowIfCancellationRequested();
-                sentActions.Add(payload["Action"].ToString() ?? "?");
-                await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
-            }
-            Logger.WriteLine($"GPU restart route payloads [{string.Join(" -> ", sentActions)}] sent for target={mode}");
-
-            await Task.Delay(800, requestCts.Token).ConfigureAwait(false);
-            AppConfig.Flush();
-            requestCts.Token.ThrowIfCancellationRequested();
-            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
-            {
-                ["Action"] = "DGPU_DIRECT_CONNECT_RESTART",
-            }).ConfigureAwait(false);
-            Logger.WriteLine($"Requested GCU GPU restart route for target={mode}");
-            return GpuRestartRequestOutcome.Requested;
+            return await PublishGpuRestartAsync(
+                mode, BuildGpuRestartRoute(mode), requestCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -968,6 +938,52 @@ public class MechrevoService
             Interlocked.CompareExchange(ref _gpuSwitchCts, null, requestCts);
             requestCts.Dispose();
         }
+    }
+
+    /// <summary>构建 GPU 重启路由：手动与自动两条重启路径共用同一序列来源（测试接缝只覆盖它）。</summary>
+    IReadOnlyList<Dictionary<string, object>> BuildGpuRestartRoute(int mode) =>
+        GpuRestartRouteOverride is { } factory
+            ? factory(mode, _hw.SupportsDgpuDirect)
+            : CreateGpuRestartTargetPayloads(mode, _hw.SupportsDgpuDirect);
+
+    /// <summary>
+    /// GPU 重启的唯一发布出口。Fail closed：空路由意味着没有任何模式会被写进 EC，
+    /// 此时发布 DGPU_DIRECT_CONNECT_RESTART 只会让 GCU 把机器白重启一次、模式却没变
+    /// （真机证据：`GPU restart route payloads [] sent for target=0/1` 后照样重启）。
+    /// 守卫放在发布点，任何调用方都绕不过去。调用方必须已持有 _switchLock。
+    /// </summary>
+    async Task<GpuRestartRequestOutcome> PublishGpuRestartAsync(
+        int mode,
+        IReadOnlyList<Dictionary<string, object>> route,
+        CancellationToken token)
+    {
+        if (route.Count == 0)
+        {
+            Logger.WriteLine(
+                $"GPU restart route is empty for target={mode} " +
+                $"(supportsDgpuDirect={_hw.SupportsDgpuDirect}, supportsIgpuOnly={_hw.SupportsIgpuOnly}); " +
+                "refusing to publish DGPU_DIRECT_CONNECT_RESTART so the machine is not rebooted for nothing.");
+            return GpuRestartRequestOutcome.Unsupported;
+        }
+
+        List<string> sentActions = new(route.Count);
+        foreach (Dictionary<string, object> payload in route)
+        {
+            token.ThrowIfCancellationRequested();
+            sentActions.Add(payload["Action"].ToString() ?? "?");
+            await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
+        }
+        Logger.WriteLine($"GPU restart route applied for target={mode}: {sentActions.Count} payload(s) [{string.Join(" -> ", sentActions)}]");
+
+        await Task.Delay(800, token).ConfigureAwait(false);
+        AppConfig.Flush();
+        token.ThrowIfCancellationRequested();
+        await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
+        {
+            ["Action"] = "DGPU_DIRECT_CONNECT_RESTART",
+        }).ConfigureAwait(false);
+        Logger.WriteLine($"Requested GCU GPU restart route for target={mode}");
+        return GpuRestartRequestOutcome.Requested;
     }
 
     internal static IReadOnlyList<Dictionary<string, object>> CreateGpuRestartTargetPayloads(
@@ -1166,12 +1182,15 @@ public class MechrevoService
 
             if (autoRestart)
             {
-                // 原版流程：800ms 后 DGPU_DIRECT_CONNECT_RESTART（服务端自动重启系统）。
-                await Task.Delay(800, requestCts.Token).ConfigureAwait(false);
-                AppConfig.Flush();
-                requestCts.Token.ThrowIfCancellationRequested();
-                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "DGPU_DIRECT_CONNECT_RESTART" }).ConfigureAwait(false);
-                Logger.WriteLine("SwitchGpuMode 已发送自动重启命令");
+                // 与手动路径走同一个发布出口：空路由时绝不发布 DGPU_DIRECT_CONNECT_RESTART，
+                // 否则自动流程一样会把机器白重启一次。
+                GpuRestartRequestOutcome restartOutcome = await PublishGpuRestartAsync(
+                    mode, BuildGpuRestartRoute(mode), requestCts.Token).ConfigureAwait(false);
+                if (restartOutcome != GpuRestartRequestOutcome.Requested)
+                {
+                    Logger.WriteLine($"SwitchGpuMode auto-restart refused: target={mode} outcome={restartOutcome}");
+                    return false;
+                }
             }
             return true;
         }
