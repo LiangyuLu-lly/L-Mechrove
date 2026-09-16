@@ -1197,26 +1197,19 @@ namespace MechrevoLite
                         return;
                     }
 
+                    // 本应用替代官方控制中心：GCU 通道没拿到控制权就自动回落我们自己的直连，
+                    // 不询问，也不因 GCU/官方服务在线或报告了状态而放弃直连（跨切原则见 beta18 设计稿）。
                     bool gcuReportedLiquidCooling = Program.hw is { LcStatusSeen: true };
                     bool systemAlreadyConnected = _lcSystemBluetoothObservation.IsConnected;
-                    bool useDirectFallback = LiquidCoolingConnectionPolicy.ShouldUseAutomaticDirectFallback(
-                        gcuAttempted, gcuReportedLiquidCooling, systemAlreadyConnected);
-                    if (!silent && !useDirectFallback &&
-                        MessageBox.Show(
-                            gcuReportedLiquidCooling || systemAlreadyConnected
-                                ? "Windows 或 GCU 已检测到水冷设备，但尚未报告可控制状态。\n\n继续兼容直连会绕过 GCU，可能与其他控制台争用设备。是否继续？"
-                                : "GCU 未返回液冷状态。是否尝试兼容直连？",
-                            "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
-                    {
-                        useDirectFallback = true;
-                    }
-
-                    if (useDirectFallback && await TryDirectLiquidCoolingAsync()) return;
+                    if (LiquidCoolingConnectionPolicy.ShouldUseAutomaticDirectFallback(
+                            Program.ble is { IsConnected: true }) &&
+                        await TryDirectLiquidCoolingAsync())
+                        return;
 
                     if (!silent)
                     {
                         lcStatus.Text = gcuReportedLiquidCooling || systemAlreadyConnected
-                            ? "已检测到水冷，等待 GCU 连接"
+                            ? "水冷连接失败（点击重试）"
                             : "未找到水冷箱（点击重试）";
                         lcStatus.ForeColor = UiVisualStyle.Warn;
                     }

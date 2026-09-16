@@ -28,10 +28,12 @@ internal static class LiquidCoolingConnectionPolicy
             : LiquidCoolingControlRoute.None;
     }
 
-    internal static bool ShouldUseAutomaticDirectFallback(
-        bool gcuAvailable,
-        bool gcuReportedStatus,
-        bool bluetoothObserved) => !gcuAvailable && !gcuReportedStatus && !bluetoothObserved;
+    /// <summary>
+    /// 本应用替代官方控制中心：GCU 通道拿不到控制权时必须自动回落到我们自己的直连，
+    /// 不得因为官方 GCU/服务在线、已报告状态，或 Windows 观测到蓝牙连接而阻止回落。
+    /// 唯一不必回落的情形是我们已经持有直连。
+    /// </summary>
+    internal static bool ShouldUseAutomaticDirectFallback(bool directBleConnected) => !directBleConnected;
 
     internal static bool ShouldRetryGcuConnection(
         bool hardwareConnected,

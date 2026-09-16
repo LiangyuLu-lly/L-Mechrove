@@ -220,17 +220,18 @@ public class LiquidCoolingIntegrationTests
             directBle, gcuControllable, bluetoothObserved));
     }
 
+    /// <summary>
+    /// 本应用替代官方控制中心：GCU 通道拿不到控制权时必须自动回落我们自己的直连，
+    /// 不得因为官方 GCU/服务在线或已报告状态而阻止回落。唯一不必回落的情形是已持有直连。
+    /// </summary>
     [Theory]
-    [InlineData(false, false, false, true)]
-    [InlineData(false, false, true, false)]
-    [InlineData(true, false, false, false)]
-    [InlineData(true, true, false, false)]
-    [InlineData(true, false, true, false)]
-    public void AutomaticDirectFallback_OnlyRunsWhenNoOtherOwnerWasObserved(
-        bool gcuAvailable, bool gcuReportedStatus, bool bluetoothObserved, bool expected)
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void AutomaticDirectFallback_RunsUnlessWeAlreadyOwnTheDirectRoute(
+        bool directBleConnected, bool expected)
     {
         Assert.Equal(expected, LiquidCoolingConnectionPolicy.ShouldUseAutomaticDirectFallback(
-            gcuAvailable, gcuReportedStatus, bluetoothObserved));
+            directBleConnected));
     }
 
     [Theory]
@@ -818,6 +819,104 @@ public class LiquidCoolingIntegrationTests
 
         Assert.True(await service.LcConnect());
         Assert.Contains(("BT_LC/Control", "Connect"), commands);
+    }
+
+    /// <summary>
+    /// 官方 UI 的实测连接序列是「先选定目标设备再 Connect」：目标未选定（DevMACString 为空）时
+    /// Connect 没有设备可连，状态永远停在 IsConnectable。选择必须是 GCU 状态里 DeviceMacList
+    /// 的原样字符串（BluetoothLE#BluetoothLE&lt;addr&gt;-&lt;addr&gt;），不能换成裸 MAC。
+    /// </summary>
+    [Fact]
+    public async Task GcuConnectionRequest_ArmsTheTargetDeviceFromTheStatusListBeforeConnecting()
+    {
+        const string mac = "BluetoothLE#BluetoothLEe4:4a:e0:48:16:d7-e8:35:36:c7:2e:c1";
+        var commands = new ConcurrentQueue<Dictionary<string, object>>();
+        using var hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic == "BT_LC/Control")
+                commands.Enqueue(new Dictionary<string, object>(Assert.IsAssignableFrom<IDictionary<string, object>>(payload)));
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { LiquidCooling = true });
+        hardware.HandleMessage("BT_LC/Status", $$"""
+            { "connected": false, "ConnectString": "IsConnectable", "LC_action": true,
+              "DevMACString": "", "DeviceMacList": ["{{mac}}"] }
+            """);
+        var service = new MechrevoService(hardware);
+
+        Assert.True(await service.LcConnect());
+
+        Dictionary<string, object>[] published = commands.ToArray();
+        Assert.Collection(published,
+            command =>
+            {
+                Assert.Equal("DeviceMacSetting", command["Action"]);
+                Assert.Equal(mac, command["DeviceMac"]);
+            },
+            command => Assert.Equal("Connect", command["Action"]));
+    }
+
+    /// <summary>选定目标后再 Connect 必须能到达可控制状态（厂商固件在 arm+connect 后才报告 Connected）。</summary>
+    [Fact]
+    public async Task GcuConnectionRequest_ReachesControllableAfterArmingAndConnecting()
+    {
+        const string mac = "BluetoothLE#BluetoothLEe4:4a:e0:48:16:d7-e8:35:36:c7:2e:c1";
+        MechrevoHw hardware = null!;
+        hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic != "BT_LC/Control") return Task.CompletedTask;
+            var values = Assert.IsAssignableFrom<IDictionary<string, object>>(payload);
+            string? action = values.TryGetValue("Action", out object? value) ? value?.ToString() : null;
+            if (action == "DeviceMacSetting")
+                hardware.HandleMessage("BT_LC/Status", $$"""
+                    { "connected": false, "ConnectString": "IsConnectable", "LC_action": true,
+                      "DevMACString": "{{mac}}", "DeviceMacList": ["{{mac}}"] }
+                    """);
+            else if (action == "Connect")
+                hardware.HandleMessage("BT_LC/Status", $$"""
+                    { "connected": true, "ConnectString": "Connected", "LC_action": true,
+                      "DevMACString": "{{mac}}", "DeviceMacList": ["{{mac}}"] }
+                    """);
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { LiquidCooling = true });
+        using (hardware)
+        {
+            hardware.HandleMessage("BT_LC/Status", $$"""
+                { "connected": false, "ConnectString": "IsConnectable", "LC_action": true,
+                  "DevMACString": "", "DeviceMacList": ["{{mac}}"] }
+                """);
+            var service = new MechrevoService(hardware);
+
+            Assert.True(await service.LcConnect());
+
+            Assert.Equal(mac, hardware.LcCurrentMac);
+            Assert.True(hardware.LcGcuControllable);
+        }
+    }
+
+    /// <summary>目标已选定（DevMACString 非空）时不再重复 arm，只发 Connect——重连不应改写用户已选的设备。</summary>
+    [Fact]
+    public async Task GcuConnectionRequest_DoesNotRearmWhenATargetIsAlreadySelected()
+    {
+        const string mac = "BluetoothLE#BluetoothLEe4:4a:e0:48:16:d7-e8:35:36:c7:2e:c1";
+        var actions = new ConcurrentQueue<string?>();
+        using var hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic == "BT_LC/Control")
+            {
+                var values = Assert.IsAssignableFrom<IDictionary<string, object>>(payload);
+                actions.Enqueue(values.TryGetValue("Action", out object? value) ? value?.ToString() : null);
+            }
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { LiquidCooling = true });
+        hardware.HandleMessage("BT_LC/Status", $$"""
+            { "connected": false, "ConnectString": "IsConnectable", "LC_action": true,
+              "DevMACString": "{{mac}}", "DeviceMacList": ["{{mac}}"] }
+            """);
+        var service = new MechrevoService(hardware);
+
+        Assert.True(await service.LcConnect());
+
+        Assert.Equal(["Connect"], actions.ToArray());
     }
 
     static string LiquidCoolingStatus(int pump, int fan) => $$"""

@@ -1704,10 +1704,28 @@ public class MechrevoService
             // BT_LC is a runtime-discovered subsystem on several models. Do not reject the
             // initial discovery request merely because an older ItemSupport profile lacks it.
             if (!_hw.IsConnected) return false;
+            await ArmLiquidCoolingTargetAsync();
             await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "Connect" });
             Logger.WriteLine("LcConnect 已发送");
             return true;
         });
+
+    Task PublishLcDeviceMacAsync(string mac) =>
+        _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "DeviceMacSetting", ["DeviceMac"] = mac });
+
+    /// <summary>
+    /// 官方 UI 的实测连接序列是「先选定目标设备再 Connect」：目标未选定（DevMACString 为空）时
+    /// Connect 没有设备可连，状态会永远停在 IsConnectable。这里按状态里的 DeviceMacList 原样下发
+    /// DeviceMacSetting——必须是 GCU 给出的完整字符串（BluetoothLE#BluetoothLE&lt;addr&gt;-&lt;addr&gt;），
+    /// 不能换成裸 MAC。已选定目标时不重复 arm。
+    /// </summary>
+    async Task ArmLiquidCoolingTargetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_hw.LcCurrentMac) || _hw.LcDeviceMacs.Count == 0) return;
+        string mac = _hw.LcDeviceMacs[0];
+        await PublishLcDeviceMacAsync(mac);
+        Logger.WriteLine($"LcSelectDevice({mac}) 已发送");
+    }
 
     /// <summary>Requests a BT_LC status snapshot for runtime discovery and post-command readback.</summary>
     public Task<bool> RefreshLiquidCoolingStatus() =>
@@ -1733,7 +1751,7 @@ public class MechrevoService
         RunLiquidCoolingAsync($"LcSelectDevice({mac})", LiquidCoolingWriteLockTimeout, async () =>
         {
             if (!_hw.SupportsLiquidCooling || string.IsNullOrWhiteSpace(mac)) return false;
-            await _hw.Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "DeviceMacSetting", ["DeviceMac"] = mac });
+            await PublishLcDeviceMacAsync(mac);
             Logger.WriteLine($"LcSelectDevice({mac}) 已发送");
             return true;
         });
