@@ -1157,6 +1157,8 @@ namespace MechrevoLite
                 }
                 if (temporaryPowerOff && (hw is not { IsConnected: true } || service is null)) return false;
 
+                // 本周期是否刚下发键盘上电：决定能否抢先进入自定义帧模式（见下方 ReInit 处的说明）。
+                bool powerJustIssued = false;
                 int requestId = Volatile.Read(ref _lightingRestoreRequestId);
                 bool appliedThisCycle = Volatile.Read(ref _keyboardRestoreAppliedRequestId) == requestId;
                 // 本周期键盘已落地且效果在跑：同一熄灯周期的恢复会相继触发（重试/连接/唤醒），
@@ -1178,6 +1180,7 @@ namespace MechrevoLite
                         // 只下发不等回读：GCU 键盘电源回读本机长期 not confirmed，等待它会凭空给
                         // 本地 HID 效果加上约 2 秒延迟，与外置通道错开。命令成功发布即继续。
                         bool issued = await service.IssueLightPower(MqttTopics.KeyboardCtrl, true).ConfigureAwait(false);
+                        powerJustIssued = issued;
                         if (issued) await Task.Delay(KeyboardPowerSettleMs).ConfigureAwait(false);
                         else Logger.WriteLine("RGB 自动恢复：键盘电源未能下发，继续恢复本地 HID 效果");
                     }
@@ -1207,7 +1210,11 @@ namespace MechrevoLite
 
                 bool wasConnected = rgb.IsConnected;
                 if (!wasConnected && !rgb.Connect()) return false;
-                if (wasConnected && forceEffectRestore && !rgb.ReInitCustomMode())
+                // 刚下发键盘上电时不得抢先进入自定义帧模式：固件的上电初始化约 1s 后才完成并重新
+                // 套用官方效果，抢先进入的那一次必定被作废——它只是多写一次清屏（真机表现为亮灭多次）。
+                // 唯一一次入口留给保护窗口在固件上电回帧时做（窗口已在上电前武装）。回帧若丢失，
+                // StartMode 照常出帧，行为与改动前一致（旧代码那次抢先入口同样会被上电初始化作废）。
+                if (wasConnected && forceEffectRestore && !powerJustIssued && !rgb.ReInitCustomMode())
                 {
                     // 固件抢占后 HID 句柄可能仍存在但已不能接收帧，重新枚举一次设备。
                     if (!rgb.Connect()) return false;

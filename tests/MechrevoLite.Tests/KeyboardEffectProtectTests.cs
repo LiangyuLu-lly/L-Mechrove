@@ -318,6 +318,45 @@ public class KeyboardEffectProtectTests
         await Task.Delay(150);   // 异步恢复周期收尾，避免 Dispose 与 StartMode 竞争
     }
 
+    /// <summary>
+    /// 真机回归（beta17 现场）：睡眠/空闲恢复后键盘亮灭约三次才稳定——同一次恢复里
+    /// 「进入自定义帧模式」被做了两遍：恢复路径抢先做一遍（必定被作废），固件上电回帧又做一遍。
+    ///
+    /// 证据（真机 16:11 日志）：恢复 42.524 先起效果，固件上电约 1.04 s 后才回帧（43.562），
+    /// 43.564 才重申——先做的那一遍固件上电初始化必然覆盖（beta16 保护窗口正为识别那一帧而设）。
+    /// 多出来的入口同时多写了一次清屏，就是用户看到的「亮灭三次」。
+    ///
+    /// 契约：一次「熄灯 → 恢复 → 固件上电回帧」只允许**恰好一次**进入自定义帧模式、
+    /// **恰好一次**重启效果；入口由保护窗口（固件上电回帧）那一次承担。
+    /// </summary>
+    [Fact]
+    public async Task IdleRestore_PowerOnEcho_EntersCustomModeExactlyOnce()
+    {
+        using var harness = new Harness();
+        await Program.EvaluateLightingIdleAsync(timeoutSeconds: 10, idleMilliseconds: 10_000);
+        Assert.True(Program.LightingIdleSuspended, "空闲到期后应进入临时熄灯。");
+
+        // 熄灯周期里 GCU 的键盘回帧就是真机形状：电源 Off、亮度寄存器 0、effect=5。
+        harness.Hardware.HandleMessage("Keyboard/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\",\"effect\":\"5\",\"light\":\"0\",\"brightNess\":\"0\"}");
+        int reinitBefore = harness.Keyboard.CustomModeReinitCount;
+        int generationBefore = harness.Keyboard.EffectGeneration;
+
+        harness.SuppressKeyboardPowerOnEcho();
+        await Program.EvaluateLightingIdleAsync(timeoutSeconds: 10, idleMilliseconds: 200);
+        Assert.False(Program.LightingIdleSuspended, "检测到输入后应解除临时熄灯。");
+        Assert.True(Program.KeyboardEffectProtectArmed, "空闲恢复重新上电后必须武装效果保护窗口。");
+
+        // 固件上电初始化完成：只有 power Off→On，effect/亮度与基线相同（保护窗口判据）。
+        harness.Hardware.HandleMessage("Keyboard/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"effect\":\"5\",\"light\":\"0\",\"brightNess\":\"0\"}");
+        await WaitUntil(() => !Program.KeyboardEffectProtectArmed);   // 窗口命中（回帧已处理）
+        await Task.Delay(300);   // 重申在后台任务里，等它落地再数入口
+
+        Assert.Equal(reinitBefore + 1, harness.Keyboard.CustomModeReinitCount);   // 只允许一次入口
+        Assert.Equal(generationBefore + 1, harness.Keyboard.EffectGeneration);    // 效果仍恰好重启一次
+    }
+
     [Theory]
     [InlineData(true, 10, 9, true, false, true)]    // 窗口内固件上电回帧 → 重申
     [InlineData(true, 9, 9, true, false, false)]    // 版本未前进 → 不是新帧
