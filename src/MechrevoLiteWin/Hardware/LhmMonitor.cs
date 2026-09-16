@@ -24,6 +24,9 @@ public class LhmMonitor : IDisposable
         {
             IsCpuEnabled = true,
             IsGpuEnabled = true,
+            // 探针结论（beta18，见 docs 附录）：Memory 组只提供 RAM 用量传感器、~25µs/轮，保留；
+            // Storage（提权才枚举、每轮 6-250ms IOCTL）与 0 传感器的 Motherboard 不打开。
+            IsMemoryEnabled = true,
         };
         try
         {

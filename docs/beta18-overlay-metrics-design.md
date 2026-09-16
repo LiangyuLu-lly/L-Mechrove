@@ -212,3 +212,43 @@
 4. **布局层：行模型改造**：`HardwareOverlay` 从固定 2 行改为"行列表 + 空行自动收缩"，`UpdateOverlaySize`/`PerformPaint` 按行数计算；先只迁移现有 2 行（行为等价，纯重构）。证据：`SettingsLayoutTests.cs` 全绿 + 截图对比 2 行模式像素级不变。
 5. **布局层：新增行/格子**：按 §5 逐格接入（GPU 行两格 → CPU 行两格 → 内存行 → 存储/网络行），每格一个提交，各自带 `overlay_show_*` 键。证据：每格的截图（有数据 + 拔掉传感器/关键两种状态）+ 布局守卫测试扩展后全绿。
 6. **收尾**：拖动/缩放/锚定回归手测（约束 5），200%/100%/35% 三档缩放截图，`git status` 干净。
+
+## 11. 探针 1 结果（2026-09-17 实测）
+
+条件：Debug x64 探针构建（三开关全开 + 逐硬件 `Stopwatch` 打点，跑完已还原），应用非提权运行（与正式运行同权限），另做一次静默提权对照（本机 UAC=无提示提权）。证据：3 份 dump 差集 + 182 条 `LHM probe:` 日志。
+
+### 11.1 新传感器（相对基线 dump 144 行）
+
+| 设计问题 | 实测新增 | 定档 |
+|---|---|---|
+| DRAM 温度 / 频率 | **无**。Memory 组只多出 3 个传感器名：`Memory/Data/Memory Used`、`Memory/Data/Memory Available`、`Memory/Load/Memory`（两种权限一致；无 DIMM/SPD 专属温度或 Clock 传感器） | B → **C 不可得** |
+| NVMe/SSD 温度 | **仅提权**：3 个盘（21/13/21 传感器），含 `Storage/Temperature/Composite Temperature`、`Temperature #1/#2`、`Warning/Critical Temperature`；另送 `Level/Life`、`Data/Data Read|Data Written`、`Factor/Power On Count|Power On Hours`、`Load/Used Space`、`Data/Free|Total Space`、`Load/Read|Write|Total Activity`、`Throughput/Read Rate|Write Rate`、`Level/Available Spare|Available Spare Threshold|Percentage Used`。非提权 Storage 组枚举 **0 个设备** | B → **条件可得（仅提权）** |
+| 主板 / 风扇 RPM | **无**（Motherboard 硬件存在但 0 传感器，两种权限一致） | 新增 **C 不可得** |
+| 其他新传感器 | 同上 Storage 行（寿命/读写量/通电时间/备用块/百分比），记录备查、本次不使用 | — |
+
+### 11.2 耗时实测（逐硬件切片）
+
+| 硬件 | 非提权（正式运行权限） | 提权 |
+|---|---|---|
+| Memory（新增） | med 12µs / max 1.1ms | med 5µs / max 1.0ms |
+| Motherboard（新增） | med 1µs / max 40µs | med 0µs / max 32µs |
+| Storage（新增） | 0 设备 ⇒ 0 成本 | med 12.7ms / max 252ms，5/192 切片 ≥100ms（每轮合计约 5–40ms，尖峰 ~250ms） |
+| GpuNvidia（原有） | med 83ms / max 1166ms | med 605ms / max 1022ms |
+| Cpu（原有） | med 10ms / max 101ms | med 7.6ms / max 81ms |
+
+对照构建（仅 `IsCpuEnabled`+`IsGpuEnabled`，42 轮）：GpuNvidia med 85ms / max 810ms / 48% 轮次 ≥100ms ⇒ **GpuNvidia 的百毫秒~1 秒级停顿是既有现象，与新增开关无关**。新增组在非提权下合计 ≤ ~50µs/轮；三次启动均干净（dump 在启动后 ≤10s 写出），日志无 LHM 报错。
+
+### 11.3 开关去留（本次提交后的代码状态）
+
+| 开关 | 决定 | 理由 |
+|---|---|---|
+| `IsMemoryEnabled` | **保留** | 有真实传感器、~25µs/轮、无每轮 IOCTL；但不提供 DRAM 温度/频率 |
+| `IsStorageEnabled` | **还原** | 非提权（正式权限）枚举 0 设备；提权下每轮 6–250ms SMART IOCTL，未降频前违反硬约束 6（§8） |
+| `IsMotherboardEnabled` | **还原** | 两种权限均 0 传感器 |
+
+### 11.4 分档/实施影响
+
+- DRAM 温度、DRAM 频率：**砍掉**（§5.3 内存行只做 RAM 占用，来源维持 MQTT）。
+- NVMe 温度、存储已用/总量：保留提案，但标注为「仅提权会话有数据」；落地前提 = ≥5s 降频 + 明确提权策略（§8），否则非提权用户永远只是空行。
+- 主板风扇/板载传感器：不进入提案。
+- 探针 2（`GpuMemFreq`/`CpuMaxFrequency` 原始载荷）仍未做，§2 两个白捡指标仍待确认。
