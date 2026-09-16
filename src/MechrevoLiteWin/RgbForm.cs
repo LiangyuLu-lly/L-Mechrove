@@ -30,6 +30,7 @@ public class RgbForm : RForm
     int _closeTimerCommandGen;   // 睡眠时间快速连选时仅确认最后一次设置（ApplyModeSelection 收尾推送用）
     int _gcuBrightGen;           // 回退态亮度载体代际：拖动中的中间值不发布，停顿后发布最新档
     readonly SemaphoreSlim _gcuBrightLock = new(1, 1);   // 亮度载体单飞：迟到的旧档不得覆盖新档
+    int _teardownDone;           // FormClosed 对同一实例会触发两次（Application.Exit 反序循环 + 拥有窗体循环），teardown 必须幂等
     RSlider _brightSlider = null!;   // 回退态下唯一保持可用的参数控件（状态行承诺「仅电源与亮度」）
     System.Windows.Forms.Timer? _modeSyncTimer;   // 仪表盘改效果时，已打开的对话框跟随重放
     int _activeHidMode = KeyboardRgb.ModeWave;
@@ -183,6 +184,9 @@ public class RgbForm : RForm
         };
         FormClosed += (_, _) =>
         {
+            // 拥有窗体在 Application.Exit 里会被关两次（反序循环 + 拥有窗体循环）：teardown 只跑一次，
+            // 否则第二次会 Wait 已 Dispose 的信号量，异常逃出 OnFormClosed 直接带崩进程。
+            if (Interlocked.Exchange(ref _teardownDone, 1) != 0) return;
             _modeSyncTimer?.Stop();
             _modeSyncTimer?.Dispose();
             _rgb.DeviceLost -= OnRgbDeviceLost;

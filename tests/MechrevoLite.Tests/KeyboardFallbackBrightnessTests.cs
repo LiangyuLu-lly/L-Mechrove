@@ -398,4 +398,56 @@ public class KeyboardFallbackBrightnessTests
         Assert.Equal(0, harness.CountEffectAll(KeyboardTopic));   // 绝不发 GCU 亮度载体
         Assert.Equal(25, harness.Keyboard.Brightness);            // HID 渲染器亮度照旧
     }
+
+    // ---------- RgbForm teardown 幂等（同一实例的 FormClosed 会触发两次） ----------
+
+    /// <summary>
+    /// Application.Exit 第二阶段的 while 循环按反序处理 s_forms（最后显示的窗体先关）：
+    /// OnFormClosed 会把它移出 Application.OpenForms，随后主窗体（拥有窗体）的
+    /// RaiseFormClosedOnAppExit 再看自己的被拥有窗体，此时已不在 OpenForms，于是对同一实例
+    /// 再调一次 OnFormClosed。用反射直接走这条 protected 路径，等价于真机上的两次触发。
+    /// </summary>
+    static void RaiseFormClosed(RgbForm form)
+    {
+        MethodInfo? onClosed = typeof(Form).GetMethod("OnFormClosed",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(onClosed);
+        onClosed!.Invoke(form, new object[] { new FormClosedEventArgs(CloseReason.ApplicationExitCall) });
+    }
+
+    static SemaphoreSlim BrightnessLockOf(RgbForm form) =>
+        (SemaphoreSlim)typeof(RgbForm).GetField("_gcuBrightLock",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+
+    /// <summary>第二次 FormClosed 不得再 Wait/Dispose 已销毁的信号量（21cd310 回归：进程静默死亡）。</summary>
+    [Fact]
+    public void RgbFormTeardown_IsIdempotent_WhenFormClosedFiresTwice()
+    {
+        using var harness = new Harness();
+        Program.UiAuditMode = true;   // 构造不启动模式跟随计时器
+        using var form = new RgbForm(harness.Keyboard);
+        Program.UiAuditMode = false;
+
+        RaiseFormClosed(form);        // 第一次：反序循环先关被拥有窗体
+
+        Exception? thrown = Record.Exception(() => RaiseFormClosed(form));   // 第二次：拥有窗体循环再关一次
+        Exception? cause = thrown?.InnerException ?? thrown;
+        Assert.True(thrown is null,
+            "FormClosed 会对同一实例触发两次，teardown 必须幂等。实际抛出：" +
+            cause?.GetType().Name + " " + cause?.Message);
+    }
+
+    /// <summary>修复不得静默跳过原意图：正常单次关闭仍要有界等待进行中的亮度发布，拿到锁后 Release 并 Dispose。</summary>
+    [Fact]
+    public void RgbFormTeardown_SingleClose_StillDrainsAndDisposesTheBrightnessLock()
+    {
+        using var harness = new Harness();
+        Program.UiAuditMode = true;
+        using var form = new RgbForm(harness.Keyboard);
+        Program.UiAuditMode = false;
+
+        RaiseFormClosed(form);
+
+        Assert.Throws<ObjectDisposedException>(() => BrightnessLockOf(form).Wait(0));
+    }
 }
