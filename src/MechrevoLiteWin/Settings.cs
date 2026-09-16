@@ -4372,8 +4372,8 @@ namespace MechrevoLite
             AppConfig.Set("gpu_auto", 0);
             MarkGpuRestartPending();
             AppConfig.Flush();
-            bool requested = await Program.service.RequestGpuModeRestartAsync(targetMode);
-            if (!requested)
+            GpuRestartRequestOutcome outcome = await Program.service.RequestGpuModeRestartOutcomeAsync(targetMode);
+            if (outcome != GpuRestartRequestOutcome.Requested)
             {
                 AppConfig.Set("gpu_mode", previousMode);
                 AppConfig.Set("gpu_auto", previousAuto ? 1 : 0);
@@ -4388,7 +4388,12 @@ namespace MechrevoLite
                 }
                 AppConfig.Flush();
                 await RefreshGpuModeUiStateAsync();
-                MessageBox.Show("GCU 未能发送重启切换请求，显卡模式未被标记为已切换。",
+                // 「该方向没有可用指令」与一般发送失败是两回事：前者是机型/固件不支持，
+                // 说清楚用户才不会反复点同一次必然白重启的切换。
+                MessageBox.Show(
+                    outcome == GpuRestartRequestOutcome.Unsupported
+                        ? $"当前机型或当前 GCU 版本不支持「{modeName}」方向的显卡切换：没有可用的切换指令，已取消且未重启。"
+                        : "GCU 未能发送重启切换请求，显卡模式未被标记为已切换。",
                     "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }

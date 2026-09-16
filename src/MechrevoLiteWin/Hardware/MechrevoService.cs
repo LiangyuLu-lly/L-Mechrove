@@ -8,6 +8,17 @@ public enum GpuModeStatusReadback
 }
 
 /// <summary>
+/// 重启切换请求的结果。UI 需要把「该方向没有可用指令」与一般失败区分开，
+/// 才能在不支持时给出诚实提示，而不是含糊地说「发送失败」。
+/// </summary>
+internal enum GpuRestartRequestOutcome
+{
+    Requested,
+    Unsupported,
+    Failed,
+}
+
+/// <summary>
 /// 机械革命专用服务层：直接为 UI 提供模式/显卡切换与状态。
 /// 不经过 G-Helper 的 ModeControl/GPUModeControl 中间层（避免 ASUS 语义污染）。
 /// 协议依据 m1-findings.md 实测：Fan/Control、Setting/Control、Fan/Status、Setting/Status。
@@ -878,8 +889,19 @@ public class MechrevoService
     public Task<bool> SwitchAutomaticGpuMode(bool plugged) =>
         SwitchGpuMode(GpuAuto, pluggedForAuto: plugged);
 
+    /// <summary>测试接缝：覆盖重启切换的路由序列，用来锁定「空路由必须 fail closed」。生产代码从不设置它。</summary>
+    internal static Func<int, bool, IReadOnlyList<Dictionary<string, object>>>? GpuRestartRouteOverride { get; set; }
+
     /// <summary>请求厂商服务在重启前应用 MUX 目标，不等待热切换状态完成。</summary>
-    public async Task<bool> RequestGpuModeRestartAsync(int mode)
+    public async Task<bool> RequestGpuModeRestartAsync(int mode) =>
+        await RequestGpuModeRestartOutcomeAsync(mode).ConfigureAwait(false) == GpuRestartRequestOutcome.Requested;
+
+    /// <summary>
+    /// 与 <see cref="RequestGpuModeRestartAsync"/> 同一条实现，只是返回可区分的结果。
+    /// 分开的理由：UI 必须能把「该方向没有可用指令」与其它失败区分开，否则只能统一报
+    /// 「发送失败」——那正是这次 40 系空路由重启的含糊来源。
+    /// </summary>
+    internal async Task<GpuRestartRequestOutcome> RequestGpuModeRestartOutcomeAsync(int mode)
     {
         var requestCts = new CancellationTokenSource();
         CancellationTokenSource? previous = Interlocked.Exchange(ref _gpuSwitchCts, requestCts);
@@ -888,13 +910,28 @@ public class MechrevoService
         try
         {
             if (_hw is not { IsConnected: true } || mode is < GpuIGpu or > GpuAuto || !_hw.CanSwitchGpuMode(mode))
-                return false;
+                return GpuRestartRequestOutcome.Failed;
 
             lockTaken = await AcquireSwitchLockAsync(
                 $"RequestGpuModeRestartAsync({mode})", requestCts.Token).ConfigureAwait(false);
-            if (!lockTaken) return false;
+            if (!lockTaken) return GpuRestartRequestOutcome.Failed;
+
+            IReadOnlyList<Dictionary<string, object>> route = GpuRestartRouteOverride is { } factory
+                ? factory(mode, _hw.SupportsDgpuDirect)
+                : CreateGpuRestartTargetPayloads(mode, _hw.SupportsDgpuDirect);
+            // Fail closed：空路由意味着没有任何模式会被写进 EC。过去这里仍会发布
+            // DGPU_DIRECT_CONNECT_RESTART，GCU 照单重启一次——模式没变，用户白重启
+            // （真机证据：40 系 target=0/1 时 `GPU restart route payloads [] sent`）。宁可不动，也不空转重启。
+            if (route.Count == 0)
+            {
+                Logger.WriteLine(
+                    $"GPU restart route is empty for target={mode} " +
+                    $"(supportsDgpuDirect={_hw.SupportsDgpuDirect}, supportsIgpuOnly={_hw.SupportsIgpuOnly}); " +
+                    "refusing to publish DGPU_DIRECT_CONNECT_RESTART so the machine is not rebooted for nothing.");
+                return GpuRestartRequestOutcome.Unsupported;
+            }
             List<string> sentActions = new();
-            foreach (Dictionary<string, object> payload in CreateGpuRestartTargetPayloads(mode, _hw.SupportsDgpuDirect))
+            foreach (Dictionary<string, object> payload in route)
             {
                 requestCts.Token.ThrowIfCancellationRequested();
                 sentActions.Add(payload["Action"].ToString() ?? "?");
@@ -910,17 +947,17 @@ public class MechrevoService
                 ["Action"] = "DGPU_DIRECT_CONNECT_RESTART",
             }).ConfigureAwait(false);
             Logger.WriteLine($"Requested GCU GPU restart route for target={mode}");
-            return true;
+            return GpuRestartRequestOutcome.Requested;
         }
         catch (OperationCanceledException)
         {
             Logger.WriteLine($"GPU restart route superseded: target={mode}");
-            return false;
+            return GpuRestartRequestOutcome.Failed;
         }
         catch (Exception ex)
         {
             Logger.WriteLine($"GPU restart route failed: target={mode} error={ex.Message}");
-            return false;
+            return GpuRestartRequestOutcome.Failed;
         }
         finally
         {
