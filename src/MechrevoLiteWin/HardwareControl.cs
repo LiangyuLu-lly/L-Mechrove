@@ -1,3 +1,4 @@
+using MechrevoLite.Battery;
 using MechrevoLite.Gpu;
 using MechrevoLite.Hardware;
 
@@ -32,6 +33,24 @@ public static class HardwareControl
     public static decimal batteryHealth = -1;
     public static decimal? batteryRate;
     public static bool chargeWatt;
+
+    // 电池充放瓦数来自本地 OS 电池 IOCTL（不走 MQTT 推流）。读不到保持 null——
+    // 悬浮窗与托盘提示只在有数值时显示，不编数。
+    internal static Func<decimal?> batteryRateReader = BatteryRateReader.ReadWatts;
+    internal const int BatteryRateRefreshIntervalMs = 5000;
+    static long _lastBatteryRateRead;
+
+    /// <summary>
+    /// 限频刷新 <see cref="batteryRate"/>（默认 5 秒；force 用于测试与显式刷新）。
+    /// 读取失败时字段为 null，调用方按「未知」处理。
+    /// </summary>
+    internal static void RefreshBatteryRate(bool force = false)
+    {
+        long now = Environment.TickCount64;
+        if (!force && now - _lastBatteryRateRead < BatteryRateRefreshIntervalMs) return;
+        _lastBatteryRateRead = now;
+        batteryRate = batteryRateReader();
+    }
 
     public static LhmMonitor? lhm;   // 实时功耗（LibreHardwareMonitorLib 本地直读）
     static readonly object lhmLock = new();
@@ -149,7 +168,7 @@ public static class HardwareControl
     public static bool readMemory;
     public static bool readPower;
     public static bool readBattery;
-    public static void ReadSensors() { }
+    public static void ReadSensors() => RefreshBatteryRate();
     public static void ReadSensorsOverlay() => SampleLocalPower();
 
     /// <summary>
@@ -161,6 +180,7 @@ public static class HardwareControl
     {
         RefreshLocalMonitoring();
         ObservePowerWall();
+        RefreshBatteryRate();
     }
     public static int GetBatteryChargePercentage() => batteryCharge;
     public static int GetCPUTemp() => cpuTemp;

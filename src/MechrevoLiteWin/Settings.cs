@@ -4456,10 +4456,7 @@ namespace MechrevoLite
                 charge = Properties.Strings.BatteryCharge + ": " + HardwareControl.batteryCharge;
             }
 
-            if (HardwareControl.batteryRate < 0)
-                battery = Properties.Strings.Discharging + ": " + Math.Round(-(decimal)HardwareControl.batteryRate, 1).ToString() + "W";
-            else if (HardwareControl.batteryRate > 0)
-                battery = Properties.Strings.Charging + ": " + Math.Round((decimal)HardwareControl.batteryRate, 1).ToString() + "W";
+            battery = BatteryRateText(HardwareControl.batteryRate);
 
 
             if (HardwareControl.gpuTemp > 0)
@@ -4969,6 +4966,16 @@ namespace MechrevoLite
             if (hw.BatteryCycleCount >= 0) parts.Add($"循环 {hw.BatteryCycleCount} 次");
             if (HasMeaningfulCapacity(hw.BatteryCapacityText)) parts.Add(hw.BatteryCapacityText);
             return string.Join(" · ", parts);
+        }
+
+        /// <summary>充/放瓦数文本：未知（null 或 0）返回空串，不编数；放电为正数加「放电」前缀。</summary>
+        internal static string BatteryRateText(decimal? rate)
+        {
+            if (rate is < 0)
+                return Properties.Strings.Discharging + ": " + Math.Round(-rate.Value, 1).ToString() + "W";
+            if (rate is > 0)
+                return Properties.Strings.Charging + ": " + Math.Round(rate.Value, 1).ToString() + "W";
+            return "";
         }
 
         public void VisualiseBattery(int limit)
