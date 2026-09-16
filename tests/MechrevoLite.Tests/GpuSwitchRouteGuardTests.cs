@@ -70,6 +70,31 @@ public class GpuSwitchRouteGuardTests
     }
 
     /// <summary>
+    /// 进入独显直连（target=2）的路由必须与今天完全一致：官方进入直连的三连击
+    /// （TOGGLE_ON → RB_OFF[SetToWMIEC=OK] → TOGGLE_ON）后再重启。本次修复不得改动它。
+    /// </summary>
+    [Fact]
+    public async Task EnteringDirect_KeepsTheOfficialThreeActionRouteUnchanged()
+    {
+        var actions = new List<string>();
+        using MechrevoHw hardware = NewHardware(actions);
+        hardware.HandleMessage("Setting/Status", DirectStatus);
+        var service = new MechrevoService(hardware);
+
+        Assert.True(await service.RequestGpuModeRestartAsync(MechrevoService.GpuDgpu));
+
+        Assert.Equal(
+            new[]
+            {
+                "DGPU_DIRECT_CONNECT_TOGGLE_ON",
+                "IGPU_ONLY_CONNECT_RB_OFF",
+                "DGPU_DIRECT_CONNECT_TOGGLE_ON",
+                "DGPU_DIRECT_CONNECT_RESTART",
+            },
+            actions);
+    }
+
+    /// <summary>
     /// 反向（离开独显直连）的指令序列必须与官方 console 一致：
     /// 官方 <c>CCUWinUI.decompiled.cs:86477-86515</c> 对「目标=混合/标准」只发一条
     /// <c>DGPU_DIRECT_CONNECT_TOGGLE_OFF</c>，对「目标=核显-only」只发一条
