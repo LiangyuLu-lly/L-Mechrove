@@ -343,11 +343,15 @@ public partial class SettingsForm
                 }
                 if (Program.service is not null && Program.hw is { IsConnected: true })
                 {
-                    // HID 未连（或确定性不支持）时退回固件通道（同 RgbForm 的电源补开路径）
+                    // HID 未连（或确定性不支持）时退回固件通道（同 RgbForm 的电源补开路径）。
+                    // 回退通道不承载任意 HID 效果，中文显示名也不是协议合法效果名：改用亮度载体——
+                    // 重发 GCU 当前回报的效果 + 当前 UI 亮度档（设计 §4），效果保留、线上不再出现无效中文名。
                     sw.Enabled = false;
                     bool ok = await Program.service.SetKeyboardPower(true);
                     sw.Enabled = true;
-                    if (ok) _ = Task.Run(() => Program.service.SetKeyboardEffect(hid.Name, save: true));
+                    if (ok)
+                        _ = Task.Run(() => Program.service.SetKeyboardBrightnessPreservingEffect(
+                            KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(Program.rgb.Brightness)));
                 }
             };
             sw.CheckedChanged += async (_, _) =>
@@ -434,17 +438,13 @@ public partial class SettingsForm
                 }
                 else
                 {
-                    // HID 未连时退回固件通道（同 RgbForm 的电源补开路径）
+                    // HID 未连（或确定性不支持）时退回固件通道（同 RgbForm 的电源补开路径）。
+                    // 回退通道不承载任意 HID 效果，中文显示名也不是协议合法效果名：改用亮度载体——
+                    // 重发 GCU 当前回报的效果 + 当前 UI 亮度档（设计 §4），效果保留、线上不再出现无效中文名。
                     ok = await service.SetKeyboardPower(true);
                     if (ok)
-                    {
-                        int idx = _kbEffectCombo?.SelectedIndex ?? -1;
-                        if (idx >= 0 && idx < RgbForm.HidEffects.Length)
-                        {
-                            string effectName = RgbForm.HidEffects[idx].Name;
-                            _ = Task.Run(() => service.SetKeyboardEffect(effectName, save: true));
-                        }
-                    }
+                        _ = Task.Run(() => service.SetKeyboardBrightnessPreservingEffect(
+                            KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(Program.rgb?.Brightness ?? 100)));
                 }
                 sw.Enabled = true;
                 if (!ok)

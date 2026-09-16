@@ -1937,6 +1937,17 @@ public class MechrevoService
         Color? singleColor = null, bool save = false)
         => SetLightEffect(MqttTopics.KeyboardCtrl, effect, light, speed, direction, singleColor, save);
 
+    /// <summary>
+    /// 回退（GCU）通道的亮度载体（设计 §4）：协议没有独立的「设亮度」命令——light 只能随
+    /// SetEffectALL 打包下发。重发 GCU 当前回报的效果名 + 新的 light 档位（0–4），效果因此被保留，
+    /// 线上也不会出现中文显示名；回报为空/未知时用唯一规范默认 "Single"。
+    /// </summary>
+    public Task<bool> SetKeyboardBrightnessPreservingEffect(int level0to4)
+    {
+        string effect = string.IsNullOrWhiteSpace(_hw.KeyboardEffect) ? "Single" : _hw.KeyboardEffect;
+        return SetLightEffect(MqttTopics.KeyboardCtrl, effect, light: level0to4);
+    }
+
     /// <summary>通用灯效命令（键盘/灯条/Logo 灯共用 MyKeyBoard 载荷结构，仅 topic 不同）。
     /// save=true 时 nv_save=SAVE——效果一次性写入固件 NVRAM（重启/断电后保持）。</summary>
     public async Task<bool> SetLightEffect(string topic, string effect, int light = 4, int speed = 1, string direction = "None", Color? singleColor = null, bool save = true)

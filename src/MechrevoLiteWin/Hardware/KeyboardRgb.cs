@@ -195,6 +195,10 @@ public class KeyboardRgb : IDisposable
     /// <summary>把 GCU 的 0..4 级硬件亮度转换为 HID 帧的 0..100 缩放值。</summary>
     internal static int MapHardwareBrightnessLevel(int level) => Math.Clamp(level, 0, 4) * 25;
 
+    /// <summary>把 HID 0..100 软件亮度按最近档映射回 GCU 的 0..4 五档（回退通道亮度载体的输入）。</summary>
+    internal static int MapSoftwareBrightnessToHardwareLevel(int brightness) =>
+        Math.Clamp((brightness + 12) / 25, 0, 4);
+
     /// <summary>优先使用官方 brightNess；0..4 视为五档值，其余固件值按百分比读取。</summary>
     internal static int MapReportedHardwareBrightness(int brightness, int legacyLevel) =>
         brightness >= 0 ? brightness <= 4 ? MapHardwareBrightnessLevel(brightness) : Math.Clamp(brightness, 0, 100) :
