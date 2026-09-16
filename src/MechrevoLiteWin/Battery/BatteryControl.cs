@@ -67,12 +67,7 @@ namespace MechrevoLite.Battery
         {
             chargeFull = true;
             if (EcChargeLimit.IsAvailableOnThisMachine())
-            {
                 SetBatteryChargeLimit(EcChargeLimit.MaximumPercent);   // 100% = 固件的无上限值
-                Program.settingsForm.VisualiseBatteryFull();
-                return;
-            }
-            Program.acpi.DeviceSet(AsusACPI.BatteryLimit, 100, "BatteryLimit");
             Program.settingsForm.VisualiseBatteryFull();
         }
 

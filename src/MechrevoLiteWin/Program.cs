@@ -1240,7 +1240,6 @@ namespace MechrevoLite
             // 注销/关机/重启时兜底还原亮度（best-effort，不能因为一个 Win32 调用失败而中断会话结束流程）。
             TryRestoreScreenAfterFailure();
             gpuControl.StandardModeFix();
-            modeControl.ShutdownReset();
             BatteryControl.AutoBattery();
             InputDispatcher.ShutdownStatusLed();
         }
@@ -1361,7 +1360,6 @@ namespace MechrevoLite
                 ScreenControl.AutoScreen();
             }
 
-            ScreenControl.InitMiniled();
             // VisualControl.InitBrightness() 已删除（连同整个 ASUS Splendid 通路）。
             // 它调的是 Splendid 的 gamma 假调光，不是屏幕亮度——后者走
             // Settings/DeviceSwitchItemStatus 的 ScreenBrightness + BrightnessCommitQueue。
@@ -1450,7 +1448,6 @@ namespace MechrevoLite
             {
                 Logger.WriteLine("Power Mode Changed:" + e.Mode.ToString());
                 gpuControl.StandardModeFix();
-                modeControl.ShutdownReset();
                 InputDispatcher.ShutdownStatusLed();
                 return;
             }

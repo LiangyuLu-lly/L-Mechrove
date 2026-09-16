@@ -183,22 +183,13 @@ namespace MechrevoLite.Mode
             {
                 try
                 {
-                    bool reset = AppConfig.IsResetRequired() && (Modes.GetBase(oldMode) == Modes.GetBase(mode)) && customPower > 0 && !AppConfig.IsApplyPower();
-
                     customFans = false;
                     customPower = 0;
 
                     SetModeLabel();
 
-                    // G14 2024 workaround 的 DeviceSet 在 Mechrevo 是空实现——等待无意义，移除 1.5s 假延迟
-                    if (reset)
-                    {
-                        Program.acpi.DeviceSet(AsusACPI.PerformanceMode, (Modes.GetBase(oldMode) != 1) ? AsusACPI.PerformanceTurbo : AsusACPI.PerformanceBalanced, "ModeReset");
-                    }
-
                     ct.ThrowIfCancellationRequested();
 
-                    if (AppConfig.Is("status_mode")) Program.acpi.DeviceSet(AsusACPI.StatusMode, [0x00, Modes.GetBase(mode) == AsusACPI.PerformanceSilent ? (byte)0x02 : (byte)0x03], "StatusMode");
                     await Program.acpi.SetPerformanceMode(AppConfig.IsManualModeRequired() ? AsusACPI.PerformanceManual : Modes.GetBase(mode));
                     ct.ThrowIfCancellationRequested();
 
@@ -300,7 +291,6 @@ namespace MechrevoLite.Mode
             if (Program.hw is not { IsConnected: true })
                 await Task.Delay(500, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            SetGPUPower();
             AutoRyzen();
 
             if (IsReapplyRyzenRequired())
@@ -397,14 +387,8 @@ namespace MechrevoLite.Mode
                 return;
             }
 
-            // SPL and SPPT
-            if (Program.acpi.IsSupported(AsusACPI.PPT_APUA0))
-            {
-                Program.acpi.DeviceSet(AsusACPI.PPT_APUA3, limit_total, "PowerLimit A3");
-                Program.acpi.DeviceSet(AsusACPI.PPT_APUA0, limit_slow, "PowerLimit A0");
-                customPower = limit_total;
-            }
-            else if (isAMD)
+            // 未连接 GCU 的 AMD 机型：退回本地 Ryzen SMU 路径
+            if (isAMD)
             {
                 if (ProcessHelper.IsUserAdministrator())
                 {
@@ -419,12 +403,7 @@ namespace MechrevoLite.Mode
 
             if (allAMD) // CPU limit all amd models
             {
-                Program.acpi.DeviceSet(AsusACPI.PPT_CPUB0, limit_cpu, "PowerLimit B0");
                 customPower = limit_cpu;
-            }
-            else if (isAMD && Program.acpi.IsSupported(AsusACPI.PPT_APUC1)) // FPPT boost for non all-amd models
-            {
-                Program.acpi.DeviceSet(AsusACPI.PPT_APUC1, limit_fast, "PowerLimit C1");
             }
 
             SetModeLabel();
@@ -461,30 +440,6 @@ namespace MechrevoLite.Mode
                     Logger.WriteLine("Clocks Error:" + ex.ToString());
                 }
             });
-        }
-
-        public void SetGPUPower()
-        {
-
-            int gpu_boost = AppConfig.GetMode("gpu_boost");
-            int gpu_temp = AppConfig.GetMode("gpu_temp");
-            int gpu_power = AppConfig.GetMode("gpu_power");
-
-            int boostResult = -1;
-
-            if (gpu_power >= AsusACPI.MinGPUPower && gpu_power <= AsusACPI.MaxGPUPower && Program.acpi.IsSupported(AsusACPI.GPU_POWER))
-                Program.acpi.DeviceSet(AsusACPI.GPU_POWER, gpu_power, "PowerLimit TGP (GPU VAR)");
-
-            if (gpu_boost >= AsusACPI.MinGPUBoost && gpu_boost <= AsusACPI.MaxGPUBoost && Program.acpi.IsSupported(AsusACPI.PPT_GPUC0))
-                boostResult = Program.acpi.DeviceSet(AsusACPI.PPT_GPUC0, gpu_boost, "PowerLimit C0 (GPU BOOST)");
-
-            if (gpu_temp >= AsusACPI.MinGPUTemp && gpu_temp <= AsusACPI.MaxGPUTemp && Program.acpi.IsSupported(AsusACPI.PPT_GPUC2))
-                Program.acpi.DeviceSet(AsusACPI.PPT_GPUC2, gpu_temp, "PowerLimit C2 (GPU TEMP)");
-
-            // Fallback
-            if (boostResult == 0)
-                Program.acpi.DeviceSet(AsusACPI.PPT_GPUC0, gpu_boost, "PowerLimit C0");
-
         }
 
         public SmuStatus? SetCPUTemp(int cpuTemp, bool log = false)
@@ -627,18 +582,6 @@ namespace MechrevoLite.Mode
             {
                 Logger.WriteLine("AutoCPUTemp Error: " + ex.Message);
             }
-        }
-
-        public void ShutdownReset()
-        {
-            if (!AppConfig.IsShutdownReset()) return;
-            Program.acpi.DeviceSet(AsusACPI.PerformanceMode,AsusACPI.PerformanceBalanced, "Mode Reset");
-        }
-
-        public void SleepReset()
-        {
-            if (!AppConfig.IsSleepReset()) return;
-            Program.acpi.DeviceSet(AsusACPI.PerformanceMode, Modes.GetCurrentBase(), "Sleep Reset");
         }
 
         async Task ApplyMechrevoPowerLimitsAsync(int pl1, int pl2)

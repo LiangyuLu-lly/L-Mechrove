@@ -3426,7 +3426,6 @@ namespace MechrevoLite
             if (m.WParam == (IntPtr)NativeMethods.PBT_APMSUSPEND)
             {
                 Logger.WriteLine("System Suspend");
-                Program.modeControl.SleepReset();
                 m.Result = (IntPtr)1;
             }
 
@@ -3939,13 +3938,13 @@ namespace MechrevoLite
         private void Button120Hz_Click(object? sender, EventArgs e)
         {
             ScreenControl.SetAutoRefresh(0);
-            ScreenControl.SetScreen(ScreenControl.MAX_REFRESH, 1);
+            ScreenControl.SetScreen(ScreenControl.MAX_REFRESH);
         }
 
         private void Button60Hz_Click(object? sender, EventArgs e)
         {
             ScreenControl.SetAutoRefresh(0);
-            ScreenControl.SetScreen(ScreenControl.MIN_RATE, 0);
+            ScreenControl.SetScreen(ScreenControl.MIN_RATE);
         }
 
 

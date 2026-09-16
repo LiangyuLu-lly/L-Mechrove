@@ -27,13 +27,13 @@ namespace MechrevoLite.Display
             if (force || AppConfig.Is("screen_auto"))
             {
                 if (SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Online)
-                    SetScreen(MAX_REFRESH, 1);
+                    SetScreen(MAX_REFRESH);
                 else
-                    SetScreen(MIN_RATE, 0);
+                    SetScreen(MIN_RATE);
             }
             else
             {
-                SetScreen(overdrive: AppConfig.Get("overdrive"));
+                SetScreen();
             }
         }
 
@@ -58,7 +58,7 @@ namespace MechrevoLite.Display
             }
         }
 
-        public static void SetScreen(int frequency = -1, int overdrive = -1, int miniled = -1)
+        public static void SetScreen(int frequency = -1)
         {
             var laptopScreen = ScreenNative.FindLaptopScreen(true);
             var refreshRate = ScreenNative.GetRefreshRate(laptopScreen);
@@ -75,40 +75,7 @@ namespace MechrevoLite.Display
                 ScreenNative.SetRefreshRate(laptopScreen, frequency);
             }
 
-            if (Program.acpi.IsOverdriveSupported() && overdrive >= 0)
-            {
-                if (AppConfig.IsNoOverdrive()) overdrive = 0;
-                if (overdrive != Program.acpi.DeviceGet(AsusACPI.ScreenOverdrive))
-                {
-                    Program.acpi.DeviceSet(AsusACPI.ScreenOverdrive, overdrive, "ScreenOverdrive");
-                }
-            }
-
-            SetMiniled(miniled);
-
             InitScreen();
-        }
-
-        public static void SetMiniled(int miniled = -1)
-        {
-            if (miniled >= 0)
-            {
-                if (Program.acpi.IsSupported(AsusACPI.ScreenMiniled1))
-                    Program.acpi.DeviceSet(AsusACPI.ScreenMiniled1, miniled, "Miniled1");
-                else
-                {
-                    Program.acpi.DeviceSet(AsusACPI.ScreenMiniled2, miniled, "Miniled2");
-                }
-            }
-        }
-
-        public static void InitMiniled()
-        {
-            if (AppConfig.IsForceMiniled())
-            {
-                SetHDRControl(AppConfig.Get("hdr_control"));
-                SetMiniled(AppConfig.Get("miniled"));
-            }
         }
 
         public static void InitOptimalBrightness()
@@ -120,8 +87,6 @@ namespace MechrevoLite.Display
         public static void SetOptimalBrightness(int status)
         {
             AppConfig.Set("optimal_brightness", status);
-            if (status == 2) status = SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Offline ? 1 : 0;
-            Program.acpi.DeviceSet(AsusACPI.ScreenOptimalBrightness, status, "Optimal Brightness");
         }
 
         public static void ToogleFHD()
@@ -132,10 +97,8 @@ namespace MechrevoLite.Display
             DialogResult dialogResult = MessageBox.Show("Changing display mode requires reboot", Properties.Strings.AlertUltimateTitle, MessageBoxButtons.YesNo);
             if (dialogResult == DialogResult.Yes)
             {
-                // 确认框刚点过，先捕获重启凭证再做 EC 写入；写入本身无条件完成，重启仍受守卫。
+                // 确认框刚点过，先捕获重启凭证；重启仍受守卫。
                 SystemRestart.CaptureUserConfirmation();
-                Program.acpi.DeviceSet(AsusACPI.ScreenFHD, (fhd == 1) ? 0 : 1, "FHD");
-                // 不可逆动作走统一入口：真实输入或确认凭证 + 后台发起，不占用 UI 线程。
                 SystemRestart.RequestRestart("FHD toggle", SystemRestart.RebootNowArguments);
             }
         }
@@ -145,7 +108,6 @@ namespace MechrevoLite.Display
             if (status >= 0)
             {
                 AppConfig.Set("hdr_control", status);
-                Program.acpi.DeviceSet(AsusACPI.ScreenHDRControl, status, "HDR Control");
             }
         }
 
@@ -201,7 +163,7 @@ namespace MechrevoLite.Display
             }
 
             AppConfig.Set("miniled", miniled);
-            SetScreen(miniled: miniled);
+            SetScreen();
             
             return name;
         }

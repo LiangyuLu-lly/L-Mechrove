@@ -17,7 +17,7 @@ public class RuntimeDefectRegressionTests
     {
         // 实测证据：DeviceGet 返回 0 时，Settings.VisualiseScreen 的 `miniled1 >= 0`
         // 成立，在没有 miniled 面板的机器上显示出「多区背光」按钮，点击后
-        // DeviceSet 是空实现，什么都不会发生。config.json 里还被写进 miniled=0。
+        // 什么都不会发生。config.json 里还被写进 miniled=0。
         Assert.True(AsusACPI.NotSupported < 0,
             "调用方普遍用 >= 0 判断硬件存在，未映射设备码必须返回负值。");
     }

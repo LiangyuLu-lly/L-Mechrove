@@ -11,26 +11,17 @@ public class AsusACPI
     // ---- 设备地址常量（保留原值，仅作兼容；Mechrevo 不使用 ACPI 地址）----
     public const int ChargerMode = 0x0012006C;
     public const int ChargerBarrel = 1;
-    public const uint PerformanceMode = 0x00120075;
     // 这里曾经有六个 ASUS 专有的显卡设备码：GPUEcoROG / GPUEcoVivo /
     // GPUXGConnected / GPUXG / GPUMuxROG / GPUMuxVivo。
     // 前两组是 ROG 与 Vivobook 两条产品线各自的 Eco/Mux 码（我们只用统一的
     // GPUEco / GPUMux，它们在 DeviceGet 里映射到 MechrevoHw 的标志位），
     // 后两个属于 XG Mobile 外置显卡坞——那一族已整体删除。全部零引用。
-    public const uint BatteryLimit = 0x00120057;
     public const uint ScreenOverdrive = 0x00050019;
     public const uint ScreenMiniled1 = 0x0005001E;
     public const uint ScreenMiniled2 = 0x0005002E;
     public const uint ScreenFHD = 0x0005001C;
     public const uint ScreenHDRControl = 0x00050071;
     public const uint ScreenOptimalBrightness = 0x0005002A;
-    public const int PPT_APUA0 = 0x001200A0;
-    public const int PPT_APUA3 = 0x001200A3;
-    public const int PPT_CPUB0 = 0x001200B0;
-    public const int PPT_GPUC0 = 0x001200C0;
-    public const int PPT_APUC1 = 0x001200C1;
-    public const int PPT_GPUC2 = 0x001200C2;
-    public const uint GPU_POWER = 0x00120098;
 
     // ---- 枚举值（G-Helper UI 语义）----
     public const int PerformanceBalanced = 0;
@@ -60,12 +51,6 @@ public class AsusACPI
     // 把下面任何一个常量当成机型限值都会算错。
     public const int MinTotal = 5;
     public const int MinCPU = 5;
-    public const int MinGPUBoost = 5;
-    public const int MaxGPUBoost = 25;
-    public const int MinGPUTemp = 75;
-    public const int MaxGPUTemp = 87;
-    public const int MinGPUPower = 0;
-    public static int MaxGPUPower = 70;
     public const int MaxCPU = 210;
     public const int MaxTotal = 210;
 
@@ -92,7 +77,7 @@ public class AsusACPI
     /// 这里曾经对未映射的设备码返回 0，后果是继承自 g-helper 的代码把 0 当成一个
     /// 「读到了、值为 0」的有效读数，于是：
     ///   - Settings.VisualiseScreen 的 `miniled1 >= 0` 成立，在没有 miniled 面板的机器上
-    ///     显示出「多区背光」按钮，点击后走 DeviceSet 空实现，什么都不会发生；
+    ///     显示出「多区背光」按钮，点击后什么都不会发生；
     ///   - 开启 HDR 后 `hdrControl >= 0` 同样成立，冒出一个同样无效的 HDR 控制按钮；
     ///   - ScreenControl.InitScreen 把伪造的 miniled/overdrive 值写进 config.json；
     ///   - Modes.InitFullSpeed 越过 `vivoMode < 0` 守卫，每次启动打一行无意义的日志。
@@ -111,12 +96,6 @@ public class AsusACPI
 
     /// <summary>未映射设备码的返回值。调用方约定 &lt; 0 表示该硬件不存在。</summary>
     public const int NotSupported = -1;
-
-    public int DeviceSet(uint code, int value, string logName = "ACPI")
-        => 0;
-
-    public int DeviceSet(uint code, byte[] value, string logName = "ACPI")
-        => 0;
 
     public async Task SetPerformanceMode(int mode, string logName = "Mode")
     {
