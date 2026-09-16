@@ -405,8 +405,11 @@ public class CustomModeForm : RForm
         (_pl1, _pl1Val) = AddSliderRow("CPU 功耗墙 PL1 (W)", pl1Range.Min, pl1Range.Max, pl1Range.Value, v => Queue("PL1", v.ToString()));
         (_pl2, _pl2Val) = AddSliderRow("CPU 功耗墙 PL2 (W)", pl2Range.Min, pl2Range.Max, pl2Range.Value, v => Queue("PL2", v.ToString()));
         // PL4 是瞬时功耗墙，不是所有机型都上报；ApplyRange 会在范围无效时自动隐藏整行。
+        // AMD 机型上 PL4 字段永不生效（官方 AMD 分支只发 CpuAmdFPPT），这一行映射到 fPPT，
+        // 标签随之改名，免得上写了 PL4 的错觉；Intel 机型的文案与行为保持不变。
         var pl4Range = DeviceRange(hw?.Pl4Minimum ?? -1, hw?.Pl4Maximum ?? -1, hw?.Pl4 ?? 0);
-        (_pl4, _pl4Val) = AddSliderRow("CPU 瞬时功耗墙 PL4 (W)", pl4Range.Min, pl4Range.Max, pl4Range.Value, v => Queue("PL4", v.ToString()));
+        string pl4Label = hw?.UsesAmdPowerFields == true ? "CPU 峰值功耗墙 fPPT (W)" : "CPU 瞬时功耗墙 PL4 (W)";
+        (_pl4, _pl4Val) = AddSliderRow(pl4Label, pl4Range.Min, pl4Range.Max, pl4Range.Value, v => Queue("PL4", v.ToString()));
         // 温度墙开关：档位默认是关的（实测），关了 EC 不应用温度值——必须单独发包切换
         _tccChk = AddCheckRow("CPU 温度墙", hw?.TccSwitch ?? false, on =>
         {

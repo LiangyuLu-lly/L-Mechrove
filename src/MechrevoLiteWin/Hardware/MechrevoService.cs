@@ -419,6 +419,9 @@ public class MechrevoService
                     wireKey = "CpuAmdSPL";
                 else if (kv.Key == "PL2" && _hw.UsesAmdPowerFields)
                     wireKey = "CpuAmdSPPT";
+                // AMD 机型上 PL4 字段被 GCU 忽略；官方 AMD 分支只发 CpuAmdFPPT，且原样下发瓦数。
+                else if (kv.Key == "PL4" && _hw.UsesAmdPowerFields)
+                    wireKey = _hw.Pl4WireKey;
                 else if (kv.Key == "PL4" && int.TryParse(kv.Value, out int pl4Watts))
                     wireValue = _hw.Pl4ToWire(pl4Watts);
                 else if (kv.Key == "FanSwitchSpeed" && int.TryParse(kv.Value, out int switchSpeedMs))

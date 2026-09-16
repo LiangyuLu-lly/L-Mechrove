@@ -890,12 +890,21 @@ public class MechrevoHw : IDisposable
     /// </summary>
     public bool Pl4Double { get; private set; }                 // CPU_PL4_Double_Flag
 
-    /// <summary>面向用户瓦数与线上值的倍率。</summary>
+    /// <summary>面向用户瓦数与线上值的倍率（仅 Intel 的 PL4 半瓦机型需要）。</summary>
     internal int Pl4Scale => Pl4Double ? 2 : 1;
-    /// <summary>把面向用户的瓦数折算成线上值（整除，与官方一致）。</summary>
-    internal int Pl4ToWire(int watts) => watts / Pl4Scale;
-    /// <summary>折算再还原后真正可达的瓦数。半瓦机型上奇数入参会被量化到偶数。</summary>
-    internal int Pl4Effective(int watts) => Pl4ToWire(watts) * Pl4Scale;
+    /// <summary>
+    /// 「瞬时功耗墙」在两种平台上的线上键名：Intel 发 <c>PL4</c>；AMD 机型上 PL4 字段永不生效
+    /// （官方 AMD 分支只读 CPU_AmdFPPT、只发 CpuAmdFPPT，见 CCUWinUI.decompiled.cs 52776/50142），
+    /// 必须发 fPPT 才能被 GCU 接受。
+    /// </summary>
+    internal string Pl4WireKey => UsesAmdPowerFields ? "CpuAmdFPPT" : "PL4";
+    /// <summary>
+    /// 把面向用户的瓦数折算成线上值（整除，与官方一致）。AMD 的 fPPT 不像 PL4 那样按半瓦收发，
+    /// 官方直接原样下发，所以 AMD 上是恒等换算。
+    /// </summary>
+    internal int Pl4ToWire(int watts) => UsesAmdPowerFields ? watts : watts / Pl4Scale;
+    /// <summary>折算再还原后真正可达的瓦数。半瓦机型上奇数入参会被量化到偶数；AMD 原样。</summary>
+    internal int Pl4Effective(int watts) => UsesAmdPowerFields ? watts : Pl4ToWire(watts) * Pl4Scale;
 
     // ---- 风扇转换灵敏度（Fan/Status 的 FAN_FanSwitchSpeed*，官方"风扇转换灵敏度"）----
     public bool FanSwitchSpeedEnabled { get; private set; }     // FAN_FanSwitchSpeedEnabled
@@ -2059,7 +2068,12 @@ public class MechrevoHw : IDisposable
         _pl4RawMaximum = FirstUsablePowerValue(o, _pl4RawMaximum,
             "CPU_PL4Maximum", "CPU_PL4Max", "CPU_PL4_Maximum", "CPU_PL4_Max");
         int pl4Scale = Pl4Double ? 2 : 1;
-        Pl4 = _pl4Raw >= 0 ? _pl4Raw * pl4Scale : -1;
+        int genericPl4 = _pl4Raw >= 0 ? _pl4Raw * pl4Scale : -1;
+        // AMD 的「瞬时功耗墙」是 fPPT：官方在 AMD 分支只读 CPU_AmdFPPT，从不读 CPU_PL4。
+        // 平台判定与 Pl1/Pl2 同一纪律——只有确认 AMD 通道且 fPPT 可用时才让它接管读数，
+        // 否则 Intel 机型上一个占位值会劫持显示。量程仍取 PL4 的（官方 fPPT 滑条的 MaxValue
+        // 就是 CpuPL4Maximum）。
+        Pl4 = UsesAmdPowerFields && CpuAmdFppt > 0 ? CpuAmdFppt : genericPl4;
         Pl4Minimum = _pl4RawMinimum >= 0 ? _pl4RawMinimum * pl4Scale : -1;
         Pl4Maximum = _pl4RawMaximum >= 0 ? _pl4RawMaximum * pl4Scale : -1;
 
@@ -2541,6 +2555,7 @@ public class MechrevoHw : IDisposable
     /// PL4（瞬时功耗墙）。范围用运行时的 Pl4Minimum/Pl4Maximum，它们已按 Pl4Double 换算过。
     /// Pl4Double 机型上线上值是面向用户瓦数的一半，奇数瓦会在折半时被截断，
     /// 所以确认的目标是折半再还原后的「实际可达值」，而不是调用方原始的入参。
+    /// AMD 机型上这一项走 CpuAmdFPPT（见 <see cref="Pl4WireKey"/>），原样瓦数、原样回读。
     /// </summary>
     public async Task<bool> SetPl4(int pl4)
     {
@@ -2550,6 +2565,7 @@ public class MechrevoHw : IDisposable
             Logger.WriteLine($"SetPl4 rejected outside capability: PL4={pl4} [{Pl4Minimum},{Pl4Maximum}]");
             return false;
         }
+        string key = Pl4WireKey;
         int wire = Pl4ToWire(pl4);
         int effective = Pl4Effective(pl4);
         if (effective != pl4)
@@ -2560,7 +2576,7 @@ public class MechrevoHw : IDisposable
             await Publish(MqttTopics.FanControl, new Dictionary<string, object>
             {
                 ["Action"] = "SET_OPERATING_MODE_DETAIL",
-                ["PL4"] = wire.ToString(),
+                [key] = wire.ToString(),
             });
             if (Pl4 == effective) return true;
             await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
