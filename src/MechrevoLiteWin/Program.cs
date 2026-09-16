@@ -996,8 +996,7 @@ namespace MechrevoLite
             if (rgb.KbPowerOn)
             {
                 // 熄灭同样只下发不等回读：键盘本地效果已在上面立即停掉，外置关灯紧随同一轮发出。
-                bool issued = await service.PublishLightPower(MqttTopics.KeyboardCtrl, false).ConfigureAwait(false);
-                service.ObserveLightPower(MqttTopics.KeyboardCtrl, false);
+                bool issued = await service.IssueLightPower(MqttTopics.KeyboardCtrl, false).ConfigureAwait(false);
                 if (issued) Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 1);
             }
             await SetExternalLightingPowerAsync(on: false, restoreEffect: false, useTemporarySnapshot: false)
@@ -1145,8 +1144,7 @@ namespace MechrevoLite
                     if (hw is not { IsConnected: true } || service is null) return false;
                     // 只下发不等回读：键盘本就该灭（StopCurrentEffect 已就地生效），回读未确认不得
                     // 把这条通道判成失败、把整个周期拖进 20 轮重发。
-                    bool issued = await service.PublishLightPower(MqttTopics.KeyboardCtrl, false).ConfigureAwait(false);
-                    service.ObserveLightPower(MqttTopics.KeyboardCtrl, false);
+                    bool issued = await service.IssueLightPower(MqttTopics.KeyboardCtrl, false).ConfigureAwait(false);
                     if (issued)
                     {
                         Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 0);
@@ -1176,8 +1174,7 @@ namespace MechrevoLite
                         ArmKeyboardEffectProtect();
                         // 只下发不等回读：GCU 键盘电源回读本机长期 not confirmed，等待它会凭空给
                         // 本地 HID 效果加上约 2 秒延迟，与外置通道错开。命令成功发布即继续。
-                        bool issued = await service.PublishLightPower(MqttTopics.KeyboardCtrl, true).ConfigureAwait(false);
-                        service.ObserveLightPower(MqttTopics.KeyboardCtrl, true);
+                        bool issued = await service.IssueLightPower(MqttTopics.KeyboardCtrl, true).ConfigureAwait(false);
                         if (issued) await Task.Delay(KeyboardPowerSettleMs).ConfigureAwait(false);
                         else Logger.WriteLine("RGB 自动恢复：键盘电源未能下发，继续恢复本地 HID 效果");
                     }

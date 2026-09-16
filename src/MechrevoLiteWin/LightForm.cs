@@ -209,7 +209,7 @@ public class LightForm : RForm
             // 请求状态 + 按持久化电源开关恢复（原版页面进入时 GETSTATUS；未开灯时效果不显示）
             if (Program.hw is { IsConnected: true } && Program.service is not null)
             {
-                try { await Program.hw.Publish(_topic, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }); } catch { }
+                await Program.service.RequestLightStatus(_topic);
                 bool confirmed = await Program.service.SetLightPower(_topic, _powerOn);
                 if (!confirmed || !_powerOn) return;
                 await Task.Delay(600);

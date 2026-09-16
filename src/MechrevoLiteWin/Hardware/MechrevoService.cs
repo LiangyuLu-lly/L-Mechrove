@@ -2058,6 +2058,34 @@ public class MechrevoService
         return await ConfirmLightPower(topic, on).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 恢复/熄灯周期的「只下发 + 后台遥测确认」唯一入口：命令发布后立即返回，回读降级为遥测。
+    ///
+    /// 调用点不得再各自拼 <see cref="PublishLightPower"/> + <see cref="ObserveLightPower"/>——
+    /// 协议只有这一份，「每个逻辑状态变化只下发一次」才不会被散落的调用点破坏
+    /// （同一灯态重复下发会让固件重初始化/闪烁）。
+    /// </summary>
+    public async Task<bool> IssueLightPower(string topic, bool on)
+    {
+        bool issued = await PublishLightPower(topic, on).ConfigureAwait(false);
+        ObserveLightPower(topic, on);
+        return issued;
+    }
+
+    /// <summary>
+    /// 灯效通道的裸状态查询（GETSTATUS）。UI 打开灯效窗口时请求一次状态；
+    /// 与 <see cref="ConfirmLightPower"/> 的补发查询共用同一个服务出口，UI 不得再直接触碰
+    /// <c>hw.Publish</c>。不检查通道是否受支持——与调用点原语义一致（连接态由调用点把关）。
+    /// </summary>
+    public async Task RequestLightStatus(string topic)
+    {
+        try
+        {
+            await _hw.Publish(topic, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+        }
+        catch (Exception ex) { Logger.WriteLine("RequestLightStatus fail: " + ex.Message); }
+    }
+
     /// <summary>深度睡眠开关；secs&gt;0 时携带定时（900-1800s），仅开启状态生效。</summary>
     public async Task<bool> SwitchDeepSleep(bool on, int secs = 0)
     {
