@@ -626,17 +626,35 @@ public partial class SettingsForm
         // —— 键盘控制器状态行（设计 §5）：紧跟键盘行之后，判定为「不支持」时才显示；
         // Supported/Unknown 隐藏（AutoSize 行无可见子控件 → 整行收 0，现有用户布局不变）。
         // 直接落 body（不套行容器）：名称不得带 rowKeyboard 前缀——Controls.Find 是前缀匹配。
+        // 高度走 Text Reflow（同 FirstRunGuideForm 描述行）：AutoSize 标签在 Percent 列里
+        // 「布局高 ≠ 首选高」，body 实际高度会超出父容器首选高（beta17 审计 parent-overflow
+        // +21 的根因）；关 AutoSize、宽度随列、高度按当前宽度换行测量回填，Resize/FontChanged
+        // （含审计缩放）时重算，行高确定且随视口自适应。
         _lblKeyboardControllerStatus = new Label
         {
             Name = "labelKeyboardControllerStatus",
             Text = KeyboardControllerUnsupportedText,
-            AutoSize = true,
+            AutoSize = false,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
             Visible = false,
             ForeColor = UiVisualStyle.Muted,
             BackColor = UiVisualStyle.Window,
             Font = UiStyleCaptionFont(),
             Margin = new Padding(D(2), 0, D(4), D(2)),
         };
+        void ReflowKeyboardStatusHeight()
+        {
+            Label lbl = _lblKeyboardControllerStatus;
+            // 测量口径与渲染一致（NoPadding + 8px 宽余量），高度再加 4px 渲染余量：
+            // 少这 4px 文字底部会被裁（beta17 审计实测 needs 34 / available 30）。
+            int width = Math.Max(1, lbl.ClientSize.Width - 8);
+            int needed = TextRenderer.MeasureText(lbl.Text, lbl.Font,
+                new Size(width, int.MaxValue),
+                TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.WordBreak).Height;
+            lbl.Height = needed + 4;
+        }
+        _lblKeyboardControllerStatus.Resize += (_, _) => ReflowKeyboardStatusHeight();
+        _lblKeyboardControllerStatus.FontChanged += (_, _) => ReflowKeyboardStatusHeight();
         Control keyboardRow = body.Controls.OfType<Control>().First(c => c.Name == "rowKeyboard");
         int keyboardRowIndex = body.GetCellPosition(keyboardRow).Row;
         body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
