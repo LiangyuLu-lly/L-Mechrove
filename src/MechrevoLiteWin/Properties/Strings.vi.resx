@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>Có vẻ như GPU rời đang được sử dụng nhiều, tắt nó?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Chế độ Tiết kiệm</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Chuyển sang Chế độ Tối thượng cần phải khởi động lại</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Áp dụng</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Hơi thở</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Chuyển màu</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Cầu vồng</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Ngẫu nhiên</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Tĩnh</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Nhấp nháy</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Tự động</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Khởi động</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Tiếng ROG khi bật máy</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Backlight Down</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>Cảm ơn</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Slash</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Please disable Windows &gt; Dynamic Lighting</value>

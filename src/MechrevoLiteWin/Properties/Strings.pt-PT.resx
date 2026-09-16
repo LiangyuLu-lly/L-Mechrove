@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>Parece que o GPU está em uso pesado, desativá-lo?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Modo económico</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Passar ao Modo Ultimate implica o reinício do sistema</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Aplicar</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Respiração</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Ciclo de cores</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Arco-íris</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Aleatório</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Estático</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Estroboscópio</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Automático</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Ao ligar</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Som de ligar</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Backlight Down</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>Obrigado</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Barra</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Por favor, desative o Windows &gt; Iluminação Dinâmica</value>

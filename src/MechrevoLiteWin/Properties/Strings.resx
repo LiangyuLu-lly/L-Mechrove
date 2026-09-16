@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>Looks like GPU is in heavy use, disable it?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Eco Mode</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Switching off Ultimate Mode requires restart</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Apply</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Breathe</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Color Cycle</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Rainbow</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Random</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Static</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Strobe</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Auto</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Boot</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Boot Sound</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Backlight Down</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>Thank You</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Slash</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Please disable Windows &gt; Dynamic Lighting</value>

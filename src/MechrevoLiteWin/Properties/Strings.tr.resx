@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>GPU yoğun kullanımda gibi, devre dışı bırakılsın mı?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Eko Modu</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Ultimate Modu kapatmak yeniden başlatmayı gerektirir</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Uygula</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Nefes</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Renk Döngüsü</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Gökkuşağı</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Rastgele</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Sabit</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Flaş</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Otomatik</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Açılış</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Açılış sesi</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Arka Işığı Azalt</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>Teşekkürler</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Kesik</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Windows Dinamik Aydınlatmayı &gt; Lütfen Kapatın</value>

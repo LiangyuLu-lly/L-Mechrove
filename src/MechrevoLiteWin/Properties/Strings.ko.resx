@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>GPU 사용량이 높습니다. 비활성화하시겠습니까?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Eco 모드</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Ultimate 모드를 끄기 위해서는 다시 시작해야 합니다.</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>적용</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>숨쉬기</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>색 순환</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>무지개</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>랜덤</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>정적</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>섬광</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>자동</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>부팅</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>부팅 사운드</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Backlight Down</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>감사합니다</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Slash</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Please disable Windows &gt; Dynamic Lighting</value>

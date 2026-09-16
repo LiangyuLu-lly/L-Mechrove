@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>Uso intensivo della GPU, disabilitare?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Modalità Eco</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Per disattivare la modalità Estrema è necessario riavviare</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Applica</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Respiro</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Ciclo Colori</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Arcobaleno</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Casuale</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Statico</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Strobo</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Auto</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Avvio</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Suono Di Avvio</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Backlight Down</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>Grazie</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Slash</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Per favore disattiva Personalizzazione &gt; Illuminazione Dinamica</value>

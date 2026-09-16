@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>Здається, що GPU використовується, вимкнути її?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Еко Режим</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Вимкнення ультимативного режиму потребує перезавантаження</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Застосувати</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Дихання</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Зміна Кольорів</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Веселка</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Випадкова</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Статична</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Стробоскоп</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Авто</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Старт</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Звук завантаження</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Backlight Down</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>Дякуємо</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Слеш</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Вимкніть Windows > &gt; Динамічне освітлення</value>

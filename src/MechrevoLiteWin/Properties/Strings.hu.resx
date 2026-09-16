@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>Úgy tűnik használatban van a GPU. Biztosan letiltod?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Eco mód</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Az Ultimate mód kikapcsolása után újraindítás szükséges</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Alkalmaz</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Lélegző</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Színváltás</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Szivárvány</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Véletlen</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Állandó</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Stroboszkóp</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Automata</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Rendszerbetöltés</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Rendszerindítási hang</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Hátvilágítás ki</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>Köszönöm</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Slash világítás</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Kérjük, tiltsd le a Windows Dinamikus megvilágítás funkcióját</value>

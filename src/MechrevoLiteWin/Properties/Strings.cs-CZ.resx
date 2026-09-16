@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>GPU je zřejmě silně vytížená, chcete ji deaktivovat?</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>Eco režim</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>Vypnutí Ultimátního režimu vyžaduje restartování</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>Použít</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>Pulzující</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>Barevný cyklus</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>Duha</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>Náhodný</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>Statický</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>Stroboskop</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>Auto</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>Spouštění</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>Přehrát zvuk při spuštění</value>
   </data>
   <data name="Brightness" xml:space="preserve">
     <value>Jas</value>
@@ -389,9 +365,6 @@
   </data>
   <data name="Donate" xml:space="preserve">
     <value>Podpořit</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>Slash</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>Vypněte prosím možnost Windows &gt; Dynamické osvětlení</value>

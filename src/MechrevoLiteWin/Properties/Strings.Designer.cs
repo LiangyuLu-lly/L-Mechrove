@@ -61,23 +61,7 @@ namespace MechrevoLite.Properties {
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Looks like GPU is in heavy use, disable it?.
-        /// </summary>
-        internal static string AlertDGPU {
-            get {
-                return ResourceManager.GetString("AlertDGPU", resourceCulture);
-            }
-        }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Eco Mode.
-        /// </summary>
-        internal static string AlertDGPUTitle {
-            get {
-                return ResourceManager.GetString("AlertDGPUTitle", resourceCulture);
-            }
-        }
         
         /// <summary>
         ///   Looks up a localized string similar to Switching off Ultimate Mode requires restart.
@@ -124,32 +108,8 @@ namespace MechrevoLite.Properties {
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Breathe.
-        /// </summary>
-        internal static string AuraBreathe {
-            get {
-                return ResourceManager.GetString("AuraBreathe", resourceCulture);
-            }
-        }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Color Cycle.
-        /// </summary>
-        internal static string AuraColorCycle {
-            get {
-                return ResourceManager.GetString("AuraColorCycle", resourceCulture);
-            }
-        }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Rainbow.
-        /// </summary>
-        internal static string AuraRainbow {
-            get {
-                return ResourceManager.GetString("AuraRainbow", resourceCulture);
-            }
-        }
         
         /// <summary>
         ///   Looks up a localized string similar to Random.
@@ -160,23 +120,7 @@ namespace MechrevoLite.Properties {
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Static.
-        /// </summary>
-        internal static string AuraStatic {
-            get {
-                return ResourceManager.GetString("AuraStatic", resourceCulture);
-            }
-        }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Strobe.
-        /// </summary>
-        internal static string AuraStrobe {
-            get {
-                return ResourceManager.GetString("AuraStrobe", resourceCulture);
-            }
-        }
         
         /// <summary>
         ///   Looks up a localized string similar to Auto.
@@ -277,14 +221,6 @@ namespace MechrevoLite.Properties {
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Boot Sound.
-        /// </summary>
-        internal static string BootSound {
-            get {
-                return ResourceManager.GetString("BootSound", resourceCulture);
-            }
-        }
         
         /// <summary>
         ///   Looks up a localized string similar to Brightness.
@@ -826,14 +762,6 @@ namespace MechrevoLite.Properties {
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized string similar to Slash.
-        /// </summary>
-        internal static string SlashMode {
-            get {
-                return ResourceManager.GetString("SlashMode", resourceCulture);
-            }
-        }
         
         /// <summary>
         ///   Looks up a localized string similar to Sleep.

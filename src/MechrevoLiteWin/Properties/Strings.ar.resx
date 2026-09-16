@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="AlertDGPU" xml:space="preserve">
-    <value>يبدو أن وحدة معالجة الرسومات قيد الاستخدام المكثف، هل ترغب في تعطيلها؟</value>
-  </data>
-  <data name="AlertDGPUTitle" xml:space="preserve">
-    <value>وضع التوفير</value>
-  </data>
   <data name="AlertUltimateOff" xml:space="preserve">
     <value>إيقاف وضع الأداء العالي يتطلب إعادة تشغيل</value>
   </data>
@@ -135,23 +129,8 @@
   <data name="Apply" xml:space="preserve">
     <value>تطبيق</value>
   </data>
-  <data name="AuraBreathe" xml:space="preserve">
-    <value>تنفس</value>
-  </data>
-  <data name="AuraColorCycle" xml:space="preserve">
-    <value>دورة الألوان</value>
-  </data>
-  <data name="AuraRainbow" xml:space="preserve">
-    <value>قوس قزح</value>
-  </data>
   <data name="AuraRandomColor" xml:space="preserve">
     <value>عشوائي</value>
-  </data>
-  <data name="AuraStatic" xml:space="preserve">
-    <value>ثابت</value>
-  </data>
-  <data name="AuraStrobe" xml:space="preserve">
-    <value>وميض</value>
   </data>
   <data name="AutoMode" xml:space="preserve">
     <value>تلقائي</value>
@@ -179,9 +158,6 @@
   </data>
   <data name="Boot" xml:space="preserve">
     <value>إقلاع</value>
-  </data>
-  <data name="BootSound" xml:space="preserve">
-    <value>صوت الإقلاع</value>
   </data>
   <data name="BacklightDown" xml:space="preserve">
     <value>Backlight Down</value>
@@ -401,9 +377,6 @@
   </data>
   <data name="ThankYou" xml:space="preserve">
     <value>شكراً لك</value>
-  </data>
-  <data name="SlashMode" xml:space="preserve">
-    <value>سلاش</value>
   </data>
   <data name="DisableDynamicLighting" xml:space="preserve">
     <value>الرجاء تعطيل ويندوز &gt; الإضاءة الديناميكية</value>
