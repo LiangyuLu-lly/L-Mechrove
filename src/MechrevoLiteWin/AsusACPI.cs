@@ -9,8 +9,8 @@ namespace MechrevoLite;
 public class AsusACPI
 {
     // ---- 设备地址常量（保留原值，仅作兼容；Mechrevo 不使用 ACPI 地址）----
-    public const int ChargerMode = 0x0012006C;
-    public const int ChargerBarrel = 1;
+    // ChargerMode / ChargerBarrel 已删除：它们只用于 ReadPowerSource 区分 Barrel/USBC，
+    // 而本机没有该设备码的数据来源，USBC 结果不可达。
     // 这里曾经有六个 ASUS 专有的显卡设备码：GPUEcoROG / GPUEcoVivo /
     // GPUXGConnected / GPUXG / GPUMuxROG / GPUMuxVivo。
     // 前两组是 ROG 与 Vivobook 两条产品线各自的 Eco/Mux 码（我们只用统一的

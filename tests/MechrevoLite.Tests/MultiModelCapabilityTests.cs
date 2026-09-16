@@ -87,7 +87,8 @@ public class MultiModelCapabilityTests : IDisposable
         var acpi = new AsusACPI();
         Assert.False(acpi.IsSupported(AsusACPI.ScreenOptimalBrightness));
         Assert.False(acpi.IsSupported(AsusACPI.ScreenFHD));
-        Assert.False(acpi.IsSupported(AsusACPI.ChargerMode));
+        // 字面量取代已删除的 AsusACPI.ChargerMode：该设备码没有数据来源。
+        Assert.False(acpi.IsSupported(0x0012006C));
     }
 
     [Fact]

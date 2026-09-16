@@ -29,7 +29,7 @@ public class RuntimeDefectRegressionTests
     [InlineData(AsusACPI.ScreenOverdrive)]
     [InlineData(AsusACPI.ScreenOptimalBrightness)]
     [InlineData(AsusACPI.ScreenFHD)]
-    [InlineData(AsusACPI.ChargerMode)]
+    [InlineData(0x0012006Cu)]  // 曾用 AsusACPI.ChargerMode 常量；该常量随 USBC 死分支删除
     public void CapabilityProbe_TreatsNotSupportedAsAbsentHardware(uint deviceCode)
     {
         // 锁住调用方的判定约定：这些设备码在本机没有数据来源，返回值必须落在

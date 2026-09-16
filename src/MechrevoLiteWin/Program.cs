@@ -1394,22 +1394,19 @@ namespace MechrevoLite
         private static PowerLineStatus lastLineStatus = SystemInformation.PowerStatus.PowerLineStatus;
         private static readonly System.Timers.Timer powerSettleTimer = new() { AutoReset = false };
 
+        /// <summary>
+        /// 插电时区分 Barrel / USBC 需要 ASUS 的 ChargerMode 设备码，本机没有数据来源，
+        /// 读到的恒为 NotSupported；因此插电只有 Barrel 一种结果（Battery 为离电）。
+        /// </summary>
         public static PowerSource ReadPowerSource()
         {
             if (SystemInformation.PowerStatus.PowerLineStatus != PowerLineStatus.Online)
                 return PowerSource.Battery;
 
-            int chargerMode = acpi?.DeviceGet(AsusACPI.ChargerMode) ?? 0;
-            if (chargerMode > 0 && (chargerMode & AsusACPI.ChargerBarrel) == 0)
-                return PowerSource.USBC;
-
             return PowerSource.Barrel;
         }
 
-        public static bool usbcProfile = AppConfig.Is("usbc_profile");
-
-        public static int PerformanceKey() =>
-            usbcProfile ? (int)ReadPowerSource() : (int)SystemInformation.PowerStatus.PowerLineStatus;
+        public static int PerformanceKey() => (int)SystemInformation.PowerStatus.PowerLineStatus;
 
         /// <summary>SystemEvents/定时器线程 → UI 线程封送（跨线程直接改控件在 Release 下表现为内存竞争/偶发崩溃）。</summary>
         static void OnSystemEvent(Action action)

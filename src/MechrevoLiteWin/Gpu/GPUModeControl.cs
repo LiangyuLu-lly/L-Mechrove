@@ -330,9 +330,12 @@ namespace MechrevoLite.Gpu
         /// <summary>手动显卡切换在途标志：自动流程见到它必须让位，否则会取消用户的在途切换。</summary>
         static int _manualGpuSwitchInFlight;
 
+        /// <summary>
+        /// 是否插着外接电源。USBC 档位不可达：ReadPowerSource 判定 USBC 需要 ASUS 的
+        /// ChargerMode 设备码，本机读不到（恒 NotSupported），插电只可能是 Barrel。
+        /// </summary>
         public static bool IsPlugged() =>
-            Program.currentSource == Program.PowerSource.Barrel ||
-            (Program.currentSource == Program.PowerSource.USBC && !AppConfig.Is("optimized_usbc"));
+            Program.currentSource == Program.PowerSource.Barrel;
 
         public bool AutoGPUMode(bool optimized = false, int delay = 0)
         {

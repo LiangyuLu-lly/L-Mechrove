@@ -150,7 +150,6 @@ namespace MechrevoLite.Mode
             {
                 // Power plan from config or defaulting to balanced
                 string plan = AppConfig.GetModeString("scheme");
-                if (Program.currentSource == Program.PowerSource.USBC && AppConfig.GetModeString("scheme_usbc") is string usbc) plan = usbc;
                 SetPowerPlan(plan);            
             }
 
