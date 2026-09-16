@@ -357,6 +357,8 @@ namespace MechrevoLite.Helpers
 
             if (timeoutMs > 0)
             {
+                // RunCMD 的同步签名是调用方契约；超时后必须 Kill 子进程，故这里同步等待读取任务。
+                // Wait 返回 true 即任务已完成，紧随其后的 .Result 不再阻塞。
                 var readTask = cmd.StandardOutput.ReadToEndAsync();
                 if (!readTask.Wait(timeoutMs))
                 {

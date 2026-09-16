@@ -3185,6 +3185,8 @@ public class MechrevoHw : IDisposable
         {
             // 过去这里是无超时的同步阻塞。broker 无响应时整个退出流程会挂住，
             // 而 Dispose 通常跑在 UI 线程上。
+            // 保留同步是有意的：IDisposable.Dispose 契约本身是同步的，释放顺序必须在本方法内完成；
+            // 2 秒上限已把 UI 线程最长卡顿限制住。
             if (_client?.IsConnected == true)
                 _client.DisconnectAsync().WaitAsync(DisposeDrainTimeout).GetAwaiter().GetResult();
         }

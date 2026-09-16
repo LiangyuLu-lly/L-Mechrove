@@ -92,6 +92,7 @@ namespace MechrevoLite.Mode
 
         public void WaitForApply()
         {
+            // 唯一调用点是 GPUModeControl.SetGPUEco 的 Task.Run（后台线程），这里的同步等待不会阻塞 UI。
             try { _modeTask.Wait(5000); } catch { }
         }
 

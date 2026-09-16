@@ -2363,18 +2363,25 @@ namespace MechrevoLite
             if (Program.UiAuditMode || _officialConsoleStatus is null || _officialConsoleButton is null) return;
             if (Interlocked.Exchange(ref _officialStatusRefreshRunning, 1) != 0) return;
             bool gcuConnected = Program.hw is { IsConnected: true };
-            _ = Task.Run(() => OfficialConsoleIsolation.GetStatus(gcuConnected)).ContinueWith(task =>
+            _ = RefreshOfficialConsoleStatusAsync(gcuConnected);
+        }
+
+        private async Task RefreshOfficialConsoleStatusAsync(bool gcuConnected)
+        {
+            try
+            {
+                OfficialConsoleIsolation.IsolationStatus status =
+                    await Task.Run(() => OfficialConsoleIsolation.GetStatus(gcuConnected)).ConfigureAwait(false);
+                Volatile.Write(ref _officialStatusRefreshRunning, 0);
+                if (IsDisposed || !IsHandleCreated) return;
+                try { BeginInvoke(() => ApplyOfficialConsoleStatus(status)); }
+                catch (Exception ex) { Logger.WriteLine("Official console status UI update failed: " + ex.Message); }
+            }
+            catch (Exception ex)
             {
                 Volatile.Write(ref _officialStatusRefreshRunning, 0);
-                if (task.IsFaulted)
-                {
-                    Logger.WriteLine("Official console background status failed: " + task.Exception?.GetBaseException().Message);
-                    return;
-                }
-                if (IsDisposed || !IsHandleCreated) return;
-                try { BeginInvoke(() => ApplyOfficialConsoleStatus(task.Result)); }
-                catch (Exception ex) { Logger.WriteLine("Official console status UI update failed: " + ex.Message); }
-            }, TaskScheduler.Default);
+                Logger.WriteLine("Official console background status failed: " + ex.GetBaseException().Message);
+            }
         }
 
         private void ApplyOfficialConsoleStatus(OfficialConsoleIsolation.IsolationStatus status)

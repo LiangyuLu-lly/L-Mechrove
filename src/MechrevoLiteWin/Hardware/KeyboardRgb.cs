@@ -212,6 +212,7 @@ public class KeyboardRgb : IDisposable
                 if (!dev.Open()) { LastError = "打开 HID 失败（设备被占用或权限不足）"; return false; }
                 _stream = dev;
                 DeviceInfo = dev.DeviceInfo;
+                // HID 打开后的设备稳定等待：有意的设备时序，勿删（RgbForm 的调用点在 Task.Run 后台线程）。
                 Thread.Sleep(20);
                 if (!EnterCustomMode())
                 {

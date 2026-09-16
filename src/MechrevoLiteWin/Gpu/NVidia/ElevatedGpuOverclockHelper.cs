@@ -325,6 +325,7 @@ public sealed class ElevatedGpuOverclockApplier : IGpuOverclockElevatedApplier, 
             Logger.WriteLine("GPU OC helper received an invalid client SID: " + ex.Message);
             return 2;
         }
+        // CLI 入口（Program.Main 的 --gpu-oc-helper 分支，在 Application.Run 之前）：进程无 UI 消息循环/同步上下文，同步等待不会死锁。
         return RunAsync(args[0], args[1], expectedClient).GetAwaiter().GetResult();
     }
 
