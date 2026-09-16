@@ -1983,9 +1983,6 @@ namespace MechrevoLite
             buttonAmdOled.ForeColor = SystemColors.ControlLightLight;
             buttonAmdOled.Click += ButtonAmdOled_Click;
 
-            buttonArmoury.BackColor = colorTurbo;
-            buttonArmoury.ForeColor = SystemColors.ControlLightLight;
-
             buttonSilent.Click += ButtonSilent_Click;
             buttonBalanced.Click += ButtonBalanced_Click;
             buttonTurbo.Click += ButtonTurbo_Click;
