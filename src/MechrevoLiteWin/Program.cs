@@ -840,7 +840,10 @@ namespace MechrevoLite
             if (!takeover && !protectedTakeover) return;
 
             // 亮度同步先于单飞门：Fn 连发时每一档都要落到渲染器，否则灯停在旧档（固件新亮度必须保留）。
-            if (SyncKeyboardBrightnessForFirmwareChange(reportedBrightness, () => rgb.Brightness,
+            // 只跟随真实接管帧（takeover）：保护窗口命中的是恢复后固件的上电回帧，它带的是 GCU 侧
+            // 键盘亮度寄存器（自定义帧模式下恒为 0），不是用户按 Fn 设的亮度。镜像它会把渲染亮度
+            // 持久化成 0，键盘在恢复周期后永久熄灭（真机日志：GCU=0% HID=0%）。
+            if (takeover && SyncKeyboardBrightnessForFirmwareChange(reportedBrightness, () => rgb.Brightness,
                     value => { rgb.Brightness = value; rgb.QueueSaveConfig(); }))
                 Logger.WriteLine($"RGB 硬件亮度同步：GCU={reportedBrightness}% HID={reportedBrightness}%");
 

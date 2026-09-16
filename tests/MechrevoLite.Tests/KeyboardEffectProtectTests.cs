@@ -20,7 +20,9 @@ namespace MechrevoLite.Tests;
 ///    重申（ReInit），最终仍是我们的模式，且命中即解除（不形成重试风暴）；
 /// 2) 进入自定义帧模式之前，恢复周期相关的 GCU 写（键盘上电、设备侧计时关闭）必须已经下发——
 ///    效果启动不得排在会触发固件重新套用效果的 GCU 写之前；
-/// 3) 保护判据本身是纯函数，直接锁定 armed/过期/版本/电源四个条件。
+/// 3) 保护判据本身是纯函数，直接锁定 armed/过期/版本/电源四个条件；
+/// 4) 上电回帧的亮度**不得**镜像进渲染器：该帧带的是 GCU 侧键盘亮度寄存器（自定义帧模式下恒为 0），
+///    不是用户按 Fn 设的亮度，写进去会被持久化成 0，键盘亮几秒后永久熄灭（真机 15:45 复现）。
 /// </summary>
 public class KeyboardEffectProtectTests
 {
@@ -252,6 +254,68 @@ public class KeyboardEffectProtectTests
         Assert.True(firstHid >= 0, "恢复必须启动本地 HID 效果。事件：" + string.Join(" | ", events));
         Assert.True(powerOn < firstHid, "键盘上电必须先于 HID 效果启动。事件：" + string.Join(" | ", events));
         Assert.True(closeTimerOff < firstHid, "设备侧计时关闭必须先于 HID 效果启动。事件：" + string.Join(" | ", events));
+    }
+
+    /// <summary>
+    /// 真机回归（beta17 现场）：空闲恢复后固件的上电回帧把键盘渲染亮度写成 0 并持久化，
+    /// 键盘亮几秒后永久熄灭（灯条/Logo 不受影响）。
+    ///
+    /// 机制：该帧带 GCU 的键盘亮度寄存器（自定义帧模式下恒为 0，真机日志
+    /// <c>KB: effect=5 light=0 brightness=0%</c>），<c>OnHardwareStateChanged</c> 把它当固件接管
+    /// 同步进 <c>rgb.Brightness</c> 并 <c>QueueSaveConfig</c>；保护窗口命中的帧只证明固件完成了
+    /// 上电初始化，它的亮度不是用户按 Fn 设的值——因此只重申自定义帧模式，绝不镜像亮度。
+    /// </summary>
+    [Fact]
+    public async Task IdleRestore_FirmwarePowerOnEcho_KeepsTheSavedRenderBrightness()
+    {
+        using var harness = new Harness();
+        harness.Keyboard.Brightness = 75;   // 用户保存的渲染亮度；被写成 0 会让键盘全黑
+
+        await Program.EvaluateLightingIdleAsync(timeoutSeconds: 10, idleMilliseconds: 10_000);
+        Assert.True(Program.LightingIdleSuspended, "空闲到期后应进入临时熄灯。");
+
+        // 熄灯周期里 GCU 的键盘回帧就是真机形状：电源 Off、亮度寄存器 0、effect=5。
+        harness.Hardware.HandleMessage("Keyboard/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\",\"effect\":\"5\",\"light\":\"0\",\"brightNess\":\"0\"}");
+
+        harness.SuppressKeyboardPowerOnEcho();
+        await Program.EvaluateLightingIdleAsync(timeoutSeconds: 10, idleMilliseconds: 200);
+        Assert.False(Program.LightingIdleSuspended, "检测到输入后应解除临时熄灯。");
+        Assert.True(Program.KeyboardEffectProtectArmed, "空闲恢复重新上电后必须武装效果保护窗口。");
+
+        int reinitBefore = harness.Keyboard.CustomModeReinitCount;
+
+        // 固件上电初始化完成：只有 power Off→On，effect/亮度与基线相同（保护窗口判据）。
+        harness.Hardware.HandleMessage("Keyboard/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"effect\":\"5\",\"light\":\"0\",\"brightNess\":\"0\"}");
+        await WaitUntil(() => harness.Keyboard.CustomModeReinitCount > reinitBefore);
+
+        Assert.Equal(reinitBefore + 1, harness.Keyboard.CustomModeReinitCount);   // 窗口仍恰好重申一次
+        Assert.Equal(75, harness.Keyboard.Brightness);   // 保存的渲染亮度必须原样保留
+    }
+
+    /// <summary>
+    /// 亮度镜像的另一半契约：真正的固件接管帧（Fn 改亮度，相对基线前进）仍必须落到渲染器，
+    /// 否则灯停在旧档（固件新亮度必须保留）。
+    /// </summary>
+    [Fact]
+    public async Task FirmwareBrightnessChange_StillReachesTheRenderer()
+    {
+        using var harness = new Harness();
+        harness.Keyboard.Brightness = 75;
+        harness.Hardware.HandleMessage("Keyboard/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"effect\":\"5\",\"light\":\"3\",\"brightNess\":\"75\"}");
+        Program.MarkKeyboardCustomStatusBaseline();   // 基线 = 当前上报（75%）
+
+        // Fn 降一档：亮度 75%→50%，effect 不变 → 真实固件接管
+        int reinitBefore = harness.Keyboard.CustomModeReinitCount;
+        harness.Hardware.HandleMessage("Keyboard/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"effect\":\"5\",\"light\":\"2\",\"brightNess\":\"50\"}");
+        await WaitUntil(() => harness.Keyboard.Brightness == 50);
+
+        Assert.Equal(50, harness.Keyboard.Brightness);
+        await WaitUntil(() => harness.Keyboard.CustomModeReinitCount > reinitBefore);   // 等异步重申落地
+        await Task.Delay(150);   // 异步恢复周期收尾，避免 Dispose 与 StartMode 竞争
     }
 
     [Theory]
