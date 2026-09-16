@@ -35,7 +35,8 @@ public class AsusACPI
     public const int GPUModeUltimate = 2;
     public const int GPUEco = 0;
     public const uint GPUMux = 0x00090016;
-    public const uint StatusMode = 0x00090031;
+    // StatusMode = 0x00090031 已删除：唯一调用点 ModeControl 的 status_mode 写入
+    // 走 DeviceSet 空实现，随 DeviceSet 一起移除；该键从未在本机生效。
     // VivoBookMode = 0x00110019 已删除：它是华硕 Vivobook 的一个位域，
     // 唯一读取点是已删除的 Modes.InitFullSpeed()。
 
