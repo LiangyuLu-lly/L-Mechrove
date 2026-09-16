@@ -334,13 +334,16 @@ public partial class SettingsForm
                 Program.rgb.KbPowerOn = true;
                 Program.rgb.KbHidMode = hid.Mode;
                 Program.rgb.QueueSaveConfig();
-                if (Program.rgb.IsConnected)
+                // 唯一接缝（防双发）：确定性「不支持」→ 不进入 HID 分支（效果选择交官方通道）；
+                // Supported/Unknown 保持今天的阶梯（Unknown 视为支持）。
+                if (Program.rgb.IsConnected && !ShouldUseGcuKeyboardFallback(Program.rgb))
                 {
                     _ = Task.Run(() => Program.rgb.StartMode(hid.Mode));   // HID 帧写后台执行
+                    return;
                 }
-                else if (Program.service is not null && Program.hw is { IsConnected: true })
+                if (Program.service is not null && Program.hw is { IsConnected: true })
                 {
-                    // HID 未连时退回固件通道（同 RgbForm 的电源补开路径）
+                    // HID 未连（或确定性不支持）时退回固件通道（同 RgbForm 的电源补开路径）
                     sw.Enabled = false;
                     bool ok = await Program.service.SetKeyboardPower(true);
                     sw.Enabled = true;
@@ -353,6 +356,10 @@ public partial class SettingsForm
                 _lastQuickSwitchUi = DateTime.Now;
                 bool requested = sw.Checked;
                 int gen = ++_kbCmdGen;   // 代际：迟到的旧续体不得再启动 HID
+
+                // 唯一接缝（防双发）：确定性「不支持」→ 本分支绝不触碰 HID（连接/旁路/StartMode 全部跳过），
+                // 键盘可见光交给官方通道；Supported/Unknown 保持今天的阶梯（Unknown 视为支持）。
+                bool gcuFallback = ShouldUseGcuKeyboardFallback(Program.rgb);
 
                 // 键盘可见光由应用内 HID 渲染器掌控，固件通道只是电源旁路：两条都要动。
                 // 只发固件命令时 HID 帧会继续写亮——用户报告的「开关不起作用」。
@@ -370,17 +377,23 @@ public partial class SettingsForm
                     Program.rgb.QueueSaveConfig();
                 }
 
-                // HID 未连接时先主动连接一次：RgbForm 的可用路径就是「先 Connect 再 StartMode」。
-                // 只走固件兜底时本机固件永不确认（实测 power=False / not confirmed），开关看起来就是坏的。
+                // HID 未连接时先取判定：判定未知则在后台惰性探测（Supported 时流保持打开，随即由下面的
+                // HID 分支接续启动效果）；确定性「不支持」跳过连接，效果/电源走官方通道。
                 // 审计/测试模式不碰真实 HID 设备（与效果下发处的 UiAuditMode 门控同一纪律）：
                 // 测试机确实插着键盘灯 HID，若在这里真连接会走 HID 分支、绕过固件通道断言。
-                if (requested && !Program.UiAuditMode && Program.rgb is { IsConnected: false })
+                if (requested && !gcuFallback && !Program.UiAuditMode && Program.rgb is { IsConnected: false } rgbToConnect)
                 {
-                    var rgbToConnect = Program.rgb;
-                    await Task.Run(() => rgbToConnect.Connect());
+                    if (rgbToConnect.ControllerAvailability == FeatureAvailability.Unknown)
+                        await rgbToConnect.EnsureHidReadyAsync();
+                    // 判定到达：刷新键盘状态行（RefreshDeviceCapabilities 自带 InvokeRequired 守卫）。
+                    if (rgbToConnect.ControllerAvailability != FeatureAvailability.Unknown)
+                        RefreshDeviceCapabilities();
+                    // 判定已达到 Supported（或探测瞬时 Unknown）而流仍未打开：保持今天的连接语义重连一次。
+                    if (!rgbToConnect.IsConnected && rgbToConnect.ControllerAvailability != FeatureAvailability.Unsupported)
+                        await Task.Run(() => rgbToConnect.Connect());
                 }
 
-                if (requested && Program.rgb is { IsConnected: true })
+                if (requested && !gcuFallback && Program.rgb is { IsConnected: true })
                 {
                     // HID 直连时由渲染器接管：固件效果已退出帧模式，必须重进自定义帧模式再发帧。
                     // I2：固件电源旁路必须**并发**进行而非挡在出帧前面——本机固件键盘通道永不确认
@@ -445,7 +458,7 @@ public partial class SettingsForm
                         if (!requested)
                         {
                             var rgb = Program.rgb;
-                            if (rgb.IsConnected)
+                            if (rgb.IsConnected && !gcuFallback)
                                 _ = Task.Run(async () =>
                                 {
                                     hidStop?.Wait(600);   // 等 OFF 的清屏帧写完，避免清屏晚到覆盖重开的帧
@@ -609,7 +622,36 @@ public partial class SettingsForm
             body.SetCellPosition(existing, new TableLayoutPanelCellPosition(
                 0, body.GetCellPosition(existing).Row + 1));
         body.Controls.Add(prefsRow, 0, 0);
+
+        // —— 键盘控制器状态行（设计 §5）：紧跟键盘行之后，判定为「不支持」时才显示；
+        // Supported/Unknown 隐藏（AutoSize 行无可见子控件 → 整行收 0，现有用户布局不变）。
+        // 直接落 body（不套行容器）：名称不得带 rowKeyboard 前缀——Controls.Find 是前缀匹配。
+        _lblKeyboardControllerStatus = new Label
+        {
+            Name = "labelKeyboardControllerStatus",
+            Text = KeyboardControllerUnsupportedText,
+            AutoSize = true,
+            Visible = false,
+            ForeColor = UiVisualStyle.Muted,
+            BackColor = UiVisualStyle.Window,
+            Font = UiStyleCaptionFont(),
+            Margin = new Padding(D(2), 0, D(4), D(2)),
+        };
+        Control keyboardRow = body.Controls.OfType<Control>().First(c => c.Name == "rowKeyboard");
+        int keyboardRowIndex = body.GetCellPosition(keyboardRow).Row;
+        body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        body.RowCount = body.RowStyles.Count;
+        foreach (var existing in body.Controls.OfType<Control>().ToArray())
+        {
+            int rowIndex = body.GetCellPosition(existing).Row;
+            if (rowIndex > keyboardRowIndex)
+                body.SetCellPosition(existing, new TableLayoutPanelCellPosition(0, rowIndex + 1));
+        }
+        body.Controls.Add(_lblKeyboardControllerStatus, 0, keyboardRowIndex + 1);
     }
+
+    /// <summary>判定为「不支持」时的状态文案（设计 §5，UI 语言 = 中文）。</summary>
+    internal const string KeyboardControllerUnsupportedText = "本机控制器不支持软件灯效控制，已改用官方通道（仅电源与亮度）";
 
     /// <summary>睡眠时间选项（label / 设备侧分钟 / 应用侧空闲秒）：自 RgbForm.cs 迁来（2026-09-13）。
     /// 设备侧计时恒为 0——睡眠由应用内空闲检测实现（RgbForm.SyncDeviceCloseTimerAsync 同一纪律）。</summary>
@@ -657,6 +699,15 @@ public partial class SettingsForm
     {
         if (stopGeneration == currentGeneration()) stopHid();
     }
+
+    /// <summary>
+    /// 唯一接缝（防双发）：当前运行态下键盘可见光是否只能走官方（GCU）通道。
+    /// 纯策略只吃 (判定, HID 连接态, GCU 可用) 三个值；调用方一律独占提前返回，绝不穿透。
+    /// </summary>
+    static bool ShouldUseGcuKeyboardFallback(KeyboardRgb? rgb) =>
+        rgb is not null && KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
+            rgb.ControllerAvailability, rgb.IsConnected,
+            Program.service is not null && Program.hw is { IsConnected: true });
 
     void SyncLightRows()
     {

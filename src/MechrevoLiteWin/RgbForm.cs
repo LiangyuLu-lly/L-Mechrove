@@ -273,13 +273,37 @@ public class RgbForm : RForm
         _rgb.KbHidMode = hid.Mode;
         Program.MarkKeyboardCustomStatusBaseline();
         BuildHidParams();
+        // 唯一接缝（防双发）：确定性「不支持」→ 不进入 HID 连接/启动分支（本机没有可用的软件灯效控制器），
+        // 键盘电源交给官方通道（固件电源关时补开）；Supported/Unknown 保持今天的 HID 阶梯（Unknown 视为支持）。
+        if (KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
+                _rgb.ControllerAvailability, _rgb.IsConnected,
+                Program.service is not null && Program.hw is { IsConnected: true }))
+        {
+            SetDeviceUiEnabled(false);
+            SetStatus("本机控制器不支持软件灯效控制，已改用官方通道（仅电源与亮度）");
+            if (Program.service is not null && Program.hw is { IsConnected: true } && !Program.hw.KeyboardPower)
+                _ = Task.Run(() => Program.service.SetLightPower(MqttTopics.KeyboardCtrl, true));
+            _ = SyncDeviceCloseTimerAsync();
+            _rgb.QueueSaveConfig();
+            return;
+        }
         if (!_rgb.IsConnected)
         {
             // HID 枚举/初始化耗时（含内部 Sleep）——后台线程执行，避免 UI 冻结
             SetStatus("正在连接键盘 RGB…");
-            _ = Task.Run(() =>
+            _ = Task.Run(async () =>
             {
-                bool ok = _rgb.Connect();
+                // 惰性探测（首次决策、后台线程）：Supported 时流保持打开，随即接续启动效果；
+                // 瞬时 Unknown 按现状照常连接一次（绝不因此改走 GCU）。
+                if (_rgb.ControllerAvailability == FeatureAvailability.Unknown)
+                {
+                    await _rgb.EnsureHidReadyAsync().ConfigureAwait(false);
+                    // 判定到达：刷新仪表盘键盘状态行（RefreshDeviceCapabilities 自带 InvokeRequired 守卫）。
+                    if (_rgb.ControllerAvailability != FeatureAvailability.Unknown)
+                        Program.settingsForm?.RefreshDeviceCapabilities();
+                }
+                bool ok = _rgb.IsConnected
+                    || (_rgb.ControllerAvailability != FeatureAvailability.Unsupported && _rgb.Connect());
                 try
                 {
                     Invoke(() =>

@@ -92,6 +92,8 @@ namespace MechrevoLite
         bool _lightChannelLightbar;
         bool _lightChannelLogo;
         ComboBox? _kbEffectCombo; ComboBox? _lbEffectCombo; ComboBox? _logoEffectCombo;
+        // 键盘控制器状态行（判定为「不支持」时提示已改走官方通道；Supported/Unknown 隐藏）。
+        Label? _lblKeyboardControllerStatus;
         bool _syncingEffectCombos;
         // 灯光组头右侧的两个全局灯光设置（用户 2026-09-13：从 RgbForm 移入组头）。
         RCheckBox? _lightOffOnBatteryChk;
@@ -2854,6 +2856,14 @@ namespace MechrevoLite
                 _lightChannelLogo = logo;
                 EnableSection(_lightGroup, audit || anyLighting);
                 SyncLightRows();
+            }
+            // 键盘控制器状态行（设计 §5）：只有确定性「不支持」才提示已改走官方通道；Supported/Unknown 隐藏，
+            // 现有用户布局不变。判定只读缓存——**绝不**在 UI 线程（这里）启动探测；审计模式下判定保持
+            // Unknown，标签因审计而可见（布局演练），路径仍走 HID 分支、不碰硬件。
+            if (_lblKeyboardControllerStatus is not null)
+            {
+                bool controllerUnsupported = Program.rgb?.ControllerAvailability == FeatureAvailability.Unsupported;
+                _lblKeyboardControllerStatus.Visible = keyboard && (audit || controllerUnsupported);
             }
 
             bool brightness = Show(hw?.ScreenBrightnessSeen == true);

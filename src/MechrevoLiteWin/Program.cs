@@ -1194,6 +1194,17 @@ namespace MechrevoLite
                     return true;
                 }
 
+                // 唯一接缝（防双发）：确定性「不支持」→ 本机没有接受软件灯效的 HID 控制器，
+                // 跳过连接/重进自定义模式/启动效果（电源已由上面的官方通道下发，发布即视为已应用）。
+                // 判定只读缓存、绝不在此重探：唤醒路径不新增任何 await/延迟/命令。
+                if (KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
+                        rgb.ControllerAvailability, rgb.IsConnected, service is not null && hw is { IsConnected: true }))
+                {
+                    Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 0);
+                    Logger.WriteLine("RGB 自动恢复：控制器不支持软件灯效，HID 分支跳过（官方通道已下发电源）");
+                    return true;
+                }
+
                 bool wasConnected = rgb.IsConnected;
                 if (!wasConnected && !rgb.Connect()) return false;
                 if (wasConnected && forceEffectRestore && !rgb.ReInitCustomMode())
