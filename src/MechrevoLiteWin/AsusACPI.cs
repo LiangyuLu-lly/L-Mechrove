@@ -31,7 +31,6 @@ public class AsusACPI
     public const int PPT_APUC1 = 0x001200C1;
     public const int PPT_GPUC2 = 0x001200C2;
     public const uint GPU_POWER = 0x00120098;
-    public const int BootSound = 0x00130022;
 
     // ---- 枚举值（G-Helper UI 语义）----
     public const int PerformanceBalanced = 0;
@@ -133,49 +132,6 @@ public class AsusACPI
     }
 
     public int GetFan(AsusFan device) => Program.hw is not { IsConnected: true } ? -1 : (device == AsusFan.CPU ? Program.hw.CpuFanRpm : Program.hw.GpuFanRpm);
-    public byte[] GetFanCurve(AsusFan device, int mode = 0)
-    {
-        // Mechrevo Fan/Table 缓存（16 档）→ G-Helper 16 字节（前 8 温度 + 后 8 占空比）
-        var upT = device == AsusFan.CPU ? Program.hw?.CpuCurveUpT : Program.hw?.GpuCurveUpT;
-        var duty = device == AsusFan.CPU ? Program.hw?.CpuCurveDuty : Program.hw?.GpuCurveDuty;
-        var curve = new byte[16];
-        if (upT is null || duty is null) return curve;
-        int n = 0;
-        for (int i = 0; i < 16 && n < 8; i++)
-        {
-            if (upT[i] == 255) break;   // 哨兵：无效档
-            curve[n] = upT[i];
-            curve[n + 8] = duty[i];
-            n++;
-        }
-        return curve;
-    }
-
-    public int SetFanCurve(AsusFan device, byte[] curve, string logName = "FanCurve")
-    {
-        // G-Helper 16 字节（8 温度+8 占空比）→ 16 档占空比（按温度阶梯映射到 Mechrevo 固定档位）
-        if (Program.hw is null || curve.Length < 16) return -1;
-        var hwCurve = Program.hw;
-        var upT = device == AsusFan.CPU ? hwCurve.CpuCurveUpT : hwCurve.GpuCurveUpT;
-        var duties = new int[16];
-        for (int i = 0; i < 16; i++)
-        {
-            if (upT[i] == 255) { duties[i] = 0; continue; }
-            int temp = upT[i];
-            // 找 G-Helper 曲线中 <= temp 的最大温度点的 duty
-            int duty = 0;
-            for (int j = 0; j < 8; j++)
-            {
-                if (curve[j] <= temp) duty = curve[j + 8];
-            }
-            duties[i] = duty;
-        }
-        _ = hwCurve.SetFanCurve(device == AsusFan.CPU ? 0 : 1, duties);
-        return 0;
-    }
-    public (int up, int down) GetFanHysteresis() => (-1, -1);
-
-    public (int, int) GetCores(uint device = 0x001200D5) => (0, 0);
 
     /// <summary>
     /// 当前机型画像。优先用已连接实例上的那份（含 MQTT 运行时纠偏），

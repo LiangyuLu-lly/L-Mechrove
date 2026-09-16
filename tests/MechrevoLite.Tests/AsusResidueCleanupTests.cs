@@ -179,13 +179,15 @@ public class AsusResidueCleanupTests
 
     /// <summary>
     /// <c>AsusACPI</c> 类本身是活的适配层（shim）：它把继承自 g-helper 的界面调用
-    /// 转成 <c>MechrevoHw</c> 的操作。风扇曲线的读写就走这里。
+    /// 转成 <c>MechrevoHw</c> 的操作——风扇转速读取、GPU 模式设备读取与模式写入。
+    /// 风扇曲线的读写**不**走这里：那条路是 <c>MechrevoHw.SetFanCurve</c>（FanCurveForm 直调），
+    /// 本类上的 GetFanCurve/SetFanCurve 转发层已作为零调用残留删除。
     /// 名字带 Asus 不等于死代码。
     /// </summary>
     [Fact]
     public void AsusAcpiShimSurvivesBecauseItIsTheLiveAdapter()
     {
-        foreach (string method in new[] { "GetFan", "GetFanCurve", "SetFanCurve", "DeviceGet", "SetPerformanceMode" })
+        foreach (string method in new[] { "GetFan", "DeviceGet", "SetPerformanceMode" })
             Assert.NotNull(typeof(AsusACPI).GetMethod(method,
                 BindingFlags.Public | BindingFlags.Instance));
     }
