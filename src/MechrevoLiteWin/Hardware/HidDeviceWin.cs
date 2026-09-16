@@ -184,8 +184,8 @@ public class HidDeviceWin : IDisposable
         return ok;
     }
 
-    /// <summary>打开设备（共享模式：本机 GCUBridge 持有接口句柄，只能共享打开）。</summary>
-    public bool Open()
+    /// <summary>打开设备（共享模式：本机 GCUBridge 持有接口句柄，只能共享打开）。virtual：测试可注入打开失败设备。</summary>
+    public virtual bool Open()
     {
         _handle?.Dispose();
         _handle = CreateFile(Path, GenericRead | GenericWrite, FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);

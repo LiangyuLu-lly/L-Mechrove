@@ -65,6 +65,7 @@ public class KeyboardRgb : IDisposable
     System.Threading.Timer? _configSaveTimer;
     readonly string? _configPathOverride;
     internal Func<bool>? ReconnectProbe;    // 测试 seam：替代真实 HID 重连（生产为 null）
+    internal Func<HidDeviceWin?>? ResolveDeviceProbe;   // 测试 seam：替代真实 HID 枚举（生产为 null）
     readonly object _reconnectLock = new(); // 单飞重连门
     volatile bool _reconnecting;            // 重连在飞行：帧循环据此跳过本帧（不阻塞）
     volatile bool _disposed;
@@ -160,8 +161,9 @@ public class KeyboardRgb : IDisposable
     void PaceFrame(int fps) => _pacer.Pace(fps);
 
     /// <summary>枚举 BetterRGB 支持的 ITE8291 键盘 RGB 接口。</summary>
-    static HidDeviceWin? ResolveDevice()
+    HidDeviceWin? ResolveDevice()
     {
+        if (ResolveDeviceProbe is not null) return ResolveDeviceProbe();   // 测试 seam
         HidDeviceWin? best = null;
         int bestScore = 0;
         foreach (var d in HidDeviceWin.Enumerate(VendorId))
@@ -198,34 +200,15 @@ public class KeyboardRgb : IDisposable
         brightness >= 0 ? brightness <= 4 ? MapHardwareBrightnessLevel(brightness) : Math.Clamp(brightness, 0, 100) :
         legacyLevel < 0 ? -1 : legacyLevel <= 4 ? MapHardwareBrightnessLevel(legacyLevel) : Math.Clamp(legacyLevel, 0, 100);
 
+    /// <summary>单次连接尝试的分类：区分「无候选」（确定性结论）与「尝试失败」（可重试一次）。</summary>
+    enum ConnectOutcome { Success, NoDevice, Failed }
+
     /// <summary>打开设备并进入自定义 RGB 模式（step1 → clear → step2）。</summary>
     public bool Connect()
     {
         lock (_lock)
         {
-            _stream?.Dispose();
-            _stream = null;
-            try
-            {
-                var dev = ResolveDevice();
-                if (dev is null) { LastError = "未找到兼容的 ITE8291/BetterRGB 接口（VID 048D，FF03/MI_01）"; return false; }
-                if (!dev.Open()) { LastError = "打开 HID 失败（设备被占用或权限不足）"; return false; }
-                _stream = dev;
-                DeviceInfo = dev.DeviceInfo;
-                // HID 打开后的设备稳定等待：有意的设备时序，勿删（RgbForm 的调用点在 Task.Run 后台线程）。
-                Thread.Sleep(20);
-                if (!EnterCustomMode())
-                {
-                    _stream.Dispose();
-                    _stream = null;
-                    LastError = "初始化 RGB 模式失败（feature report 被拒）";
-                    Logger.WriteLine($"RGB connect FAIL: {LastError}");
-                    return false;
-                }
-                LastError = "";
-                Logger.WriteLine("RGB connect OK: " + DeviceInfo);
-                return true;
-            }
+            try { return ConnectCoreLocked() == ConnectOutcome.Success; }
             catch (Exception ex)
             {
                 _stream?.Dispose();
@@ -237,6 +220,34 @@ public class KeyboardRgb : IDisposable
         }
     }
 
+    /// <summary>
+    /// 连接/探测共用的唯一实现体（须持 _lock 调用）：ResolveDevice → Open → EnterCustomMode。
+    /// 探测 ≡ 真实路径，杜绝分叉；异常向上抛给调用方分类（Connect 捕获后保持原 false 语义，探测据此判 Unknown）。
+    /// </summary>
+    ConnectOutcome ConnectCoreLocked()
+    {
+        _stream?.Dispose();
+        _stream = null;
+        var dev = ResolveDevice();
+        if (dev is null) { LastError = "未找到兼容的 ITE8291/BetterRGB 接口（VID 048D，FF03/MI_01）"; return ConnectOutcome.NoDevice; }
+        if (!dev.Open()) { LastError = "打开 HID 失败（设备被占用或权限不足）"; return ConnectOutcome.Failed; }
+        _stream = dev;
+        DeviceInfo = dev.DeviceInfo;
+        // HID 打开后的设备稳定等待：有意的设备时序，勿删（RgbForm 的调用点在 Task.Run 后台线程）。
+        Thread.Sleep(20);
+        if (!EnterCustomMode())
+        {
+            _stream.Dispose();
+            _stream = null;
+            LastError = "初始化 RGB 模式失败（feature report 被拒）";
+            Logger.WriteLine($"RGB connect FAIL: {LastError}");
+            return ConnectOutcome.Failed;
+        }
+        LastError = "";
+        Logger.WriteLine("RGB connect OK: " + DeviceInfo);
+        return ConnectOutcome.Success;
+    }
+
     static readonly byte[] Step1 = { 0x00, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00 };
     static readonly byte[] Step2 = { 0x00, 0x08, 0x02, 0x33, 0x00, 0x32, 0x00, 0x00, 0x00 };
 
@@ -246,6 +257,76 @@ public class KeyboardRgb : IDisposable
         if (!_stream.Write(new byte[65])) return false;   // clearFrame 65×0
         if (!_stream.SetFeature(Step2)) return false;
         return true;
+    }
+
+    // ---- 控制器能力探测（判定来源；探测 ≡ 真实路径，复用 ConnectCoreLocked）----
+    const int ProbeTimeoutMs = 3000;    // 墙钟上限：枚举 + Sleep(20) 只需毫秒级，3 s 是余量；超限判 Unknown
+    const int ProbeRetryDelayMs = 100;  // Open/EnterCustomMode 失败后的单次重试间隔
+
+    /// <summary>三态判定：未知（未探测/瞬时失败）、不支持、支持。确定性结论进程内缓存，唤醒/重连绝不重探。</summary>
+    internal FeatureAvailability ControllerAvailability { get; private set; } = FeatureAvailability.Unknown;
+
+    readonly object _probeLock = new();   // 单飞：并发探测不会互相覆盖判定
+    int _controllerProbeCount;
+
+    /// <summary>测试 seam：探测真正执行的次数（锁定「确定性判定缓存后不再重探」）。</summary>
+    internal int ControllerProbeCount => Volatile.Read(ref _controllerProbeCount);
+
+    /// <summary>
+    /// 确保 HID 就绪（惰性探测 + 连接，须在后台/接缝处调用，唤醒路径不得调用）。
+    /// 判定映射：枚举无候选 → Unsupported（确定性，不重试）；Open/EnterCustomMode 失败 → 100 ms 后重试一次，仍失败 → Unsupported；
+    /// 全部通过 → Supported；异常或超过 3 s 上限 → Unknown（保持今天的行为，绝不改走 GCU）。
+    /// 副作用：仅 Supported 保持流打开并停留在自定义模式（调用方随即启动灯效）；Unsupported/Unknown 释放流；探测从不写效果帧。
+    /// </summary>
+    public async Task<bool> EnsureHidReadyAsync()
+    {
+        if (ControllerAvailability != FeatureAvailability.Unknown)
+            return ControllerAvailability == FeatureAvailability.Supported;
+
+        FeatureAvailability verdict;
+        try
+        {
+            verdict = await Task.Run(ProbeController)
+                .WaitAsync(TimeSpan.FromMilliseconds(ProbeTimeoutMs)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("RGB probe 超时或异常: " + ex.Message);
+            verdict = FeatureAvailability.Unknown;
+        }
+
+        if (verdict != FeatureAvailability.Supported)
+        {
+            lock (_lock) { _stream?.Dispose(); _stream = null; }
+        }
+        if (verdict != FeatureAvailability.Unknown)
+            ControllerAvailability = verdict;   // 只缓存确定性结论；Unknown 保持今天的行为
+        return verdict == FeatureAvailability.Supported;
+    }
+
+    /// <summary>后台探测体：共享的连接实现体，失败只重试一次（无候选不重试）。</summary>
+    FeatureAvailability ProbeController()
+    {
+        lock (_probeLock)
+        {
+            if (ControllerAvailability != FeatureAvailability.Unknown) return ControllerAvailability;
+            Interlocked.Increment(ref _controllerProbeCount);
+            try
+            {
+                ConnectOutcome outcome;
+                lock (_lock) outcome = ConnectCoreLocked();
+                if (outcome == ConnectOutcome.Success) return FeatureAvailability.Supported;
+                if (outcome == ConnectOutcome.NoDevice) return FeatureAvailability.Unsupported;
+                Thread.Sleep(ProbeRetryDelayMs);
+                lock (_lock) outcome = ConnectCoreLocked();
+                return outcome == ConnectOutcome.Success ? FeatureAvailability.Supported : FeatureAvailability.Unsupported;
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("RGB probe FAIL: " + ex.Message);
+                return FeatureAvailability.Unknown;
+            }
+        }
     }
 
     /// <summary>
