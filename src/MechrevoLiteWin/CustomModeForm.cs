@@ -58,6 +58,10 @@ public class CustomModeForm : RForm
     RComboBox _planCombo = null!, _boostCombo = null!;   // Windows 电源计划 / 睿频（按档独立）
     bool _syncingWinPower;
     int _currentIdx = -1;   // 当前选中的自定义档（Windows 电源设置按档保存）
+    // 点击即落地的目标档：>=0 期间选中态与「切换中…」由它驱动，滞后的硬件回读不得把它拽回去。
+    int _pendingProfileIndex = -1;
+    // 切换代次：后一次点击立即接管；被取代的旧流程不再做确认后工作（落盘/电源应用/最终文案）。
+    int _switchGeneration;
     Label _status = null!;
     Label _powerWallStatus = null!;
     // 功耗墙判定需要持续采样；这个窗口开着的时候就是用户在关心功耗墙的时候。
@@ -707,39 +711,72 @@ public class CustomModeForm : RForm
         _gpuOcArmed = false;
 
         int previousProfile = CurrentConfigurationProfile();
+        // 即时反馈先于任何等待：选中态和进行时文案必须在点击的这一帧落地。此前选中态只在
+        // 硬件确认后才移动，用户看不到任何反应，会在 1.15s 确认窗口内再点一次——真机日志里
+        // 同一次切换被下发两遍、确认后工作成对出现，就是这么来的。
+        int generation = ++_switchGeneration;
+        _pendingProfileIndex = index;
+        SelectProfileButton(index);
         _status.Text = SwitchPendingText;
         _status.ForeColor = UiVisualStyle.Warn;
-        bool ok = await Program.service.SwitchCustomProfile(index);
+
+        bool serviceConfirmed = await Program.service.SwitchCustomProfile(index);
+        bool ok = serviceConfirmed;
         if (!ok)
         {
             // SwitchCustomProfile 的确认窗口只有 250ms+900ms；慢回读时它返回 false，但硬件
             // 随后确实切了过去，CustomModeChanged 会把状态刷成「已激活」——成功切换因此
             // 闪现「切换未确认」。宽限期内等硬件上报目标档，只有等不到才算真失败。
-            for (int attempt = 0; attempt < SwitchGraceAttempts && Program.hw?.CustomProfileIndex != index; attempt++)
+            // 被更新的点击取代时不再空等：那次点击负责最终结果。
+            for (int attempt = 0;
+                 attempt < SwitchGraceAttempts
+                     && generation == _switchGeneration
+                     && Program.hw?.CustomProfileIndex != index;
+                 attempt++)
                 await Task.Delay(SwitchGraceDelayMs);
             ok = !SwitchShouldReportFailure(serviceConfirmed: false, Program.hw?.CustomProfileIndex ?? -1, index);
         }
+        if (generation != _switchGeneration)
+        {
+            // 更新的点击已接管：落盘/电源应用/最终文案只由最新一次流程执行一次。
+            return false;
+        }
+        _pendingProfileIndex = -1;
         if (ok)
         {
             // Persist the local profile only after GCU confirms the same hardware slot.
             // Loading it before the MQTT confirmation made a failed switch look successful
             // and caused the next page open to restore the previous slot's values.
-            AppConfig.Set("custom_last_profile", index);
-            AppConfig.Flush();
-            LoadWindowsPowerSettings(index);
-            if (!WinPowerPlan.ApplyProfile(index))
+            // 服务确认分支已在 MechrevoService 落盘；只有迟到确认（服务超时返回、硬件在
+            // 宽限期内补上）这条路径需要在这里补一次——每次成功切换恰好一次落盘。
+            if (!serviceConfirmed)
             {
-                _status.Text = "自定义 " + (index + 1) + " 已激活，Windows 电源设置未确认";
-                _status.ForeColor = UiVisualStyle.Warn;
+                AppConfig.Set("custom_last_profile", index);
+                AppConfig.Flush();
             }
+            LoadWindowsPowerSettings(index);
+            bool powerConfirmed = WinPowerPlan.ApplyProfile(index);
+            _status.Text = powerConfirmed
+                ? "自定义 " + (index + 1) + " 已激活"
+                : "自定义 " + (index + 1) + " 已激活，Windows 电源设置未确认";
+            _status.ForeColor = powerConfirmed ? UiVisualStyle.Ok : UiVisualStyle.Warn;
         }
         else
         {
+            // 真失败：选中态回退到切换前的档位，再给出失败措辞。
+            SelectProfileButton(previousProfile);
             LoadWindowsPowerSettings(previousProfile);
             _status.Text = SwitchUnconfirmedText;
             _status.ForeColor = UiVisualStyle.Danger;
         }
         return ok;
+    }
+
+    /// <summary>选中态唯一入口：点击的乐观切换、硬件回读刷新、失败回退都走这里。</summary>
+    void SelectProfileButton(int index)
+    {
+        for (int i = 0; i < _profileBtns.Length; i++)
+            _profileBtns[i].Activated = i == index;
     }
 
     async Task FlushPendingAsync()
@@ -928,11 +965,11 @@ public class CustomModeForm : RForm
             _syncing = true;
             try
             {
+                // 切换在途时选中态跟随点击（乐观态）：滞后的回读报的还是旧档，不能把用户
+                // 刚点的选中态拽回去，否则又变成「点了没反应」。
+                int selectedProfile = _pendingProfileIndex >= 0 ? _pendingProfileIndex : hw.CustomProfileIndex;
                 for (int i = 0; i < _profileBtns.Length; i++)
-                {
-                    bool active = hw.CustomProfileIndex == i;
-                    _profileBtns[i].Activated = active;
-                }
+                    _profileBtns[i].Activated = selectedProfile == i;
                 ApplyRange(_pl1, _pl1Val, hw.Pl1Minimum, hw.Pl1Maximum, hw.Pl1);
                 ApplyRange(_pl2, _pl2Val, hw.Pl2Minimum, hw.Pl2Maximum, hw.Pl2);
                 ApplyRange(_pl4, _pl4Val, hw.Pl4Minimum, hw.Pl4Maximum, hw.Pl4);
@@ -992,7 +1029,8 @@ public class CustomModeForm : RForm
                 _ocChk.Enabled = ocWritable;
                 if (_gpuOcAdminRow is not null) _gpuOcAdminRow.Visible = ocSupported && ocRequiresElevation;
                 SyncGpuOverclockDependents();
-                if (hw.CustomProfileIndex >= 0)
+                // 切换在途时不覆盖「切换中…」：结果由点击的那次流程落定。
+                if (hw.CustomProfileIndex >= 0 && _pendingProfileIndex < 0)
                 {
                     _status.Text = "自定义 " + (hw.CustomProfileIndex + 1) + " 已激活";
                     _status.ForeColor = UiVisualStyle.Ok;

@@ -20,6 +20,9 @@ public static class AppConfig
     private static readonly object configLock = new();
     private static readonly object writeLock = new();
 
+    /// <summary>Flush() 实际落盘的次数（测试接缝）：档位切换要求每次成功切换恰好一次落盘。</summary>
+    internal static int FlushCount;
+
     private static readonly JsonSerializerOptions LenientOptions = new()
     {
         AllowTrailingCommas = true,
@@ -209,6 +212,7 @@ public static class AppConfig
 
     public static void Flush()
     {
+        FlushCount++;
         timer.Stop();
         Persist();
     }

@@ -250,9 +250,14 @@ public static class WinPowerPlan
         catch { return 2; }
     }
 
+    /// <summary>测试接缝：非 null 时代替真实 powrprof 应用（测试绝不改动机器当前电源计划）。</summary>
+    internal static Func<int, bool>? ApplyProfileOverride { get; set; }
+
     /// <summary>应用指定自定义档保存的电源计划 + 睿频（切换档位时调用）。</summary>
     public static bool ApplyProfile(int index)
     {
+        Func<int, bool>? overrideAction = ApplyProfileOverride;
+        if (overrideAction is not null) return overrideAction(index);
         ProfileSettings settings = GetOrCreateProfileSettings(index);
         bool planConfirmed = string.IsNullOrEmpty(settings.Plan) || SetActivePlan(settings.Plan);
         bool boostConfirmed = planConfirmed && SetBoost(settings.Boost);
