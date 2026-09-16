@@ -960,7 +960,7 @@ public class LiquidCoolingIntegrationTests
 
         Assert.True(await service.LcConnect());
 
-        Assert.Equal(["Connect"], actions.ToArray());
+        Assert.Equal((IEnumerable<string?>)["Connect"], actions);
     }
 
     static string LiquidCoolingStatus(int pump, int fan) => $$"""

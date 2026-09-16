@@ -250,7 +250,7 @@ public class DayModeThemeTests
             using var box = new PictureBox { Size = new Size(16, 16) };
             UiVisualStyle.ApplyGlyph(box, UiGlyph.Kind.Gauge);
 
-            using Bitmap bitmap = new((Image)box.Image.Clone());
+            using Bitmap bitmap = new((Image)Assert.IsAssignableFrom<Image>(box.Image).Clone());
             var dangerPixels = new List<Point>();
             for (int y = 0; y < bitmap.Height; y++)
                 for (int x = 0; x < bitmap.Width; x++)

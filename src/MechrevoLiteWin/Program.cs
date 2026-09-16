@@ -26,10 +26,10 @@ namespace MechrevoLite
     {
         public static NotifyIcon trayIcon;
         public static AsusACPI acpi;
-        public static MechrevoLite.Hardware.MechrevoHw hw;
+        public static MechrevoLite.Hardware.MechrevoHw? hw;
         public static MechrevoLite.Hardware.MechrevoService service;
         public static MechrevoLite.Hardware.KeyboardRgb rgb;
-        public static MechrevoLite.Hardware.WaterCoolerBle ble;
+        public static MechrevoLite.Hardware.WaterCoolerBle? ble;
 
         public static SettingsForm settingsForm;
 

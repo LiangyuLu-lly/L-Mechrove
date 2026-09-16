@@ -69,8 +69,10 @@ public class RColorPickerTests
             Color selected = RenderBorderPixel(swatch, selected: true);
             Color unselected = RenderBorderPixel(swatch, selected: false);
 
-            Assert.Equal(UiVisualStyle.Accent.ToArgb(), selected.ToArgb());
-            Assert.Equal(UiVisualStyle.Border.ToArgb(), unselected.ToArgb());
+            Assert.True(selected.ToArgb() == UiVisualStyle.Accent.ToArgb(),
+                $"{label}模式选中描边应为 Accent（实际 {selected.ToArgb():X8}，期望 {UiVisualStyle.Accent.ToArgb():X8}）。");
+            Assert.True(unselected.ToArgb() == UiVisualStyle.Border.ToArgb(),
+                $"{label}模式未选中描边应为 Border（实际 {unselected.ToArgb():X8}，期望 {UiVisualStyle.Border.ToArgb():X8}）。");
         }
         finally
         {
