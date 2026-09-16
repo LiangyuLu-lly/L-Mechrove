@@ -969,53 +969,35 @@ public partial class SettingsForm
         // 更新键的 Click 已在构造函数（Settings.cs）绑定；此处再绑一次会让一次点击先后弹出两个
         // 模态更新窗口（关掉第一个后第二个才出现）——用户报告的「更新窗口要关两次」。不要在此重复接线。
 
+        // 与四个旧键同一造型来源（StyleFooterGhostButton）：此前这里手写第二份字面量，
+        // FlatAppearance 底/圆角与旧键各自漂移。
         var settingsButton = new RButton
         {
             Text = "设置",
-            FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+            Cursor = Cursors.Hand,
             AutoSize = false,
-            Size = new Size(scale(46), scale(34)),
-            Anchor = AnchorStyles.None,   // 与其余四键一致：单元格内垂直居中（缺省 Top|Left 会整体高 4px）
-            Margin = Padding.Empty,
-            Padding = Padding.Empty,
-            ForeColor = UiStyleXXX(), BackColor = panelFooter.BackColor,
-            FlatAppearance = { BorderColor = UiVisualStyle.Window, BorderSize = 0 },
-            ImageAlign = ContentAlignment.TopCenter,
-            TextAlign = ContentAlignment.BottomCenter,
-            TextImageRelation = TextImageRelation.ImageAboveText,
-            Font = UiStyleCaptionFont(),
-            Tag = "footer-ghost",
-            Borderless = true,
-            BorderRadius = 2,
+            Size = new Size(scale(46), scale(36)),
+            Anchor = AnchorStyles.None,   // 与其余键一致：单元格内垂直居中（缺省 Top|Left 会整体高 4px）
+            BackColor = panelFooter.BackColor,
         };
-        // 图标走 ApplyFooterGlyph 登记：主题重刷时按当前 Muted 重渲染（直接 Render 则
-        // 位图停留在构建期主题，日→夜后齿轮只剩 3.4:1——真机实测的残留方块）。
+        UiVisualStyle.StyleFooterGhostButton(settingsButton);
         UiVisualStyle.ApplyFooterGlyph(settingsButton, UiGlyph.Kind.Gear, scale(16));
         settingsButton.Click += (_, _) => OpenSettingsDialog();
 
-        // 诊断包入口（footer 幽灵键，与其余四键同形态）：导出到用户选择的 zip。
+        // 诊断包入口（footer 幽灵键，与其余键同形态）：导出到用户选择的 zip。
         // 它是 panelFooter 的后代——UiAuditRunner.CheckFooterOcclusion 明确跳过底栏自身控件，
         // 因此不会被固定底栏遮挡，真实点击必有可点中中心点。
         var diagnosticButton = new RButton
         {
             Text = "诊断",
-            FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+            Cursor = Cursors.Hand,
             AutoSize = false,
-            Size = new Size(scale(46), scale(34)),
+            Size = new Size(scale(46), scale(36)),
             Anchor = AnchorStyles.None,
-            Margin = Padding.Empty,
-            Padding = Padding.Empty,
-            ForeColor = UiStyleXXX(), BackColor = panelFooter.BackColor,
-            FlatAppearance = { BorderColor = UiVisualStyle.Window, BorderSize = 0 },
-            ImageAlign = ContentAlignment.TopCenter,
-            TextAlign = ContentAlignment.BottomCenter,
-            TextImageRelation = TextImageRelation.ImageAboveText,
-            Font = UiStyleCaptionFont(),
-            Tag = "footer-ghost",
-            Borderless = true,
-            BorderRadius = 2,
+            BackColor = panelFooter.BackColor,
             AccessibleName = "导出诊断包",
         };
+        UiVisualStyle.StyleFooterGhostButton(diagnosticButton);
         UiVisualStyle.ApplyFooterGlyph(diagnosticButton, UiGlyph.Kind.Package, scale(16));
         diagnosticButton.Click += async (_, _) => await DiagnosticPackCommand.RunAsync(this, diagnosticButton);
 
@@ -1031,56 +1013,38 @@ public partial class SettingsForm
 
     /// <summary>
     /// 设计器旧 footer 按钮统一改图标形态：Dock 清掉（Top/Fill 会在等列单元里把它拉成
-    /// 满格大块，真机首验实证）、文本清空、图标+底部小字居中。接线不动。
+    /// 满格大块，真机首验实证）、文本清空、图标+底部小字居中。铬全部取自
+    /// UiVisualStyle.StyleFooterGhostButton（与设置/诊断键同一来源）。接线不动。
     /// </summary>
     void ResetLegacyFooterButton(Button button, string label, UiGlyph.Kind icon, Func<int, int> scale)
     {
         button.Text = label;
         button.Dock = DockStyle.None;
-        button.Anchor = AnchorStyles.None;   // 单元内居中，保持 46x34 的紧凑键尺寸
+        button.Anchor = AnchorStyles.None;   // 单元内居中，保持 46x36 的紧凑键尺寸
         button.AutoSize = false;
-        button.Size = new Size(scale(46), scale(34));
-        button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderColor = UiVisualStyle.Window;
-        button.FlatAppearance.BorderSize = 0;
-        button.Padding = Padding.Empty;
-        // footer 无框图标键（预览 .fbtn）：打上 ghost 标记退出 ApplyTree 的 Secondary 皮肤
-        //（否则每次主题重刷都会给按钮加回 SurfaceRaised 底 + 1px 描边 = 真机截图里的方块感）；
-        // RButton 系另需 Borderless——旧的蓝色描边圈来自 buttonOverlay.BorderColor 的边框绘制。
-        button.Tag = "footer-ghost";
-        if (button is RButton rbutton)
-        {
-            rbutton.Borderless = true;
-            rbutton.BorderRadius = 2;
-        }
+        button.Size = new Size(scale(46), scale(36));
+        button.BackColor = panelFooter.BackColor;
+        UiVisualStyle.StyleFooterGhostButton(button);
         if (icon == UiGlyph.Kind.Overlay)
         {
-            // 悬浮窗键的图标色随激活态走 Accent/Muted，由 UpdateFooterOverlayVisual
-            // 自己重渲染——不进 footer-ghost 的 Muted 重渲染管线，避免主题重刷把
-            // 激活态的 Accent 图标压回 Muted。
-            button.Image = UiGlyph.Render(icon, scale(16), UiVisualStyle.Muted, 0);
+            // 悬浮窗键的图标/文字色随激活态走 Accent/Muted：UpdateFooterOverlayVisual
+            // 登记带状态的取色器，主题重刷按当前主题+激活态现算（不再残留构建期颜色）。
+            UpdateFooterOverlayVisual(AppConfig.IsOverlay());
         }
         else
         {
             UiVisualStyle.ApplyFooterGlyph(button, icon, scale(16));
         }
-        button.ImageAlign = ContentAlignment.TopCenter;
-        button.TextAlign = ContentAlignment.BottomCenter;
-        button.TextImageRelation = TextImageRelation.ImageAboveText;
-        button.BackColor = panelFooter.BackColor;
-        button.ForeColor = UiStyleXXX();
-        button.Font = UiStyleCaptionFont();
-        button.Margin = Padding.Empty;
     }
 
-    /// <summary>悬浮窗键激活态 = 强调色图标/文字（预览 footer 是无框图标键，不再用描边框表达）。</summary>
+    /// <summary>悬浮窗键激活态 = 强调色图标/文字；未激活态与其余五键同色（Text 字 + Muted 图标）。
+    /// 图标登记带激活态的取色器：主题重刷时按当前主题+激活态现算，不残留构建期颜色。</summary>
     internal void UpdateFooterOverlayVisual(bool active)
     {
-        Color color = active ? UiVisualStyle.Accent : UiVisualStyle.Muted;
-        buttonOverlay.ForeColor = color;
-        Image? previous = buttonOverlay.Image;
-        buttonOverlay.Image = UiGlyph.Render(UiGlyph.Kind.Overlay, ResponsiveLayout.LogicalToDevice(this, 16), color, 0);
-        previous?.Dispose();
+        buttonOverlay.ForeColor = active ? UiVisualStyle.Accent : UiStyleXXX();
+        UiVisualStyle.ApplyFooterGlyph(buttonOverlay, UiGlyph.Kind.Overlay,
+            ResponsiveLayout.LogicalToDevice(this, 16),
+            () => AppConfig.IsOverlay() ? UiVisualStyle.Accent : UiVisualStyle.Muted);
     }
 
     static Color UiStyleXXX() => UiVisualStyle.Text;

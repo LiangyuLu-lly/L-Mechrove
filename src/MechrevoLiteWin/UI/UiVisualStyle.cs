@@ -281,23 +281,57 @@ internal static class UiVisualStyle
         RenderGlyph(label, kind);
     }
 
-    // footer 图标键的图标种类登记：主题重刷时按当前 Muted 重渲染位图（ApplyTree 的
-    // footer-ghost 分支消费）。buttonOverlay 不登记——它的图标色随激活态走 Accent，
-    // 由 UpdateFooterOverlayVisual 自己管理。
+    // footer 图标键的图标种类登记：主题重刷时重渲染位图（ApplyTree 的 footer-ghost 分支消费）。
+    // 取色器一并登记：普通键取主题 Muted；悬浮窗键传激活态取色器（Accent/Muted 随
+    // AppConfig.IsOverlay() 现算）——主题重刷时按当前主题+激活态重渲染，不再残留
+    // 构建期主题色（日→夜后 ◎ 图标变色的根因）。
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, object> _footerGlyphs = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, object> _footerGlyphColors = new();
 
     internal static void ApplyFooterGlyph(ButtonBase button, UiGlyph.Kind kind, int side)
+        => ApplyFooterGlyph(button, kind, side, null);
+
+    /// <param name="color">图标取色器；null = 主题 Muted（重刷时现算，日夜自动跟随）。</param>
+    internal static void ApplyFooterGlyph(ButtonBase button, UiGlyph.Kind kind, int side, Func<Color>? color)
     {
         _footerGlyphs.AddOrUpdate(button, kind);
+        _footerGlyphColors.AddOrUpdate(button, color ?? (Func<Color>)(() => Muted));
         Image? previous = button.Image;
-        button.Image = UiGlyph.Render(kind, side, Muted, 0);
+        button.Image = UiGlyph.Render(kind, side, color?.Invoke() ?? Muted, 0);
         previous?.Dispose();
     }
 
     private static void RenderFooterGlyph(ButtonBase button, UiGlyph.Kind kind)
     {
         int side = button.Image is { Width: > 8 } existing ? existing.Width : 16;
-        ApplyFooterGlyph(button, kind, side);
+        _footerGlyphColors.TryGetValue(button, out object? color);
+        ApplyFooterGlyph(button, kind, side, color as Func<Color>);
+    }
+
+    /// <summary>
+    /// footer 图标键（预览 .fbtn）的唯一造型来源：BuildFooterV2 的六个键（四个设计器旧键 +
+    /// 设置/诊断两个新键）共用这一套铬，构造期与主题重刷（footer-ghost 分支）不再各写一份
+    /// 字面量。调用前先设 BackColor（描边底取它）。图标+文字用 ImageAboveText 关系布局：
+    /// WinForms 为图与文各保留独立条带，结构上不可能叠进同一矩形。
+    /// </summary>
+    internal static void StyleFooterGhostButton(ButtonBase button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.Tag = "footer-ghost";
+        button.Margin = Padding.Empty;
+        button.Padding = Padding.Empty;
+        button.ImageAlign = ContentAlignment.TopCenter;
+        button.TextAlign = ContentAlignment.BottomCenter;
+        button.TextImageRelation = TextImageRelation.ImageAboveText;
+        button.ForeColor = Text;
+        button.Font = Font(TypeScale.Caption);
+        if (button is RButton rbutton)
+        {
+            rbutton.Borderless = true;
+            rbutton.BorderRadius = 2;   // 统一圆角：设计器给 buttonOverlay 的是 5，其余 RButton 是 2
+        }
+        button.FlatAppearance.BorderColor = button.BackColor;
+        button.FlatAppearance.BorderSize = 0;
     }
 
     private static void RenderGlyph(PictureBox box, UiGlyph.Kind kind)
