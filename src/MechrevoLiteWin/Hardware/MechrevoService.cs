@@ -1840,22 +1840,27 @@ public class MechrevoService
             };
             if (!ok) return false;
 
+            bool readbackVerified = false;
             if (lightingReadbackWasSeen || requireReadback)
             {
-                bool confirmed = await ConfirmLiquidCoolingStateAsync(
+                readbackVerified = await ConfirmLiquidCoolingStateAsync(
                     statusVersionBeforeCommand,
                     () => LiquidCoolingLightProfileMatches(profile, effectiveColor),
                     $"LcApplyLightProfile({profile})");
-                if (!confirmed)
+                if (!readbackVerified && _hw.LcLightingStatusSeen)
                 {
+                    // The firmware reports LED state and a fresh readback kept
+                    // disagreeing: it ignored the write. Fail loudly.
                     Logger.WriteLine($"LcApplyLightProfile({profile}) lighting readback not confirmed");
                     return false;
                 }
             }
-            else
+            if (!readbackVerified)
             {
-                // Older GCU builds do not expose LED mode fields. Keep their
-                // send-only compatibility, but make the lack of proof explicit.
+                // Statusless lighting firmware (e.g. LCT22002 v2.0.0.4) never reports
+                // LED mode fields, so a readback can never be satisfied: the write is
+                // unverifiable, not failed. Keep its send-only compatibility, but make
+                // the lack of proof explicit.
                 Logger.WriteLine($"LcApplyLightProfile({profile}) sent without lighting readback");
             }
             if (ok && persist)

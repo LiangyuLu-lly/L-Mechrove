@@ -477,19 +477,63 @@ public class LiquidCoolingIntegrationTests
         }
     }
 
+    /// <summary>
+    /// 从不回报 LED 字段的固件（如 LCT22002 v2.0.0.4）永远无法满足回读：这是「无法验证」而不是
+    /// 「写入失败」。该设备类必须回落到只下发，并真的把灯效命令发出去；否则 GCU 路由会把它当成
+    /// 终局失败并停止恢复（beta17 回归）。
+    /// </summary>
     [Fact]
-    public async Task GcuLightProfile_RequiredReadbackRejectsAStatuslessFirmware()
+    public async Task GcuLightProfile_RequiredReadbackFallsBackToSendOnlyForAStatuslessFirmware()
     {
-        using var hardware = new MechrevoHw(
-            (_, _) => Task.CompletedTask,
-            new MechrevoDeviceCapabilities { LiquidCooling = true });
+        var commands = new ConcurrentQueue<Dictionary<string, object>>();
+        using var hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic == "BT_LC/Control")
+                commands.Enqueue(new Dictionary<string, object>(Assert.IsAssignableFrom<IDictionary<string, object>>(payload)));
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { LiquidCooling = true });
         hardware.HandleMessage("BT_LC/Status", """
             { "connected": true, "ConnectString": "Connected", "LC_action": true }
             """);
         var service = new MechrevoService(hardware);
 
-        Assert.False(await service.LcApplyLightProfile(
+        Assert.True(await service.LcApplyLightProfile(
             WaterCoolerBle.LightCyanStatic, Color.Empty, requireReadback: true));
+        Assert.Contains(commands, command =>
+            command.TryGetValue("Action", out object? action) && action?.ToString() == "LEDControl");
+    }
+
+    /// <summary>
+    /// 会回报 LED 状态的固件不得被上面的只下发回落削弱：写后回读仍是旧档位就说明设备忽略了写入，
+    /// 必须继续判失败——该回读存在的意义正是抓这种静默 no-op。
+    /// </summary>
+    [Fact]
+    public async Task GcuLightProfile_RequiredReadbackStillRejectsAMismatchFromAReportingFirmware()
+    {
+        MechrevoHw hardware = null!;
+        hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic == "BT_LC/Control")
+            {
+                var values = Assert.IsAssignableFrom<IDictionary<string, object>>(payload);
+                if (values.TryGetValue("Action", out object? action) && action?.ToString() == "GETSTATUS")
+                    hardware.HandleMessage("BT_LC/Status", """
+                        { "LCLED_Mode": 2, "LCFanLED_Mode": 0, "LCLED_R": 0, "LCLED_G": 255, "LCLED_B": 255 }
+                        """);
+            }
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { LiquidCooling = true });
+        using (hardware)
+        {
+            hardware.HandleMessage("BT_LC/Status", """
+                { "connected": true, "ConnectString": "Connected", "LC_action": true,
+                  "LCLED_Mode": 2, "LCFanLED_Mode": 0, "LCLED_R": 0, "LCLED_G": 255, "LCLED_B": 255 }
+                """);
+            var service = new MechrevoService(hardware);
+
+            Assert.False(await service.LcApplyLightProfile(
+                WaterCoolerBle.LightCyanStatic, Color.Empty, requireReadback: true));
+        }
     }
 
     [Fact]

@@ -1455,9 +1455,11 @@ namespace MechrevoLite
                 if (ok && route == LiquidCoolingControlRoute.Gcu)
                     await RequestGcuLiquidCoolingStatusAsync(force: true);
                 lcStatus.Text = ok
-                    ? route == LiquidCoolingControlRoute.Gcu
+                    ? route == LiquidCoolingControlRoute.Gcu && Program.hw?.LcLightingStatusSeen == true
                         ? $"灯效已确认：{text}"
-                        : $"已应用灯效：{text}"
+                        : route == LiquidCoolingControlRoute.Gcu
+                            ? $"灯效命令已发送：{text}"
+                            : $"已应用灯效：{text}"
                     : "灯光写入失败";
             }
             void AddLightItem(string text, string profile, bool requiresFanLed = false)
