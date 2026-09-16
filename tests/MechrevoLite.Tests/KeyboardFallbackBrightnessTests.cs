@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Reflection;
 using System.Windows.Forms;
 using MechrevoLite.Hardware;
 using MechrevoLite.UI;
@@ -32,10 +33,28 @@ public class KeyboardFallbackBrightnessTests
 
     static Task SettleAsync() => Task.Delay(150);
 
+    /// <summary>同步轮询（不 await）：RgbForm 回退路径会在测试线程上留下带句柄的窗体与
+    /// 排队到 xunit 同步上下文的续体，await 轮询在该形态下会停摆；同步轮询绕开上下文。</summary>
+    static void WaitUntilSync(Func<bool> condition)
+    {
+        for (int attempt = 0; attempt < 250 && !condition(); attempt++) Thread.Sleep(10);
+    }
+
     static void DetachUiContext() => SynchronizationContext.SetSynchronizationContext(null);
 
     static bool IsChineseDisplayName(object? value) =>
         RgbForm.HidEffects.Any(hid => hid.Name == value?.ToString());
+
+    /// <summary>确定性假 HID：记录写入，不触真实设备（同 KeyboardFallbackCharacterizationTests 的接缝）。</summary>
+    sealed class RecordingKeyboardHid : HidDeviceWin
+    {
+        readonly Harness _harness;
+        public RecordingKeyboardHid(Harness harness) => _harness = harness;
+        public override bool Open() => true;
+        public override bool SetFeature(byte[] report) { _harness.RecordHid("HID:SetFeature"); return true; }
+        public override bool Write(byte[] report) { _harness.RecordHid("HID:Write"); return true; }
+        public override void Dispose() { }
+    }
 
     /// <summary>假 GCU（记录下发 + 回显键盘电源状态）+ 判定为「不支持」的键盘 + 临时配置目录。</summary>
     sealed class Harness : IDisposable
@@ -43,6 +62,7 @@ public class KeyboardFallbackBrightnessTests
         public readonly MechrevoHw Hardware;
         public readonly KeyboardRgb Keyboard;
         public readonly List<(string Topic, Dictionary<string, object> Payload)> Written = new();
+        public readonly List<string> HidOps = new();
 
         readonly object _gate = new();
         readonly string _directory;
@@ -54,7 +74,7 @@ public class KeyboardFallbackBrightnessTests
         readonly bool _previousSuspended;
         readonly bool _previousAudit;
 
-        public Harness(bool kbPowerOn = true)
+        public Harness(bool kbPowerOn = true, bool keyboardConnected = false)
         {
             _previousLightDir = Environment.GetEnvironmentVariable(LightingSettingsStore.ConfigDirectoryOverrideVariable);
             _directory = TempConfigDirectory();
@@ -81,7 +101,9 @@ public class KeyboardFallbackBrightnessTests
             }, new MechrevoDeviceCapabilities { Keyboard = true });
             Hardware = hardware;
 
-            Keyboard = new KeyboardRgb(Path.Combine(_directory, "rgb.cfg")) { KbPowerOn = kbPowerOn };
+            Keyboard = keyboardConnected
+                ? new KeyboardRgb(Path.Combine(_directory, "rgb.cfg"), new RecordingKeyboardHid(this)) { KbPowerOn = kbPowerOn }
+                : new KeyboardRgb(Path.Combine(_directory, "rgb.cfg")) { KbPowerOn = kbPowerOn };
             Keyboard.ResolveDeviceProbe = () => null;   // 无候选 = 确定性「不支持」（设计 §1）
 
             _previousHardware = Program.hw;
@@ -102,6 +124,16 @@ public class KeyboardFallbackBrightnessTests
         public void ReportKeyboardEffect(string effect) =>
             Hardware.HandleMessage("Keyboard/Status",
                 $"{{\"type\":\"MEZone_Lighbar4\",\"effect\":\"{effect}\",\"light\":\"4\",\"powerStatus\":\"On\"}}");
+
+        public void RecordHid(string op)
+        {
+            lock (_gate) HidOps.Add(op);
+        }
+
+        public int CountHidOps()
+        {
+            lock (_gate) return HidOps.Count;
+        }
 
         public List<(string Topic, Dictionary<string, object> Payload)> Snapshot()
         {
@@ -268,4 +300,102 @@ public class KeyboardFallbackBrightnessTests
     [InlineData(120, 4)]
     public void UiBrightness_RoundsToTheNearestHardwareLevel(int brightness, int expected) =>
         Assert.Equal(expected, KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(brightness));
+
+    // ---------- RgbForm 回退态亮度滑条（beta17 收尾：状态行承诺「仅电源与亮度」） ----------
+
+    static void ApplyModeSelectionViaReflection(RgbForm form)
+    {
+        MethodInfo? apply = typeof(RgbForm).GetMethod("ApplyModeSelection",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(apply);
+        apply!.Invoke(form, new object?[] { true });
+    }
+
+    static IEnumerable<Control> Descendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (Control nested in Descendants(child)) yield return nested;
+        }
+    }
+
+    static Control HidPanelOf(RgbForm form) => (Control)typeof(RgbForm).GetField("_hidPanel",
+        BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+
+    /// <summary>
+    /// 回退态 RgbForm：亮度滑条保持可用（状态行承诺「仅电源与亮度」），拖到 5 个档位各自经
+    /// 官方通道下发恰好一条亮度载体（light = 档位、effect = GCU 回报名）；其余 HID 专属控件
+    /// 仍禁用，HID 亮度路径不被触碰（无 HID 连接、无效果线程启动）。
+    /// </summary>
+    [Fact]
+    public async Task Unsupported_RgbFormBrightnessSlider_PublishesTheCarrierAtEachOfTheFiveLevels()
+    {
+        using var harness = new Harness();
+        Assert.False(await harness.Keyboard.EnsureHidReadyAsync());   // 确定性判定：不支持
+        harness.ReportKeyboardEffect("Rainbow");
+        harness.Keyboard.Brightness = 13;   // 非整档初值：5 个档位都与当前值不同，滑条必触发
+
+        Program.UiAuditMode = true;         // 构造不启动模式跟随计时器
+        using var form = new RgbForm(harness.Keyboard);
+        Program.UiAuditMode = false;        // 滑条发布路径不走审计门（审计模式本就不进回退分支）
+        harness.Clear();
+
+        ApplyModeSelectionViaReflection(form);   // 进入回退分支
+
+        Control hidPanel = HidPanelOf(form);
+        // 亮度滑条 = 参数表第一行（BuildHidParams 先加「亮度」再加帧率/模式参数）
+        RSlider slider = Descendants(hidPanel).OfType<RSlider>().First();
+        Assert.True(slider.Enabled, "回退态下亮度滑条必须可用，否则用户无法调亮度。");
+        Assert.DoesNotContain(Descendants(hidPanel),
+            c => c is RComboBox combo && combo.Enabled);   // 其余 HID 专属控件保持禁用
+
+        int effectGenerationBefore = harness.Keyboard.EffectGeneration;
+        foreach (int step in new[] { 0, 25, 50, 75, 100 })
+        {
+            harness.Clear();
+            slider.Value = step;
+            WaitUntilSync(() => harness.CountEffectAll(KeyboardTopic) > 0);
+            Thread.Sleep(150);   // 去抖窗口过后再断言唯一性（迟到的旧档不得再发）
+
+            Dictionary<string, object> payload = SingleEffectAll(harness);
+            Assert.Equal((step / 25).ToString(), payload["light"]);   // 0/25/50/75/100 ⇒ 档 0..4
+            Assert.Equal("Rainbow", payload["effect"]);               // 效果保留（GCU 回报名）
+            AssertNoChineseDisplayNameOnTheWire(harness);
+        }
+
+        Assert.Equal(100, harness.Keyboard.Brightness);   // UI 亮度随滑条持久化（载体输入档）
+        Assert.Equal(effectGenerationBefore, harness.Keyboard.EffectGeneration);   // HID 效果线程未被触碰
+        Assert.False(harness.Keyboard.IsConnected);       // HID 路径未被触碰：从不连接
+        Assert.Equal(0, harness.CountHidOps());           // 无任何 HID 写入
+    }
+
+    /// <summary>Supported 机型上滑条保持今天的 HID 行为：只写渲染器亮度，绝不发 GCU 载体。</summary>
+    [Fact]
+    public async Task Supported_RgbFormBrightnessSlider_KeepsTheHidPathAndNeverPublishesTheCarrier()
+    {
+        using var harness = new Harness(keyboardConnected: true);   // Supported：HID 已连接（假设备接缝）
+        // 固件电源已开：连接态路径不补发 GCU 电源（同 KeyboardFallbackCharacterizationTests 表征 2）。
+        harness.Hardware.HandleMessage("Keyboard/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\"}");
+
+        Program.UiAuditMode = true;   // 构造不启动模式跟随计时器；全程保持（同表征 2）
+        using var form = new RgbForm(harness.Keyboard);
+        harness.Clear();
+
+        ApplyModeSelectionViaReflection(form);   // 走 HID 分支（已连接）
+        await WaitUntil(() => harness.Keyboard.ActiveMode == harness.Keyboard.KbHidMode);
+
+        Control hidPanel = HidPanelOf(form);
+        RSlider slider = Descendants(hidPanel).OfType<RSlider>().First();
+        Assert.True(slider.Enabled);
+
+        harness.Clear();
+        slider.Value = 25;
+        await WaitUntil(() => harness.Keyboard.Brightness == 25);
+        await SettleAsync();
+
+        Assert.Equal(0, harness.CountEffectAll(KeyboardTopic));   // 绝不发 GCU 亮度载体
+        Assert.Equal(25, harness.Keyboard.Brightness);            // HID 渲染器亮度照旧
+    }
 }

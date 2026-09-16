@@ -28,6 +28,9 @@ public class RgbForm : RForm
     int _minContentWidth;
     int _applyGen;               // 模式切换代际：旧切换任务的延迟动作不得覆盖新选择
     int _closeTimerCommandGen;   // 睡眠时间快速连选时仅确认最后一次设置（ApplyModeSelection 收尾推送用）
+    int _gcuBrightGen;           // 回退态亮度载体代际：拖动中的中间值不发布，停顿后发布最新档
+    readonly SemaphoreSlim _gcuBrightLock = new(1, 1);   // 亮度载体单飞：迟到的旧档不得覆盖新档
+    RSlider _brightSlider = null!;   // 回退态下唯一保持可用的参数控件（状态行承诺「仅电源与亮度」）
     System.Windows.Forms.Timer? _modeSyncTimer;   // 仪表盘改效果时，已打开的对话框跟随重放
     int _activeHidMode = KeyboardRgb.ModeWave;
     Action? _updateClientHeight;   // 内容定高；OnLoad 里首帧之前跑一次（Shown 时窗口已可见，改高会跳）
@@ -183,6 +186,9 @@ public class RgbForm : RForm
             _modeSyncTimer?.Stop();
             _modeSyncTimer?.Dispose();
             _rgb.DeviceLost -= OnRgbDeviceLost;
+            Interlocked.Increment(ref _gcuBrightGen);
+            if (_gcuBrightLock.Wait(1000)) { _gcuBrightLock.Release(); _gcuBrightLock.Dispose(); }
+            else Logger.WriteLine("RGB brightness carrier dispose timed out waiting for an in-flight publish.");
         };
 
         Shown += async (_, _) =>
@@ -225,6 +231,62 @@ public class RgbForm : RForm
     void SetDeviceUiEnabled(bool enabled)
     {
         _hidPanel.Enabled = enabled;
+    }
+
+    /// <summary>唯一接缝的窗内读法：确定性「不支持」且官方通道可用时，键盘电源/亮度走 GCU 回退。</summary>
+    bool IsGcuKeyboardFallback() =>
+        KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
+            _rgb.ControllerAvailability, _rgb.IsConnected,
+            Program.service is not null && Program.hw is { IsConnected: true });
+
+    /// <summary>
+    /// 回退态 UI：HID 专属控件全部禁用（本机没有软件灯效控制器，它们毫无意义），仅亮度滑条保持
+    /// 可用——其变更经官方通道的亮度载体下发（状态行承诺「仅电源与亮度」）。面板本身不能整体
+    /// 禁用：禁用父容器会连带禁用滑条，所以逐个禁用后代控件，再恢复滑条及其祖先链。
+    /// </summary>
+    void SetGcuFallbackUiState()
+    {
+        SetDeviceUiEnabled(true);
+        foreach (Control child in _hidPanel.Controls) DisableTree(child);
+        for (Control? c = _brightSlider; c is not null && !ReferenceEquals(c, _hidPanel); c = c.Parent)
+            c.Enabled = true;
+    }
+
+    static void DisableTree(Control root)
+    {
+        root.Enabled = false;
+        foreach (Control child in root.Controls) DisableTree(child);
+    }
+
+    /// <summary>回退态亮度滑条 → 官方通道的亮度载体（SetKeyboardBrightnessPreservingEffect）。
+    /// 拖动去抖：停顿 150ms 后发布最新档（与 SyncDeviceCloseTimerAsync 同一代际去抖样式）；
+    /// 单飞锁 + 代际守卫防迟到的旧档覆盖新档。审计不碰硬件；关灯时亮度载体不下发。</summary>
+    void PublishGcuBrightness()
+    {
+        if (Program.UiAuditMode || !_rgb.KbPowerOn) return;
+        int gen = ++_gcuBrightGen;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            if (gen != Volatile.Read(ref _gcuBrightGen)) return;
+            await SendGcuBrightnessAsync(gen);
+        });
+    }
+
+    async Task SendGcuBrightnessAsync(int gen)
+    {
+        if (Program.service is null || Program.hw is not { IsConnected: true }) return;
+        if (!IsGcuKeyboardFallback()) return;   // 单一路径：仅回退态走 GCU，Supported/Unknown 保持 HID
+        bool lockTaken = false;
+        try
+        {
+            await _gcuBrightLock.WaitAsync();
+            lockTaken = true;
+            if (gen != Volatile.Read(ref _gcuBrightGen)) return;
+            await Program.service.SetKeyboardBrightnessPreservingEffect(
+                KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(_rgb.Brightness));
+        }
+        finally { if (lockTaken) _gcuBrightLock.Release(); }
     }
 
     void OnRgbDeviceLost()
@@ -275,11 +337,9 @@ public class RgbForm : RForm
         BuildHidParams();
         // 唯一接缝（防双发）：确定性「不支持」→ 不进入 HID 连接/启动分支（本机没有可用的软件灯效控制器），
         // 键盘电源交给官方通道（固件电源关时补开）；Supported/Unknown 保持今天的 HID 阶梯（Unknown 视为支持）。
-        if (KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
-                _rgb.ControllerAvailability, _rgb.IsConnected,
-                Program.service is not null && Program.hw is { IsConnected: true }))
+        if (IsGcuKeyboardFallback())
         {
-            SetDeviceUiEnabled(false);
+            SetGcuFallbackUiState();
             SetStatus("本机控制器不支持软件灯效控制，已改用官方通道（仅电源与亮度）");
             if (Program.service is not null && Program.hw is { IsConnected: true } && !Program.hw.KeyboardPower)
                 _ = Task.Run(() => Program.service.SetLightPower(MqttTopics.KeyboardCtrl, true));
@@ -480,9 +540,14 @@ public class RgbForm : RForm
             return c;
         }
 
-        // 通用：亮度 + 帧率
-        var bright = Slider(0, 100, _rgb.Brightness, v => _rgb.Brightness = v);
-        AddRow("亮度", bright);
+        // 通用：亮度 + 帧率。回退态下滑条变更经官方通道的亮度载体下发（IsGcuKeyboardFallback
+        // 判定在事件触发时求值：Supported/Unknown 只写渲染器亮度，绝不发 GCU——结构性单路径）。
+        _brightSlider = Slider(0, 100, _rgb.Brightness, v =>
+        {
+            _rgb.Brightness = v;   // UI 亮度持久化（回退态下也是亮度载体的输入档）
+            if (IsGcuKeyboardFallback()) PublishGcuBrightness();
+        });
+        AddRow("亮度", _brightSlider);
         var fps = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
         foreach (var f in new[] { "15 FPS", "30 FPS", "45 FPS", "60 FPS" }) fps.Items.Add(f);
         int fpsIdx = Array.IndexOf(new[] { 15, 30, 45, 60 }, _rgb.TargetFps);
