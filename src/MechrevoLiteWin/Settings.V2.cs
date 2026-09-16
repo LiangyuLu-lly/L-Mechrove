@@ -969,7 +969,7 @@ public partial class SettingsForm
         // 更新键的 Click 已在构造函数（Settings.cs）绑定；此处再绑一次会让一次点击先后弹出两个
         // 模态更新窗口（关掉第一个后第二个才出现）——用户报告的「更新窗口要关两次」。不要在此重复接线。
 
-        var settingsButton = new Button
+        var settingsButton = new RButton
         {
             Text = "设置",
             FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
@@ -979,12 +979,14 @@ public partial class SettingsForm
             Margin = Padding.Empty,
             Padding = Padding.Empty,
             ForeColor = UiStyleXXX(), BackColor = panelFooter.BackColor,
-            FlatAppearance = { BorderColor = panelFooter.BackColor, BorderSize = 0 },
+            FlatAppearance = { BorderColor = UiVisualStyle.Window, BorderSize = 0 },
             ImageAlign = ContentAlignment.TopCenter,
             TextAlign = ContentAlignment.BottomCenter,
             TextImageRelation = TextImageRelation.ImageAboveText,
             Font = UiStyleCaptionFont(),
             Tag = "footer-ghost",
+            Borderless = true,
+            BorderRadius = 2,
         };
         // 图标走 ApplyFooterGlyph 登记：主题重刷时按当前 Muted 重渲染（直接 Render 则
         // 位图停留在构建期主题，日→夜后齿轮只剩 3.4:1——真机实测的残留方块）。
@@ -994,7 +996,7 @@ public partial class SettingsForm
         // 诊断包入口（footer 幽灵键，与其余四键同形态）：导出到用户选择的 zip。
         // 它是 panelFooter 的后代——UiAuditRunner.CheckFooterOcclusion 明确跳过底栏自身控件，
         // 因此不会被固定底栏遮挡，真实点击必有可点中中心点。
-        var diagnosticButton = new Button
+        var diagnosticButton = new RButton
         {
             Text = "诊断",
             FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
@@ -1004,12 +1006,14 @@ public partial class SettingsForm
             Margin = Padding.Empty,
             Padding = Padding.Empty,
             ForeColor = UiStyleXXX(), BackColor = panelFooter.BackColor,
-            FlatAppearance = { BorderColor = panelFooter.BackColor, BorderSize = 0 },
+            FlatAppearance = { BorderColor = UiVisualStyle.Window, BorderSize = 0 },
             ImageAlign = ContentAlignment.TopCenter,
             TextAlign = ContentAlignment.BottomCenter,
             TextImageRelation = TextImageRelation.ImageAboveText,
             Font = UiStyleCaptionFont(),
             Tag = "footer-ghost",
+            Borderless = true,
+            BorderRadius = 2,
             AccessibleName = "导出诊断包",
         };
         UiVisualStyle.ApplyFooterGlyph(diagnosticButton, UiGlyph.Kind.Package, scale(16));
@@ -1039,11 +1043,16 @@ public partial class SettingsForm
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderColor = UiVisualStyle.Window;
         button.FlatAppearance.BorderSize = 0;
+        button.Padding = Padding.Empty;
         // footer 无框图标键（预览 .fbtn）：打上 ghost 标记退出 ApplyTree 的 Secondary 皮肤
         //（否则每次主题重刷都会给按钮加回 SurfaceRaised 底 + 1px 描边 = 真机截图里的方块感）；
         // RButton 系另需 Borderless——旧的蓝色描边圈来自 buttonOverlay.BorderColor 的边框绘制。
         button.Tag = "footer-ghost";
-        if (button is RButton rbutton) rbutton.Borderless = true;
+        if (button is RButton rbutton)
+        {
+            rbutton.Borderless = true;
+            rbutton.BorderRadius = 2;
+        }
         if (icon == UiGlyph.Kind.Overlay)
         {
             // 悬浮窗键的图标色随激活态走 Accent/Muted，由 UpdateFooterOverlayVisual
