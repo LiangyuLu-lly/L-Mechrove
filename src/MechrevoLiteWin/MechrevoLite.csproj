@@ -31,7 +31,7 @@
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <AssemblyVersion>0.289.0.0</AssemblyVersion>
     <FileVersion>0.289.0.0</FileVersion>
-    <Version>0.289.0-beta16</Version>
+    <Version>0.289.0-beta17</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>
