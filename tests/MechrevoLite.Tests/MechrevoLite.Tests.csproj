@@ -34,6 +34,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MechrevoLiteWin\MechrevoLite.csproj" />
+    <!-- W4 只读 EC 快照探针的解析逻辑；Probe 只有读路径，测试用假传输，不碰硬件。 -->
+    <ProjectReference Include="..\..\src\Probe\Probe.csproj" />
   </ItemGroup>
 
 </Project>

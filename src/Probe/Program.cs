@@ -11,5 +11,6 @@ switch (cmd)
     case "send": await MqttProbe.Send(args.ElementAtOrDefault(1) ?? "Setting/Control", args.ElementAtOrDefault(2) ?? "{}", int.TryParse(args.ElementAtOrDefault(3), out var waitSec) ? waitSec : 8); break;
     case "golden": await GoldenCapture.Run(int.TryParse(args.ElementAtOrDefault(1), out var g) ? g : 120); break;
     case "nvoc": NvOcProbe.Read(); break;
-    default: Console.WriteLine("usage: probe <handshake|sniff|ec|golden [seconds]>"); break;
+    case "snapshot": await EcSnapshotReport.RunAsync(args.Skip(1).ToArray()); break;
+    default: Console.WriteLine("usage: probe <handshake|sniff|ec|golden [seconds]|snapshot [outFile] [--ranges a,b] [--mqtt-seconds N] [--delay-ms N]>"); break;
 }
