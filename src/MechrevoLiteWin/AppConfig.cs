@@ -346,6 +346,7 @@ public static class AppConfig
     {
         config = new Dictionary<string, object>();
         config["performance_mode"] = 0;
+        config["log_level"] = "off";   // 日志级别：off（默认，零磁盘磨损）/ error / all
         string jsonString = JsonSerializer.Serialize(config);
         File.WriteAllText(configFile, jsonString);
     }

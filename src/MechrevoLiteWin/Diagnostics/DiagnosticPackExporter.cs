@@ -12,7 +12,9 @@ internal sealed record DiagnosticPackInputs(
     string ReleaseLabel,
     string SystemInfoText,
     IReadOnlyList<DiagnosticPackFile> LogFiles,
-    IReadOnlyList<DiagnosticPackFile> ConfigFiles);
+    IReadOnlyList<DiagnosticPackFile> ConfigFiles,
+    string? CrashRingBufferText = null,
+    string? LogLevel = null);
 
 /// <summary>导出结果：zip 路径、实际写入的条目列表（含目录条目）、总字节数。</summary>
 internal sealed record DiagnosticPackResult(string ZipPath, IReadOnlyList<string> Entries, long SizeBytes);
@@ -26,6 +28,7 @@ internal static class DiagnosticPackExporter
 {
     internal const string SystemInfoEntry = "系统信息.txt";
     internal const string GuideEntry = "说明.txt";
+    internal const string RingBufferEntry = "日志/内存日志缓冲.txt";
     internal const string LogFolderEntry = "日志/";
     internal const string ConfigFolderEntry = "配置/";
     internal const string ConfigReadmeEntry = "配置/README-配置.txt";
@@ -62,10 +65,15 @@ internal static class DiagnosticPackExporter
             var logPlan = PlanLogs(inputs.LogFiles, maxLogBytes, manifest);
             var configPlan = PlanConfigs(inputs.ConfigFiles, manifest);
 
+            // 日志 OFF 时 log.txt 不存在，manifest 的首行必须说明当时的级别与证据来源。
+            manifest.Insert(0,
+                $"- 日志级别：{inputs.LogLevel ?? "未知"}（off / error / all；OFF 时以内存环形缓冲与 crash.txt 为准）");
+
             WriteText(zip, entries, SystemInfoEntry,
                 inputs.SystemInfoText.TrimEnd() + Environment.NewLine + Environment.NewLine +
                 "【打包清单】" + Environment.NewLine + string.Join(Environment.NewLine, manifest));
             WriteText(zip, entries, GuideEntry, BuildGuide(inputs.Version));
+            WriteText(zip, entries, RingBufferEntry, BuildRingBufferText(inputs));
             WriteText(zip, entries, ConfigReadmeEntry, BuildConfigReadme(inputs.ConfigFiles));
 
             foreach (var item in logPlan)
@@ -84,7 +92,9 @@ internal static class DiagnosticPackExporter
         =================
         本压缩包由 L-Mechrevo 的「导出诊断包」功能生成，用于排查问题。它包含：
           - 系统信息.txt：应用版本、Windows 版本、机型、CPU、GPU 与驱动、GCU 连通与能力位；
-          - 日志\：应用自身的运行日志（log.txt）；
+          - 日志\log.txt：应用运行日志（日志级别为 OFF 时该文件不存在，这是默认设置）；
+          - 日志\crash.txt：进程异常退出时落盘的崩溃现场；
+          - 日志\内存日志缓冲.txt：导出当时的内存环形缓冲快照（日志 OFF 时仍会保留最近 64 KB）；
           - 配置\：应用的配置文件副本（含 README-配置.txt 说明每个文件是什么）。
 
         应用版本：{version}
@@ -105,6 +115,19 @@ internal static class DiagnosticPackExporter
         本压缩包在本地生成，不会自动上传、不会联网发送；请自行确认内容后再提交。
         配置文件可能包含本机设备标识（例如已保存的液冷设备 MAC），介意请先检查。
         """;
+
+    internal static string BuildRingBufferText(DiagnosticPackInputs inputs)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("内存日志环形缓冲（导出时的快照）");
+        sb.AppendLine("================================");
+        sb.AppendLine($"日志级别：{inputs.LogLevel ?? "未知"}");
+        sb.AppendLine("说明：无论日志级别如何，进程都保留最近 64 KB 的日志行；异常退出时会追加到 日志/crash.txt。");
+        sb.AppendLine("      本文件是导出当时的同一份内存快照，日志 OFF 时它是唯一能拿到的近期轨迹。");
+        sb.AppendLine();
+        sb.Append(inputs.CrashRingBufferText ?? "（内存缓冲为空：本次运行尚未产生任何日志行。）");
+        return sb.ToString();
+    }
 
     internal static string BuildConfigReadme(IReadOnlyList<DiagnosticPackFile> configs)
     {

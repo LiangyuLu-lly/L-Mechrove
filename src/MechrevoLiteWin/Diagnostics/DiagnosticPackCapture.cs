@@ -8,13 +8,6 @@ internal static class DiagnosticPackCapture
 {
     internal static DiagnosticPackInputs Capture()
     {
-        var logs = new List<DiagnosticPackFile>
-        {
-            new(Logger.logFile,
-                DiagnosticPackExporter.LogFolderEntry + Path.GetFileName(Logger.logFile),
-                "应用运行日志（追加写入，超过 2 MB 时只保留末尾 1 MB）"),
-        };
-
         List<DiagnosticPackFile> configs = AppConfig.ExportableConfigFiles()
             .Select(file => new DiagnosticPackFile(
                 file.SourcePath,
@@ -26,7 +19,23 @@ internal static class DiagnosticPackCapture
             Program.ReleaseVersion,
             Program.ReleaseLabel,
             DiagnosticSystemInfo.Build(),
-            logs,
-            configs);
+            BuildLogFiles(),
+            configs,
+            CrashRingBufferText: Logger.SnapshotRingBuffer(),
+            LogLevel: Logger.CurrentLevel.ToString());
     }
+
+    /// <summary>
+    /// 日志类条目：运行日志 + 崩溃现场。日志级别 OFF 时 log.txt 不存在，crash.txt 与
+    /// 内存环形缓冲快照（见 DiagnosticPackInputs.CrashRingBufferText）就是唯一证据。
+    /// </summary>
+    internal static List<DiagnosticPackFile> BuildLogFiles() => new()
+    {
+        new(Logger.logFile,
+            DiagnosticPackExporter.LogFolderEntry + Path.GetFileName(Logger.logFile),
+            "应用运行日志（日志级别 OFF 时不存在；超过 10 MB 时保留末尾 1 MB）"),
+        new(Logger.crashFile,
+            DiagnosticPackExporter.LogFolderEntry + Path.GetFileName(Logger.crashFile),
+            "崩溃现场日志（进程异常退出时落盘的内存环形缓冲）"),
+    };
 }

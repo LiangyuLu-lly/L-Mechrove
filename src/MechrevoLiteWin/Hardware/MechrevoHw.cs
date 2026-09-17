@@ -1571,7 +1571,7 @@ public class MechrevoHw : IDisposable
         Interlocked.Exchange(ref _lcStatusReceivedAt, Environment.TickCount64);
         // 变化才记录：GCU 每 6 秒推一次液冷状态，内容通常完全相同。
         // 只做频率节流会让这一行在一小时内重复几百次，把日志里真正需要
-        // 排查的内容挤出 2 MB 上限。
+        // 排查的内容挤出 10 MB 上限。
         Logger.WriteLineIfChanged("lc-status", $"LC: reported={LcReportedConnected} controllable={LcGcuControllable} state={LcConnectString} pump={LcPumpDuty} fan={LcFanDuty} pumpCtrl={LcPumpControl} fanCtrl={LcFanControl} auto={LcCoolingAutoSupported} fw={LcFwVersion} macs={LcDeviceMacs.Count} curMac={LcCurrentMac}");
         RaiseIsolated(LcChanged, nameof(LcChanged));
     }

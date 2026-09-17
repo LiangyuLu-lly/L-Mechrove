@@ -145,12 +145,19 @@ namespace MechrevoLite
             {
                 TryRestoreScreenAfterFailure();
                 Logger.WriteLine("Unhandled: " + e.ExceptionObject);
+                Logger.FlushCrashBuffer("AppDomain.UnhandledException");
             };
-            TaskScheduler.UnobservedTaskException += (s, e) => { Logger.WriteLine("Unobserved: " + e.Exception); e.SetObserved(); };
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                Logger.WriteLine("Unobserved: " + e.Exception);
+                Logger.FlushCrashBuffer("TaskScheduler.UnobservedTaskException");
+                e.SetObserved();
+            };
             Application.ThreadException += (_, e) =>
             {
                 TryRestoreScreenAfterFailure();
                 Logger.WriteLine("UI thread exception: " + e.Exception);
+                Logger.FlushCrashBuffer("Application.ThreadException");
             };
 
             string action = "";
@@ -226,6 +233,8 @@ namespace MechrevoLite
             if (action == "--ui-audit")
             {
                 UiAuditMode = true;
+                // 日志默认 OFF（零磁盘磨损）；审计需要完整日志定位 UI 缺陷，用与环境变量覆盖同一机制打开。
+                Environment.SetEnvironmentVariable(Logger.LevelOverrideVariable, "all");
                 string output = args.Length > 1
                     ? Path.GetFullPath(args[1])
                     : Path.Combine(AppContext.BaseDirectory, "ui-audit");
