@@ -460,6 +460,27 @@ public class MechrevoHw : IDisposable
     public bool IsGpuActionAllowedByGeneration(string action) =>
         DisplayRoutePolicy.AllowsAction(DgpuGeneration, action);
 
+    // 能力级供货判据（UI 可见性）：机型/服务说支持 **且** 本代际控制台确实有这个动作。
+    // Supports* 保留"命令族是否存在"的语义（服务层据此选载荷）；本组谓词叠上轴 2 事实表，
+    // 供 UI 决定要不要把控制项交给用户——否则 30 系的按钮点了只会失败（ProvenAbsent 的动作）。
+
+    /// <summary>iGPU-only 是否可提供给用户（30 系 <c>IGPU_ONLY_*</c> = ProvenAbsent）。</summary>
+    public bool CanOfferIgpuOnly =>
+        SupportsIgpuOnly && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyOn);
+
+    /// <summary>热切换是否可提供给用户（30/40 系无 <c>GPU_HOTSWAP_*</c> 词汇）。</summary>
+    public bool CanOfferGpuHotSwap =>
+        SupportsGpuHotSwap && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.HotSwapOn);
+
+    /// <summary>
+    /// 手动显卡模式切换是否可提供给用户。产品的手动切换一律走"应用目标 + 重启"
+    /// （<see cref="GpuSwitchPolicy.Resolve"/> 对一切模式变更返回 <c>Restart</c>），
+    /// 所以没有 <c>RESTART</c> 动作的代际（30 系 = <c>ProvenAbsent</c>）没有任何可用路由：
+    /// UI 必须整段隐藏，不能给出点了只会失败的按钮。
+    /// </summary>
+    public bool CanOfferGpuModeSwitch =>
+        (SupportsDgpuDirect || SupportsIgpuOnly) && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart);
+
     public bool SupportsKeyboard => Capabilities.Keyboard || KeyboardStatusSeen;
     public bool SupportsLightbar => Capabilities.Lightbar || LightbarStatusSeen;
     public bool SupportsLogoLight => Capabilities.LogoLight || LogoLightStatusSeen || LightbarLogoSupport == true;

@@ -2932,8 +2932,11 @@ namespace MechrevoLite
 
             // Runtime support flags are authoritative when GCU reports them. Do
             // not resurrect a stale registry capability with an OR expression.
-            bool eco = Show(hw?.IgpuOnlyStatusSupport ?? caps.IgpuOnly);
-            bool ultimate = Show(hw?.DgpuDirectStatusSupport ?? caps.DgpuDirect);
+            // 能力级门控：本代际没有 RESTART 动作（30 系 = ProvenAbsent）时产品的手动切换
+            // 没有任何可用路由（GpuSwitchPolicy 对一切模式变更返回 Restart），整段不得出现。
+            bool gpuSwitchOffered = audit || (hw?.CanOfferGpuModeSwitch ?? true);
+            bool eco = gpuSwitchOffered && Show(hw?.CanOfferIgpuOnly ?? caps.IgpuOnly);
+            bool ultimate = gpuSwitchOffered && Show(hw?.SupportsDgpuDirect ?? caps.DgpuDirect);
             bool gpuCapabilitiesKnown = caps.ProfileAvailable || hw?.SettingStatusSeen == true;
             if (!audit && !unsupportedModel && gpuCapabilitiesKnown && !eco && AppConfig.Is("gpu_auto"))
             {
@@ -4366,7 +4369,7 @@ namespace MechrevoLite
                 Program.service.CurrentGpuMode,
                 Program.hw.GpuSwitchResult,
                 targetMode,
-                Program.hw.SupportsGpuHotSwap,
+                Program.hw.CanOfferGpuHotSwap,
                 currentStateFresh: statusReadback == GpuModeStatusReadback.Fresh);
             if (plan.Route == GpuSwitchRoute.NoChange)
             {

@@ -25,8 +25,9 @@ namespace MechrevoLite.Gpu
         {
             if (Program.hw is not null && (Program.hw.Capabilities.ProfileAvailable || Program.hw.SettingStatusSeen))
             {
-                bool ecoSupported = Program.hw.SupportsIgpuOnly;
-                bool muxSupported = Program.hw.SupportsDgpuDirect;
+                bool switchSupported = Program.hw.CanOfferGpuModeSwitch;
+                bool ecoSupported = switchSupported && Program.hw.CanOfferIgpuOnly;
+                bool muxSupported = switchSupported && Program.hw.SupportsDgpuDirect;
                 settings.VisualiseGPUButtons(ecoSupported || muxSupported, muxSupported, ecoSupported);
                 settings.RefreshDeviceCapabilities();
                 if (!ecoSupported && AppConfig.Is("gpu_auto"))
@@ -131,7 +132,7 @@ namespace MechrevoLite.Gpu
                     // 热切换时，独显占用才会挡住 EC 断电，才需要预检和重启生效兜底。
                     int modeBeforeSwitch = Program.hw.GpuMode;
                     bool hotIgpuSwitch = target == MechrevoService.GpuIGpu &&
-                        Program.hw.SupportsGpuHotSwap &&
+                        Program.hw.CanOfferGpuHotSwap &&
                         (modeBeforeSwitch == MechrevoService.GpuStandard ||
                          (modeBeforeSwitch == MechrevoService.GpuAuto && Program.hw.GpuSwitchResult == 1));
                     if (hotIgpuSwitch && !await CloseDgpuApplicationsForManualSwitchAsync().ConfigureAwait(false))
