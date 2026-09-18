@@ -43,7 +43,18 @@ public sealed record GenerationRouteFacts(
     RouteCell Restart,
     RouteCell HotSwap,
     IReadOnlyList<string> ConsoleActions,
-    IReadOnlyList<OemDisplayModeEncoding> OemDisplayMode);
+    IReadOnlyList<OemDisplayModeEncoding> OemDisplayMode)
+{
+    /// <summary>
+    /// N11: within the 40-series there are two capability tiers. <c>true</c> = the machine has
+    /// 双显三模 (hybrid / dGPU-direct / iGPU); <c>false</c> = it does not. <c>null</c> for
+    /// generations that have no such split (30/50).
+    /// </summary>
+    public bool? ThreeMode { get; init; }
+
+    /// <summary>控制台动作词汇（N11 测试与消费方使用的别名）。</summary>
+    public IReadOnlyList<string> Actions => ConsoleActions;
+}
 
 /// <summary>
 /// 逐代（**轴 2**）显示路由事实表。代际由运行时探测（<see cref="DgpuGenerationProbe"/>），
@@ -59,8 +70,15 @@ public sealed record GenerationRouteFacts(
 /// **元数据标识符堆 + 完整 PDB 符号表 + 全载荷 0 命中**的符号级证据，无 C# 可读，故不得升为 PROVEN
 /// （见 <c>.omo\evidence\g30-console-decompile.md</c>）。服务侧 <c>UNKNOWN</c>
 /// （30 系服务 MySettingManager 未反编译）。</item>
-/// <item><b>40 系</b>：控制台侧与服务侧均 <c>PROVEN</c>——两侧都有逐方法反编译的 C#（控制台
-/// <c>Topic.cs</c>/<c>MqttClientCtrl.cs</c>；服务 <c>MySettingManager.cs</c>/<c>WMIEC.cs</c>）。</item>
+/// <item><b>40 系（两档，N11 订正）</b>：控制台侧与服务侧均 <c>PROVEN</c>——两侧都有逐方法反编译的 C#
+/// （控制台 <c>Topic.cs</c>/<c>MqttClientCtrl.cs</c>；服务 <c>MySettingManager.cs</c>/<c>WMIEC.cs</c>）。
+/// <para><b>订正（amended by owner）</b>：此前把 <c>ControlCenter_5.17.49.19</c> 无 <c>IGPU_ONLY_*</c>、
+/// <c>5.17.51.27</c> 有 —— 判为"后续版本新增了核显模式"是**错的**。二者是**两种机型**：40 系分两档，
+/// 一档**带双显三模**（混合 / 独显直连 / 核显，对应 5.17.51.27，有 <c>IGPU_ONLY_*</c>），
+/// 另一档**不带**（对应 5.17.49.19，无 <c>IGPU_ONLY_*</c>）。这正是业主给两个 40 系控制台的原因。
+/// 载荷侧 <c>GCU-40-51749</c>(UniwillService) 与 <c>GCU-40-51751</c>(AiStoneService) 与两档对应。</para>
+/// <para>因此"代际"单轴不够：档位判据必须是**服务写入的 <c>ItemSupport</c> 能力位**
+/// （<c>iGPUModeOnlySupport</c>，同源厂商），而不是按机型硬编码分档。</para></item>
 /// <item><b>50 系</b>：控制台侧 <c>PROVEN</c>——厂商控制台是真实反编译的 C# 代码
 /// （<c>CCUWinUI.decompiled.cs</c>，15 万行量级）；服务侧 <c>UNKNOWN</c>（50 系服务 IL 混淆）。</item>
 /// </list>
@@ -107,17 +125,18 @@ public static class DisplayRouteMatrix
             new[] { ToggleOn, ToggleOff },
             Array.Empty<OemDisplayModeEncoding>()),
 
+        // N11: 40-series WITH 双显三模 (hybrid / dGPU-direct / iGPU) - the 5.17.51.27 console.
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen40,
             new RouteCell(EvidenceMark.Proven,
                 "控制台侧（PROVEN——逐方法反编译）：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF/IGPU、" +
-                "DGPU_DIRECT_CONNECT_RESTART、IGPU_ONLY_CONNECT_RB_ON/OFF（40A）、GETSTATUS",
+                "DGPU_DIRECT_CONNECT_RESTART、IGPU_ONLY_CONNECT_RB_ON/OFF（带双显三模档）、GETSTATUS",
                 "MyControlCenter/Topic.cs:51,123-125 / MyControlCenter/MqttClientCtrl.cs:59-65,92-113 / MySettingManager.cs:1229-1271"),
             new RouteCell(EvidenceMark.Proven,
-                "服务侧 SetFwVars(\"OemDisplayMode\")（40A NVRAM + WMI 0x30000000x iGPU-only；40B 仅 NVRAM）",
+                "服务侧 SetFwVars(\"OemDisplayMode\")（NVRAM + WMI 0x30000000x iGPU-only）",
                 "MySettingManager.cs:1229-1271 / WMIEC.cs:403-472 / GCUService.decompiled.cs:45504-45532"),
             new RouteCell(EvidenceMark.Proven,
-                "IGPU_ONLY_CONNECT_RB_ON/OFF（40A，WMI 0x300000001/0x300000000）",
+                "IGPU_ONLY_CONNECT_RB_ON/OFF（WMI 0x300000001/0x300000000）",
                 "WMIEC.cs:403-472 / gpu-mode-matrix.md A (40A)"),
             new RouteCell(EvidenceMark.Proven,
                 "DGPU_DIRECT_CONNECT_RESTART → shutdown /r /t 0",
@@ -130,7 +149,35 @@ public static class DisplayRouteMatrix
             {
                 new OemDisplayModeEncoding("AMD", 1, 0, 2, "MySettingManager.cs:1229-1271"),
                 new OemDisplayModeEncoding("Intel", 2, 4, 1, "MySettingManager.cs:1229-1271"),
-            }),
+            })
+        { ThreeMode = true },
+
+        // N11: 40-series WITHOUT 双显三模 - the 5.17.49.19 console. No IGPU_ONLY_* vocabulary.
+        new GenerationRouteFacts(
+            DgpuGenerationKind.Gen40,
+            new RouteCell(EvidenceMark.Proven,
+                "控制台侧（PROVEN——逐方法反编译）：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF、" +
+                "DGPU_DIRECT_CONNECT_RESTART、GETSTATUS；**无 IGPU_ONLY_***（不带双显三模档）",
+                "ControlCenter_5.17.49.19 控制台反编译 / gpu-mode-matrix.md A (40B)"),
+            new RouteCell(EvidenceMark.Proven,
+                "服务侧 SetFwVars(\"OemDisplayMode\")（仅 NVRAM，无 WMI iGPU-only 路径）",
+                "MySettingManager.cs:1229-1271 / GCUService.decompiled.cs:45504-45532"),
+            new RouteCell(EvidenceMark.ProvenAbsent,
+                "不带双显三模档：IGPU_ONLY_* 在该档控制台载荷中 0 命中",
+                "ControlCenter_5.17.49.19 控制台反编译 / gpu-mode-matrix.md A (40B)"),
+            new RouteCell(EvidenceMark.Proven,
+                "DGPU_DIRECT_CONNECT_RESTART → shutdown /r /t 0",
+                "MySettingManager.cs:1292-1311 / gpu-mode-matrix.md A"),
+            new RouteCell(EvidenceMark.Unknown,
+                "40 系无热切换动作词汇（GPU_HOTSWAP_* 0 命中）",
+                "gpu-mode-matrix.md A"),
+            new[] { ToggleOn, ToggleOff, ToggleIgpu, Restart },
+            new[]
+            {
+                new OemDisplayModeEncoding("AMD", 1, 0, 2, "MySettingManager.cs:1229-1271"),
+                new OemDisplayModeEncoding("Intel", 2, 4, 1, "MySettingManager.cs:1229-1271"),
+            })
+        { ThreeMode = false },
 
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen50,
@@ -157,6 +204,19 @@ public static class DisplayRouteMatrix
     /// <summary>找一行；找不到返回 <c>null</c>（<c>Unknown</c>/<c>NoDgpu</c> 永远没有行）。</summary>
     public static GenerationRouteFacts? Find(DgpuGenerationKind generation) =>
         Rows.FirstOrDefault(row => row.Generation == generation);
+
+    /// <summary>
+    /// N11: find the row for a generation + capability tier. For generations without a tier split
+    /// (30/50) the <paramref name="threeMode"/> argument is ignored.
+    /// </summary>
+    public static GenerationRouteFacts? FindTier(DgpuGenerationKind generation, bool threeMode) =>
+        Rows.FirstOrDefault(row => row.Generation == generation && (row.ThreeMode is null || row.ThreeMode == threeMode));
+
+    /// <summary>
+    /// N11: the 40-series tier is decided by the service-written <c>ItemSupport</c> capability bit
+    /// (<c>iGPUModeOnlySupport</c>), never by a hard-coded per-model table.
+    /// </summary>
+    public static bool TierFromCapability(int igpuModeOnlySupport) => igpuModeOnlySupport == 1;
 
     /// <summary>该代际的"服务侧写路由"落地方式可信度。只有 40 系是 PROVEN。</summary>
     public static EvidenceMark ServiceWritePathMark(DgpuGenerationKind generation) =>
