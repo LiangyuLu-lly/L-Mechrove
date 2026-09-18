@@ -6,26 +6,20 @@
     Maps the local hardware to the GCU payload directory bundled by the L-Mechrevo installer.
 
 .DESCRIPTION
-    Two modes:
+    Single payload (N6, owner decision A): the installer ships ONLY release\GCU-only, which
+    carries its own UWACPIDriver, and serves every supported generation (30/40/50) with it.
 
-    Multi-payload (default while G0 is unpassed):
-        Bundles four vendor trees and picks one by GPU generation:
-            release\GCU-only        -> 50-series (RTX 50xx / Blackwell)   staged as payload\50
-            release\GCU-40-51751    -> 40-series, AiStoneService variant   staged as payload\40-51751
-            release\GCU-40-51749    -> 40-series, UniwillService variant   staged as payload\40-51749
-            release\GCU-common      -> shared UWACPIDriver                 staged as payload\common
+    The retired 40-series trees are no longer bundled. The broken platform-code -> generation
+    heuristic is gone: axis 1 (platform code) must not decide axis 2 (dGPU generation). Detection
+    is GPU-name / NVIDIA PCI device-id only; an undeterminable generation exits non-zero with a
+    readable reason and NEVER falls back to a 40-series payload. -Variant / /GCUVARIANT is refused
+    because no second payload exists.
 
-    Single-payload (-SinglePayload / #ifdef SingleGcuPayload):
-        Ships only release\GCU-only and serves every supported generation (30/40/50) with it.
-        The retired 40-series trees are gone and the broken PH4*/PH6* platform->generation
-        heuristic is not consulted: axis 1 (platform code) must not decide axis 2 (dGPU
-        generation). Detection is GPU-name / NVIDIA PCI device-id only; an undeterminable
-        generation exits non-zero with a readable reason and NEVER falls back to a 40-series
-        payload. -Variant / /GCUVARIANT is refused because no second payload exists.
-
-        G0 gate: single-payload mode may only be enabled once real 30-series AND 40-series
-        hardware proves the 1.2.0.0 payload serves them. Until then the default stays
-        multi-payload and the 40-series trees stay bundled.
+    The old G0 gate is superseded (owner): the newest GCU is backward compatible to 30-series, the
+    vendor ships one GCU/console for all 24 platform codes, and release\GCU-only\...\UserFanTables
+    carries all 24 per-model chassis dirs + the 23 flat files while the 40-series payloads carry
+    zero per-model dirs - so the newest payload is the superset. The safety net that replaces G0 is
+    the post-install/first-run self-check plus the visible fallback (see Install-Gcu.ps1).
 
 .OUTPUTS
     [pscustomobject] with Generation, Variant, ServiceDir, RepoPayload, StagedDir, Reason, Evidence.
@@ -40,116 +34,43 @@ param(
     [string[]]$DeviceId,
     [string]$BiosProjectId,
     [string[]]$GpuName,
-    [ValidateSet('Auto', '50', '40-51749', '40-51751')]
     [string]$Variant = 'Auto',
     [string]$OutputFile,
     [switch]$AsJson,
-    [switch]$SinglePayload,
     [switch]$SelfTest
 )
 
 Set-StrictMode -Version 2.0
 
 # --- bundle (what the installer stages) -------------------------------------
-$script:MultiBundle = @(
-    [pscustomobject]@{ Key = '50';       RepoPayload = 'release\GCU-only' }
-    [pscustomobject]@{ Key = '40-51749'; RepoPayload = 'release\GCU-40-51749' }
-    [pscustomobject]@{ Key = '40-51751'; RepoPayload = 'release\GCU-40-51751' }
-    [pscustomobject]@{ Key = 'common';   RepoPayload = 'release\GCU-common' }
-)
-$script:SingleBundle = @(
-    [pscustomobject]@{ Key = '50';       RepoPayload = 'release\GCU-only' }
+# N6: exactly one tree. release\GCU-only carries its own UWACPIDriver, so release\GCU-common is
+# NOT staged: it is byte-identical to GCU-only\UWACPIDriver (verified: uwacpidriver.cat 11342,
+# UWACPIDriver.inf 2034, UWACPIDriver.sys 46352 - same sizes and hashes), so staging it would
+# duplicate the driver for no benefit.
+$script:Bundle = @(
+    [pscustomobject]@{ Key = '50'; RepoPayload = 'release\GCU-only' }
 )
 
 # --- selection (which tree the installer copies) ----------------------------
-$script:PayloadByVariant = [ordered]@{
-    '50'       = [pscustomobject]@{ Variant = '50';       Generation = '50'; ServiceDir = 'AiStoneService'; RepoPayload = 'release\GCU-only';      StagedDir = 'payload\50' }
-    '40-51751' = [pscustomobject]@{ Variant = '40-51751'; Generation = '40'; ServiceDir = 'AiStoneService'; RepoPayload = 'release\GCU-40-51751'; StagedDir = 'payload\40-51751' }
-    '40-51749' = [pscustomobject]@{ Variant = '40-51749'; Generation = '40'; ServiceDir = 'UniwillService'; RepoPayload = 'release\GCU-40-51749'; StagedDir = 'payload\40-51749' }
-}
-$script:SinglePayloadEntry = [pscustomobject]@{
+$script:PayloadEntry = [pscustomobject]@{
     Variant = '50'; Generation = '50'; ServiceDir = 'AiStoneService'; RepoPayload = 'release\GCU-only'; StagedDir = 'payload\50'
 }
 
 function Get-GcuPayloadBundle {
-    param([switch]$SinglePayload)
-    if ($SinglePayload) { return $script:SingleBundle }
-    return $script:MultiBundle
+    return $script:Bundle
 }
 
 function Assert-GcuPayloadDirs {
-    param(
-        [Parameter(Mandatory = $true)][string]$Root,
-        [switch]$SinglePayload
-    )
+    param([Parameter(Mandatory = $true)][string]$Root)
     $missing = New-Object System.Collections.Generic.List[string]
-    foreach ($entry in @(Get-GcuPayloadBundle -SinglePayload:$SinglePayload)) {
+    foreach ($entry in @(Get-GcuPayloadBundle)) {
         $dir = Join-Path $Root $entry.RepoPayload
         if (-not (Test-Path -LiteralPath $dir)) { $missing.Add($dir) }
     }
     if ($missing.Count -gt 0) {
         throw ("GCU payload directory missing: {0}" -f ($missing -join ', '))
     }
-    return @(Get-GcuPayloadBundle -SinglePayload:$SinglePayload)
-}
-
-function Get-NvidiaGeneration {
-    param(
-        [string[]]$Ids,
-        [string[]]$Names,
-        [string]$BiosProject
-    )
-
-    $evidence = New-Object System.Collections.Generic.List[string]
-    $is50 = $false
-    $is40 = $false
-
-    foreach ($name in @($Names)) {
-        if ([string]::IsNullOrWhiteSpace($name)) { continue }
-        if ($name -match '(?i)\bRTX\s*50[5-9]\d\b') {
-            $is50 = $true
-            $evidence.Add("gpu-name '$name' matches RTX 50[5-9]x")
-        }
-        elseif ($name -match '(?i)\bRTX\s*40[5-9]\d\b') {
-            $is40 = $true
-            $evidence.Add("gpu-name '$name' matches RTX 40[5-9]x")
-        }
-    }
-
-    foreach ($id in @($Ids)) {
-        if ([string]::IsNullOrWhiteSpace($id)) { continue }
-        $match = [regex]::Match($id, '(?i)DEV_([0-9A-F]{4})')
-        if (-not $match.Success) { continue }
-        $dev = [Convert]::ToInt32($match.Groups[1].Value, 16)
-        $high = $dev -band 0xFF00
-        if (@(0x2B00, 0x2C00, 0x2D00, 0x2E00, 0x2F00) -contains $high) {
-            $is50 = $true
-            $evidence.Add(("pci-device {0} is Blackwell-class (0x{1:X4})" -f $id, $dev))
-        }
-        elseif (@(0x2600, 0x2700, 0x2800) -contains $high) {
-            $is40 = $true
-            $evidence.Add(("pci-device {0} is Ada-class (0x{1:X4})" -f $id, $dev))
-        }
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($BiosProject)) {
-        if ($BiosProject -match '(?i)^PH6') {
-            $is50 = $true
-            $evidence.Add("BIOS project id '$BiosProject' is a PH6 (50-series) platform")
-        }
-        elseif ($BiosProject -match '(?i)^PH4') {
-            $is40 = $true
-            $evidence.Add("BIOS project id '$BiosProject' is a PH4 (40-series) platform")
-        }
-    }
-
-    $generation = if ($is50) { '50' } elseif ($is40) { '40' } else { 'unknown' }
-    return [pscustomobject]@{
-        Generation = $generation
-        Is50       = $is50
-        Is40       = $is40
-        Evidence   = $evidence
-    }
+    return @(Get-GcuPayloadBundle)
 }
 
 function Get-GpuGeneration {
@@ -268,7 +189,8 @@ function Get-LiveProbe {
     }
 }
 
-function Select-SingleGcuPayload {
+function Select-GcuPayload {
+    [CmdletBinding()]
     param(
         [string]$Variant = 'Auto',
         [string[]]$DeviceId,
@@ -278,7 +200,7 @@ function Select-SingleGcuPayload {
     )
 
     if ($Variant -ne 'Auto') {
-        throw ("single-payload mode: -Variant '{0}' is retired; -Variant / /GCUVARIANT is no longer supported because only the 50-series GCU-only payload is shipped (G0)." -f $Variant)
+        throw ("-Variant '{0}' is retired: only the newest GCU payload (release\GCU-only) is shipped, so there is no second payload to select. /GCUVARIANT no longer has any effect." -f $Variant)
     }
 
     # Auto-probe only when the caller supplied no hardware data at all. A BIOS project id alone
@@ -296,133 +218,45 @@ function Select-SingleGcuPayload {
             if (-not [string]::IsNullOrWhiteSpace($name)) { $observedNames.Add([string]$name) }
         }
         $observed = if ($observedNames.Count -gt 0) { ($observedNames -join ', ') } else { '(none)' }
-        throw ("cannot determine the NVIDIA dGPU generation (30/40/50) from the GPU name or PCI device id (observed: {0}); refusing to install the GCU payload - no fallback. G0 must prove the 50-series payload serves every supported generation." -f $observed)
+        throw ("cannot determine the NVIDIA dGPU generation (30/40/50) from the GPU name or PCI device id (observed: {0}); refusing to install the GCU payload - no fallback. The newest payload is the superset, but an undeterminable generation is not a supported machine." -f $observed)
     }
 
-    $entry = $script:SinglePayloadEntry
+    $entry = $script:PayloadEntry
     return [pscustomobject]@{
         Generation  = $detected.Generation
         Variant     = $entry.Variant
         ServiceDir  = $entry.ServiceDir
         RepoPayload = $entry.RepoPayload
         StagedDir   = $entry.StagedDir
-        Reason      = ("single-payload mode: {0}-series detected -> {1} (G0)" -f $detected.Generation, $entry.RepoPayload)
-        Evidence    = $detected.Evidence
-    }
-}
-
-function Select-GcuPayload {
-    [CmdletBinding()]
-    param(
-        [string]$Variant = 'Auto',
-        [string[]]$DeviceId,
-        [string]$BiosProjectId,
-        [string[]]$GpuName,
-        [switch]$Probe,
-        [switch]$SinglePayload
-    )
-
-    if ($SinglePayload) {
-        return Select-SingleGcuPayload -Variant $Variant -DeviceId $DeviceId -BiosProjectId $BiosProjectId -GpuName $GpuName -Probe:$Probe
-    }
-
-    if ($Variant -ne 'Auto') {
-        $entry = $script:PayloadByVariant[$Variant]
-        if ($null -eq $entry) { throw ("unknown -Variant '{0}'" -f $Variant) }
-        return [pscustomobject]@{
-            Generation = $entry.Generation
-            Variant    = $entry.Variant
-            ServiceDir = $entry.ServiceDir
-            RepoPayload = $entry.RepoPayload
-            StagedDir  = $entry.StagedDir
-            Reason     = "explicit override -Variant $Variant"
-            Evidence   = @("explicit override")
-        }
-    }
-
-    if ($Probe -or ((-not $DeviceId -or $DeviceId.Count -eq 0) -and (-not $GpuName -or $GpuName.Count -eq 0) -and [string]::IsNullOrWhiteSpace($BiosProjectId))) {
-        $live = Get-LiveProbe
-        if (-not $DeviceId -or $DeviceId.Count -eq 0) { $DeviceId = $live.DeviceId }
-        if (-not $GpuName -or $GpuName.Count -eq 0) { $GpuName = $live.GpuName }
-        if ([string]::IsNullOrWhiteSpace($BiosProjectId)) { $BiosProjectId = $live.BiosProjectId }
-    }
-
-    $detected = Get-NvidiaGeneration -Ids $DeviceId -Names $GpuName -BiosProject $BiosProjectId
-
-    if ($detected.Generation -eq '50') {
-        $variant = '50'
-        $reason = '50-series evidence present -> GCU-only payload'
-    }
-    else {
-        $variant = '40-51751'
-        if ($detected.Generation -eq '40') {
-            $reason = '40-series evidence present -> AiStoneService payload (51751 default: no reliable signal distinguishes 51749 vs 51751)'
-        }
-        else {
-            $reason = 'no 50-series evidence -> 40-series AiStoneService payload (51751 default; use -Variant 40-51749 to override)'
-        }
-    }
-
-    $entry = $script:PayloadByVariant[$variant]
-    return [pscustomobject]@{
-        Generation  = $entry.Generation
-        Variant     = $entry.Variant
-        ServiceDir  = $entry.ServiceDir
-        RepoPayload = $entry.RepoPayload
-        StagedDir   = $entry.StagedDir
-        Reason      = $reason
+        Reason      = ("{0}-series detected -> {1} (single payload; newest GCU is the superset)" -f $detected.Generation, $entry.RepoPayload)
         Evidence    = $detected.Evidence
     }
 }
 
 function Invoke-SelfTest {
+    # Every supported generation resolves to the one shipped payload; an undeterminable
+    # generation and the retired override both THROW (no fallback).
     $cases = @(
-        @{ Name = 'RTX 5080 laptop -> 50';                    Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2C19&SUBSYS_60411D05&REV_A1'); GpuName = @('NVIDIA GeForce RTX 5080 Laptop GPU') }; Expect = '50' },
-        @{ Name = 'RTX 5090 desktop -> 50';                   Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2B85'); GpuName = @('NVIDIA GeForce RTX 5090') }; Expect = '50' },
-        @{ Name = 'RTX 4090 laptop -> 40-51751';              Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2717'); GpuName = @('NVIDIA GeForce RTX 4090 Laptop GPU') }; Expect = '40-51751' },
-        @{ Name = 'RTX 4070 laptop -> 40-51751';              Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2820'); GpuName = @('NVIDIA GeForce RTX 4070 Laptop GPU') }; Expect = '40-51751' },
-        @{ Name = 'BIOS PH6TRX1 -> 50';                       Args = @{ BiosProjectId = 'PH6TRX1' }; Expect = '50' },
-        @{ Name = 'BIOS PH4TQx1 -> 40-51751';                 Args = @{ BiosProjectId = 'PH4TQx1' }; Expect = '40-51751' },
-        @{ Name = 'unknown Intel-only -> 40-51751 fallback';  Args = @{ DeviceId = @('PCI\VEN_8086&DEV_7D67'); GpuName = @('Intel(R) Graphics') }; Expect = '40-51751' },
-        @{ Name = 'explicit override 40-51749';               Args = @{ Variant = '40-51749' }; Expect = '40-51749' }
+        @{ Name = 'RTX 5080 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2C19&SUBSYS_60411D05&REV_A1'); GpuName = @('NVIDIA GeForce RTX 5080 Laptop GPU') }; Expect = '50' },
+        @{ Name = 'RTX 5090 desktop -> GCU-only';      Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2B85'); GpuName = @('NVIDIA GeForce RTX 5090') }; Expect = '50' },
+        @{ Name = 'RTX 4090 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2717'); GpuName = @('NVIDIA GeForce RTX 4090 Laptop GPU') }; Expect = '50' },
+        @{ Name = 'RTX 4070 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2820'); GpuName = @('NVIDIA GeForce RTX 4070 Laptop GPU') }; Expect = '50' },
+        @{ Name = 'RTX 3080 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2206'); GpuName = @('NVIDIA GeForce RTX 3080 Laptop GPU') }; Expect = '50' },
+        @{ Name = 'PCIE 2C19 -> GCU-only';             Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2C19') }; Expect = '50' },
+        @{ Name = 'Intel-only must not fall back';     Args = @{ DeviceId = @('PCI\VEN_8086&DEV_7D67'); GpuName = @('Intel(R) Graphics') }; Expect = 'THROW' },
+        @{ Name = 'retired 40-51749 override';         Args = @{ Variant = '40-51749' }; Expect = 'THROW' }
     )
 
     $failed = 0
     foreach ($case in $cases) {
         $p = @{ Variant = 'Auto'; DeviceId = @(); GpuName = @(); BiosProjectId = '' }
         foreach ($key in $case.Args.Keys) { $p[$key] = $case.Args[$key] }
-        $result = Select-GcuPayload -Variant $p.Variant -DeviceId $p.DeviceId -GpuName $p.GpuName -BiosProjectId $p.BiosProjectId
-        $ok = ($result.Variant -eq $case.Expect)
-        if (-not $ok) { $failed++ }
-        $mark = if ($ok) { 'PASS' } else { 'FAIL' }
-        Write-Host ("  [{0}] {1} -> {2} (expected {3})" -f $mark, $case.Name, $result.Variant, $case.Expect)
-    }
-    Write-Host ("SelfTest: {0} case(s), {1} failed" -f $cases.Count, $failed)
-    return ($failed -eq 0)
-}
-
-function Invoke-SelfTestSingle {
-    $cases = @(
-        @{ Name = 'RTX 5080 -> single GCU-only';       Args = @{ GpuName = @('NVIDIA GeForce RTX 5080 Laptop GPU') }; Expect = '50' },
-        @{ Name = 'RTX 4090 -> single GCU-only';       Args = @{ GpuName = @('NVIDIA GeForce RTX 4090 Laptop GPU') }; Expect = '50' },
-        @{ Name = 'RTX 3080 -> single GCU-only';       Args = @{ GpuName = @('NVIDIA GeForce RTX 3080 Laptop GPU') }; Expect = '50' },
-        @{ Name = 'PCIE 2C19 -> single GCU-only';      Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2C19') }; Expect = '50' },
-        @{ Name = 'retired 40-51749 override';         Args = @{ Variant = '40-51749' }; Expect = 'THROW' },
-        @{ Name = 'Intel-only must not fall back';     Args = @{ GpuName = @('Intel(R) Graphics') }; Expect = 'THROW' }
-    )
-
-    $failed = 0
-    foreach ($case in $cases) {
-        $p = @{ Variant = 'Auto'; DeviceId = @(); GpuName = @() }
-        foreach ($key in $case.Args.Keys) { $p[$key] = $case.Args[$key] }
-        $threw = $false
         $actual = ''
         try {
-            $result = Select-SingleGcuPayload -Variant $p.Variant -DeviceId $p.DeviceId -GpuName $p.GpuName
+            $result = Select-GcuPayload -Variant $p.Variant -DeviceId $p.DeviceId -GpuName $p.GpuName -BiosProjectId $p.BiosProjectId
             $actual = $result.Variant
         }
         catch {
-            $threw = $true
             $actual = 'THROW'
         }
         $ok = ($actual -eq $case.Expect)
@@ -430,7 +264,7 @@ function Invoke-SelfTestSingle {
         $mark = if ($ok) { 'PASS' } else { 'FAIL' }
         Write-Host ("  [{0}] {1} -> {2} (expected {3})" -f $mark, $case.Name, $actual, $case.Expect)
     }
-    Write-Host ("SelfTest (single-payload): {0} case(s), {1} failed" -f $cases.Count, $failed)
+    Write-Host ("SelfTest: {0} case(s), {1} failed" -f $cases.Count, $failed)
     return ($failed -eq 0)
 }
 
@@ -440,13 +274,12 @@ if ($MyInvocation.InvocationName -eq '.') {
 }
 
 if ($SelfTest) {
-    $ok = if ($SinglePayload) { Invoke-SelfTestSingle } else { Invoke-SelfTest }
-    if (-not $ok) { exit 1 }
+    if (-not (Invoke-SelfTest)) { exit 1 }
     exit 0
 }
 
 try {
-    $selection = Select-GcuPayload -Variant $Variant -DeviceId $DeviceId -BiosProjectId $BiosProjectId -GpuName $GpuName -SinglePayload:$SinglePayload
+    $selection = Select-GcuPayload -Variant $Variant -DeviceId $DeviceId -BiosProjectId $BiosProjectId -GpuName $GpuName
 }
 catch {
     Write-Host ("GCU payload selection FAILED: " + $_.Exception.Message)

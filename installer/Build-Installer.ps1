@@ -22,8 +22,7 @@ param(
     [string]$AppSourceDir,
     [string]$OutputDir,
     [string]$IsccPath,
-    [switch]$ProvisionCompiler,
-    [switch]$SinglePayload
+    [switch]$ProvisionCompiler
 )
 
 Set-StrictMode -Version 2.0
@@ -159,10 +158,10 @@ foreach ($doc in @((Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NO
 }
 
 # --- GCU payload accounting --------------------------------------------------
-# Specifying -SinglePayload stages release\GCU-only only (T22/G0); the default keeps all four
-# trees because G0 (real 30/40 hardware proof for the 1.2.0.0 payload) has not passed.
-$bundle = Assert-GcuPayloadDirs -Root $root -SinglePayload:$SinglePayload
-Write-Host ("GCU payload bundle: {0}" -f $(if ($SinglePayload) { 'single (release\GCU-only)' } else { 'multi (4 trees)' }))
+# N6: exactly one payload tree is packaged (release\GCU-only). Assert-GcuPayloadDirs hard-fails
+# the build when it is missing, so a package can never be produced without its payload.
+$bundle = Assert-GcuPayloadDirs -Root $root
+Write-Host ("GCU payload bundle: single ({0})" -f ($bundle | ForEach-Object { $_.RepoPayload }) -join ', ')
 $payloads = foreach ($entry in $bundle) {
     [pscustomobject]@{ Key = $entry.Key; Dir = (Join-Path $root $entry.RepoPayload) }
 }
@@ -206,7 +205,6 @@ $defineArgs = @(
     ('/DAppSourceDir={0}' -f $AppSourceDir),
     ('/O{0}' -f $OutputDir)
 )
-if ($SinglePayload) { $defineArgs += '/DSingleGcuPayload=1' }
 Write-Host ("== ISCC {0} {1}" -f ($defineArgs -join ' '), $issPath)
 $savedEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
@@ -235,7 +233,7 @@ $summary = [ordered]@{
     InstallerBytes  = $setupItem.Length
     InstallerSHA256 = $hash
     PayloadTotalBytes = $totalPayloadBytes
-    SinglePayload   = [bool]$SinglePayload
+    PayloadTrees    = @($payloadReport | ForEach-Object { $_.Key })
     Iscc            = $iscc
 }
 $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDir 'build-summary.json') -Encoding UTF8

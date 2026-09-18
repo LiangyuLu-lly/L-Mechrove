@@ -41,17 +41,6 @@
 
 #define AppExeName "L-Mechrevo.exe"
 
-; --- GCU payload mode (T22 / gate G0) ---------------------------------------
-; Single-payload mode ships only release\GCU-only for every supported dGPU
-; generation. Gated on G0: real 30-series AND 40-series hardware must prove the
-; 1.2.0.0 payload serves them before this define may be turned on. Off by default
-; keeps all four trees bundled.
-#ifdef SingleGcuPayload
-  #define GcuModeArgs " -SinglePayload"
-#else
-  #define GcuModeArgs ""
-#endif
-
 [Setup]
 AppId={{8F4E2C71-9B3A-4D6E-A1C2-7E5B9D0F3A64}
 AppName={#AppName}
@@ -124,21 +113,13 @@ Source: "{#RepoRoot}\用前必看.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Select-GcuPayload.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
 Source: "Install-Gcu.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
 Source: "Uninstall-Gcu.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
-; --- GCU vendor payloads ------------------------------------------------------
-; Single-payload (G0): release\GCU-only serves 30/40/50 with the 1.2.0.0 payload.
-; Multi-payload (default while G0 is unpassed): all four trees, selector picks one.
-#ifdef SingleGcuPayload
+; --- GCU vendor payload (N6: exactly one tree) --------------------------------
+; release\GCU-only is the newest payload and the superset: it serves 30/40/50, carries its own
+; UWACPIDriver, and its UserFanTables holds all 24 per-model chassis dirs + the 23 flat files
+; (the retired 40-series payloads carry zero per-model dirs). The shared driver tree is NOT
+; staged either: it is byte-identical to GCU-only\UWACPIDriver, so staging it would duplicate it.
+; The 40-series trees stay on disk untouched as the material for the visible fallback.
 Source: "{#RepoRoot}\release\GCU-only\*"; DestDir: "{app}\GCU\payload\50"; Flags: ignoreversion recursesubdirs createallsubdirs
-#else
-; 50-series  : release\GCU-only        (AiStoneService + UWACPIDriver + scripts) -> payload\50
-; 40-series  : release\GCU-40-51751    (AiStoneService variant)                  -> payload\40-51751
-; 40-series  : release\GCU-40-51749    (UniwillService variant)                  -> payload\40-51749
-; shared     : release\GCU-common      (UWACPIDriver, byte-identical across gens) -> payload\common
-Source: "{#RepoRoot}\release\GCU-only\*"; DestDir: "{app}\GCU\payload\50"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#RepoRoot}\release\GCU-40-51749\*"; DestDir: "{app}\GCU\payload\40-51749"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#RepoRoot}\release\GCU-40-51751\*"; DestDir: "{app}\GCU\payload\40-51751"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#RepoRoot}\release\GCU-common\*"; DestDir: "{app}\GCU\payload\common"; Flags: ignoreversion recursesubdirs createallsubdirs
-#endif
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
@@ -155,7 +136,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "
 ; N5: the installer is the single place elevation is obtained. Install-Gcu.ps1 creates the
 ; highest-privileges autostart task, grants the app's directory ACLs and the ACPIDriver access
 ; while this process is already elevated, so the app never needs to elevate at runtime.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant ""{param:GCUVARIANT|Auto}""{#GcuModeArgs} -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"" -AppExe ""{app}\{#AppExeName}"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant ""{param:GCUVARIANT|Auto}"" -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"" -AppExe ""{app}\{#AppExeName}"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
