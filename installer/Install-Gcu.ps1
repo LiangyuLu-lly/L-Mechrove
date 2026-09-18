@@ -21,6 +21,7 @@ param(
     [ValidateSet('Auto', '50', '40-51749', '40-51751')][string]$Variant = 'Auto',
     [string]$LogDir,
     [string]$UninstallScriptPath,
+    [string]$InstallerVersion,
     [switch]$NoStart,
     [switch]$SinglePayload,
     [switch]$DryRun
@@ -177,6 +178,52 @@ function Compare-PayloadIdentity {
     return 'Different'
 }
 
+function Get-InstalledMarker {
+    $key = 'HKLM:\SOFTWARE\L-Mechrevo'
+    $marker = [pscustomobject]@{ GcuVariant = $null; GcuPayloadSha256 = $null; GcuInstallerVersion = $null }
+    if (-not (Test-Path -LiteralPath $key)) { return $marker }
+    foreach ($name in @('GcuVariant', 'GcuPayloadSha256', 'GcuInstallerVersion')) {
+        try {
+            $value = (Get-ItemProperty -LiteralPath $key -Name $name -ErrorAction Stop).$name
+            if ($null -ne $value) { $marker.$name = [string]$value }
+        }
+        catch { }
+    }
+    return $marker
+}
+
+function Test-InstallerDowngrade {
+    # Ordering uses the installer/app version line (shared and monotonic), never the GCU service
+    # FileVersion, which the payloads do not share (1.2.0.0 vs 1.0.2.70).
+    [CmdletBinding()]
+    param(
+        [string]$InstalledVersion,
+        [string]$IncomingVersion
+    )
+    if ([string]::IsNullOrWhiteSpace($InstalledVersion)) { return 'NoInstalled' }
+    if ([string]::IsNullOrWhiteSpace($IncomingVersion)) { return 'UnknownIncoming' }
+    $installed = $null
+    $incoming = $null
+    if (-not [System.Version]::TryParse($InstalledVersion, [ref]$installed)) { return 'UnknownInstalled' }
+    if (-not [System.Version]::TryParse($IncomingVersion, [ref]$incoming)) { return 'UnknownIncoming' }
+    if ($installed -gt $incoming) { return 'Downgrade' }
+    return 'NotOlder'
+}
+
+function Get-InstallAction {
+    # Idempotency: an already-current install whose recorded payload identity matches the bundled
+    # one needs only verification, never a re-copy or re-registration.
+    [CmdletBinding()]
+    param(
+        [bool]$AlreadyCurrent,
+        [string]$InstalledSha256,
+        [string]$IncomingSha256
+    )
+    if (-not $AlreadyCurrent) { return 'Install' }
+    if ((Compare-PayloadIdentity -InstalledSha256 $InstalledSha256 -IncomingSha256 $IncomingSha256) -eq 'Same') { return 'VerifyOnly' }
+    return 'Install'
+}
+
 function Install-UwacpiDriver {
     param([string]$DriverDir)
     $inf = Join-Path $DriverDir 'UWACPIDriver.inf'
@@ -261,7 +308,7 @@ function Start-GcuService {
 }
 
 function Set-InstallMarker {
-    param([pscustomobject]$Selection, [string]$ServiceExe, [string]$PayloadSha256)
+    param([pscustomobject]$Selection, [string]$ServiceExe, [string]$PayloadSha256, [string]$InstallerVersion)
     try {
         $key = 'HKLM:\SOFTWARE\L-Mechrevo'
         if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
@@ -270,6 +317,9 @@ function Set-InstallMarker {
         Set-ItemProperty -LiteralPath $key -Name 'GcuServiceExe' -Value $ServiceExe
         if (-not [string]::IsNullOrWhiteSpace($PayloadSha256)) {
             Set-ItemProperty -LiteralPath $key -Name 'GcuPayloadSha256' -Value $PayloadSha256
+        }
+        if (-not [string]::IsNullOrWhiteSpace($InstallerVersion)) {
+            Set-ItemProperty -LiteralPath $key -Name 'GcuInstallerVersion' -Value $InstallerVersion
         }
         Set-ItemProperty -LiteralPath $key -Name 'GcuInstalledUtc' -Value ((Get-Date).ToUniversalTime().ToString('o'))
         Write-Log '  install marker written to HKLM\SOFTWARE\L-Mechrevo (payload identity = SHA256)'
@@ -331,20 +381,30 @@ try {
     $payloadIdentity = Get-GcuPayloadIdentity -ServiceDir $serviceSource
     Write-Log ("payload identity (SHA256) = {0}" -f $payloadIdentity.Sha256)
 
-    # Fast path: already installed and healthy -> only re-assert the firewall rule.
+    # Anti-downgrade (installer/app version line, shared and monotonic): refuse before any change.
+    $marker = Get-InstalledMarker
+    $downgrade = Test-InstallerDowngrade -InstalledVersion $marker.GcuInstallerVersion -IncomingVersion $InstallerVersion
+    if ($downgrade -eq 'Downgrade') {
+        throw ("refusing to downgrade: installed L-Mechrevo {0} is newer than this installer {1}; no service/driver/firewall changes made - use a newer installer to upgrade." -f $marker.GcuInstallerVersion, $InstallerVersion)
+    }
+    Write-Log ("downgrade check = {0} (installed='{1}' incoming='{2}')" -f $downgrade, $marker.GcuInstallerVersion, $InstallerVersion)
+
+    # Fast path: already installed, healthy and the same payload identity -> verify only.
     $currentBinPath = Get-ServiceBinPath
     $alreadyCurrent = (Test-ExpectedBinPath -PathName $currentBinPath -ExpectedExe $serviceExe) -and `
         (Test-Path -LiteralPath $serviceExe) -and (Test-Path -LiteralPath $gcuServiceExe) -and (Test-Path -LiteralPath $driverSys)
+    $currentIdentitySha = if (Test-Path -LiteralPath $gcuServiceExe) { (Get-GcuPayloadIdentity -ServiceDir $serviceTarget).Sha256 } else { $null }
+    $action = Get-InstallAction -AlreadyCurrent $alreadyCurrent -InstalledSha256 $currentIdentitySha -IncomingSha256 $payloadIdentity.Sha256
 
-    if ($alreadyCurrent -and -not $DryRun) {
+    if ($action -eq 'VerifyOnly' -and -not $DryRun) {
         $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
         if ($service -and $service.Status -eq 'Running') {
-            Write-Log 'already installed and RUNNING; verifying signatures and firewall only'
+            Write-Log 'already installed with the same payload identity and RUNNING; verifying signatures and firewall only'
             Assert-SignedFile -Path $serviceExe -Label 'GCUBridge'
             Assert-SignedFile -Path $gcuServiceExe -Label 'GCUService'
             Assert-SignedFile -Path $driverSys -Label 'UWACPIDriver'
             Ensure-FirewallRule
-            Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256
+            Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion
             Write-Log 'GCU install OK (no changes needed)'
             exit 0
         }
@@ -384,7 +444,7 @@ try {
         Start-GcuService
     }
 
-    Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256
+    Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion
     Write-Log 'GCU install OK'
     exit 0
 }
