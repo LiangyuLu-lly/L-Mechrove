@@ -148,6 +148,38 @@ public class MechrevoService
     };
 
     public int CurrentMode => OpToMode(_hw.OperatingMode);
+
+    /// <summary>
+    /// EC 只读传输工厂（T20 测试接缝）。生产默认打开 <c>\\.\ACPIDriver</c> 的只读通道；
+    /// 测试注入假传输。功耗默认值只读，绝不写 EC。
+    /// </summary>
+    internal static Func<Probe.IEcReadTransport?> EcReadTransportFactory { get; set; } = DefaultEcReadTransport;
+
+    static Probe.IEcReadTransport? DefaultEcReadTransport() =>
+        Probe.AcpiDriverReadTransport.TryOpen(out Probe.AcpiDriverReadTransport? transport, out _) ? transport : null;
+
+    /// <summary>
+    /// 读该视觉模式对应的 PL/Tcc 默认值（T20）。Customize 没有 EC 默认组；读不到 EC；
+    /// 任一字节缺失 —— 三种情况都返回 <c>Editable=false</c>（禁用该模式功耗编辑），绝不猜瓦数。
+    /// </summary>
+    public static PlDefaultsResult ReadPlDefaults(int visualMode)
+    {
+        if (PlDefaults.ModeForVisualMode(visualMode) is not { } mode)
+            return PlDefaultsResult.Unavailable(null, "customize has no EC default set");
+
+        Probe.IEcReadTransport? transport = EcReadTransportFactory();
+        if (transport is null)
+            return PlDefaultsResult.Unavailable(mode, "EC read transport unavailable");
+
+        try
+        {
+            return PlDefaults.Read(mode, transport);
+        }
+        finally
+        {
+            (transport as IDisposable)?.Dispose();
+        }
+    }
     public int CurrentGpuMode => _hw.GpuMode;   // 0=核显 1=标准 2=独显直连 3=自动
 
     /// <summary>切换运行模式：发布 → 等待切换完成 → 回读确认 → 事件通知。</summary>
