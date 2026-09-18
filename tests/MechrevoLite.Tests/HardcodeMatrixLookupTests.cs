@@ -91,10 +91,14 @@ public class HardcodeMatrixLookupTests
     {
         IReadOnlySet<string> codes = ModelRegistryData.Load().PlatformCodeSet;
 
+        // N8: the criterion is the vendor service, not the 24-code list. A service-served machine
+        // is supported; a machine the service does not serve degrades to read-only.
         Assert.True(ModelSupport.Determine(
-            new ModelIdentity("PH4TRX1", 18, "IDY", ModelSource.Ec), codes).IsSupported);
+            new ModelIdentity("PH4TRX1", 18, "IDY", ModelSource.Ec), codes, serviceServed: true).IsSupported);
+        Assert.True(ModelSupport.Determine(
+            new ModelIdentity("GK7NXXR", 16, "NA", ModelSource.Ec), codes, serviceServed: true).IsSupported);
         Assert.Equal(SupportReason.NotInSet, ModelSupport.Determine(
-            new ModelIdentity("PH6AGxx", 5894, "IDY", ModelSource.Ec), codes).Reason);
+            new ModelIdentity("PH6AGxx", 5894, "IDY", ModelSource.Ec), codes, serviceServed: false).Reason);
     }
 
     [Fact]

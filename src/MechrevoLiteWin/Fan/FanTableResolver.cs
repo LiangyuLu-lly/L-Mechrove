@@ -8,7 +8,10 @@ public enum FanTableResolutionKind
     /// <summary>该机型在 <c>UserFanTables</c> 里有自己的目录——用目录里的 JSON。</summary>
     Directory,
 
-    /// <summary>没有该机型的目录：按厂商行为回退"从 EC 读默认表"，绝不落到别的机型目录。</summary>
+    /// <summary>没有该机型的目录：回退到 23 张通用 flat 表（N8）。</summary>
+    GenericFlatTables,
+
+    /// <summary>既没有该机型的目录、也没有通用 flat 表：按厂商行为回退"从 EC 读默认表"。</summary>
     EcdDefaults,
 
     /// <summary>身份读不到/解析不出——没有任何目录可用，也不得猜测。</summary>
@@ -71,10 +74,29 @@ public static class FanTableResolver
                 FanTableResolutionKind.Directory, name, candidate, inSupportedSet,
                 "resolved to the model's own fan-table directory");
 
+        // N8: no per-model directory -> fall back to the 23 generic flat tables, which is what the
+        // vendor uses for platforms outside the 24 per-model codes (e.g. GK7NXXR). Only when those
+        // are absent too do we fall back to reading the default table from the EC.
+        if (HasGenericFlatTables(fanTablesRoot))
+            return new FanTableResolution(
+                FanTableResolutionKind.GenericFlatTables, name, fanTablesRoot, inSupportedSet,
+                "model has no fan-table directory; using the generic flat fan tables");
+
         return new FanTableResolution(
             FanTableResolutionKind.EcdDefaults, name, null, inSupportedSet,
             inSupportedSet
                 ? "model directory is missing; read the default fan table from the EC"
                 : "model has no fan-table directory; read the default fan table from the EC");
+    }
+
+    /// <summary>
+    /// 通用 flat 表是否存在（N8）。厂商用这 23 张表服务没有机型专属目录的平台
+    /// （<c>DefaultFanTable_{Gaming,Office,Turbo}</c> + <c>M1T1..M4T5</c>）。
+    /// </summary>
+    internal static bool HasGenericFlatTables(string fanTablesRoot)
+    {
+        if (string.IsNullOrWhiteSpace(fanTablesRoot) || !Directory.Exists(fanTablesRoot)) return false;
+        return File.Exists(Path.Combine(fanTablesRoot, "DefaultFanTable_Gaming.json"))
+            && File.Exists(Path.Combine(fanTablesRoot, "M1T1.json"));
     }
 }

@@ -15,7 +15,7 @@ public class SupportDecisionTests
     [Fact]
     public void AParsedIdentityInsideThe24CodeSetIsSupported()
     {
-        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(Project(18)), Supported);
+        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(Project(18)), Supported, serviceServed: true);
 
         Assert.True(decision.IsSupported);
         Assert.Equal(SupportReason.Ok, decision.Reason);
@@ -30,7 +30,7 @@ public class SupportDecisionTests
         foreach (string code in Supported)
         {
             SupportDecision decision = ModelSupport.Determine(
-                new ModelIdentity(code, 0, "IDY", ModelSource.Ec), Supported);
+                new ModelIdentity(code, 0, "IDY", ModelSource.Ec), Supported, serviceServed: true);
             Assert.True(decision.IsSupported, code);
             Assert.Equal(SupportReason.Ok, decision.Reason);
         }
@@ -58,7 +58,7 @@ public class SupportDecisionTests
         }));
         Assert.Equal("PH6AGxx", identity.ProjectId);
 
-        SupportDecision decision = ModelSupport.Determine(identity, Supported);
+        SupportDecision decision = ModelSupport.Determine(identity, Supported, serviceServed: false);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.NotInSet, decision.Reason);
@@ -68,7 +68,7 @@ public class SupportDecisionTests
     [Fact]
     public void AStandaloneEnumCodeWithoutADirectoryIsNotInSet()
     {
-        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported);
+        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, serviceServed: false);
 
         Assert.Equal("PH6TQxx", decision.ProjectId);
         Assert.False(decision.IsSupported);
@@ -78,7 +78,7 @@ public class SupportDecisionTests
     [Fact]
     public void DetermineFromTheTransportReadsTheDecisionThroughTheSeam()
     {
-        SupportDecision decision = ModelSupport.Determine(Project(18));
+        SupportDecision decision = ModelSupport.Determine(Project(18), serviceServed: true);
 
         Assert.True(decision.IsSupported);
         Assert.Equal("PH4TRX1", decision.ProjectId);
@@ -89,13 +89,13 @@ public class SupportDecisionTests
     {
         ModelIdentity unsupported = ModelRegistry.Read(Project(22));  // PH6TQxx -> NotInSet
         ModelIdentity supported = ModelRegistry.Read(Project(18));    // PH4TRX1 -> Ok
-        SupportDecision baselineUnsupported = ModelSupport.Determine(unsupported, Supported);
-        SupportDecision baselineSupported = ModelSupport.Determine(supported, Supported);
+        SupportDecision baselineUnsupported = ModelSupport.Determine(unsupported, Supported, serviceServed: false);
+        SupportDecision baselineSupported = ModelSupport.Determine(supported, Supported, serviceServed: true);
 
         foreach (string? bios in new[] { null, "IDY", "IDR", "PH4TRX1", "PH6TQxx" })
         {
-            Assert.Equal(baselineUnsupported, ModelSupport.Determine(unsupported, Supported, bios));
-            Assert.Equal(baselineSupported, ModelSupport.Determine(supported, Supported, bios));
+            Assert.Equal(baselineUnsupported, ModelSupport.Determine(unsupported, Supported, bios, serviceServed: false));
+            Assert.Equal(baselineSupported, ModelSupport.Determine(supported, Supported, bios, serviceServed: true));
         }
     }
 

@@ -20,7 +20,7 @@ public class SupportDecisionFailTests
     public void AnEmptySupportSetSupportsNothing()
     {
         SupportDecision decision = ModelSupport.Determine(
-            new ModelIdentity("PH4TRX1", 18, "IDY", ModelSource.Ec), new HashSet<string>());
+            new ModelIdentity("PH4TRX1", 18, "IDY", ModelSource.Ec), new HashSet<string>(), serviceServed: false);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.NotInSet, decision.Reason);
@@ -29,7 +29,7 @@ public class SupportDecisionFailTests
     [Fact]
     public void AnUnreadableEcIsUnparsableAndNotSupported()
     {
-        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported);
+        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported, serviceServed: true);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.Unparsable, decision.Reason);
@@ -40,7 +40,7 @@ public class SupportDecisionFailTests
     public void AnOutOfEnumProjectByteIsUnparsableNotNotInSet()
     {
         SupportDecision decision = ModelSupport.Determine(
-            ModelRegistry.Read(new ModelRegistryTests.FakeEc(new() { [1856] = 250 })), Supported);
+            ModelRegistry.Read(new ModelRegistryTests.FakeEc(new() { [1856] = 250 })), Supported, serviceServed: true);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.Unparsable, decision.Reason);
@@ -53,7 +53,7 @@ public class SupportDecisionFailTests
 
         SupportDecision decision = ModelSupport.Determine(
             new ModelIdentity(ModelIdentity.UnknownName, -1, ModelIdentity.UnknownName, ModelSource.Unknown),
-            setWithUnknown);
+            setWithUnknown, serviceServed: true);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.Unparsable, decision.Reason);
@@ -64,7 +64,7 @@ public class SupportDecisionFailTests
     {
         // PHxAxxx 是枚举成员（23）但不是 24 个机型之一：不得因为"像机型"就放行。
         SupportDecision decision = ModelSupport.Determine(
-            new ModelIdentity("PHxAxxx", 23, "IDY", ModelSource.Ec), Supported);
+            new ModelIdentity("PHxAxxx", 23, "IDY", ModelSource.Ec), Supported, serviceServed: false);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.NotInSet, decision.Reason);
@@ -73,18 +73,19 @@ public class SupportDecisionFailTests
     [Fact]
     public void ACorroborationMismatchOnAnUnsupportedModelDoesNotMakeItSupported()
     {
-        SupportDecision baseline = ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported);
+        SupportDecision baseline = ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, serviceServed: false);
 
         Assert.Equal(SupportReason.NotInSet, baseline.Reason);
-        Assert.Equal(baseline, ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, "PH4TRX1"));
-        Assert.Equal(baseline, ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, "IDR"));
+        // The corroborating BIOS id must not flip the verdict: hold serviceServed constant.
+        Assert.Equal(baseline, ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, "PH4TRX1", serviceServed: false));
+        Assert.Equal(baseline, ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, "IDR", serviceServed: false));
     }
 
     [Fact]
     public void EveryNonOkReasonCarriesIsSupportedFalse()
     {
-        SupportDecision unparsable = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported);
-        SupportDecision notInSet = ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported);
+        SupportDecision unparsable = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported, serviceServed: true);
+        SupportDecision notInSet = ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, serviceServed: false);
 
         Assert.Equal(SupportReason.Unparsable, unparsable.Reason);
         Assert.Equal(SupportReason.NotInSet, notInSet.Reason);

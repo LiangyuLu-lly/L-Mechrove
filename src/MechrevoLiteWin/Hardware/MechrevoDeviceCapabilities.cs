@@ -207,6 +207,17 @@ public sealed class MechrevoDeviceCapabilities
         return values;
     }
 
+    /// <summary>
+    /// 厂商服务是否已写入非空的 <c>ItemSupport</c>（N8 的"服务在服务本机"判据之一）。
+    /// 只读；服务缺失/未连时该键为空，返回 <c>false</c>，保留 D1 的只读降级。
+    /// </summary>
+    internal static bool HasItemSupportContent()
+    {
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        ReadItemSupportInto(values);
+        return values.Count > 0;
+    }
+
     // Newer packages use the 64-bit GamingCenter2 key. Older Control Center
     // installers may use a 32-bit registry view or a legacy product root.
     // Canonical values are read first and legacy keys only fill gaps.

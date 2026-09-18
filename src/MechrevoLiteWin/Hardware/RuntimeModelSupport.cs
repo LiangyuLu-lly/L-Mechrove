@@ -32,7 +32,9 @@ public static class RuntimeModelSupport
             }
             using (transport)
             {
-                SupportDecision auto = ModelSupport.Determine(transport);
+                // N8: the vendor's criterion, not the 24-code list. A machine the vendor service
+                // serves is usable; only a machine it does NOT serve degrades to read-only.
+                SupportDecision auto = ModelSupport.Determine(transport, IsServiceServed());
                 ModelOverrideDecision decision = ModelOverrideStateMachine.EvaluateConfigured(auto);
                 return decision.ManualApplied
                     ? ModelOverrideStateMachine.ValidateManual(decision.EffectiveModel)
@@ -46,7 +48,34 @@ public static class RuntimeModelSupport
         }
     }
 
-    /// <summary>是否被判为**明确不支持**（识别到但不在 24 集合内）。无法判定（Unparsable）不算。</summary>
+    /// <summary>是否被判为**明确不支持**（识别到但厂商服务未服务该机）。无法判定（Unparsable）不算。</summary>
     public static bool IsPositivelyUnsupported(SupportDecision decision) =>
         decision.Reason == SupportReason.NotInSet;
+
+    /// <summary>
+    /// 厂商服务是否在服务本机（N8 的判据来源）。任一为真即算：
+    /// 服务已连（MQTT 握手成功）或服务写入的 <c>ItemSupport</c> 有内容。
+    /// 两者都拿不到即"未服务"，保留 D1 的只读降级。
+    /// </summary>
+    internal static bool IsServiceServed()
+    {
+        try
+        {
+            if (Program.hw is { IsConnected: true }) return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("Service-served probe (MQTT) failed: " + ex.Message);
+        }
+
+        try
+        {
+            return MechrevoDeviceCapabilities.HasItemSupportContent();
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("Service-served probe (ItemSupport) failed: " + ex.Message);
+            return false;
+        }
+    }
 }

@@ -122,6 +122,19 @@ public static class ModelRegistry
     /// </summary>
     internal static bool IsKnownProjectName(string name) => ProjectIdNames.Values.Contains(name, StringComparer.Ordinal);
 
+    /// <summary>展开后的 project id -> 厂商枚举名（测试与诊断用；N8 的 GK7NXXR 解码核验）。</summary>
+    internal static string? ProjectIdNameFor(int expandedProjectId) =>
+        ProjectIdNames.TryGetValue(expandedProjectId, out string? name) ? name : null;
+
+    /// <summary>厂商 <c>GetProject2ExID</c> 的纯函数形式（测试用；不碰硬件）。</summary>
+    internal static int ExpandProjectIdForTest(int projectId, Func<int, int> readByte) =>
+        ExpandProjectId(projectId, new DelegateReadTransport(readByte));
+
+    sealed class DelegateReadTransport(Func<int, int> read) : IEcReadTransport
+    {
+        public int ReadByte(int address) => read(address);
+    }
+
     static string ReadBiosProjectIdName(IEcReadTransport transport)
     {
         int raw = transport.ReadByte(BiosProjectByteAddress);
