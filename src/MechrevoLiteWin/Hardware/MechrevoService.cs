@@ -48,11 +48,11 @@ public class MechrevoService
     /// 热切换确认轮询次数上限，与官方 IgpuOnlyOnCommand 的 count&gt;60 对齐（61 次 × 2 秒 ≈ 122 秒）。
     /// static 而非 const 只是为了让测试能把轮询压缩到 1 次——生产代码不要改写它。
     /// </summary>
-    internal static int HotSwitchStatusPollLimit { get; set; } = 61;
-    internal const int HotSwitchStatusRetryEveryPolls = 4;
+    internal static int HotSwitchStatusPollLimit { get; set; } = IgpuOnlySemantics.PollLimit;
+    internal const int HotSwitchStatusRetryEveryPolls = IgpuOnlySemantics.RetryEveryPolls;
 
     internal static bool ShouldRetryHotSwitchPoll(int poll) =>
-        poll >= 0 && poll % HotSwitchStatusRetryEveryPolls == 0;
+        IgpuOnlySemantics.ShouldResend(poll);
 
     public event Action<int>? ModeChanged;        // 模式变化（G-Helper 枚举：0=游戏 1=增强 2=办公 3=自定义）
     public event Action<int>? GpuModeChanged;     // 显卡模式变化（0=核显 1=标准 2=直连 3=自动）
@@ -1088,7 +1088,7 @@ public class MechrevoService
 
             bool leavingDirect = CurrentGpuMode == GpuDgpu && mode != GpuDgpu;
             int expectedAutoRuntime = mode == GpuAuto && pluggedForAuto.HasValue
-                ? (pluggedForAuto.Value ? 1 : 2)
+                ? IgpuOnlySemantics.AutomaticRuntime(pluggedForAuto.Value)
                 : -1;
             bool hotSwitchRequest = mode == GpuIGpu && _hw.SupportsGpuHotSwap &&
                 (CurrentGpuMode == GpuStandard ||
@@ -1111,7 +1111,8 @@ public class MechrevoService
                 if (CurrentGpuMode != mode) return false;
                 if (!hotSwitchRequest && _hw.GpuModeStatusVersion <= gpuModeStatusVersion) return false;
                 return !requiresFreshHotSwitchResult ||
-                    (_hw.GpuSwitchResultVersion > hotSwitchResultVersion && _hw.GpuSwitchResult == 2);
+                    (_hw.GpuSwitchResultVersion > hotSwitchResultVersion &&
+                     IgpuOnlySemantics.IsSuccess(_hw.GpuSwitchResult, turningOn: true));
             }
             GpuRouteCommand? switchCommand = GpuRouteCommandLayer.BuildSwitchCommand(
                 mode, _hw.SupportsDgpuDirect, _hw.SupportsIgpuOnly, hotSwitchRequest, _hw.DgpuGeneration);
@@ -1164,7 +1165,7 @@ public class MechrevoService
                 ? HotSwitchStatusPollLimit
                 : expectedAutoRuntime >= 0 ? 2 : 7;
             TimeSpan confirmationPollDelay = hotSwitchRequest
-                ? TimeSpan.FromSeconds(2)
+                ? TimeSpan.FromMilliseconds(IgpuOnlySemantics.PollIntervalMilliseconds)
                 : TimeSpan.FromMilliseconds(1800);
             for (int attempt = 0; attempt < confirmationAttempts && !confirmed; attempt++)
             {
@@ -1255,12 +1256,7 @@ public class MechrevoService
     {
         try
         {
-            int rollbackStatus = modeBeforeSwitch switch
-            {
-                GpuAuto => 2,
-                GpuIGpu => 1,
-                _ => 0,
-            };
+            int rollbackStatus = IgpuOnlySemantics.RollbackStatus(modeBeforeSwitch);
             Logger.WriteLine($"Hot switch not confirmed; rolling back to pre-switch mode {modeBeforeSwitch} (status={rollbackStatus})");
             await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
             {
