@@ -22,6 +22,7 @@ param(
     [string]$LogDir,
     [string]$UninstallScriptPath,
     [string]$InstallerVersion,
+    [string]$StatusDir,
     [switch]$NoStart,
     [switch]$SinglePayload,
     [switch]$DryRun
@@ -222,6 +223,92 @@ function Get-InstallAction {
     if (-not $AlreadyCurrent) { return 'Install' }
     if ((Compare-PayloadIdentity -InstalledSha256 $InstalledSha256 -IncomingSha256 $IncomingSha256) -eq 'Same') { return 'VerifyOnly' }
     return 'Install'
+}
+
+function Test-GcuPostInstall {
+    # Four invariants. ItemSupport and ServiceReady are written by the vendor service, never by us;
+    # we only read them. Failure is explicit because Inno [Run] has no ignoreerrors.
+    [CmdletBinding()]
+    param(
+        [string[]]$ServiceNames,
+        [int[]]$ListenerPids,
+        [bool]$ItemSupportPresent,
+        [int]$ServiceReady,
+        [string]$ExpectedServiceName = 'GCUBridge'
+    )
+    $names = @($ServiceNames)
+    $pids = @($ListenerPids)
+    $observed = if ($names.Count -gt 0) { $names -join ', ' } else { '(none)' }
+    $checks = @(
+        [pscustomobject]@{
+            Name = 'single-service'
+            Ok = (($names.Count -eq 1) -and ($names -contains $ExpectedServiceName))
+            Detail = ("expected exactly one GCU service ({0}); found {1}: {2}" -f $ExpectedServiceName, $names.Count, $observed)
+        },
+        [pscustomobject]@{
+            Name = 'single-13688-owner'
+            Ok = ($pids.Count -eq 1)
+            Detail = ("expected exactly one listener on TCP 13688; found {0}" -f $pids.Count)
+        },
+        [pscustomobject]@{
+            Name = 'item-support'
+            Ok = [bool]$ItemSupportPresent
+            Detail = 'HKLM\SOFTWARE\OEM\GamingCenter2\ItemSupport missing - the vendor service did not write it'
+        },
+        [pscustomobject]@{
+            Name = 'service-ready'
+            Ok = ($ServiceReady -eq 1)
+            Detail = ("ServiceReady == {0} (expected 1) - the vendor service did not become ready; see %ProgramData%\L-Mechrevo\logs\gcu-install-*.log" -f $ServiceReady)
+        }
+    )
+    $failed = @($checks | Where-Object { -not $_.Ok })
+    return [pscustomobject]@{ Ok = ($failed.Count -eq 0); Checks = $checks; Failed = $failed }
+}
+
+function Get-GcuPostInstallFacts {
+    $services = @()
+    try {
+        $services = @(Get-CimInstance -ClassName Win32_Service -ErrorAction Stop |
+            Where-Object { $_.PathName -and ($_.PathName -match '(?i)\\GCU\\') } |
+            Select-Object -ExpandProperty Name)
+    }
+    catch { $services = @() }
+    $pids = @()
+    if (Get-Command -Name Get-NetTCPConnection -ErrorAction SilentlyContinue) {
+        $pids = @(Get-NetTCPConnection -LocalPort 13688 -State Listen -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess -Unique)
+    }
+    $itemSupportPresent = $false
+    $serviceReady = -1
+    try {
+        $item = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\OEM\GamingCenter2\ItemSupport' -ErrorAction Stop
+        $itemSupportPresent = (@($item.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' }).Count -gt 0)
+        $ready = $item.PSObject.Properties['ServiceReady']
+        if ($null -ne $ready) { $serviceReady = [int]$ready.Value }
+    }
+    catch { }
+    return [pscustomobject]@{
+        ServiceNames = $services
+        ListenerPids = $pids
+        ItemSupportPresent = $itemSupportPresent
+        ServiceReady = $serviceReady
+    }
+}
+
+function Write-GcuInstallStatus {
+    [CmdletBinding()]
+    param([string]$StatusDir, [string]$Status, [string]$Reason, [object]$Checks)
+    if ([string]::IsNullOrWhiteSpace($StatusDir)) { return $null }
+    if (-not (Test-Path -LiteralPath $StatusDir)) { New-Item -ItemType Directory -Path $StatusDir -Force | Out-Null }
+    $path = Join-Path $StatusDir 'gcu-install-status.json'
+    $payload = [ordered]@{
+        Status     = $Status
+        Reason     = $Reason
+        UpdatedUtc = (Get-Date).ToUniversalTime().ToString('o')
+        Checks     = @($Checks)
+    }
+    $payload | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $path -Encoding UTF8
+    return $path
 }
 
 function Install-UwacpiDriver {
@@ -442,6 +529,22 @@ try {
     }
     else {
         Start-GcuService
+
+        # Post-install verification: the vendor service is the source of truth for ItemSupport and
+        # ServiceReady; a failure is surfaced explicitly (Inno [Run] has no ignoreerrors).
+        Write-Log 'post-install verification (single service / 13688 owner / ItemSupport / ServiceReady)'
+        $facts = Get-GcuPostInstallFacts
+        $verdict = Test-GcuPostInstall -ServiceNames $facts.ServiceNames -ListenerPids $facts.ListenerPids -ItemSupportPresent $facts.ItemSupportPresent -ServiceReady $facts.ServiceReady
+        $resolvedStatusDir = if (-not [string]::IsNullOrWhiteSpace($StatusDir)) { $StatusDir } else { $LogDir }
+        $verdictReason = (@($verdict.Checks) | ForEach-Object { ('{0}={1}' -f $_.Name, $_.Ok) }) -join ' '
+        $statusPath = Write-GcuInstallStatus -StatusDir $resolvedStatusDir -Status $(if ($verdict.Ok) { 'ready' } else { 'failed' }) -Reason $verdictReason -Checks $verdict.Checks
+        if (-not $verdict.Ok) {
+            $reasons = (@($verdict.Failed) | ForEach-Object { ('{0}: {1}' -f $_.Name, $_.Detail) }) -join '; '
+            Write-Log ('FATAL: post-install verification failed: ' + $reasons)
+            Write-Log ('FATAL: see ' + $script:LogFile + ' (gcu-install-*.log)')
+            exit 1
+        }
+        Write-Log ('post-install verification OK; status file: ' + $statusPath)
     }
 
     Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion
