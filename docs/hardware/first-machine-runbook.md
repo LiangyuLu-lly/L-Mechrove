@@ -284,6 +284,35 @@ none); the second command returns **0**; the machine does **not** reboot. The pa
 not change — the 30-series **service-side** write path is UNKNOWN, so any change is recorded as
 UNKNOWN, never as proven.
 
+### Step 2.7c — 30-series UI offers no dead control (capability gate at the control layer)
+
+The capability gate is composed in `MechrevoHw.CanOfferGpuModeSwitch` / `CanOfferIgpuOnly` /
+`CanOfferGpuHotSwap` (`src\MechrevoLiteWin\Hardware\MechrevoHw.cs:468-482`) and consumed at the
+control layer in `SettingsForm.RefreshDeviceCapabilities` (`src\MechrevoLiteWin\Settings.cs:2937`)
+and `GPUModeControl.InitGPUMode` (`src\MechrevoLiteWin\Gpu\GPUModeControl.cs:28`). On a Gen30
+machine `RESTART` / `IGPU_ONLY_*` / `GPU_HOTSWAP_*` are `ProvenAbsent` in the `DisplayRouteMatrix`
+Gen30 row, so the manual mode switch has no usable route (the product's manual switch always
+applies the target then reboots). The whole GPU-mode section must therefore be withheld.
+
+On a **Gen30** machine open the app's main dashboard and check:
+
+1. **No GPU-mode section at all.** `panelGPU` must be absent from the dashboard stack — no
+   direct-connect / standard / ultimate / iGPU-only buttons and no GPU-mode row. A visible GPU
+   control that can only fail is the exact defect this step detects.
+2. **The section stays absent even if the model profile claims support.** `ItemSupport` may report
+   `DGpuDirectConnectionSupport` / `iGPUModeOnlySupport` = 1: the profile is axis 1, the per-
+   generation facts are axis 2, and axis 1 must never override axis 2.
+3. **No offer of hot-swap or restart.** After using the app normally for a few minutes there is no
+   `GPU_HOTSWAP_*`, `IGPU_ONLY_CONNECT_RB_*` or `DGPU_DIRECT_CONNECT_RESTART` publish in the log
+   (commands in 2.7 / 2.7b).
+
+Expected: the GPU-mode section is absent (if a machine still presents some other capability bit,
+any remaining GPU control is disabled with a visible reason — never an enabled no-op button). The
+30-series official console exposes only `DGPU_DIRECT_CONNECT_TOGGLE_ON/_OFF`; our UI must not offer
+more. The unit proof for this gate is `GpuCapabilityGatingFailTests`
+(`Gen30HidesTheGpuModeSectionWhileGen40KeepsIt`, plus the capability-level Gen30 cases in
+`tests\MechrevoLite.Tests\GpuCapabilityGatingFailTests.cs`).
+
 ### Step 2.8 — Guardrails: no firmware write, no EC write
 
 ```powershell
