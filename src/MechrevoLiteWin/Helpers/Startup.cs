@@ -301,6 +301,10 @@ public class Startup
     /// <summary>
     /// 执行一次自启动自检：决定动作并就地覆盖注册，返回"是否应上报失败"。
     /// 纯决策 + 注入的注册动作，便于测试；参数里没有删除操作，从结构上杜绝"先删后建"窗口。
+    /// <para>
+    /// N5：任务由**安装器**（提权时）创建，所以任务已存在且与计划一致时这里是**空操作**——
+    /// 应用不再需要提权去创建任务。只有任务缺失/失效时才走降级修复路径，失败则上报。
+    /// </para>
     /// </summary>
     internal static bool RunStartupTaskCheck(bool taskExists, bool matchesPlan, bool startupEnabled, Func<bool> register)
     {

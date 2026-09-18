@@ -95,6 +95,23 @@ All four GCU payload trees are bundled in the default (multi-payload) build. The
 step selects exactly one at install time, so every bundled payload is reachable and none is
 silently dropped. In single-payload mode only `{app}\GCU\payload\50` is staged.
 
+## Privileges are acquired once, at install time (N5)
+
+The app is a **permanently-elevated** app by owner decision, and the installer is the single place
+elevation is obtained. `Install-Gcu.ps1` (run by the elevated installer) therefore:
+
+| Artefact | What the installer does |
+|---|---|
+| Autostart task `LMechrevo_<SID>` | `Register-ScheduledTask -RunLevel Highest -Force`, action = the app exe with **no arguments**, LogonTrigger + ConsoleConnect trigger. Created before the app ever runs, so the app never needs to elevate to create it. |
+| Install dir `{app}` and `{app}\GCU` | `Modify` for the installing user only (read/write/delete for its own files). Not a broad principal, not the widest right. |
+| Config/log dir `%AppData%\MechrevoLite` | same `Modify` grant, so config and log writes cannot fail on permissions. |
+| `%SystemRoot%\System32\drivers\UWACPIDriver.sys` | `ReadAndExecute` for the installing user, making the `\\.\ACPIDriver` access explicit and idempotent. Running elevated already covers it; no EC/firmware write is added. |
+
+`Uninstall-Gcu.ps1` removes the task (`Unregister-ScheduledTask`) before anything else, so no
+boot-time elevation entry point survives an uninstall. The app-side path in `Helpers\Startup.cs` is a
+**no-op when the task already exists** and only repairs a missing task as a degraded fallback,
+surfacing a tray balloon if it cannot.
+
 ## GCU selection rule
 
 `installer\Select-GcuPayload.ps1` maps hardware to a payload. Install-Gcu.ps1 invokes it and

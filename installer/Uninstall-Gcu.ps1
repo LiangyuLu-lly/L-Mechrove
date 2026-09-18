@@ -111,6 +111,28 @@ function Remove-UwacpiDriver {
     }
 }
 
+function Remove-AutostartTask {
+    # N5: the installer created a highest-privileges autostart task; uninstall must remove it so no
+    # boot-time elevation entry point is left behind. Match the app's naming (LMechrevo_<SID>) and
+    # also sweep the legacy names the app used to register.
+    $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    $names = @('LMechrevo_' + $sid, 'LMechrevo', 'LMechrevoCharge', 'LMechrevo_' + $sid + 'Charge')
+    foreach ($name in $names) {
+        $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+        if (-not $task) {
+            Write-Log ("  autostart task not present: {0}" -f $name)
+            continue
+        }
+        Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+        if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+            Write-Log ("  WARNING: autostart task {0} still exists after removal" -f $name)
+        }
+        else {
+            Write-Log ("  autostart task removed: {0}" -f $name)
+        }
+    }
+}
+
 function Remove-InstallMarker {
     $key = 'HKLM:\SOFTWARE\L-Mechrevo'
     if (Test-Path -LiteralPath $key) {
@@ -138,6 +160,9 @@ try {
         exit 0
     }
 
+    # N5: remove the installer-created highest-privileges autostart task first, so no boot-time
+    # elevation entry point survives the uninstall.
+    Remove-AutostartTask
     Remove-GcuService
     Remove-FirewallRule
     if ($KeepDriver) {

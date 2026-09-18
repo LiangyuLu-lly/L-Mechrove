@@ -152,7 +152,10 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "
 ; GCU payload install: runs AFTER files are copied, selects the payload by GPU generation
 ; (50-series -> payload\50; otherwise -> payload\40-51751 by default). Override the
 ; 40-series variant with /GCUVARIANT=40-51749 (multi-payload only; retired once G0 enables single-payload). Silent: no UI, log under ProgramData.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant ""{param:GCUVARIANT|Auto}""{#GcuModeArgs} -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
+; N5: the installer is the single place elevation is obtained. Install-Gcu.ps1 creates the
+; highest-privileges autostart task, grants the app's directory ACLs and the ACPIDriver access
+; while this process is already elevated, so the app never needs to elevate at runtime.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant ""{param:GCUVARIANT|Auto}""{#GcuModeArgs} -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"" -AppExe ""{app}\{#AppExeName}"" -ConfigDir ""{userappdata}\MechrevoLite"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]

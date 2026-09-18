@@ -52,6 +52,21 @@ Expected: the process is running and `StartTime` is after the boot time. This is
 half; it is recorded as BLOCKED-HW until run on the affected model (see
 `.omo/evidence/t36-reboot-status.json`).
 
+## Step 3a — The installer owns the elevated task (N5)
+
+The task is created by the elevated installer (`Install-Gcu.ps1`), not by the app: an unelevated app
+cannot create a highest-privileges task. The app is permanently elevated by owner decision; the
+installer is the only place elevation is obtained.
+
+```powershell
+$sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+schtasks /query /tn "LMechrevo_$sid" /xml | Select-String 'RunLevel|Command|Arguments'
+```
+
+Expected: `<RunLevel>HighestAvailable</RunLevel>`, `<Command>` = the installed `L-Mechrevo.exe`, and
+no `<Arguments>` element. Manual launch and post-reboot launch must both show **no UAC prompt**.
+After uninstall, `schtasks /query /tn "LMechrevo_$sid"` must report the task is gone.
+
 ## Step 3b — A failed registration is visible (permission root cause)
 
 The repair path no longer deletes the task before recreating it: the old `UnSchedule(); Schedule();`

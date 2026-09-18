@@ -23,6 +23,8 @@ param(
     [string]$UninstallScriptPath,
     [string]$InstallerVersion,
     [string]$StatusDir,
+    [string]$AppExe,
+    [string]$ConfigDir,
     [switch]$NoStart,
     [switch]$SinglePayload,
     [switch]$DryRun
@@ -188,7 +190,11 @@ function Get-InstalledMarker {
             $value = (Get-ItemProperty -LiteralPath $key -Name $name -ErrorAction Stop).$name
             if ($null -ne $value) { $marker.$name = [string]$value }
         }
-        catch { }
+        catch {
+            # A missing value is normal on a first install; anything else (denied read) must be
+            # visible, because a silently unreadable marker disables the anti-downgrade check.
+            Write-Log ("  install marker value '{0}' unreadable: {1}" -f $name, $_.Exception.Message)
+        }
     }
     return $marker
 }
@@ -286,7 +292,10 @@ function Get-GcuPostInstallFacts {
         $ready = $item.PSObject.Properties['ServiceReady']
         if ($null -ne $ready) { $serviceReady = [int]$ready.Value }
     }
-    catch { }
+    catch {
+        # Post-install verification reads this; a denied read must not look like "absent".
+        Write-Log ('  ItemSupport unreadable during post-install verification: ' + $_.Exception.Message)
+    }
     return [pscustomobject]@{
         ServiceNames = $services
         ListenerPids = $pids
@@ -392,6 +401,83 @@ function Start-GcuService {
         throw ("{0} did not reach Running (status={1})" -f $script:ServiceName, $(if ($service) { $service.Status } else { 'missing' }))
     }
     Write-Log '  service is RUNNING'
+}
+
+# ---------------------------------------------------------------------------
+# N5: privileges are acquired ONCE, here, while the installer is elevated.
+# The app is permanently elevated by owner decision; the installer is the only
+# place elevation is obtained, so the autostart task must exist before the app
+# ever runs. An unelevated app cannot create a highest-privileges task, which is
+# the same permission root cause as the original "reboot does not autostart" bug.
+# ---------------------------------------------------------------------------
+
+function Get-AutostartTaskName {
+    # Per-user task name, matching the app's own naming so the app-side repair path
+    # recognises the installer-created task instead of creating a second one.
+    $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    return ('LMechrevo_' + $sid)
+}
+
+function Register-AutostartTask {
+    param([Parameter(Mandatory = $true)][string]$AppExe)
+    if (-not (Test-Path -LiteralPath $AppExe)) {
+        throw ("autostart task target not found: {0}" -f $AppExe)
+    }
+    $taskName = Get-AutostartTaskName
+    $userName = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
+
+    # Action = the exe with NO arguments. An elevated task whose action takes arguments is an
+    # injectable elevation primitive, so the action surface is deliberately empty.
+    # The action is the exe with an empty argument surface: an elevated task whose action takes
+    # arguments is an injectable elevation primitive, so the action carries the exe path only.
+    $action = New-ScheduledTaskAction -Execute $AppExe
+    $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $userName
+    $logonTrigger.Delay = 'PT10S'
+    $consoleTrigger = New-ScheduledTaskTrigger -AtLogOn -User $userName
+    $consoleTrigger.Delay = 'PT10S'
+    $principal = New-ScheduledTaskPrincipal -UserId $userName -LogonType Interactive -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+
+    # -Force overwrites the same-named task in place: no delete window, so a denied re-register
+    # can never leave the machine without an autostart entry.
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($logonTrigger, $consoleTrigger) `
+        -Principal $principal -Settings $settings -Force | Out-Null
+    Write-Log ("  autostart task registered: {0} (RunLevel=Highest, action='{1}' with no arguments)" -f $taskName, $AppExe)
+    return $taskName
+}
+
+function Grant-AppDirectoryAcl {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    }
+    $userName = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
+    # Modify = read/write/delete for this user only. Deliberately not a broad principal and not the
+    # widest right: the app needs to write its own config/logs, nothing more.
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $userName, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+    $acl = Get-Acl -LiteralPath $Path
+    $acl.SetAccessRule($rule)
+    Set-Acl -LiteralPath $Path -AclObject $acl
+    Write-Log ("  ACL granted (Modify): {0} -> {1}" -f $userName, $Path)
+}
+
+function Grant-AcpiDriverAccess {
+    # \\.\ACPIDriver is opened by the app for the read-only EC snapshot and the charge-limit write.
+    # Running elevated already covers it; this only makes the grant explicit and idempotent so a
+    # future non-elevated consumer is not silently denied. No EC/firmware write is added here.
+    $driver = Join-Path $env:SystemRoot 'System32\drivers\UWACPIDriver.sys'
+    if (-not (Test-Path -LiteralPath $driver)) {
+        Write-Log '  UWACPIDriver.sys not present; skipping device ACL (driver install step owns it)'
+        return
+    }
+    $userName = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($userName, 'ReadAndExecute', 'Allow')
+    $acl = Get-Acl -LiteralPath $driver
+    $acl.SetAccessRule($rule)
+    Set-Acl -LiteralPath $driver -AclObject $acl
+    Write-Log ("  ACL granted (ReadAndExecute): {0} -> {1}" -f $userName, $driver)
 }
 
 function Set-InstallMarker {
@@ -548,6 +634,19 @@ try {
     }
 
     Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion
+
+    # N5: acquire every privilege the app needs, once, while we are elevated.
+    Write-Log '[7/7] privileges: autostart task (highest), directory ACLs, device access'
+    if ([string]::IsNullOrWhiteSpace($AppExe)) {
+        $AppExe = Join-Path (Split-Path -Parent $TargetDir) 'L-Mechrevo.exe'
+    }
+    Register-AutostartTask -AppExe $AppExe | Out-Null
+    Grant-AppDirectoryAcl -Path (Split-Path -Parent $TargetDir)
+    Grant-AppDirectoryAcl -Path $TargetDir
+    if (-not [string]::IsNullOrWhiteSpace($ConfigDir)) { Grant-AppDirectoryAcl -Path $ConfigDir }
+    Grant-AppDirectoryAcl -Path $LogDir
+    Grant-AcpiDriverAccess
+
     Write-Log 'GCU install OK'
     exit 0
 }

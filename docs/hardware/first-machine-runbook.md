@@ -832,6 +832,40 @@ Get-Process L-Mechrevo -ErrorAction SilentlyContinue | Select-Object Id, StartTi
 Expected: the process is running with `StartTime` after the boot time. (This is the BLOCKED-HW
 half until run on the affected model; recorded in `.omo\evidence\t36-reboot-status.json`.)
 
+### Step 10.3a — The installer owns the elevated task (N5)
+
+The autostart task is created by the **elevated installer** (`Install-Gcu.ps1`), not by the app at
+runtime: an unelevated app cannot create a "run with highest privileges" task, which is the same
+permission root cause as the original bug. The app is permanently elevated by owner decision, and
+the installer is the single place elevation is obtained.
+
+```powershell
+$sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+schtasks /query /tn "LMechrevo_$sid" /xml | Select-String 'RunLevel|Command|Arguments'
+```
+
+Expected: the task exists, `<RunLevel>HighestAvailable</RunLevel>` is present, `<Command>` is the
+installed `L-Mechrevo.exe`, and there is **no** `<Arguments>` element (an elevated task whose action
+takes arguments is an injectable elevation primitive).
+
+```powershell
+# launching the app manually must raise NO UAC prompt
+Start-Process "$env:ProgramFiles\L-Mechrevo\L-Mechrevo.exe"
+# after a reboot the app must be running, elevated, with no UAC prompt
+Get-Process L-Mechrevo | Select-Object Id, StartTime
+```
+
+Expected: no UAC prompt on manual launch; after a reboot the process is running with `StartTime`
+after the boot time and no prompt was shown.
+
+```powershell
+# uninstall must leave no boot-time elevation entry point
+& "$env:ProgramFiles\L-Mechrevo\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+schtasks /query /tn "LMechrevo_$sid"
+```
+
+Expected: after uninstall the task no longer exists (`schtasks` reports it cannot be found).
+
 ### Step 10.3b — A failed registration must be visible, not silent
 
 Autostart repair now registers the task **in place** (it never deletes the existing entry first, so
