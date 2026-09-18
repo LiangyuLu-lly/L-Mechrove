@@ -140,7 +140,9 @@ public class BatteryChargeLimitTests
 
             Assert.True(EcChargeLimit.IsSupportedMachine(supported, profile));
             Assert.False(EcChargeLimit.IsSupportedMachine(unparsable, profile));
-            Assert.False(EcChargeLimit.IsSupportedMachine(supported, empty));
+            // N15 #15 契约变更：服务画像不再是否决项（它由厂商服务写入、可能晚于首次采样）。
+            // 支持判定本身已编码「服务服务本机」，故 Supported + 空画像现在被接受。
+            Assert.True(EcChargeLimit.IsSupportedMachine(supported, empty));
 
             AppConfig.Set("ec_charge_limit", "1");
             Assert.True(EcChargeLimit.IsSupportedMachine(unparsable, empty));

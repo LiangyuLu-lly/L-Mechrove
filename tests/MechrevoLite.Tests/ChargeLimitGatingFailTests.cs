@@ -22,11 +22,17 @@ public class ChargeLimitGatingFailTests
         Assert.False(EcChargeLimit.IsSupportedMachine(ChargeLimitGatingTests.NotInSet, ChargeLimitGatingTests.ServiceProfile));
     }
 
+    /// <summary>
+    /// N15 #15 契约变更：服务画像（ItemSupport）由厂商服务写入，可能晚于首次采样；把它当否决项
+    /// 会把「服务已服务本机」的机器整个锁在充电上限之外（星耀14 ai9 365 现场 bug）。
+    /// 支持判定本身已编码「服务服务本机」，画像只是附加信号，不再是否决项。
+    /// 旧断言（Supported + 空画像 → false）编码的是被移除的旧契约，故更新为 true。
+    /// </summary>
     [Fact]
-    public void ASupportedModelWithoutAServiceProfileIsRejected()
+    public void ASupportedModelIsAcceptedEvenBeforeTheServiceProfileArrives()
     {
         using var _ = ChargeLimitGatingTests.Force(null);
-        Assert.False(EcChargeLimit.IsSupportedMachine(ChargeLimitGatingTests.Supported, ChargeLimitGatingTests.EmptyProfile));
+        Assert.True(EcChargeLimit.IsSupportedMachine(ChargeLimitGatingTests.Supported, ChargeLimitGatingTests.EmptyProfile));
     }
 
     [Fact]

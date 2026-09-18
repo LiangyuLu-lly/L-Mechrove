@@ -25,15 +25,25 @@ public class InstallerPrivilegesTests
         Assert.Contains("LMechrevo", script, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// N15 #14 契约变更：动作必须携带固定的 <c>startup</c> 字面量参数——应用自己的契约就是拿动作参数
+    /// 与 "startup" 比较（Helpers\Startup.cs:329），不带该参数的任务永远不匹配，应用会重写它，
+    /// 启动路径因此是错的（现场报告「开机自启动没有用」）。
+    ///
+    /// 安全属性仍然成立且被本测试锁定：参数是**固定字面量**，不是用户输入，因此不构成可注入的提权面。
+    /// 旧断言（DoesNotContain "-Argument"）编码的是被移除的旧契约，故更新为「参数必须是 startup 字面量」。
+    /// </summary>
     [Fact]
-    public void InstallGcu_TaskActionIsTheExeWithNoArguments()
+    public void InstallGcu_TaskActionIsTheExeWithTheFixedStartupArgument()
     {
         string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
-        // The action must be the app exe and must NOT carry an argument surface: an elevated task
-        // whose action takes arguments is an injectable elevation primitive.
         Assert.Contains("New-ScheduledTaskAction", script, StringComparison.Ordinal);
         Assert.Contains("-Execute $AppExe", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("-Argument", script, StringComparison.Ordinal);
+        // The argument surface is exactly the fixed literal the app's contract expects.
+        Assert.Contains("-Argument 'startup'", script, StringComparison.Ordinal);
+        // It must never be built from a variable or user input (that WOULD be an injectable surface).
+        Assert.DoesNotContain("-Argument $", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Argument \"", script, StringComparison.Ordinal);
     }
 
     [Fact]
