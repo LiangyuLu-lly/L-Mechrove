@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using Probe;
 
 namespace MechrevoLite.Hardware;
 
@@ -99,40 +98,11 @@ internal static class EcChargeLimit
         return support.IsSupported && matrix.ProfileAvailable;
     }
 
-    static readonly Lazy<SupportDecision> CurrentSupport = new(ReadCurrentSupport);
+    static readonly Lazy<SupportDecision> CurrentSupport = new(RuntimeModelSupport.Current);
 
-    /// <summary>本机是否允许走 EC 直写通道（矩阵 + F3）。</summary>
+    /// <summary>本机是否允许走 EC 直写通道（矩阵 + F3）。身份与覆盖判定统一见 <see cref="RuntimeModelSupport"/>。</summary>
     public static bool IsAvailableOnThisMachine() =>
         IsSupportedMachine(CurrentSupport.Value, FeatureMatrix.Current());
-
-    /// <summary>
-    /// 读 EC 身份 → F3 → 手动覆盖状态机（D2）→ 生效的支持判定。读不到设备即 <c>Unparsable</c>
-    /// （fail-closed），绝不放行。单次判定缓存到进程结束（机型不随进程变化）。
-    /// </summary>
-    static SupportDecision ReadCurrentSupport()
-    {
-        try
-        {
-            if (!AcpiDriverReadTransport.TryOpen(out AcpiDriverReadTransport? transport, out string error) || transport is null)
-            {
-                Logger.WriteLine("Model identity unavailable for charge-limit gate: " + error);
-                return SupportDecision.Unparsable();
-            }
-            using (transport)
-            {
-                SupportDecision auto = ModelSupport.Determine(transport);
-                ModelOverrideDecision decision = ModelOverrideStateMachine.Evaluate(auto);
-                return decision.ManualApplied
-                    ? ModelOverrideStateMachine.ValidateManual(decision.EffectiveModel)
-                    : auto;
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.WriteLine("Charge-limit support determination failed: " + ex.Message);
-            return SupportDecision.Unparsable();
-        }
-    }
 
     /// <summary>写入充电阈值（上限 + 复充下限一对）并回读确认。</summary>
     public static bool TrySet(int percent, out int appliedPercent)

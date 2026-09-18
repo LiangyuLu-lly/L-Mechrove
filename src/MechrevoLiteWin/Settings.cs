@@ -117,6 +117,18 @@ namespace MechrevoLite
         Panel? _themeModePanel;
         Control[] _dashboardSections = Array.Empty<Control>();
         readonly HashSet<Control> _enabledDashboardSections = new();
+        // D1：不支持机型的顶部横幅 + 只读降级。横幅是普通 dashboard 分区，隐藏时整行收拢。
+        BufferedPanel? _unsupportedModelBanner;
+        Label? _unsupportedModelLabel;
+        RTextBox? _modelOverrideBox;
+        Label? _modelOverrideStatus;
+        /// <summary>D1：当前是否处于"机型不支持 → 只读降级"状态（脚本化 UI 断言读它）。</summary>
+        internal bool IsReadOnlyDegraded { get; private set; }
+        static readonly string[] WriteEntryControlNames =
+        {
+            "sliderBattery", "buttonEco", "buttonStandard", "buttonOptimized", "buttonUltimate",
+            "buttonTurbo", "buttonSilentTurbo", "buttonCustomMode",
+        };
         Panel? _officialConsolePanel;
         Label? _officialConsoleStatus;
         RButton? _officialConsoleButton;
@@ -2526,10 +2538,31 @@ namespace MechrevoLite
 
             BuildGcuStatusStrip(D);
 
+            _unsupportedModelBanner = new BufferedPanel
+            {
+                Name = "panelUnsupportedModelNotice",
+                Dock = DockStyle.Top,
+                Height = D(64),
+                CardStyle = true,
+                Padding = new Padding(D(16), D(6), D(16), D(6)),
+                Visible = false,
+            };
+            _unsupportedModelLabel = new Label
+            {
+                Name = "labelUnsupportedModelNotice",
+                Dock = DockStyle.Fill,
+                // Text/Text 是主题前景 token；Danger 只在点击后的状态提示里用（不参与主题幂等校验）。
+                ForeColor = UiVisualStyle.Text,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
+            };
+            _unsupportedModelBanner.Controls.Add(BuildUnsupportedModelRow(D));
+
             _dashboardSections = new Control[]
             {
-                _panelGcuStatus!, panelPerformance, _telemetryPanel!, panelGPU, brightness, panelBattery,
-                _liquidGroup, _lightGroup, _quickGroup,
+                _panelGcuStatus!, _unsupportedModelBanner, panelPerformance, _telemetryPanel!, panelGPU, brightness,
+                panelBattery, _liquidGroup, _lightGroup, _quickGroup,
             };
             _enabledDashboardSections.Clear();
             foreach (Control section in _dashboardSections) _enabledDashboardSections.Add(section);
@@ -2786,6 +2819,9 @@ namespace MechrevoLite
             MechrevoDeviceCapabilities caps = hw?.Capabilities ?? _deviceCapabilities;
             bool audit = Program.UiAuditMode && !Program.UiAuditUseReportedCapabilities;
             bool Show(bool supported) => audit || supported;
+            // D1：机型支持判定（注入/EC/持久化覆盖统一在 RuntimeModelSupport）。只对"明确不支持"降级。
+            SupportDecision modelSupport = RuntimeModelSupport.Current();
+            bool unsupportedModel = RuntimeModelSupport.IsPositivelyUnsupported(modelSupport);
 
             bool StaticQuick(string key) => key switch
             {
@@ -2889,7 +2925,7 @@ namespace MechrevoLite
             bool eco = Show(hw?.IgpuOnlyStatusSupport ?? caps.IgpuOnly);
             bool ultimate = Show(hw?.DgpuDirectStatusSupport ?? caps.DgpuDirect);
             bool gpuCapabilitiesKnown = caps.ProfileAvailable || hw?.SettingStatusSeen == true;
-            if (!audit && gpuCapabilitiesKnown && !eco && AppConfig.Is("gpu_auto"))
+            if (!audit && !unsupportedModel && gpuCapabilitiesKnown && !eco && AppConfig.Is("gpu_auto"))
             {
                 AppConfig.Set("gpu_auto", 0);
                 AppConfig.Set("gpu_mode", MechrevoService.GpuStandard);
@@ -2917,9 +2953,14 @@ namespace MechrevoLite
             // 此处不能再 EnableSection——否则面板会在页面顶部重新浮动出现（真机首验实证）。
             // footer 是页面固定底栏，仍需启用。
             EnableSection(panelFooter, true);
+            // D1：不支持机型 → 顶部横幅 + 只读降级（横幅作为首个分区；隐藏时整行收拢）。
+            ApplyUnsupportedModelNotice(unsupportedModel, modelSupport);
+            // 横幅恒在栈里（隐藏时 AutoSize 行收为 0），这样隐藏态也能被脚本按名字找到。
+            if (_unsupportedModelBanner is not null && !_enabledDashboardSections.Contains(_unsupportedModelBanner))
+                _enabledDashboardSections.Add(_unsupportedModelBanner);
 
             string fingerprint = string.Join('|', _dashboardSections.Select(section => _enabledDashboardSections.Contains(section))) + '|' +
-                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{_lightGroup?.Summary}";
+                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{_lightGroup?.Summary}|{unsupportedModel}";
             if (fingerprint == _lastCapabilityLayout) return;
             _lastCapabilityLayout = fingerprint;
             // 刷新率分段按钮随 Hz 列表重建（签名守卫内部处理）
@@ -2950,6 +2991,113 @@ namespace MechrevoLite
                 section.Visible = enabled;
                 if (enabled) _enabledDashboardSections.Add(section);
             }
+        }
+
+        /// <summary>
+        /// D1：把"机型不支持"落成可见横幅 + 只读降级——禁用仪表盘的全部写入入口
+        /// （电池滑条、显卡档位、性能档位、快捷开关、整块 dashboard 栈），**不写任何配置、不发任何命令**。
+        /// 设置弹窗（⚙，在 panelFooter）保持可用，手动覆盖入口因此始终可达。
+        /// </summary>
+        void ApplyUnsupportedModelNotice(bool unsupported, SupportDecision decision)
+        {
+            IsReadOnlyDegraded = unsupported;
+            if (_unsupportedModelLabel is not null && unsupported)
+                _unsupportedModelLabel.Text = $"当前机型不在支持列表（识别到 {decision.ProjectId}），已进入只读模式。";
+            if (_unsupportedModelBanner is not null) _unsupportedModelBanner.Visible = unsupported;
+
+            foreach (string name in WriteEntryControlNames)
+            {
+                Control? control = Controls.Find(name, true).FirstOrDefault();
+                if (control is not null) control.Enabled = !unsupported;
+            }
+            foreach (Control box in _quickSwitches) box.Enabled = !unsupported;
+            // 注意：不整体禁用 _dashboardStack——横幅里的手动机型覆盖入口必须在只读降级下仍可达。
+            // 写入入口由上面的具名控件 + 快捷开关逐个禁用。
+            if (_modelOverrideBox is not null) _modelOverrideBox.Enabled = true;
+        }
+
+        /// <summary>D1 横幅内容：第一行提示，第二行手动机型覆盖入口（文本框 + 应用/自动 + 状态）。</summary>
+        Control BuildUnsupportedModelRow(Func<int, int> D)
+        {
+            var layout = new TableLayoutPanel
+            {
+                Name = "tableUnsupportedModelNotice",
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.Controls.Add(_unsupportedModelLabel!, 0, 0);
+
+            var row = new TableLayoutPanel
+            {
+                Name = "rowModelOverride",
+                Dock = DockStyle.Fill,
+                ColumnCount = 5,
+                RowCount = 1,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = Padding.Empty,
+            };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(70)));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(64)));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(64)));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(120)));
+
+            var caption = new Label
+            {
+                Text = "手动机型",
+                Dock = DockStyle.Fill,
+                ForeColor = UiVisualStyle.Muted,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
+            };
+            _modelOverrideBox = new RTextBox
+            {
+                Name = "textModelOverride",
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                Height = D(24),
+                Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
+                Text = ModelOverrideStateMachine.ReadConfiguredManualModel() ?? "",
+            };
+            _modelOverrideStatus = new Label
+            {
+                Name = "labelModelOverrideStatus",
+                Dock = DockStyle.Fill,
+                ForeColor = UiVisualStyle.Muted,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
+            };
+            var apply = new RButton { Name = "buttonModelOverrideApply", Text = "应用", Dock = DockStyle.Fill, AutoSize = true };
+            var auto = new RButton { Name = "buttonModelOverrideAuto", Text = "自动", Dock = DockStyle.Fill, AutoSize = true };
+            apply.Click += (_, _) =>
+            {
+                bool ok = ModelOverrideStateMachine.TrySetManual(_modelOverrideBox?.Text, out SupportDecision decision);
+                if (ok) ModelOverrideStateMachine.SetMode(ModelOverrideMode.ManualPinned);
+                _modelOverrideStatus.Text = ok ? "已手动固定" : $"无效（{decision.Reason}）";
+                _modelOverrideStatus.ForeColor = ok ? UiVisualStyle.Text : UiVisualStyle.Danger;
+            };
+            auto.Click += (_, _) =>
+            {
+                ModelOverrideStateMachine.SetMode(ModelOverrideMode.Auto);
+                _modelOverrideStatus.Text = "已恢复自动";
+                _modelOverrideStatus.ForeColor = UiVisualStyle.Muted;
+            };
+            row.Controls.Add(caption, 0, 0);
+            row.Controls.Add(_modelOverrideBox, 1, 0);
+            row.Controls.Add(apply, 2, 0);
+            row.Controls.Add(auto, 3, 0);
+            row.Controls.Add(_modelOverrideStatus, 4, 0);
+            layout.Controls.Add(row, 0, 1);
+            return layout;
         }
 
         /// <summary>
