@@ -643,7 +643,13 @@ try {
     Register-AutostartTask -AppExe $AppExe | Out-Null
     Grant-AppDirectoryAcl -Path (Split-Path -Parent $TargetDir)
     Grant-AppDirectoryAcl -Path $TargetDir
-    if (-not [string]::IsNullOrWhiteSpace($ConfigDir)) { Grant-AppDirectoryAcl -Path $ConfigDir }
+    # The app's config/log dir is %AppData%\MechrevoLite (Logger.ResolveAppPath). Resolve it here
+    # rather than passing {userappdata} through Inno: under admin install mode that constant is the
+    # elevating account's profile, not the invoking user's, and Inno warns about exactly that.
+    if ([string]::IsNullOrWhiteSpace($ConfigDir)) {
+        $ConfigDir = Join-Path $env:APPDATA 'MechrevoLite'
+    }
+    Grant-AppDirectoryAcl -Path $ConfigDir
     Grant-AppDirectoryAcl -Path $LogDir
     Grant-AcpiDriverAccess
 
