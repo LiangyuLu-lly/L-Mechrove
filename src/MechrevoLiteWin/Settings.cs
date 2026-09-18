@@ -4147,13 +4147,13 @@ namespace MechrevoLite
             if (maxFrequency > ScreenControl.MIN_RATE)
             {
                 button120Hz.Text = maxFrequency.ToString() + "Hz" + (overdriveSetting ? " + OD" : "");
-                panelScreen.Visible = true;
-                tableScreen.Visible = true;
+                panelScreen.Visible = ScreenPanelVisibility.PanelVisible(maxFrequency);
+                tableScreen.Visible = ScreenPanelVisibility.RefreshTableVisible(maxFrequency, ScreenControl.MIN_RATE);
             }
             else if (maxFrequency > 0)
             {
-                tableScreen.Visible = false;
-                panelScreen.Visible = AppConfig.NoGpu();
+                tableScreen.Visible = ScreenPanelVisibility.RefreshTableVisible(maxFrequency, ScreenControl.MIN_RATE);
+                panelScreen.Visible = ScreenPanelVisibility.PanelVisible(maxFrequency);
             }
 
             if (fhd >= 0)

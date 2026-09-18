@@ -66,11 +66,9 @@ namespace MechrevoLite.Gpu
 
             if (eco == 1 && HardwareControl.GpuControl?.IsValid == true)
             {
+                // T29：原先这里在 IsEcoBootFix()（ASUS 机型串）为真时 DisposeGpuControl；
+                // 该谓词在机械革命机型上恒假，分支从未执行，随 ASUS 残留一并删除。
                 Logger.WriteLine("Eco half-state");
-                if (AppConfig.IsEcoBootFix())
-                {
-                    HardwareControl.DisposeGpuControl();
-                }
             }
 
             settings.VisualiseGPUButtons(eco >= 0 || mux >= 0, mux >= 0, eco >= 0);

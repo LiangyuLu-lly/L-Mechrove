@@ -505,45 +505,28 @@ public static class AppConfig
         return Is("no_overdrive");
     }
 
-    public static bool IsEcoBootFix()
-    {
-        return ContainsModel("G635L") || ContainsModel("G615L") || ContainsModel("G835L") || ContainsModel("G815L") || ContainsModel("FA506");
-    }
-
     public static bool IsApplyPower() => IsMode("auto_apply_power");
     public static bool IsApplyFans() => IsMode("auto_apply");
     public static bool IsApplyUV() => IsMode("auto_uv");
 
+    /// <summary>
+    /// T29：ASUS 机型串已删。原判据「applyPower 且（manual_mode 或 G733 机型）」在机械革命机型上恒假；
+    /// 现在只认配置开关 <c>manual_mode</c>，保留原有逃生口。
+    /// </summary>
     public static bool IsManualModeRequired()
     {
         if (!IsApplyPower()) return false;
-        return Is("manual_mode") || ContainsModel("G733");
+        return Is("manual_mode");
     }
 
-    public static bool IsResetRequired()
-    {
-        return ContainsModel("GA403UI") || ContainsModel("GA403UU") || ContainsModel("GA403UV") || ContainsModel("FA507XV");
-    }
+    /// <summary>T29：ASUS 机型串已删，只认配置开关（原先恒假）。</summary>
+    public static bool IsFanRequired() => Is("fan_required");
 
-    public static bool IsFanRequired()
-    {
-        return ContainsModel("GA402X") || ContainsModel("GU604") || ContainsModel("G513") || ContainsModel("G713R") || ContainsModel("G713P") || ContainsModel("GU605") || ContainsModel("GA605") || ContainsModel("G634J") || ContainsModel("G834J") || ContainsModel("G614J") || ContainsModel("G814J") || ContainsModel("FX507V") || ContainsModel("FX507Z") || ContainsModel("FX608") || ContainsModel("FA608P") || ContainsModel("G614F") || ContainsModel("G614R") || ContainsModel("G733") || ContainsModel("H7606");
-    }
+    /// <summary>T29：ASUS 机型串已删，只认配置开关。</summary>
+    public static bool IsModeReapplyRequired() => Is("mode_reapply");
 
-    public static bool IsModeReapplyRequired()
-    {
-        return Is("mode_reapply") || ContainsModel("FA401") || ContainsModel("GA403");
-    }
-
-    public static bool IsStandardModeFix()
-    {
-        return Is("shutdown_gpu") || ((ContainsModel("FX506HC") || ContainsModel("FA808U")) && IsNotFalse("shutdown_gpu"));
-    }
-
-    public static bool IsShutdownReset()
-    {
-        return Is("shutdown_reset") || ContainsModel("FX507Z");
-    }
+    /// <summary>T29：ASUS 机型串已删；保留 <c>shutdown_gpu</c> 配置语义。</summary>
+    public static bool IsStandardModeFix() => Is("shutdown_gpu");
 
     public static bool IsNVPlatform()
     {
@@ -560,20 +543,11 @@ public static class AppConfig
     // IsAMDiGPU() 已删除：唯一调用点在 SettingsForm.VisualizeXGM 里，
     // 随 XG Mobile 外置显卡坞那一族一起删掉了。它的判据同样是 ASUS 机型串。
 
-    public static bool NoGpu()
-    {
-        return Is("no_gpu") || ContainsModel("UX540") || ContainsModel("M560") || ContainsModel("GZ302") || IsOnlyAIMAX();
-    }
-
-    public static bool IsOnlyAIMAX()
-    {
-        return ContainsModel("FA401EA") || ContainsModel("HN7306EA");
-    }
-
-    public static bool IsIntelHX()
-    {
-        return ContainsModel("G814") || ContainsModel("G614") || ContainsModel("G834") || ContainsModel("G634") || ContainsModel("G835") || ContainsModel("G635") || ContainsModel("G815") || ContainsModel("G615");
-    }
+    /// <summary>
+    /// T29：ASUS 机型串（UX540/M560/GZ302/FA401EA/HN7306EA）已删。语义 = 用户显式声明本机无独显；
+    /// 屏幕面板可见性不再挂在这个谓词上（见 <c>UI\ScreenPanelVisibility</c>）。
+    /// </summary>
+    public static bool NoGpu() => Is("no_gpu");
 
     public static bool IsOverlay()
     {
@@ -606,16 +580,6 @@ public static class AppConfig
     public static bool IsDynamicLightingInit()
     {
         return Is("lighting_init");
-    }
-
-    public static bool IsForceMiniled()
-    {
-        return ContainsModel("G834JYR") || ContainsModel("G834JZR") || ContainsModel("G634JZR") || ContainsModel("G835L") || ContainsModel("G635L") || Is("force_miniled");
-    }
-
-    public static bool IsSleepReset()
-    {
-        return Is("sleep_reset") || ContainsModel("GU605MI") || ContainsModel("GU605MV") || ContainsModel("GU605CR");
     }
 
     public static bool IsAutoASPM()
