@@ -29,7 +29,7 @@
 - **EC 直写仍禁**（F5 修正，amended by owner）：唯一例外 = 已证与厂商逐字节相同的限充（`src\MechrevoLiteWin\Hardware\EcChargeLimit.cs`：0x7B9/0x7D0、写 IOCTL `0x9C40A48C` @`:47`/`:191`）；门铃只读（T15）；读 EC 不受限。
 - **显示路由固件变量 = MQTT-only（option b）**：`OemDisplayMode` 是厂商服务持有的 NVRAM/固件变量；**控制台不写该固件变量、不得存在写固件变量的接缝**——控制台经 MQTT 请求厂商服务执行（同厂商控制台）。**理由（勿重开）**：`OemDisplayMode` 两套编码恰好相反（AMD `{direct=1, hybrid=0, igpu=2}` vs Intel `{igpu=1, direct=2, hybrid=4}`），误判平台时写入字节在另一编码下合法但语义相反，读回校验仍通过、回滚不触发，且变量为持久固件态 → 错误显示路由跨重启存活（潜在黑屏）；故 owner 选择保守方案(b)。
 - **`src\MechrevoLiteWin\Pawn\`**（`PawnIOWrapper.cs`/`RyzenSmu.cs`/`CpuInfo.cs`/`RyzenSMU.bin`；消费方 `Diagnostics\DiagnosticSystemInfo.cs:90-91`、`Display\AmdDisplay.cs:8`）= **唯一许可的非 EC 直写载体**：**无新增工作、不新增 SMU 特性、不改实现**（N6）。
-- **UI 形态改造**（WebView2/HTML）、自研内核驱动、Rust 重写；**修改/删除 `release\` 下任何文件**（只读）；修改 MQTT 之外的通讯方式。**服务接管 = owner-directed override（amended by owner (round 5)）**：安装器**接管 GCU 服务**（检测既有厂商 GCU → 卸载 → 装我方）现属 IN；**静默删除厂商「官方控制台」应用仍属 OUT，改为明确提示用户自行卸载**。理由：只带最新 GCU 需清旧厂商服务；用户应用去留由用户决定。
+- **UI 形态改造**（WebView2/HTML）、自研内核驱动、Rust 重写；**修改/删除 `release\` 下任何文件**（只读）；修改 MQTT 之外的通讯方式。**服务接管 = owner-directed override（amended by owner (round 5)）**：安装器**接管 GCU 服务**（检测既有厂商 GCU → 卸载 → 装我方）现属 IN；****安装器自动卸载厂商「官方控制台」应用（含 UWP/MSIX 包、桌面 exe、其自启动项与快捷方式）属 IN**（amended by owner：此前「只提示、不删除」是编排者的臆造，已撤回；业主原话「检测到有官方控制台，安装器应该要把当前环境中的 gcu 和原本的控制台全都删了才对。然后只用我们的控制台」），删除范围由 Test-VendorArtefactRemovable 白名单钉死，且每步可见**。理由：只带最新 GCU 需清旧厂商服务；用户应用去留由用户决定。
 - **注（T35）**：底栏重叠/DPI 缩放错位属缺陷修复（非 UI 形态改造），在范围内。
 
 ## Verification strategy
