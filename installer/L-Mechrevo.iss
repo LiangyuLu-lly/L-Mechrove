@@ -225,12 +225,17 @@ end;
 
 function HasDesktopRuntime10OnDisk: Boolean;
 var
-  Found: Integer;
+  FindRec: TFindRec;
 begin
   // Independent corroboration: the shared framework on disk. The installer must not rely on
-  // `dotnet` being on PATH, but a directory check is a fine fallback.
-  Result := FindFirst(ExpandConstant('{commonpf}\dotnet\shared\Microsoft.WindowsDesktop.App\10.*'), faAnyFile, Found);
-  if Result then FindClose(Found);
+  // `dotnet` being on PATH, but a wildcard directory probe is a fine fallback. FindFirst matches
+  // directories too, so '10.*' matches the versioned framework folders.
+  Result := False;
+  if FindFirst(ExpandConstant('{commonpf}\dotnet\shared\Microsoft.WindowsDesktop.App\10.*'), FindRec) then
+  begin
+    Result := True;
+    FindClose(FindRec);
+  end;
 end;
 
 function IsDesktopRuntime10Installed: Boolean;
