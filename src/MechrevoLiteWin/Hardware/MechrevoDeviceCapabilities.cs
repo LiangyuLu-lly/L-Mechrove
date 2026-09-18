@@ -87,6 +87,19 @@ public sealed class MechrevoDeviceCapabilities
 
     static readonly object CurrentLock = new();
     static MechrevoDeviceCapabilities? _current;
+    static long _snapshotRevision;
+
+    /// <summary>测试接缝：替换真正的注册表读取；为 null 时走 <see cref="Load"/>。</summary>
+    internal static Func<MechrevoDeviceCapabilities>? SnapshotFactoryOverride;
+
+    /// <summary>
+    /// 快照代数：每重建一次（<see cref="Current"/> 首次构建或 <see cref="Refresh"/> 之后）自增。
+    /// 给「这份快照是否在配置变更之后」提供可断言的依据。
+    /// </summary>
+    public static long SnapshotRevision
+    {
+        get { lock (CurrentLock) return _snapshotRevision; }
+    }
 
     /// <summary>
     /// 进程级共享的机型画像。
@@ -103,14 +116,31 @@ public sealed class MechrevoDeviceCapabilities
     {
         get
         {
-            lock (CurrentLock) return _current ??= Load();
+            lock (CurrentLock) return _current ??= BuildLocked();
         }
+    }
+
+    static MechrevoDeviceCapabilities BuildLocked()
+    {
+        MechrevoDeviceCapabilities snapshot = SnapshotFactoryOverride is { } factory ? factory() : Load();
+        _snapshotRevision++;
+        return snapshot;
     }
 
     /// <summary>丢弃缓存的机型画像，下一次访问 <see cref="Current"/> 时重新读注册表。</summary>
     public static void Invalidate()
     {
         lock (CurrentLock) _current = null;
+    }
+
+    /// <summary>
+    /// 重建并返回一份最新画像。用于服务重写了 <c>ItemSupport</c> / 配置变更之后，
+    /// 确保旧快照不会越过这次变更继续被消费。
+    /// </summary>
+    public static MechrevoDeviceCapabilities Refresh()
+    {
+        Invalidate();
+        return Current;
     }
 
     /// <summary>测试用：直接注入一份画像，避免测试依赖运行机器的注册表。</summary>

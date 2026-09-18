@@ -1137,8 +1137,17 @@ public class MechrevoHw : IDisposable
         "lb-status-HidLightbar/Status", "lb-status-HidLightbar_Logo/Status",
     };
 
+    /// <summary>
+    /// 服务画像可能已变更（MQTT 连接就绪/重连）。调用方是 <see cref="NotifyConnectionReady"/>，
+    /// 每次成功连接都会走到；测试直接调用这个接缝证明快照会在配置变更后重建。
+    /// </summary>
+    internal static void OnServiceProfileMayHaveChanged() => MechrevoDeviceCapabilities.Invalidate();
+
     internal int NotifyConnectionReady()
     {
+        // 服务可能已在我们离线期间重写了 ItemSupport：进程级能力快照必须有明确的生命周期，
+        // 不能越过这次配置变更继续被消费。
+        OnServiceProfileMayHaveChanged();
         int generation = Interlocked.Increment(ref _connectionGeneration);
         Logger.WriteLine($"MechrevoHw connection ready: generation={generation}");
         // 新连接要重新记录一遍基线状态，否则「变化才记录」会因为内容与断连前相同而
