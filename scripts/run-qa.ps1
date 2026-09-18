@@ -55,8 +55,22 @@ $startedUtc = (Get-Date).ToUniversalTime()
 
 if ($problems.Count -eq 0) {
     Write-Host ">> run-qa [$Id] $Command"
-    Invoke-Expression $Command *>&1 | Out-String | Write-Host
-    $exitCode = $LASTEXITCODE
+    # A failing test writes to stderr; merging stderr into the pipeline under $ErrorActionPreference
+    # 'Stop' turns that into a terminating error BEFORE the evidence file is written. Run the native
+    # command with the preference relaxed (and catch a real throw) so a failure still leaves evidence.
+    $nativeEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        Invoke-Expression $Command *>&1 | Out-String | Write-Host
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        $problems.Add("test command threw: $($_.Exception.Message)")
+        $exitCode = -1
+    }
+    finally {
+        $ErrorActionPreference = $nativeEap
+    }
 
     $trxRoot = Join-Path $repoRoot 'tests\MechrevoLite.Tests\TestResults'
     if ($Command -match '--results-directory\s+"?([^"\s]+)"?') {
