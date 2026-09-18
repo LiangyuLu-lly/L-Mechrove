@@ -404,6 +404,15 @@ namespace MechrevoLite
             trayIcon.MouseClick += TrayIcon_MouseClick;
             trayIcon.MouseMove += TrayIcon_MouseMove;
 
+            // 自启动注册失败必须让用户看得见：日志默认关闭，只写日志等于静默。
+            // 自检跑在后台线程且可能早于消息循环，句柄未就绪时只记日志，绝不因此抛异常。
+            Startup.AutostartFailureSink = message =>
+            {
+                Logger.WriteLine("Autostart registration failed: " + message);
+                if (settingsForm.IsHandleCreated)
+                    settingsForm.BeginInvoke(() => trayIcon.ShowBalloonTip(5000, "L-Mechrevo", message, ToolTipIcon.Warning));
+            };
+
 
             
 

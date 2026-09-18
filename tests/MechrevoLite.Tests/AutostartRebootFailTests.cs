@@ -75,4 +75,63 @@ public class AutostartRebootFailTests
     {
         Assert.False(GcuCoexistence.RequiresConsoleRemovalPrompt(GcuCoexistenceKind.None));
     }
+
+    // ---- 权限根因回归（T36 现场 bug）----------------------------------------
+    // 旧实现的自启动自检是 UnSchedule(); Schedule();：删除成功、重建失败（无管理员权限 /
+    // 任务被占用）时，用户直接失去自启动项，而失败只写进默认关闭的日志 = 静默失败。
+    // 新接口只有"什么都不做"与"就地覆盖注册"两种动作，结构上不存在删除窗口。
+
+    [Theory]
+    [InlineData(true, true, false, false)]    // 任务存在且与计划一致 -> 不重写
+    [InlineData(true, false, false, true)]    // 任务存在但已失效     -> 就地覆盖
+    [InlineData(true, false, true, true)]     // 任务存在但已失效     -> 就地覆盖
+    [InlineData(false, false, true, true)]    // 任务缺失且用户已启用 -> 注册
+    [InlineData(false, false, false, false)]  // 任务缺失且用户未启用 -> 不注册
+    public void TheRepairDecisionOnlyRegistersInPlaceAndNeverDeletes(
+        bool taskExists, bool matchesPlan, bool startupEnabled, bool expectRegister)
+    {
+        int registrations = 0;
+        bool report = Startup.RunStartupTaskCheck(
+            taskExists, matchesPlan, startupEnabled, () => { registrations++; return true; });
+
+        Assert.Equal(expectRegister ? 1 : 0, registrations);
+        Assert.False(report);   // 注册成功就不上报
+    }
+
+    [Fact]
+    public void AFailedRegistrationIsReportedWhenTheUserEnabledAutostart()
+    {
+        bool report = Startup.RunStartupTaskCheck(
+            taskExists: true, matchesPlan: false, startupEnabled: true, register: () => false);
+
+        Assert.True(report);
+    }
+
+    [Fact]
+    public void AFailedRegistrationIsNotReportedWhenTheUserNeverEnabledAutostart()
+    {
+        bool report = Startup.RunStartupTaskCheck(
+            taskExists: false, matchesPlan: false, startupEnabled: false, register: () => false);
+
+        Assert.False(report);
+    }
+
+    [Fact]
+    public void AutostartFailureIsSurfacedThroughTheSinkInsteadOfOnlyTheLog()
+    {
+        Action<string> previous = Startup.AutostartFailureSink;
+        try
+        {
+            List<string> seen = new();
+            Startup.AutostartFailureSink = seen.Add;
+
+            Startup.ReportAutostartFailure("cannot register the autostart task");
+
+            Assert.Equal(new[] { "cannot register the autostart task" }, seen);
+        }
+        finally
+        {
+            Startup.AutostartFailureSink = previous;
+        }
+    }
 }

@@ -184,11 +184,10 @@ public class Startup
 
     public static void ReScheduleAdmin()
     {
+        // 就地覆盖注册。旧实现先 UnSchedule() 再 Schedule()：删除成功而重建失败时（权限不足
+        // 正是这种情形）会直接丢失自启动项；这里存在即修复，不再先删。
         if (ProcessHelper.IsUserAdministrator() && IsScheduled())
-        {
-            UnSchedule();
             Schedule();
-        }
     }
 
     public static void StartupCheck()
@@ -221,49 +220,29 @@ public class Startup
             return;
         }
 
-        bool restoreMissingTask = false;
+        bool startupEnabled = AppConfig.Is("startup_enabled");
         using (TaskService taskService = new TaskService())
         {
             var task = GetUserTask(taskService);
-            if (task != null)
+            bool taskExists = task != null;
+            bool matchesPlan = false;
+            if (taskExists)
             {
-                try
-                {
-                    bool needsReschedule = !MatchesCurrentUserStartupTask(task.Definition);
-
-                    if (ShouldAutoRepairStartupTask(needsReschedule, ProcessHelper.IsUserAdministrator()))
-                    {
-                        Logger.WriteLine("Rescheduling to: " + strExeFilePath);
-                        UnSchedule();
-                        Schedule();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.WriteLine($"Can't check startup task: {ex.Message}");
-                }
-
-                if (taskService.RootFolder.AllTasks.FirstOrDefault(t => t.Name == chargeTaskName) == null)
-                {
-                    if (ProcessHelper.IsUserAdministrator())
-                        ScheduleCharge();
-                    else
-                        Logger.WriteLine("Charge limit task is missing; skipping automatic repair because administrator rights are required.");
-                }
-
+                try { matchesPlan = MatchesCurrentUserStartupTask(task!.Definition); }
+                catch (Exception ex) { Logger.WriteLine($"Can't check startup task: {ex.Message}"); }
             }
-            else
+
+            // 就地覆盖注册；失败且用户启用过自启动时，走可见出口而不是默认关闭的日志。
+            if (RunStartupTaskCheck(taskExists, matchesPlan, startupEnabled, Schedule))
+                ReportAutostartFailure("could not register the autostart task for " + strExeFilePath);
+
+            if (taskExists && taskService.RootFolder.AllTasks.FirstOrDefault(t => t.Name == chargeTaskName) == null)
             {
-                restoreMissingTask = ShouldRestoreEnabledStartupTask(
-                    taskMissing: true,
-                    startupEnabled: AppConfig.Is("startup_enabled"));
+                if (ProcessHelper.IsUserAdministrator())
+                    ScheduleCharge();
+                else
+                    Logger.WriteLine("Charge limit task is missing; skipping automatic repair because administrator rights are required.");
             }
-        }
-
-        if (restoreMissingTask)
-        {
-            Logger.WriteLine("Startup task is missing; restoring the user-enabled task.");
-            if (!Schedule()) Logger.WriteLine("Startup task restore failed.");
         }
     }
 
@@ -281,6 +260,54 @@ public class Startup
 
     internal static bool ShouldRestoreEnabledStartupTask(bool taskMissing, bool startupEnabled) =>
         taskMissing && startupEnabled;
+
+    internal enum StartupTaskAction
+    {
+        None = 0,
+        Register = 1,
+    }
+
+    /// <summary>
+    /// 本次启动检查应对用户级自启动任务执行的动作：什么都不做，或就地覆盖注册。
+    /// <para>
+    /// **没有删除动作**。旧实现是 <c>UnSchedule(); Schedule();</c>：删除总能成功，重建却可能
+    /// 因权限不足/任务被占用而失败，于是用户直接失去自启动项；失败又只写进默认关闭的日志，
+    /// 表现为"重启不自启且毫无提示"（T36 现场 bug）。就地 <c>RegisterTaskDefinition</c> 本身
+    /// 覆盖同名任务，删除这一步纯属多余且危险，已从接口上移除。
+    /// </para>
+    /// </summary>
+    internal static StartupTaskAction DecideStartupTaskAction(bool taskExists, bool matchesPlan, bool startupEnabled)
+    {
+        bool needsReschedule = taskExists && !matchesPlan;
+        bool restoreMissing = ShouldRestoreEnabledStartupTask(!taskExists, startupEnabled);
+        return ShouldAutoRepairStartupTask(needsReschedule, false) || restoreMissing
+            ? StartupTaskAction.Register
+            : StartupTaskAction.None;
+    }
+
+    /// <summary>只有用户明确启用过自启动、而注册/修复失败时才需要打扰用户。</summary>
+    internal static bool ShouldReportAutostartFailure(bool startupEnabled, bool registrationSucceeded) =>
+        startupEnabled && !registrationSucceeded;
+
+    /// <summary>
+    /// 自启动注册失败的上报出口。默认只写日志——而日志默认关闭，等于静默；UI 层替换为托盘气泡，
+    /// 让"自启动没装上"对用户可见，而不是只躺在没人看的 log 里。
+    /// </summary>
+    internal static Action<string> AutostartFailureSink { get; set; } =
+        static reason => Logger.WriteLine("Autostart registration failed: " + reason);
+
+    internal static void ReportAutostartFailure(string reason) => AutostartFailureSink(reason);
+
+    /// <summary>
+    /// 执行一次自启动自检：决定动作并就地覆盖注册，返回"是否应上报失败"。
+    /// 纯决策 + 注入的注册动作，便于测试；参数里没有删除操作，从结构上杜绝"先删后建"窗口。
+    /// </summary>
+    internal static bool RunStartupTaskCheck(bool taskExists, bool matchesPlan, bool startupEnabled, Func<bool> register)
+    {
+        if (DecideStartupTaskAction(taskExists, matchesPlan, startupEnabled) != StartupTaskAction.Register)
+            return false;
+        return ShouldReportAutostartFailure(startupEnabled, register());
+    }
 
     internal static StartupTaskPlan GetUserStartupTaskPlan() => new(
         TimeSpan.FromSeconds(10),
