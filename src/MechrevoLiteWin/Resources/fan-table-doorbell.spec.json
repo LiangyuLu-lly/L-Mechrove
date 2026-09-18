@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "description": "READ-ONLY verification spec for the vendor fan-table doorbell sequence. This asset documents what the GCU service does; the console does NOT implement it and must not write EC.",
+  "vendorSource": "MyControlCenter.MyFan.FanTable.FanTable_Manager1p5_CML.cs (5.17.51 decompile)",
+  "modeValues": {
+    "Gaming": 2,
+    "Office": 3,
+    "Turbo": 1
+  },
+  "poll": {
+    "intervalMs": 500,
+    "maxTries": 10,
+    "notReadyStatus1": 253,
+    "notReadyStatus2": 201,
+    "readyWhen": "read(3933) != 253 && read(3934) != 201"
+  },
+  "readback": {
+    "pointCount": 16,
+    "dutyDivisor": 2,
+    "cpu": { "upT": 3840, "downT": 3856, "duty": 3872 },
+    "gpu": { "upT": 3888, "downT": 3904, "duty": 3920 },
+    "note": "GPU block is read only when an NVIDIA dGPU is present (m_IsNvGpu gate)"
+  },
+  "writeback": {
+    "threshold": 100,
+    "saturated": 255,
+    "multiplier": 2,
+    "rule": "duty > 100 ? 0xFF : duty * 2"
+  },
+  "operations": [
+    { "step": 1, "operation": "Set_APExistToEC", "value": "false", "source": "FanTable_Manager1p5_CML.cs:603" },
+    { "step": 2, "operation": "Write", "address": 3935, "value": "mode", "source": "FanTable_Manager1p5_CML.cs:640" },
+    { "step": 3, "operation": "Write", "address": 3933, "value": "253", "source": "FanTable_Manager1p5_CML.cs:641" },
+    { "step": 4, "operation": "Write", "address": 3934, "value": "201", "source": "FanTable_Manager1p5_CML.cs:642" },
+    { "step": 5, "operation": "PollUntilReady", "source": "FanTable_Manager1p5_CML.cs:624-655" },
+    { "step": 6, "operation": "ReadTable", "source": "FanTable_Manager1p5_CML.cs:316-359" },
+    { "step": 7, "operation": "Set_APExistToEC", "value": "true", "source": "FanTable_Manager1p5_CML.cs:620" }
+  ]
+}
