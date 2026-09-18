@@ -169,19 +169,19 @@ Type: filesandordirs; Name: "{app}\GCU\UniwillService"
 Type: filesandordirs; Name: "{app}\GCU\UWACPIDriver"
 
 [Code]
-; ============================================================================
-;  .NET Desktop Runtime 10 (x64) detection + in-installer download (R2).
-;
-;  The app is framework-dependent: no runtime DLLs are shipped, so the runtime
-;  must already be installed or be obtained here. We read the runtime's own
-;  registry manifest instead of invoking `dotnet --list-runtimes`, because the
-;  installer must not assume `dotnet` is on PATH.
-;
-;  No offline fallback exists by design: the owner forbade bundling a runtime
-;  installer. The in-installer download is the only automatic path; if it fails
-;  the browser opens at the official page (interactive) or setup exits non-zero
-;  (silent).
-; ============================================================================
+// ============================================================================
+//  .NET Desktop Runtime 10 (x64) detection + in-installer download (R2).
+//
+//  The app is framework-dependent: no runtime DLLs are shipped, so the runtime
+//  must already be installed or be obtained here. We read the runtime's own
+//  registry manifest instead of invoking `dotnet --list-runtimes`, because the
+//  installer must not assume `dotnet` is on PATH.
+//
+//  No offline fallback exists by design: the owner forbade bundling a runtime
+//  installer. The in-installer download is the only automatic path; if it fails
+//  the browser opens at the official page (interactive) or setup exits non-zero
+//  (silent).
+// ============================================================================
 const
   DotNetDesktopSharedFxKey = 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
   // Versioned Microsoft blob URL is immutable, so the pinned SHA256 stays valid.
@@ -224,9 +224,12 @@ var
   Installer: String;
 begin
   Result := False;
-  if not DownloadTemporaryFile(DotNetRuntimeUrl, DotNetRuntimeFileName, DotNetRuntimeSha256) then
-  begin
-    Log('DownloadTemporaryFile failed: ' + DotNetRuntimeUrl);
+  // DownloadTemporaryFile returns Int64 and RAISES on failure (bad hash, network, TLS), so it
+  // must be wrapped - a bare "if not ..." would not even compile.
+  try
+    DownloadTemporaryFile(DotNetRuntimeUrl, DotNetRuntimeFileName, DotNetRuntimeSha256, nil);
+  except
+    Log('DownloadTemporaryFile failed: ' + GetExceptionMessage);
     Exit;
   end;
   Installer := ExpandConstant('{tmp}\') + DotNetRuntimeFileName;
@@ -244,7 +247,7 @@ function OpenRuntimeDownloadPage: Boolean;
 var
   ExitCode: Integer;
 begin
-  Result := ShellExec('open', DotNetDownloadPage, '', '', SW_SHOWNORMAL, ExitCode);
+  Result := ShellExec('open', DotNetDownloadPage, '', '', SW_SHOWNORMAL, ewNoWait, ExitCode);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
