@@ -403,6 +403,14 @@ public static class AppConfig
         Write();
     }
 
+    /// <summary>
+    /// 当前配置的只读快照（机型作用域一次性迁移与测试用）。返回副本，不暴露可变字典。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, object> Snapshot()
+    {
+        lock (configLock) return new Dictionary<string, object>(config);
+    }
+
     public static void RemoveMode(string name)
     {
         Remove(name + "_" + Modes.GetCurrent());
