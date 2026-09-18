@@ -75,13 +75,15 @@
 
 | 代际 | 控制台侧协议 | 服务侧写路径 | iGPU-only | RESTART | 热切换 |
 |---|---|---|---|---|---|
-| 30 | PROVEN（`Setting/Control`；动作仅 `..._TOGGLE_ON/OFF`） | UNKNOWN | PROVEN_ABSENT | PROVEN_ABSENT | PROVEN_ABSENT（`HOTSWAP` 0 命中） |
+| 30 | INFERRED（`Setting/Control`；动作仅 `..._TOGGLE_ON/OFF`；.NET Native 无 IL，仅元数据+PDB 符号级） | UNKNOWN | PROVEN_ABSENT | PROVEN_ABSENT | PROVEN_ABSENT（`HOTSWAP` 0 命中） |
 | 40 | PROVEN（`Setting/Control`；含 `..._IGPU`/`..._RESTART`/`IGPU_ONLY_*`） | PROVEN | PROVEN（40A WMI 0x30000000x） | PROVEN（`shutdown /r /t 0`） | UNKNOWN（0 命中） |
 | 50 | PROVEN（`Setting/Control`；含 `..._RESTART`/`IGPU_ONLY_*`/`GPU_HOTSWAP_*`） | UNKNOWN | PROVEN（每 2 s 重发 / count>60 / 每第 4 次） | PROVEN（`Task.Delay(800)` 后发） | INFERRED（处理器 no-op） |
 
-30 系控制台侧由 `.omo\evidence\g30-console-decompile.md` 证实（.NET Native 元数据堆 + 完整 PDB
-符号表；该程序集无 IL 可反编译）；`DGPU_DIRECT_CONNECT_TOGGLE_IGPU`、`..._RESTART`、`IGPU_ONLY_*`、
-`GPU_HOTSWAP_*`、`SetToWMIEC` 在整个 477 文件载荷中 0 命中。
+30 系控制台侧标 **INFERRED**：厂商程序集为 .NET Native（无 IL，无 C# 可反编译），依据是
+`.omo\evidence\g30-console-decompile.md` 的**元数据标识符堆 + 完整 PDB 符号表 + 全载荷 0 命中**
+（符号级证据，不得升为 PROVEN）；`DGPU_DIRECT_CONNECT_TOGGLE_IGPU`、`..._RESTART`、`IGPU_ONLY_*`、
+`GPU_HOTSWAP_*`、`SetToWMIEC` 在整个 477 文件载荷中 0 命中（PROVEN_ABSENT）。40/50 系控制台侧为
+**PROVEN**（逐方法反编译的真实 C# 代码）。
 
 **平台代号 → 代际 = INFERRED（未决，非厂商验证）**。矛盾出处：
 `docs\upgrade-from-openrevo.md:140` 与 `docs\gcu-dependency-matrix.md:88` 相互矛盾，无可引用的
@@ -122,7 +124,7 @@
     "k16": 6
   },
   "dgpuGenerations": {
-    "30": { "consoleProtocol": "PROVEN", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
+    "30": { "consoleProtocol": "INFERRED", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
     "40": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN", "restart": "PROVEN" },
     "50": { "consoleProtocol": "PROVEN", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN", "restart": "PROVEN" }
   },
@@ -148,6 +150,7 @@
   测试会拒绝任何单边变更。
 - 代际事实变化（例如 30/50 系写路径被证实）：改 `Gpu\DisplayRouteMatrix.cs` 的 `RouteCell`，
   同步本文件第 4 节与机器可读块（**两列都要**：`consoleProtocol` 控制台侧、`serviceWritePath`
-  服务侧）；UNKNOWN 不得被"看起来应该"升级为 PROVEN，`consoleProtocol` 升级必须附反编译/符号出处。
+  服务侧）；**证据只能降级、不得升级**（UNKNOWN 可降为 INFERRED，INFERRED 不得升为 PROVEN），
+  `PROVEN` 仅限代码级证据，符号级（元数据/PDB/字符串）最高 INFERRED。
 - 本文件与 `docs\hardware\README.md`（寄存器/EC 数据底座）互补：本文件是**支持矩阵**，
   README 是**寄存器/协议勘查**。

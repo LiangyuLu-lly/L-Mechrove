@@ -178,22 +178,26 @@ public class GpuGenerationMatrixTests
     }
 
     [Fact]
-    public void TheConsoleSideProtocolIsMqttAndProvenForEveryGeneration()
+    public void TheConsoleSideProtocolIsMqttWithPerGenerationMarks()
     {
+        // 控制台侧证据分级：40/50 系有逐方法反编译的代码 → PROVEN；
+        // 30 系是 .NET Native（无 IL），只能到元数据+PDB 符号级 → INFERRED。
+        Assert.Equal(EvidenceMark.Inferred, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen30)!.ConsoleProtocol.Mark);
+        Assert.Equal(EvidenceMark.Proven, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen40)!.ConsoleProtocol.Mark);
+        Assert.Equal(EvidenceMark.Proven, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen50)!.ConsoleProtocol.Mark);
+
         foreach (GenerationRouteFacts row in DisplayRouteMatrix.Rows)
-        {
-            Assert.Equal(EvidenceMark.Proven, row.ConsoleProtocol.Mark);
             Assert.Contains("MQTT", row.ConsoleProtocol.Detail, StringComparison.OrdinalIgnoreCase);
-        }
     }
 
     [Fact]
-    public void Gen30ConsoleSideProtocolIsProvenFromTheDecompiledConsole()
+    public void Gen30ConsoleSideProtocolIsInferredFromSymbolEvidence()
     {
         GenerationRouteFacts row = DisplayRouteMatrix.Find(DgpuGenerationKind.Gen30)!;
 
-        // 控制台侧协议：反编译（.NET Native 元数据 + 完整 PDB）证实 topic/动作词汇/处理器。
-        Assert.Equal(EvidenceMark.Proven, row.ConsoleProtocol.Mark);
+        // 控制台侧：程序集为 .NET Native（无 IL），依据元数据标识符堆 + 完整 PDB 符号表的符号级证据
+        // → INFERRED（不得升为 PROVEN，见 g30-console-decompile.md）。
+        Assert.Equal(EvidenceMark.Inferred, row.ConsoleProtocol.Mark);
         Assert.Contains("Setting/Control", row.ConsoleProtocol.Detail, StringComparison.Ordinal);
         Assert.Contains("g30-console-decompile", row.ConsoleProtocol.Source, StringComparison.OrdinalIgnoreCase);
 
@@ -202,7 +206,7 @@ public class GpuGenerationMatrixTests
             new[] { DisplayRouteMatrix.ToggleOn, DisplayRouteMatrix.ToggleOff }.OrderBy(value => value),
             row.ConsoleActions.OrderBy(value => value));
 
-        // 服务侧写路径仍 UNKNOWN（只有控制台侧被证实）。
+        // 服务侧写路径仍 UNKNOWN（只有控制台侧有符号级证据）。
         Assert.Equal(EvidenceMark.Unknown, row.ServiceWritePath.Mark);
     }
 
@@ -211,12 +215,17 @@ public class GpuGenerationMatrixTests
     {
         foreach (GenerationRouteFacts row in DisplayRouteMatrix.Rows)
         {
-            // 两列必须是各自独立的格：控制台侧已证实 / 服务侧另有其标记。
-            Assert.Equal(EvidenceMark.Proven, row.ConsoleProtocol.Mark);
+            // 两列必须是各自独立的格：控制台侧至少 INFERRED（有证据链）/ 服务侧另有其标记。
+            Assert.NotEqual(EvidenceMark.Unknown, row.ConsoleProtocol.Mark);
             Assert.False(string.IsNullOrWhiteSpace(row.ConsoleProtocol.Detail));
             Assert.False(string.IsNullOrWhiteSpace(row.ServiceWritePath.Detail));
             Assert.NotEqual(row.ConsoleProtocol.Detail, row.ServiceWritePath.Detail);
         }
+
+        // 控制台侧证据分级：30 系仅符号级（INFERRED），40/50 系为代码级（PROVEN）。
+        Assert.Equal(EvidenceMark.Inferred, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen30)!.ConsoleProtocol.Mark);
+        Assert.Equal(EvidenceMark.Proven, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen40)!.ConsoleProtocol.Mark);
+        Assert.Equal(EvidenceMark.Proven, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen50)!.ConsoleProtocol.Mark);
 
         Assert.Equal(EvidenceMark.Proven, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen40)!.ServiceWritePath.Mark);
         Assert.Equal(EvidenceMark.Unknown, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen30)!.ServiceWritePath.Mark);

@@ -16,7 +16,9 @@ CI box does not have, the unit chains are proven under fakes and the real-machin
 2. **EC direct writes are forbidden** except the battery charge-limit path. No new firmware/NVRAM
    write anywhere.
 3. Axis 1 (platform code) never determines axis 2 (dGPU generation). 30-series and 50-series
-   display-route rows stay **UNKNOWN**; only 40-series is proven.
+   **service-side write paths** stay **UNKNOWN**; only the 40-series write path is proven.
+   Console-side marks: 40/50-series `PROVEN` (decompiled code), 30-series `INFERRED` (symbol-level
+   only — .NET Native, no IL).
 4. Never kill the process `L-Mechrevo`. Close it normally (`Stop-Process -Name 'L-Mechrevo'` only
    when the section says so, never `taskkill /F`).
 5. Do not execute any extracted vendor binary. Read-only inspection only.
@@ -260,10 +262,12 @@ Expected: a rejection line; **zero** `IGPU_ONLY_CONNECT_RB_*` and **zero**
 
 ### Step 2.7b — 30-series console-side protocol (actions differ from 40/50)
 
-The 30-series vendor console (`ControlCenter_4.17.47.13`, published .NET Native) is proven to send
-**only** two display-route actions on `Setting/Control`: `DGPU_DIRECT_CONNECT_TOGGLE_ON` and
-`DGPU_DIRECT_CONNECT_TOGGLE_OFF` (`.omo\evidence\g30-console-decompile.md`). It has **no**
-`..._TOGGLE_IGPU`, `..._RESTART`, `IGPU_ONLY_*`, `GPU_HOTSWAP_*`, and no `SetToWMIEC` payload field.
+The 30-series vendor console (`ControlCenter_4.17.47.13`, published .NET Native) is assessed
+(**INFERRED** — symbol-level only) to send **only** two display-route actions on `Setting/Control`:
+`DGPU_DIRECT_CONNECT_TOGGLE_ON` and `DGPU_DIRECT_CONNECT_TOGGLE_OFF`. The assembly has no IL, so the
+basis is the metadata identifier heap + full PDB symbol table, not decompiled code
+(`.omo\evidence\g30-console-decompile.md`). It has **no** `..._TOGGLE_IGPU`, `..._RESTART`,
+`IGPU_ONLY_*`, `GPU_HOTSWAP_*`, and no `SetToWMIEC` payload field (all `PROVEN_ABSENT`: 0 hits).
 
 On a **Gen30** machine switch to direct connect, then revert, and check:
 

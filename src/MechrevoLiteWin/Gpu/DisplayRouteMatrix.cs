@@ -6,7 +6,7 @@ public enum EvidenceMark
     /// <summary>没有可引用的证据。</summary>
     Unknown,
 
-    /// <summary>有证据链但未逐方法反编译确认（跨代推断 / 字符串证据）。</summary>
+    /// <summary>有证据链但未逐方法反编译确认（跨代推断 / 字符串证据 / .NET Native 元数据与 PDB 符号级证据）。</summary>
     Inferred,
 
     /// <summary>逐方法反编译或实测确认存在。</summary>
@@ -52,10 +52,21 @@ public sealed record GenerationRouteFacts(
 /// <para>本表只记录"厂商控制台会发什么 / 厂商服务怎么写"，本产品**只发 MQTT**：
 /// 控制台不写 <c>OemDisplayMode</c>、不写任何固件变量、没有写固件变量的接缝。</para>
 ///
-/// <para><b>关键分界（两列）</b>：<c>ConsoleProtocol</c>（控制台发什么）30/40/50 三代都 **PROVEN**——
-/// 30 系程序集是 .NET Native（无 IL），其控制台侧由 **元数据标识符堆 + 完整 PDB 符号表**证实
-/// （见 <c>.omo\evidence\g30-console-decompile.md</c>）。<c>ServiceWritePath</c>（路由到底怎么落地）
-/// 只有 40 系 PROVEN；30/50 系保持 UNKNOWN（30 系服务 MySettingManager 未反编译，50 系服务 IL 混淆）。</para>
+/// <para><b>关键分界（两列，逐代交代依据）</b>——证据只能降级、不得升级
+/// （<c>UNKNOWN 可降为 INFERRED，INFERRED 不得升为 PROVEN</c>）；<c>PROVEN</c> 仅授予**代码级**证据：</para>
+/// <list type="bullet">
+/// <item><b>30 系</b>：控制台侧 <c>INFERRED</c>——程序集是 .NET Native（无 IL），依据为
+/// **元数据标识符堆 + 完整 PDB 符号表 + 全载荷 0 命中**的符号级证据，无 C# 可读，故不得升为 PROVEN
+/// （见 <c>.omo\evidence\g30-console-decompile.md</c>）。服务侧 <c>UNKNOWN</c>
+/// （30 系服务 MySettingManager 未反编译）。</item>
+/// <item><b>40 系</b>：控制台侧与服务侧均 <c>PROVEN</c>——两侧都有逐方法反编译的 C#（控制台
+/// <c>Topic.cs</c>/<c>MqttClientCtrl.cs</c>；服务 <c>MySettingManager.cs</c>/<c>WMIEC.cs</c>）。</item>
+/// <item><b>50 系</b>：控制台侧 <c>PROVEN</c>——厂商控制台是真实反编译的 C# 代码
+/// （<c>CCUWinUI.decompiled.cs</c>，15 万行量级）；服务侧 <c>UNKNOWN</c>（50 系服务 IL 混淆）。</item>
+/// </list>
+/// <para><c>ProvenAbsent</c> 仅表示**符号/标识符表级**确证不存在（30 系 <c>_IGPU</c>/<c>_RESTART</c>/
+/// <c>IGPU_ONLY_*</c>/<c>GPU_HOTSWAP_*</c> 在元数据堆、PDB 符号表与全载荷扫描中 0 命中）；它是"确证不存在"，
+/// 不是代码级 PROVEN，也不得据此把对应能力放行。</para>
 /// </summary>
 public static class DisplayRouteMatrix
 {
@@ -75,10 +86,11 @@ public static class DisplayRouteMatrix
     {
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen30,
-            new RouteCell(EvidenceMark.Proven,
-                "控制台侧：MQTT `Setting/Control`；动作词汇仅 DGPU_DIRECT_CONNECT_TOGGLE_ON/_OFF；" +
+            new RouteCell(EvidenceMark.Inferred,
+                "控制台侧（INFERRED——程序集为 .NET Native 无 IL，依据元数据标识符堆 + 完整 PDB 符号表 + 全载荷 0 命中）：" +
+                "MQTT `Setting/Control`；动作词汇仅 DGPU_DIRECT_CONNECT_TOGGLE_ON/_OFF；" +
                 "DgpuSwitchView.Toggle_PointerPressed(d__18) + SettingViewModel.DGpuDirectConnectionSwitch；" +
-                "DGPU_DIRECT_CONNECT_TOGGLE_IGPU 不在枚举内。载荷字段名为家族推断（.NET Native 无 IL）",
+                "DGPU_DIRECT_CONNECT_TOGGLE_IGPU 不在枚举内。载荷字段名为家族推断",
                 ".omo/evidence/g30-console-decompile.md（cc-41747-13/decompiled/30-series-console-protocol.md）"),
             new RouteCell(EvidenceMark.Unknown,
                 "NvramVariable.SetFwVars(\"OemDisplayMode\") 字符串在，但 30 系服务 MySettingManager 未反编译，写路径形态未知",
@@ -98,7 +110,7 @@ public static class DisplayRouteMatrix
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen40,
             new RouteCell(EvidenceMark.Proven,
-                "控制台侧：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF/IGPU、" +
+                "控制台侧（PROVEN——逐方法反编译）：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF/IGPU、" +
                 "DGPU_DIRECT_CONNECT_RESTART、IGPU_ONLY_CONNECT_RB_ON/OFF（40A）、GETSTATUS",
                 "MyControlCenter/Topic.cs:51,123-125 / MyControlCenter/MqttClientCtrl.cs:59-65,92-113 / MySettingManager.cs:1229-1271"),
             new RouteCell(EvidenceMark.Proven,
@@ -123,7 +135,7 @@ public static class DisplayRouteMatrix
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen50,
             new RouteCell(EvidenceMark.Proven,
-                "控制台侧：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF/IGPU、" +
+                "控制台侧（PROVEN——真实反编译的 C# 代码）：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF/IGPU、" +
                 "IGPU_ONLY_CONNECT_RB_ON/OFF/AUTO、DGPU_DIRECT_CONNECT_RESTART、GPU_HOTSWAP_ON/OFF",
                 "CCUWinUI.decompiled.cs:86477-86515,53527-53729,139137-139174"),
             new RouteCell(EvidenceMark.Unknown,
