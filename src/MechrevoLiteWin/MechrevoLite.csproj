@@ -16,7 +16,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPublishable>True</IsPublishable>
     <IncludeAllContentForSelfExtract>True</IncludeAllContentForSelfExtract>
-    <PublishReadyToRun>True</PublishReadyToRun>
+    <!--
+      R2：应用改为框架依赖发布（SelfContained=false，不再随包分发 .NET 运行时）。
+      ReadyToRun 实测会把载荷从 34.7 MB 抬到 42.8 MB（+8 MB，只换启动速度），因此默认关闭；
+      单文件同样关闭——框架依赖单文件被 NETSDK1151 否决（被引用的 Probe.exe 是自包含的），
+      而安装器本来就是把整个发布目录装进 {app}。
+    -->
+    <PublishReadyToRun>False</PublishReadyToRun>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>MechrevoLite.Program</StartupObject>
     <ApplicationIcon>favicon.ico</ApplicationIcon>
@@ -31,7 +37,7 @@
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <AssemblyVersion>0.289.0.0</AssemblyVersion>
     <FileVersion>0.289.0.0</FileVersion>
-    <Version>0.289.0-beta17</Version>
+    <Version>0.289.0-beta18</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>
