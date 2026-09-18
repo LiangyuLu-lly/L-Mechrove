@@ -1,0 +1,72 @@
+{
+  "generatedUtc": "2026-09-18T11:40:00Z",
+  "task": "N7 - installer removes the vendor official console, leaving only ours (owner correction)",
+  "published": false,
+  "gitTagCreated": false,
+  "uploaded": false,
+  "machineEvidence": {
+    "note": "enumerated on THIS machine before any change; recorded, not assumed",
+    "vendorConsolePackage": "NONE - Get-AppxPackage matched no CCU.WinUI / GamingCenter / ControlCenter / GCUUI package on this box",
+    "vendorGcuService": {
+      "name": "GCUBridge",
+      "status": "Running",
+      "startType": "Automatic",
+      "binPath": "C:\\Program Files\\L-Mechrevo\\GCU\\AiStoneService\\GCUBridge.exe",
+      "startName": "LocalSystem"
+    },
+    "vendorGcuDirectory": "C:\\Program Files\\L-Mechrevo\\GCU (AiStoneService + UWACPIDriver present)",
+    "uninstallEntries": "none matched the vendor console; the only Mechrevo entry is 'Mechrevo After-Sale Service' (MsiExec /I{E48CC620-...}) which is NOT the console and is KEEP",
+    "shortcuts": "no vendor-console shortcut found",
+    "autostart": "no vendor-console Run entry found (HKCU/HKLM Run + RunOnce checked)",
+    "scheduledTasks": "only LMechrevo_<SID> (ours)",
+    "unrelatedSoftwarePresent": ["NVIDIA Platform Controllers and Framework", "Realtek Ethernet Controller Driver", "360 Wargaming Game Center", "C:\\Program Files\\Mechrevo\\MRAfterSaleService", "C:\\Program Files\\NVIDIA Corporation", "C:\\Program Files\\Autodesk"],
+    "conclusion": "this machine has the vendor GCU service + directory but no vendor console package; the removal logic is therefore proven against fixtures for the package/shortcut/autostart kinds and against the real directory/service for the GCU kind"
+  },
+  "removalSet": {
+    "predicate": "installer\\Install-Gcu.ps1 Test-VendorArtefactRemovable (pure, no I/O)",
+    "removable": {
+      "package": ["CCU.WinUI*", "GamingCenter3_Cross.UWP*", "GamingCenterU*", "ControlCenterU*", "GCUUI*"],
+      "directory": ["%ProgramFiles%\\L-Mechrevo\\GCU", "...\\GCU\\AiStoneService", "...\\GCU\\UniwillService", "...\\GCU\\UWACPIDriver", "...\\GCU\\payload"],
+      "uninstall": ["*GamingCenter*", "*ControlCenter*", "*Mechrevo Gaming*", "*AISTONE*", "*Uniwill*", "*dian jing kong zhi tai*", "*kong zhi tai*"],
+      "shortcut": ["leaf name contains GamingCenter|ControlCenter|CCUWinUI|SystrayComponent|GCUUI"],
+      "autostart": ["value contains CCUWinUI.exe|SystrayComponent.exe|ControlCenterU.exe|GamingCenterU.exe|GCUUI.exe"],
+      "process": ["CCUWinUI", "SystrayComponent", "ControlCenterU", "GamingCenterU", "GCUUI"]
+    },
+    "keep": ["Microsoft.* packages", "TwinkleTray", "NVIDIA", "Realtek", "Autodesk", "MRAfterSaleService", "MVS shortcuts", "SecurityHealth", "RtkAudUService", "GameViewer", "explorer", "L-Mechrevo"],
+    "bounds": "allow-list only; no parent directories, no wildcards; release\\ is never a removal target"
+  },
+  "testIds": {
+    "vendorRemoved": "VendorConsoleRemovalN7Tests.VendorConsoleArtefactsAreRemovable (14 cases)",
+    "unrelatedKept": "VendorConsoleRemovalN7Tests.UnrelatedSoftwareIsNotRemovable (16 cases)",
+    "wiring": "VendorConsoleRemovalN7Tests.TheInstallerRemovesTheVendorConsoleAndReportsEachStep",
+    "nonFatal": "VendorConsoleRemovalN7Tests.AVendorRemovalFailureIsReportedAndDoesNotAbortTheInstall",
+    "releaseSafe": "VendorConsoleRemovalN7Tests.TheRemovalNeverTouchesTheReleaseTree",
+    "total": 33
+  },
+  "messages": {
+    "interactive": "Inno status text via the [Run] StatusMsg; the step lines are written by Write-Log which also goes to the console",
+    "silent": "%ProgramData%\\L-Mechrevo\\logs\\gcu-install-*.log",
+    "lines": [
+      "found existing GCU service: GCUBridge (status=...)",
+      "found official console package: <PackageFullName>",
+      "removed official console package: <PackageFullName>",
+      "found official console directory: <path>",
+      "removed official console directory: <path>",
+      "found official console autostart entry: <name> = <value>",
+      "official console package/directory could not be removed (...); continuing: <reason>"
+    ]
+  },
+  "installer": {
+    "path": "artifacts\\run15-beta18-n7\\L-Mechrevo-beta18-setup.exe",
+    "bytes": 49063404,
+    "mb": 46.8,
+    "sha256": "BFC1EF53C6B39816649DC102ADAE80208EAE1784D9EDCA5195FB77F97B841E1B"
+  },
+  "releaseUntouched": {
+    "GCU-only": { "files": 276, "bytes": 85663993 },
+    "GCU-40-51749": { "files": 73, "bytes": 39266036 },
+    "GCU-40-51751": { "files": 75, "bytes": 56136429 },
+    "GCU-common": { "files": 4, "bytes": 60019 },
+    "verifiedAt": "filesystem level only (git ls-files release = 0)"
+  }
+}
