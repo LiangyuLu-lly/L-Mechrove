@@ -725,10 +725,7 @@ public partial class SettingsForm
     static bool ShouldUseGcuKeyboardFallback(KeyboardRgb? rgb) =>
         rgb is not null && KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
             rgb.ControllerAvailability, rgb.IsConnected,
-            Program.service is not null && Program.hw is { IsConnected: true },
-            // N9-2: this UI-state query has no fresh write outcome; the slider handler owns the
-            // fallback decision, so the cached-availability path assumes the HID write works.
-            hidWriteTookEffect: true);
+            Program.service is not null && Program.hw is { IsConnected: true });
 
     void SyncLightRows()
     {

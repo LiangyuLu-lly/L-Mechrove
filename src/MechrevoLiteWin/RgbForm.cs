@@ -238,18 +238,10 @@ public class RgbForm : RForm
     }
 
     /// <summary>唯一接缝的窗内读法：确定性「不支持」且官方通道可用时，键盘电源/亮度走 GCU 回退。</summary>
-    /// <summary>
-    /// N9-2: the HID brightness write outcome. Set by the slider handler after it writes the HID
-    /// report; false means the device is present but the brightness field was not honoured, so the
-    /// vendor channel must take over instead of silently doing nothing.
-    /// </summary>
-    bool _hidBrightnessTookEffect = true;
-
     bool IsGcuKeyboardFallback() =>
         KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
             _rgb.ControllerAvailability, _rgb.IsConnected,
-            Program.service is not null && Program.hw is { IsConnected: true },
-            _hidBrightnessTookEffect);
+            Program.service is not null && Program.hw is { IsConnected: true });
 
     /// <summary>
     /// 回退态 UI：HID 专属控件全部禁用（本机没有软件灯效控制器，它们毫无意义），仅亮度滑条保持
@@ -557,9 +549,6 @@ public class RgbForm : RForm
         _brightSlider = Slider(0, 100, _rgb.Brightness, v =>
         {
             _rgb.Brightness = v;   // UI 亮度持久化（回退态下也是亮度载体的输入档）
-            // N9-2: record whether the HID write actually took effect. A device that is present but
-            // ignores the brightness field must fall back to the vendor channel, not silently no-op.
-            _hidBrightnessTookEffect = _rgb.ApplyBrightnessToDevice();
             if (IsGcuKeyboardFallback()) PublishGcuBrightness();
         });
         AddRow("亮度", _brightSlider);
