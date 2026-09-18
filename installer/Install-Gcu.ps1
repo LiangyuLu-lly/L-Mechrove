@@ -141,6 +141,42 @@ function Test-ExpectedBinPath {
     return ($actual.TrimEnd('"') -ieq $ExpectedExe)
 }
 
+function Get-FileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw ("file not found for hashing: {0}" -f $Path)
+    }
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-GcuPayloadIdentity {
+    # Identity is the SHA256 of the service binary. The FileVersion is deliberately NOT part of
+    # identity: the payloads do not share a version line (1.2.0.0 vs 1.0.2.70), and same-named
+    # files can share a version while differing by hash.
+    param([Parameter(Mandatory = $true)][string]$ServiceDir)
+    $exe = Join-Path (Join-Path $ServiceDir 'MyControlCenter') 'GCUService.exe'
+    if (-not (Test-Path -LiteralPath $exe)) {
+        $exe = Join-Path $ServiceDir 'GCUService.exe'
+    }
+    if (-not (Test-Path -LiteralPath $exe)) {
+        throw ("GCUService.exe not found under payload service dir: {0}" -f $ServiceDir)
+    }
+    return [pscustomobject]@{ Sha256 = (Get-FileSha256 -Path $exe); ExePath = $exe }
+}
+
+function Compare-PayloadIdentity {
+    # Hash-only comparison. There is intentionally no version parameter: version numbers cannot
+    # order or identify these payloads (unshared version line, same-name/different-hash).
+    [CmdletBinding()]
+    param(
+        [string]$InstalledSha256,
+        [string]$IncomingSha256
+    )
+    if ([string]::IsNullOrWhiteSpace($InstalledSha256)) { return 'NotInstalled' }
+    if ($InstalledSha256 -ieq $IncomingSha256) { return 'Same' }
+    return 'Different'
+}
+
 function Install-UwacpiDriver {
     param([string]$DriverDir)
     $inf = Join-Path $DriverDir 'UWACPIDriver.inf'
@@ -225,15 +261,18 @@ function Start-GcuService {
 }
 
 function Set-InstallMarker {
-    param([pscustomobject]$Selection, [string]$ServiceExe)
+    param([pscustomobject]$Selection, [string]$ServiceExe, [string]$PayloadSha256)
     try {
         $key = 'HKLM:\SOFTWARE\L-Mechrevo'
         if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
         Set-ItemProperty -LiteralPath $key -Name 'GcuVariant' -Value $Selection.Variant
         Set-ItemProperty -LiteralPath $key -Name 'GcuServiceDir' -Value $Selection.ServiceDir
         Set-ItemProperty -LiteralPath $key -Name 'GcuServiceExe' -Value $ServiceExe
+        if (-not [string]::IsNullOrWhiteSpace($PayloadSha256)) {
+            Set-ItemProperty -LiteralPath $key -Name 'GcuPayloadSha256' -Value $PayloadSha256
+        }
         Set-ItemProperty -LiteralPath $key -Name 'GcuInstalledUtc' -Value ((Get-Date).ToUniversalTime().ToString('o'))
-        Write-Log '  install marker written to HKLM\SOFTWARE\L-Mechrevo'
+        Write-Log '  install marker written to HKLM\SOFTWARE\L-Mechrevo (payload identity = SHA256)'
     }
     catch {
         Write-Log ('  WARNING: could not write install marker: ' + $_.Exception.Message)
@@ -287,6 +326,10 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $serviceSource 'GCUBridge.exe'))) {
         throw ("selected payload is incomplete; missing GCUBridge.exe under {0}" -f $serviceSource)
     }
+    # Identity is the SHA256 of the service binary; the copy is byte-identical so the source hash
+    # is what will be installed.
+    $payloadIdentity = Get-GcuPayloadIdentity -ServiceDir $serviceSource
+    Write-Log ("payload identity (SHA256) = {0}" -f $payloadIdentity.Sha256)
 
     # Fast path: already installed and healthy -> only re-assert the firewall rule.
     $currentBinPath = Get-ServiceBinPath
@@ -301,7 +344,7 @@ try {
             Assert-SignedFile -Path $gcuServiceExe -Label 'GCUService'
             Assert-SignedFile -Path $driverSys -Label 'UWACPIDriver'
             Ensure-FirewallRule
-            Set-InstallMarker -Selection $selection -ServiceExe $serviceExe
+            Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256
             Write-Log 'GCU install OK (no changes needed)'
             exit 0
         }
@@ -341,7 +384,7 @@ try {
         Start-GcuService
     }
 
-    Set-InstallMarker -Selection $selection -ServiceExe $serviceExe
+    Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256
     Write-Log 'GCU install OK'
     exit 0
 }
