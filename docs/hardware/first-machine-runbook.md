@@ -832,6 +832,34 @@ Get-Process L-Mechrevo -ErrorAction SilentlyContinue | Select-Object Id, StartTi
 Expected: the process is running with `StartTime` after the boot time. (This is the BLOCKED-HW
 half until run on the affected model; recorded in `.omo\evidence\t36-reboot-status.json`.)
 
+### Step 10.0 — The installer must detect a PRE-INSTALLED .NET 10 runtime
+
+Field bug: the beta18 installer did not detect an already-installed .NET 10 runtime, so a user who
+installed it manually was still blocked. Two defects: it read **subkey** names where the .NET
+installer records **value** names, and it read only the 64-bit registry view (on the affected
+machine the populated key is in the 32-bit view).
+
+Run this **before** installing, on a machine that already has .NET 10:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File installer\Test-DotNetDesktopRuntime.ps1
+```
+
+Expected: `DETECTED Microsoft.WindowsDesktop.App 10.<x> (x64)` and exit code `0`. A `MISSING` line
+on a machine that has the runtime is the exact false-negative this step exists to catch; the line
+also prints the registry values it did see, so the cause is visible in one step.
+
+Cross-check the raw registry shape (versions are **value names**, and the populated view varies):
+
+```powershell
+reg query "HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App" /reg:32
+reg query "HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App" /reg:64
+Get-ChildItem "$env:ProgramFiles\dotnet\shared\Microsoft.WindowsDesktop.App" -Directory | Select-Object Name
+```
+
+Expected: at least one view lists a `10.x` value name, and/or the on-disk directory lists `10.x`.
+Then run the installer: it must **not** prompt to download the runtime.
+
 ### Step 10.3a — The installer owns the elevated task (N5)
 
 The autostart task is created by the **elevated installer** (`Install-Gcu.ps1`), not by the app at

@@ -204,21 +204,41 @@ begin
     Result := StrToIntDef(Value, 0);
 end;
 
-function IsDesktopRuntime10Installed: Boolean;
+function HasDesktopRuntime10InView(const RootKey: Integer): Boolean;
 var
   Names: TArrayOfString;
   Index: Integer;
 begin
   Result := False;
-  // HKLM64: the .NET installer writes the 64-bit view; a 32-bit setup reading plain
-  // HKLM would see WOW6432Node and always conclude "missing".
-  if RegGetSubkeyNames(HKLM64, DotNetDesktopSharedFxKey, Names) then
+  // RegGetValueNames, not the subkey-name variant: the .NET installer records installed versions
+  // as VALUE names (e.g. a value named "10.0.8"), and the key has no subkeys at all. Reading
+  // subkey names made this loop never execute, so detection always returned False - the field bug
+  // where a machine that HAD .NET 10 was still told to install it.
+  if RegGetValueNames(RootKey, DotNetDesktopSharedFxKey, Names) then
     for Index := 0 to GetArrayLength(Names) - 1 do
       if MajorVersionOf(Names[Index]) = 10 then
       begin
         Result := True;
         Exit;
       end;
+end;
+
+function HasDesktopRuntime10OnDisk: Boolean;
+var
+  Found: Integer;
+begin
+  // Independent corroboration: the shared framework on disk. The installer must not rely on
+  // `dotnet` being on PATH, but a directory check is a fine fallback.
+  Result := FindFirst(ExpandConstant('{commonpf}\dotnet\shared\Microsoft.WindowsDesktop.App\10.*'), faAnyFile, Found);
+  if Result then FindClose(Found);
+end;
+
+function IsDesktopRuntime10Installed: Boolean;
+begin
+  // BOTH registry views: which one is populated differs per machine. On the affected machine the
+  // 64-bit view of this key is EMPTY and the populated key is in the 32-bit view, so reading only
+  // HKLM64 also returned False. Neither the API nor the view may be assumed.
+  Result := HasDesktopRuntime10InView(HKLM64) or HasDesktopRuntime10InView(HKLM32) or HasDesktopRuntime10OnDisk;
 end;
 
 function TryInstallDesktopRuntime: Boolean;
@@ -228,11 +248,18 @@ var
 begin
   Result := False;
   // DownloadTemporaryFile returns Int64 and RAISES on failure (bad hash, network, TLS), so it
-  // must be wrapped - a bare "if not ..." would not even compile.
+  // must be wrapped - a bare "if not ..." would not even compile. The exception message carries
+  // the concrete reason (HTTP status, TLS/proxy error, redirect handling, or a SHA-256 mismatch),
+  // so it is logged verbatim rather than as a bare "failed".
+  Log('Downloading ' + DotNetRuntimeUrl);
+  Log('Expected SHA256: ' + DotNetRuntimeSha256);
   try
     DownloadTemporaryFile(DotNetRuntimeUrl, DotNetRuntimeFileName, DotNetRuntimeSha256, nil);
   except
-    Log('DownloadTemporaryFile failed: ' + GetExceptionMessage);
+    Log('DownloadTemporaryFile FAILED for ' + DotNetRuntimeUrl);
+    Log('  reason: ' + GetExceptionMessage);
+    Log('  (a SHA-256 mismatch, an HTTP status, a TLS/proxy error and a redirect problem all');
+    Log('   surface here; the pinned hash is for the immutable versioned blob URL)');
     Exit;
   end;
   Installer := ExpandConstant('{tmp}\') + DotNetRuntimeFileName;
@@ -244,6 +271,8 @@ begin
   Log(Format('Desktop runtime installer exit code: %d', [ExitCode]));
   // 0 = installed, 1638 = a newer version is already present, 3010 = installed + reboot pending
   Result := (ExitCode = 0) or (ExitCode = 1638) or (ExitCode = 3010);
+  if not Result then
+    Log(Format('Desktop runtime installer reported failure (exit %d); see the installer log above', [ExitCode]));
 end;
 
 function OpenRuntimeDownloadPage: Boolean;
