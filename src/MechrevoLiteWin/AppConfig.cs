@@ -550,10 +550,12 @@ public static class AppConfig
         return Is("nv_platform");
     }
 
-    public static bool IsForceSetGPUMode()
-    {
-        return Is("gpu_mode_force_set") || (ContainsModel("503") && IsNotFalse("gpu_mode_force_set"));
-    }
+    /// <summary>
+    /// 强制 GPU 模式只认配置开关。原先还有一条裸子串机型分支（ASUS 残留）：任何机型名命中该子串
+    /// 就会在写入前先按 ASUS 那套改一遍 GPU 模式。真正的机型门控由消费点
+    /// <c>GPUModeControl.AutoGPUMode</c> 依赖矩阵能力位（SupportsDgpuDirect/SupportsIgpuOnly）承担。
+    /// </summary>
+    public static bool IsForceSetGPUMode() => Is("gpu_mode_force_set");
 
     // IsAMDiGPU() 已删除：唯一调用点在 SettingsForm.VisualizeXGM 里，
     // 随 XG Mobile 外置显卡坞那一族一起删掉了。它的判据同样是 ASUS 机型串。

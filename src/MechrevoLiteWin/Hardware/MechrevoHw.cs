@@ -1175,9 +1175,25 @@ public class MechrevoHw : IDisposable
         finally { Volatile.Write(ref _reconnecting, 0); }
     }
 
+    /// <summary>
+    /// 是否套用内置的一刀切默认曲线（E6）。服务画像**显式否掉**风扇设置
+    /// （<c>FanSettingsSupport=0</c>）时不套用——逐机型的曲线由服务按机型提供。
+    /// 画像缺失（测试/审计/首次启动）时保留内置回退，保证曲线图始终有数据。
+    /// </summary>
+    internal static bool ShouldApplyBuiltInCurveDefaults(MechrevoDeviceCapabilities capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        return capabilities.FanSettings || !capabilities.ProfileAvailable;
+    }
+
     void LoadDefaultCurveFromDisk()
     {
         var files = new[] { "DefaultCurve_Gaming.json", "DefaultCurve_Office.json", "DefaultCurve_Turbo.json" };
+        if (!ShouldApplyBuiltInCurveDefaults(Capabilities))
+        {
+            Logger.WriteLine("LoadDefaultCurve skipped: the service profile denies fan settings (FanSettingsSupport=0).");
+            return;
+        }
         try
         {
             // 三模式差异化默认曲线（程序目录 Resources/，随程序分发）：

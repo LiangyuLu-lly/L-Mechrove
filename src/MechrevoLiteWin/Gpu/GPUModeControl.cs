@@ -341,7 +341,9 @@ namespace MechrevoLite.Gpu
         {
 
             bool GpuAuto = AppConfig.Is("gpu_auto");
-            bool ForceGPU = AppConfig.IsForceSetGPUMode() && !GpuAuto;
+            // 强制模式不再是机型串判定：必须矩阵/画像声明本机支持至少一条 GPU 通路（E1）。
+            bool ForceGPU = AppConfig.IsForceSetGPUMode() && !GpuAuto &&
+                (Program.hw?.SupportsDgpuDirect == true || Program.hw?.SupportsIgpuOnly == true);
 
             int GpuMode = AppConfig.Get("gpu_mode");
 

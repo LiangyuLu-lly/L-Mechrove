@@ -6,13 +6,13 @@ using System.Text.RegularExpressions;
 public static class NvidiaSmi
 {
 
-    public static int GetDefaultMaxGPUPower()
-    {
-        if (AppConfig.ContainsModel("GU605") || AppConfig.ContainsModel("GA605")) return 125;
-        if (AppConfig.ContainsModel("GA403")) return 90;
-        if (AppConfig.ContainsModel("FA607")) return 140;
-        else return 175;
-    }
+    /// <summary>
+    /// 默认 GPU 功耗上限（E4）。ASUS 机型名单已删除：逐 SKU 的上限来自运行时 GCU
+    /// <c>Fan/Status</c> 的 <c>GpuTgpMaximum</c>（见 <c>MechrevoHw.GpuTgpMaximum</c>），
+    /// 本方法只做"有报告就用报告"的透传。没有运行时报告时返回 -1（未知）——
+    /// 绝不用 175 W 之类的固定值替一台没上报的机器猜上限。
+    /// </summary>
+    public static int GetDefaultMaxGPUPower(int? reportedMaximum = null) => reportedMaximum ?? -1;
 
     /// <summary>
     /// 独显上的计算/CUDA 上下文清单（pid + 进程名）。NVAPI 的活跃图形应用列表
