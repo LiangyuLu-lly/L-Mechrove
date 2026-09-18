@@ -119,15 +119,40 @@ public class BatteryChargeLimitTests
         return Path.Combine(directory!.FullName, relativePath);
     }
 
-    /// <summary>机型门禁：EC 字段布局随机型而变，没实测过的机器一律不写（配置可强制）。</summary>
-    [Theory]
-    [InlineData("YAOSHI Series", true)]
-    [InlineData("yaoshi series-x6ar55xy", true)]
-    [InlineData("MACHENIKE L16", false)]
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void OnlyVerifiedMachinesMayWriteTheRegister(string? model, bool expected) =>
-        Assert.Equal(expected, EcChargeLimit.IsSupportedMachine(model));
+    /// <summary>
+    /// 机型门禁：EC 字段布局随机型而变，判定改由 FeatureMatrix + F3（不再是机型串匹配）。
+    /// 三态与强制开关语义的完整覆盖见 <see cref="ChargeLimitGatingTests"/>。
+    /// </summary>
+    [Fact]
+    public void OnlyVerifiedMachinesMayWriteTheRegister()
+    {
+        string? previous = AppConfig.GetString("ec_charge_limit");
+        try
+        {
+            AppConfig.Remove("ec_charge_limit");
+            var profile = FeatureMatrix.FromValues(new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["KeyboardSupport"] = 1,
+            });
+            var empty = FeatureMatrix.FromValues(new Dictionary<string, object?>());
+            var supported = new SupportDecision(true, SupportReason.Ok, "PH4TRX1");
+            var unparsable = SupportDecision.Unparsable();
+
+            Assert.True(EcChargeLimit.IsSupportedMachine(supported, profile));
+            Assert.False(EcChargeLimit.IsSupportedMachine(unparsable, profile));
+            Assert.False(EcChargeLimit.IsSupportedMachine(supported, empty));
+
+            AppConfig.Set("ec_charge_limit", "1");
+            Assert.True(EcChargeLimit.IsSupportedMachine(unparsable, empty));
+            AppConfig.Set("ec_charge_limit", "0");
+            Assert.False(EcChargeLimit.IsSupportedMachine(supported, profile));
+        }
+        finally
+        {
+            if (previous is null) AppConfig.Remove("ec_charge_limit");
+            else AppConfig.Set("ec_charge_limit", previous);
+        }
+    }
 
 }
 

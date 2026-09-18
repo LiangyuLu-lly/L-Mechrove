@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Probe;
 
 namespace MechrevoLite.Hardware;
 
@@ -84,20 +85,54 @@ internal static class EcChargeLimit
     public static bool IsSupportedLimit(int percent) => percent is >= MinimumPercent and <= MaximumPercent;
 
     /// <summary>
-    /// 只有实测过的机型才允许写。EC 字段布局随机型而变（本机就是例子：固件字段表里的
-    /// CGLM@0x78F 能写能回读却管不住充电），在未验证的机器上按同一地址写等于往未知寄存器里塞值。
-    /// 配置项 <c>ec_charge_limit</c> 可强制开关（"1"/"0"），供新机型验证时用。
+    /// 是否允许写充电上限。EC 字段布局随机型而变，判定改由 <see cref="FeatureMatrix"/>（服务写入的
+    /// 机型能力画像）+ F3（<see cref="SupportDecision"/>，机型在 24 集合内）决定——**不再做机型名串匹配**。
+    /// 配置项 <c>ec_charge_limit</c> 可强制开关（"1"/"0"），供新机型验证时用，语义不变。
     /// </summary>
-    public static bool IsSupportedMachine(string? model)
+    public static bool IsSupportedMachine(SupportDecision support, FeatureMatrix matrix)
     {
+        ArgumentNullException.ThrowIfNull(support);
+        ArgumentNullException.ThrowIfNull(matrix);
         string? forced = AppConfig.GetString("ec_charge_limit");
         if (forced == "1") return true;
         if (forced == "0") return false;
-        return model?.Contains("YAOSHI", StringComparison.OrdinalIgnoreCase) == true;
+        return support.IsSupported && matrix.ProfileAvailable;
     }
 
-    /// <summary>本机是否允许走 EC 直写通道。</summary>
-    public static bool IsAvailableOnThisMachine() => IsSupportedMachine(AppConfig.GetModel());
+    static readonly Lazy<SupportDecision> CurrentSupport = new(ReadCurrentSupport);
+
+    /// <summary>本机是否允许走 EC 直写通道（矩阵 + F3）。</summary>
+    public static bool IsAvailableOnThisMachine() =>
+        IsSupportedMachine(CurrentSupport.Value, FeatureMatrix.Current());
+
+    /// <summary>
+    /// 读 EC 身份 → F3 → 手动覆盖状态机（D2）→ 生效的支持判定。读不到设备即 <c>Unparsable</c>
+    /// （fail-closed），绝不放行。单次判定缓存到进程结束（机型不随进程变化）。
+    /// </summary>
+    static SupportDecision ReadCurrentSupport()
+    {
+        try
+        {
+            if (!AcpiDriverReadTransport.TryOpen(out AcpiDriverReadTransport? transport, out string error) || transport is null)
+            {
+                Logger.WriteLine("Model identity unavailable for charge-limit gate: " + error);
+                return SupportDecision.Unparsable();
+            }
+            using (transport)
+            {
+                SupportDecision auto = ModelSupport.Determine(transport);
+                ModelOverrideDecision decision = ModelOverrideStateMachine.Evaluate(auto);
+                return decision.ManualApplied
+                    ? ModelOverrideStateMachine.ValidateManual(decision.EffectiveModel)
+                    : auto;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("Charge-limit support determination failed: " + ex.Message);
+            return SupportDecision.Unparsable();
+        }
+    }
 
     /// <summary>写入充电阈值（上限 + 复充下限一对）并回读确认。</summary>
     public static bool TrySet(int percent, out int appliedPercent)
