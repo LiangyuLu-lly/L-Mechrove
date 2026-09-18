@@ -619,11 +619,12 @@ function Register-AutostartTask {
     $taskName = Get-AutostartTaskName
     $userName = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
 
-    # Action = the exe with NO arguments. An elevated task whose action takes arguments is an
-    # injectable elevation primitive, so the action surface is deliberately empty.
-    # The action is the exe with an empty argument surface: an elevated task whose action takes
-    # arguments is an injectable elevation primitive, so the action carries the exe path only.
-    $action = New-ScheduledTaskAction -Execute $AppExe
+    # N15 #14 regression fix: the action MUST carry the `startup` argument. The app's own contract
+    # compares the action's arguments to "startup" (Helpers\Startup.cs:329) and registers it that
+    # way (:360); a task without it never matches the app's plan, so the app rewrites it and the
+    # launch path is wrong - which is exactly the "autostart does nothing" field report. The
+    # argument is a fixed literal, not user input, so it is not an injectable surface.
+    $action = New-ScheduledTaskAction -Execute $AppExe -Argument 'startup'
     $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $userName
     $logonTrigger.Delay = 'PT10S'
     $consoleTrigger = New-ScheduledTaskTrigger -AtLogOn -User $userName
