@@ -1059,6 +1059,45 @@ enabled and the task exists/points at a valid path — the exact field bug.
 
 ---
 
+## Section 10.6 — Display-route switching on a machine whose vendor console works (N16)
+
+Use this when the vendor console can switch display route on a machine but ours cannot. It is the
+one-pass check for the five-machine iGPU cluster.
+
+**Step 10.6.1 — capture the confirmation field the service actually emits.** The iGPU-only
+confirmation has two wire encodings; which one your machine uses decides whether our confirmation
+can ever succeed.
+
+```powershell
+$log = "$env:LOCALAPPDATA\L-Mechrevo\logs\app.log"
+Select-String -LiteralPath $log -Pattern 'CheckDGpuStatusforIGpuOnly' | Select-Object -Last 5 | ForEach-Object { $_.Line }
+```
+
+Expected: a line showing the raw status payload. **`CheckDGpuStatusforIGpuOnlyOnSuccess`** with
+values `1`/`2` is the 5.56 (50-series) encoding. **`CheckDGpuStatusforIGpuOnlySwitch`** with values
+`85`/`170` is the 40-series encoding (`85` = iGPU-only active, `170` = not ready / unsupported).
+Both are now understood; a machine emitting neither is a new encoding and must be recorded.
+
+**Step 10.6.2 — confirm the switch actually lands.**
+
+```powershell
+Select-String -LiteralPath $log -Pattern 'SwitchGpuMode confirmed=' | Select-Object -Last 3 | ForEach-Object { $_.Line }
+```
+
+Expected: `confirmed=True` with `runtime=<2|1>` matching the target. A `confirmed=False` with
+`runtime=0` means the confirmation field was not parsed — capture the raw payload from 10.6.1.
+
+**Step 10.6.3 — the vendor-console cross-check.** On the same machine, switch the route in the
+vendor console and confirm it works. If the vendor console succeeds and ours reports
+`confirmed=False`, the difference is in the confirmation read, not the payload: the payload shape is
+per-action and already matches the vendor (`IGPU_ONLY_CONNECT_RB_ON/OFF` carry `SetToWMIEC="OK"`;
+`AUTO` and every `DGPU_DIRECT_*` do not).
+
+**BLOCKED-HW**: the real-machine end-to-end (does the route actually change on that specific
+machine) needs that machine; the parse and payload logic are fake-tested.
+
+---
+
 ## Section 11 — Recording the run
 
 When done, produce a single summary next to the log:

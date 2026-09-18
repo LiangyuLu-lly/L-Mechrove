@@ -1956,6 +1956,14 @@ public class MechrevoHw : IDisposable
         // 显式上报为 false 的支持位已经在上面写入，?? = 不会覆盖它。
         if (IsRecognizedDgpuDirectStatus(dgpuStatus)) DgpuDirectStatusSupport ??= true;
         if (IsRecognizedIgpuOnlyStatus(igpuStatus)) IgpuOnlyStatusSupport ??= true;
+        // N16：iGPU-only 的确认信号有两代编码，我们此前只懂一代。
+        //   5.56（50 系）控制台读 CheckDGpuStatusforIGpuOnlyOnSuccess，按 Contains("1")/("2") 解析
+        //     （CCUWinUI.decompiled.cs:54637-54640）。
+        //   40 系控制台发 CheckDGpuStatusforIGpuOnlySwitch，值是 EC 字节：85=成功、170=失败
+        //     （MySettingManager.cs:842, 1292/1297/1306/1311/1316）。
+        // 5.56 控制台的状态 DTO 两个字段都声明了（137930/137932），所以服务端可能发任一个。
+        // 只读 OnSuccess 时，发 Switch=85 的机器解析成 0，确认永不成功——这就是五台机器
+        // iGPU 切换失败的共同原因。
         string? gpuSwitchResult = o.GetValue("CheckDGpuStatusforIGpuOnlyOnSuccess", StringComparison.OrdinalIgnoreCase)?.ToString();
         bool gpuSwitchResultPresent = !string.IsNullOrWhiteSpace(gpuSwitchResult);
         if (gpuSwitchResultPresent)
@@ -1970,6 +1978,18 @@ public class MechrevoHw : IDisposable
             // GpuSwitchResultVersion，先跳版本号就构成「新结果 + 旧模式」。
             // 目前它靠谓词里 `if (CurrentGpuMode != mode) return false;` 短路兜住，
             // 但 Setting/Status 应该只有一个 release 点。
+        }
+        else
+        {
+            // N16：40 系编码回退。OnSuccess 缺席时读 Switch，把 EC 字节映射到同一套 1/2 语义：
+            // 85 = iGPU-only 已生效（成功），170 = 未就绪/不支持（失败）。
+            string? switchResult = o.GetValue("CheckDGpuStatusforIGpuOnlySwitch", StringComparison.OrdinalIgnoreCase)?.ToString();
+            if (!string.IsNullOrWhiteSpace(switchResult) &&
+                int.TryParse(switchResult!.Trim(), out int ecByte))
+            {
+                GpuSwitchResult = ecByte == 85 ? 2 : ecByte == 170 ? 1 : 0;
+                GpuSwitchResultReported = true;
+            }
         }
         int newGpu = ResolveGpuModeStatus(GpuMode, dgpuStatus, igpuStatus);
         string? cannotSwitch = FirstField(o, "IGpuCannotBeSwitchNowVisibility")?.ToString();
