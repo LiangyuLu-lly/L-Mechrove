@@ -5074,7 +5074,7 @@ namespace MechrevoLite
         /// 充电上限读数未知（从未成功写入 / 写失败 / 机型不支持）时的占位。绝不能把
         /// AppConfig 缺失键的 -1 哨兵当成一个真实的「-1%」上限显示出去。
         /// </summary>
-        internal const string BatteryLimitUnknownText = "—";
+        internal const string BatteryLimitUnknownText = "无法读取";
 
         public void VisualiseBatteryTitle(int limit)
         {
