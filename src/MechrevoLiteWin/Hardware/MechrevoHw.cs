@@ -1,5 +1,6 @@
 using MechrevoLite.Gpu;
 using MechrevoLite.Gpu.NVidia;
+using MechrevoLite.Mode;
 using MQTTnet;
 using MQTTnet.Formatter;
 using Newtonsoft.Json;
@@ -913,7 +914,7 @@ public class MechrevoHw : IDisposable
     /// 把面向用户的瓦数折算成线上值（整除，与官方一致）。AMD 的 fPPT 不像 PL4 那样按半瓦收发，
     /// 官方直接原样下发，所以 AMD 上是恒等换算。
     /// </summary>
-    internal int Pl4ToWire(int watts) => UsesAmdPowerFields ? watts : watts / Pl4Scale;
+    internal int Pl4ToWire(int watts) => ModeDetailEncoding.Pl4WireWatts(watts, UsesAmdPowerFields, Pl4Scale);
     /// <summary>折算再还原后真正可达的瓦数。半瓦机型上奇数入参会被量化到偶数；AMD 原样。</summary>
     internal int Pl4Effective(int watts) => UsesAmdPowerFields ? watts : Pl4ToWire(watts) * Pl4Scale;
 
@@ -2384,7 +2385,9 @@ public class MechrevoHw : IDisposable
             3 => "OPERATING_CUSTOM_MODE",
             _ => "OPERATING_GAMING_MODE",
         };
-        int expectedOpMode = mode switch { 0 => 1, 1 => 2, 2 => 0, 3 => 3, _ => 1 };
+        int expectedOpMode = mode is >= 0 and <= 3
+            ? (int)PowerModeMapping.FromVisualMode(mode)
+            : (int)ConsoleOperatingMode.Gaming;
         bool custom = mode == 3;
         var (fanPayload, overclockPayload) = BuildModeSwitchPayloads(
             action, expectedOpMode, custom ? Math.Clamp(CustomProfileIndex, 0, 3) : 0, custom);
@@ -3346,9 +3349,9 @@ public class MechrevoHw : IDisposable
         return fallback;
     }
 
-    public int TccTargetToRaw(int target) => Math.Clamp((TjMax > 0 ? TjMax : 100) - target, 0, 100);
+    public int TccTargetToRaw(int target) => ModeDetailEncoding.TccOffset(TjMax, target);
 
-    public int TccTargetFromRaw(int offset) => Math.Clamp((TjMax > 0 ? TjMax : 100) - offset, 0, 100);
+    public int TccTargetFromRaw(int offset) => ModeDetailEncoding.TccOffset(TjMax, offset);
 
     static bool HasField(JObject o, string key) => o.GetValue(key, StringComparison.OrdinalIgnoreCase) is not null;
 

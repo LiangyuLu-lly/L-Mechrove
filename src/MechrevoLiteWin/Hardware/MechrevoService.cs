@@ -1,4 +1,5 @@
 using MechrevoLite.Gpu;
+using MechrevoLite.Mode;
 
 namespace MechrevoLite.Hardware;
 
@@ -132,14 +133,9 @@ public class MechrevoService
     }
 
     /// <summary>机械革命 opMode（0=办公 1=游戏 2=增强 3=自定义）→ 本服务枚举（0=游戏 1=增强 2=办公 3=自定义）。</summary>
-    static int OpToMode(int op) => op switch
-    {
-        0 => ModeOffice,
-        1 => ModeGaming,
-        2 => ModeTurbo,
-        3 => ModeCustom,
-        _ => ModeGaming,
-    };
+    static int OpToMode(int op) => op is >= 0 and <= 3
+        ? PowerModeMapping.ToVisualMode((ConsoleOperatingMode)op)
+        : ModeGaming;
 
     /// <summary>将机械革命服务枚举转换为 SettingsForm 使用的视觉枚举。</summary>
     public static int ToVisualMode(int mode) => mode switch
@@ -185,14 +181,9 @@ public class MechrevoService
                 _ => "OPERATING_GAMING_MODE",
             };
             Logger.WriteLine($"MechrevoService.SwitchMode({mode}) -> {action}");
-            int expectedOperatingMode = mode switch
-            {
-                ModeOffice => 0,
-                ModeGaming => 1,
-                ModeTurbo => 2,
-                ModeCustom => 3,
-                _ => 1,
-            };
+            int expectedOperatingMode = mode is >= 0 and <= 3
+                ? (int)PowerModeMapping.FromVisualMode(mode)
+                : (int)ConsoleOperatingMode.Gaming;
             _hw.MarkModeSwitchPending(expectedOperatingMode);
             // 载荷与 MechrevoHw.SetMode 共用一份构造：ProfileIndex 是 JSON 数字（不是 "0"），
             // 而且切模式必须紧跟一条 LCHWOC/Control 的运行标记
