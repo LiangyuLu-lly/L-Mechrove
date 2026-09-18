@@ -148,9 +148,40 @@ public sealed class MechrevoDeviceCapabilities
             Logger.WriteLine("Cannot read machine identity: " + ex.Message);
         }
 
-        // Newer packages use the 64-bit GamingCenter2 key. Older Control Center
-        // installers may use a 32-bit registry view or a legacy product root.
-        // Canonical values are read first and legacy keys only fill gaps.
+        ReadItemSupportInto(values);
+
+        string? modelOverride = ModelOverride;
+        if (modelOverride is not null)
+        {
+            // 子进程注入（UI 审计的 LMECHREVO_MODEL_OVERRIDE=<代号>）：覆盖身份来源，
+            // 不碰注册表；能力位仍来自本机服务画像。
+            values["BIOS_PROJECT_ID"] = modelOverride;
+            identity["SystemProductName"] = modelOverride;
+        }
+
+        var capabilities = FromValues(values, identity, DetectLogoLightingRegistry());
+        Logger.WriteLine("Device capabilities: " + capabilities.IdentitySummary +
+            $", officialProfile={capabilities.ProfileAvailable}, logo={capabilities.LogoLight}");
+        return capabilities;
+    }
+
+    /// <summary>
+    /// 读服务写入的 <c>ItemSupport</c> + <c>GpuConfig</c> 原始值（含 <c>LMECHREVO_MODEL_OVERRIDE</c> 注入），
+    /// 不做任何能力推导。供 <see cref="FeatureMatrix"/> 只读消费。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, object?> ReadServiceValues()
+    {
+        var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        ReadItemSupportInto(values);
+        if (ModelOverride is { } modelOverride) values["BIOS_PROJECT_ID"] = modelOverride;
+        return values;
+    }
+
+    // Newer packages use the 64-bit GamingCenter2 key. Older Control Center
+    // installers may use a 32-bit registry view or a legacy product root.
+    // Canonical values are read first and legacy keys only fill gaps.
+    static void ReadItemSupportInto(IDictionary<string, object?> values)
+    {
         foreach (string path in ItemSupportPaths.Concat(GpuConfigPaths))
         {
             foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
@@ -169,20 +200,6 @@ public sealed class MechrevoDeviceCapabilities
                 }
             }
         }
-
-        string? modelOverride = ModelOverride;
-        if (modelOverride is not null)
-        {
-            // 子进程注入（UI 审计的 LMECHREVO_MODEL_OVERRIDE=<代号>）：覆盖身份来源，
-            // 不碰注册表；能力位仍来自本机服务画像。
-            values["BIOS_PROJECT_ID"] = modelOverride;
-            identity["SystemProductName"] = modelOverride;
-        }
-
-        var capabilities = FromValues(values, identity, DetectLogoLightingRegistry());
-        Logger.WriteLine("Device capabilities: " + capabilities.IdentitySummary +
-            $", officialProfile={capabilities.ProfileAvailable}, logo={capabilities.LogoLight}");
-        return capabilities;
     }
 
     internal static MechrevoDeviceCapabilities FromValues(
