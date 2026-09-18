@@ -1,3 +1,5 @@
+using MechrevoLite.Gpu;
+
 namespace MechrevoLite.Hardware;
 
 public enum GpuModeStatusReadback
@@ -944,7 +946,7 @@ public class MechrevoService
     IReadOnlyList<Dictionary<string, object>> BuildGpuRestartRoute(int mode) =>
         GpuRestartRouteOverride is { } factory
             ? factory(mode, _hw.SupportsDgpuDirect)
-            : CreateGpuRestartTargetPayloads(mode, _hw.SupportsDgpuDirect);
+            : CreateGpuRestartTargetPayloads(mode, _hw.SupportsDgpuDirect, _hw.DgpuGeneration);
 
     /// <summary>
     /// GPU 重启的唯一发布出口。Fail closed：空路由意味着没有任何模式会被写进 EC，
@@ -988,28 +990,49 @@ public class MechrevoService
 
     internal static IReadOnlyList<Dictionary<string, object>> CreateGpuRestartTargetPayloads(
         int mode,
-        bool supportsDgpuDirect) => mode switch
+        bool supportsDgpuDirect,
+        DgpuGenerationKind generation = DgpuGenerationKind.Unknown)
     {
-        GpuDgpu =>
-        [
-            new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
-            CreateGpuModePayload(GpuStandard),
-            new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
-        ],
-        GpuStandard => supportsDgpuDirect
-            ? [new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF" }]
-            : [CreateGpuModePayload(GpuStandard)],
-        GpuIGpu => supportsDgpuDirect
-            ? [new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_IGPU" }]
-            : [CreateGpuModePayload(GpuIGpu)],
-        GpuAuto => supportsDgpuDirect
-            ? [
-                new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF" },
-                CreateGpuModePayload(GpuAuto),
-            ]
-            : [CreateGpuModePayload(GpuAuto)],
-        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
-    };
+        // 重启路由的契约是"应用目标 + 重启"。该代际没有 RESTART 动作（30 系 = ProvenAbsent）时
+        // 整条路由不可用：绝不半应用（那会留下一个未验证的 MUX 半状态），由调用方报 Unsupported。
+        if (!DisplayRoutePolicy.AllowsAction(generation, DisplayRouteMatrix.Restart))
+            return Array.Empty<Dictionary<string, object>>();
+
+        IReadOnlyList<Dictionary<string, object>> route = mode switch
+        {
+            GpuDgpu =>
+            [
+                new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
+                CreateGpuModePayload(GpuStandard),
+                new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
+            ],
+            GpuStandard => supportsDgpuDirect
+                ? [new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF" }]
+                : [CreateGpuModePayload(GpuStandard)],
+            GpuIGpu => supportsDgpuDirect
+                ? [new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_IGPU" }]
+                : [CreateGpuModePayload(GpuIGpu)],
+            GpuAuto => supportsDgpuDirect
+                ? [
+                    new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF" },
+                    CreateGpuModePayload(GpuAuto),
+                ]
+                : [CreateGpuModePayload(GpuAuto)],
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+        // 逐动作再收窄一次：该代际动作词汇里没有的动作一律不发（未知代际不受限）。
+        return IsGenerationRestricted(generation)
+            ? route.Where(payload => DisplayRoutePolicy.AllowsAction(generation, ActionOf(payload))).ToArray()
+            : route;
+    }
+
+    /// <summary>30/40/50 才是"已知代际"；Unknown/NoDgpu 不套用代际限制。</summary>
+    static bool IsGenerationRestricted(DgpuGenerationKind generation) =>
+        generation is DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50;
+
+    static string ActionOf(Dictionary<string, object> payload) =>
+        payload.TryGetValue("Action", out object? value) ? value?.ToString() ?? "" : "";
 
     /// <summary>请求 GCU 回传当前显卡模式，不写入或切换任何硬件状态。</summary>
     public async Task<GpuModeStatusReadback> RefreshGpuModeStatus()
@@ -1090,9 +1113,17 @@ public class MechrevoService
                 return !requiresFreshHotSwitchResult ||
                     (_hw.GpuSwitchResultVersion > hotSwitchResultVersion && _hw.GpuSwitchResult == 2);
             }
-            Dictionary<string, object> payload = CreateGpuSwitchPayload(
-                mode, _hw.SupportsDgpuDirect, _hw.SupportsIgpuOnly, hotSwitchRequest);
-            string action = payload["Action"].ToString() ?? "";
+            GpuRouteCommand? switchCommand = GpuRouteCommandLayer.BuildSwitchCommand(
+                mode, _hw.SupportsDgpuDirect, _hw.SupportsIgpuOnly, hotSwitchRequest, _hw.DgpuGeneration);
+            if (switchCommand is null)
+            {
+                // 该代际动作词汇里没有这个动作（例如 30 系上的 iGPU-only）：fail closed，不发。
+                Logger.WriteLine(
+                    $"SwitchGpuMode({mode}) rejected: action not in dGPU generation {_hw.DgpuGeneration} vocabulary");
+                return false;
+            }
+            Dictionary<string, object> payload = switchCommand.Payload;
+            string action = switchCommand.Action;
             bool leavingIgpuOnly = modeBeforeSwitch == GpuIGpu && mode != GpuIGpu;
             Logger.WriteLine($"MechrevoService.SwitchGpuMode({mode}) -> {action}, leavingDirect={leavingDirect}, leavingIgpuOnly={leavingIgpuOnly}");
             if (mode == GpuDgpu)

@@ -2471,9 +2471,15 @@ public class MechrevoHw : IDisposable
         bool useHotSwitch = mode == MechrevoService.GpuIGpu && SupportsGpuHotSwap;
         bool useMuxTarget = mode == MechrevoService.GpuIGpu && SupportsDgpuDirect &&
             !SupportsIgpuOnly && !useHotSwitch;
-        Dictionary<string, object> payload = MechrevoService.CreateGpuSwitchPayload(
-            mode, SupportsDgpuDirect, SupportsIgpuOnly, useHotSwitch);
-        string action = payload["Action"].ToString() ?? "";
+        GpuRouteCommand? switchCommand = GpuRouteCommandLayer.BuildSwitchCommand(
+            mode, SupportsDgpuDirect, SupportsIgpuOnly, useHotSwitch, DgpuGeneration);
+        if (switchCommand is null)
+        {
+            Logger.WriteLine($"SetGpuMode({mode}) rejected: action not in dGPU generation {DgpuGeneration} vocabulary");
+            return false;
+        }
+        Dictionary<string, object> payload = switchCommand.Payload;
+        string action = switchCommand.Action;
         Logger.WriteLine($"SetGpuMode({mode}) -> {action}");
         await _controlLock.WaitAsync();
         try

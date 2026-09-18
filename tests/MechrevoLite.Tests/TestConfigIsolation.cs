@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using MechrevoLite.Gpu;
 
 namespace MechrevoLite.Tests;
 
@@ -21,5 +22,22 @@ internal static class TestConfigIsolation
         // 自行保存/恢复这两个委托（套件已禁用并行，静态状态安全）。
         Startup.ReadScheduledState = static () => false;
         Startup.WriteScheduledState = static _ => true;
+
+        // dGPU 代际（轴 2）门控在测试里必须确定性：生产会读真实 GPU，测试固定为"无独显"
+        // （NoDgpu 不套用任何代际限制）。需要特定代际的测试自行设置
+        // GpuGenerationProvider.Override（它们都属 SerialGpuSwitchCollection，串行安全）。
+        GpuGenerationProvider.AdapterOverride = static () => Array.Empty<GpuAdapter>();
+        GpuGenerationProvider.Storage = new InMemoryDgpuGenerationStorage();
     }
 }
+
+/// <summary>测试专用内存存储：绝不碰 AppConfig，避免代际持久化污染其他测试的配置断言。</summary>
+internal sealed class InMemoryDgpuGenerationStorage : IDgpuGenerationStorage
+{
+    readonly Dictionary<string, string> _values = new(StringComparer.Ordinal);
+
+    public string? Get(string key) => _values.TryGetValue(key, out string? value) ? value : null;
+
+    public void Set(string key, string value) => _values[key] = value;
+}
+
