@@ -95,14 +95,23 @@ internal static class EcChargeLimit
         string? forced = AppConfig.GetString("ec_charge_limit");
         if (forced == "1") return true;
         if (forced == "0") return false;
-        return support.IsSupported && matrix.ProfileAvailable;
+        // N15 #15: the profile is written by the vendor service and may lag the first sample, so
+        // requiring it here locked a service-served machine out of the charge limit entirely. The
+        // support decision already encodes "the service serves this machine"; the profile is only
+        // an additional signal, not a veto.
+        return support.IsSupported;
     }
 
-    static readonly Lazy<SupportDecision> CurrentSupport = new(RuntimeModelSupport.Current);
-
-    /// <summary>本机是否允许走 EC 直写通道（矩阵 + F3）。身份与覆盖判定统一见 <see cref="RuntimeModelSupport"/>。</summary>
+    /// <summary>
+    /// 本机是否允许走 EC 直写通道（矩阵 + F3）。身份与覆盖判定统一见 <see cref="RuntimeModelSupport"/>。
+    ///
+    /// <para><b>N15 #12 订正</b>：此前这里把判定缓存在 <c>Lazy&lt;SupportDecision&gt;</c> 里，进程生命周期内
+    /// 只求值一次。支持判据现在依赖"厂商服务是否在服务本机"，而服务可能在应用启动之后才连上 ——
+    /// 一次过早的采样会把整机永久锁成只读（现场："什么功能都用不了"，重启后依旧）。改为每次现算：
+    /// 判定是纯函数，代价只是一次 EC 读 + 一次注册表读。</para>
+    /// </summary>
     public static bool IsAvailableOnThisMachine() =>
-        IsSupportedMachine(CurrentSupport.Value, FeatureMatrix.Current());
+        IsSupportedMachine(RuntimeModelSupport.Current(), FeatureMatrix.Current());
 
     /// <summary>写入充电阈值（上限 + 复充下限一对）并回读确认。</summary>
     public static bool TrySet(int percent, out int appliedPercent)
