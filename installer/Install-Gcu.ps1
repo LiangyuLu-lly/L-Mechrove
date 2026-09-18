@@ -271,6 +271,28 @@ function Test-GcuPostInstall {
     return [pscustomobject]@{ Ok = ($failed.Count -eq 0); Checks = $checks; Failed = $failed }
 }
 
+function Get-GcuFallbackGuidance {
+    # N6: the visible fallback that replaces the retired G0 gate. HONEST LIMITATION: this project
+    # has no download server, so there is no one-click cloud download. The guidance tells the user
+    # exactly which payload to fetch and where it lives, and how to install it by hand.
+    $lines = @(
+        'The newest GCU payload (release\GCU-only) did not come up on this machine.'
+        'If this is a 40-series machine, fetch the matching 40-series payload and install it by hand:'
+        '  1. release\GCU-40-51751  (AiStoneService variant; the 40-series default)'
+        '  2. release\GCU-40-51749  (UniwillService variant; the older 40-series console)'
+        'Both live in the L-Mechrevo source tree under release\ and are NOT shipped in this package.'
+        'There is no download server for this project, so the payload cannot be fetched automatically.'
+        'To install one by hand: copy its <ServiceDir> folder over {app}\GCU\<ServiceDir>, then run'
+        '  powershell -NoProfile -ExecutionPolicy Bypass -File "{app}\GCU\Install-Gcu.ps1" -StagingRoot "{app}\GCU" -TargetDir "{app}\GCU"'
+        'and re-run the self-check. Report the failure with %ProgramData%\L-Mechrevo\logs\gcu-install-*.log.'
+    )
+    return [pscustomobject]@{
+        Reason   = 'the newest GCU payload did not become ready on this machine'
+        Payloads = @('release\GCU-40-51751', 'release\GCU-40-51749')
+        Lines    = $lines
+    }
+}
+
 function Get-GcuPostInstallFacts {
     $services = @()
     try {
@@ -628,6 +650,9 @@ try {
             $reasons = (@($verdict.Failed) | ForEach-Object { ('{0}: {1}' -f $_.Name, $_.Detail) }) -join '; '
             Write-Log ('FATAL: post-install verification failed: ' + $reasons)
             Write-Log ('FATAL: see ' + $script:LogFile + ' (gcu-install-*.log)')
+            # N6: the visible fallback. Never silent, never a fake cloud download.
+            $guidance = Get-GcuFallbackGuidance
+            foreach ($line in $guidance.Lines) { Write-Log ('FALLBACK: ' + $line) }
             exit 1
         }
         Write-Log ('post-install verification OK; status file: ' + $statusPath)
