@@ -20,6 +20,7 @@ param(
     [Parameter(Mandatory = $true)][string]$TargetDir,
     [ValidateSet('Auto', '50', '40-51749', '40-51751')][string]$Variant = 'Auto',
     [string]$LogDir,
+    [string]$UninstallScriptPath,
     [switch]$NoStart,
     [switch]$SinglePayload,
     [switch]$DryRun
@@ -29,7 +30,11 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:RuleName = 'L-Mechrevo - Block remote GCU MQTT'
+# Every bundled vendor payload registers the same service name, so the "legacy registration" is
+# the same name installed by the vendor install.bat with a different binPath; the uninstall-first
+# step removes it by name before the new payload is registered.
 $script:ServiceName = 'GCUBridge'
+$script:LegacyServiceNames = @('GCUBridge')
 $script:LogFile = $null
 
 function Write-Log {
@@ -83,19 +88,50 @@ function Get-ServiceBinPath {
     return [string]$service.PathName
 }
 
-function Stop-GcuProcesses {
-    $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
-    if ($service) {
-        Write-Log ("  stopping {0} (status={1})" -f $script:ServiceName, $service.Status)
-        Stop-Service -Name $script:ServiceName -Force -ErrorAction SilentlyContinue
+function Invoke-PriorGenerationUninstall {
+    # Uninstall-first: remove the current/legacy GCUBridge registration (the vendor install.bat
+    # registers the same name) and the firewall rule before the new payload is copied, so two
+    # generations cannot coexist. A failure here aborts the install instead of stacking a second
+    # service on top of a stale one.
+    param(
+        [string]$TargetDir,
+        [string]$UninstallScriptPath,
+        [string]$LogDir,
+        [switch]$DryRun
+    )
+    $scriptPath = if (-not [string]::IsNullOrWhiteSpace($UninstallScriptPath)) {
+        $UninstallScriptPath
     }
-    foreach ($name in @('GCUService', 'GCUBridge')) {
-        foreach ($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
-            Write-Log ("  stopping leftover process {0} (pid {1})" -f $name, $process.Id)
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        }
+    else {
+        Join-Path $PSScriptRoot 'Uninstall-Gcu.ps1'
     }
-    Start-Sleep -Milliseconds 500
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        throw ("prior-generation uninstall script not found: {0}; aborting install" -f $scriptPath)
+    }
+    $powershellExe = Join-Path $PSHOME 'powershell.exe'
+    $uninstallArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath, '-TargetDir', $TargetDir, '-KeepDriver')
+    if (-not [string]::IsNullOrWhiteSpace($LogDir)) { $uninstallArgs += @('-LogDir', $LogDir) }
+    if ($DryRun) { $uninstallArgs += '-DryRun' }
+    Write-Log ('  uninstall-first: {0} {1}' -f $scriptPath, ($uninstallArgs -join ' '))
+    & $powershellExe @uninstallArgs
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        throw ("prior-generation uninstall failed (exit {0}); aborting install" -f $code)
+    }
+    Write-Log '  prior-generation service/registration removed'
+}
+
+function Assert-Port13688Free {
+    # A single owner: after the prior service is gone, nothing may still be listening on 13688.
+    $cmd = Get-Command -Name Get-NetTCPConnection -ErrorAction SilentlyContinue
+    if (-not $cmd) { return }
+    $owners = @(Get-NetTCPConnection -LocalPort 13688 -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+    if ($owners.Count -gt 0) {
+        $pid0 = $owners[0]
+        $proc = Get-Process -Id $pid0 -ErrorAction SilentlyContinue
+        throw ("TCP 13688 is still owned by PID {0} ({1}) after the prior-generation uninstall; aborting install" -f $pid0, $(if ($proc) { $proc.ProcessName } else { 'unknown' }))
+    }
 }
 
 function Test-ExpectedBinPath {
@@ -207,6 +243,11 @@ function Set-InstallMarker {
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
+if ($MyInvocation.InvocationName -eq '.') {
+    # Dot-sourced (tests / the build): expose the functions only, run nothing.
+    return
+}
+
 try {
     if ([string]::IsNullOrWhiteSpace($LogDir)) {
         $LogDir = Join-Path $env:ProgramData 'L-Mechrevo\logs'
@@ -266,15 +307,15 @@ try {
         }
     }
 
-    if (-not $DryRun) {
-        Stop-GcuProcesses
-    }
+    Write-Log '[1/6] removing any prior generation service/registration (uninstall-first)'
+    Invoke-PriorGenerationUninstall -TargetDir $TargetDir -UninstallScriptPath $UninstallScriptPath -LogDir $LogDir -DryRun:$DryRun
+    if (-not $DryRun) { Assert-Port13688Free }
 
-    Write-Log ('[1/5] copying {0} payload' -f $selection.Variant)
+    Write-Log ('[2/6] copying {0} payload' -f $selection.Variant)
     Copy-Tree -Source $serviceSource -Destination $serviceTarget
     Copy-Tree -Source $driverSource -Destination $driverTarget
 
-    Write-Log '[2/5] verifying Authenticode signatures'
+    Write-Log '[3/6] verifying Authenticode signatures'
     Assert-SignedFile -Path $serviceExe -Label 'GCUBridge'
     Assert-SignedFile -Path $gcuServiceExe -Label 'GCUService'
     Assert-SignedFile -Path $driverSys -Label 'UWACPIDriver'
@@ -285,13 +326,13 @@ try {
         exit 0
     }
 
-    Write-Log '[3/5] installing UWACPI kernel driver'
+    Write-Log '[4/6] installing UWACPI kernel driver'
     Install-UwacpiDriver -DriverDir $driverTarget
 
-    Write-Log '[4/5] registering GCUBridge service'
+    Write-Log '[5/6] registering GCUBridge service'
     Install-Service -ServiceExe $serviceExe
 
-    Write-Log '[5/5] firewall rule + service start'
+    Write-Log '[6/6] firewall rule + service start'
     Ensure-FirewallRule
     if ($NoStart) {
         Write-Log '  -NoStart set; service left stopped'

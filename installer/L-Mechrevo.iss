@@ -153,3 +153,8 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile
 [UninstallDelete]
 ; Logs written outside {app} during install/uninstall.
 Type: filesandordirs; Name: "{commonappdata}\L-Mechrevo\logs"
+; Runtime copies made by Install-Gcu.ps1 that Inno never registered (T23): without these the
+; selected payload dir and the driver copy survive uninstall and leak onto disk.
+Type: filesandordirs; Name: "{app}\GCU\AiStoneService"
+Type: filesandordirs; Name: "{app}\GCU\UniwillService"
+Type: filesandordirs; Name: "{app}\GCU\UWACPIDriver"

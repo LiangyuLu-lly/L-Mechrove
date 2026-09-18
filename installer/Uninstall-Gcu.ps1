@@ -23,7 +23,11 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:RuleName = 'L-Mechrevo - Block remote GCU MQTT'
+# Every bundled vendor payload (50-series and both 40-series variants) registers the same
+# GCUBridge name, so the legacy registration shares it; iterate the list so a name added by an
+# older vendor install.bat is still removed.
 $script:ServiceName = 'GCUBridge'
+$script:LegacyServiceNames = @('GCUBridge')
 $script:LogFile = $null
 
 function Write-Log {
@@ -34,30 +38,37 @@ function Write-Log {
 }
 
 function Remove-GcuService {
-    $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
+    foreach ($name in $script:LegacyServiceNames) {
+        Remove-SingleGcuService -Name $name
+    }
+}
+
+function Remove-SingleGcuService {
+    param([string]$Name)
+    $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
     if (-not $service) {
-        Write-Log '  GCUBridge service not present'
+        Write-Log ("  {0} service not present" -f $Name)
         return
     }
-    Write-Log ("  stopping {0} (status={1})" -f $script:ServiceName, $service.Status)
-    Stop-Service -Name $script:ServiceName -Force -ErrorAction SilentlyContinue
-    foreach ($name in @('GCUService', 'GCUBridge')) {
-        foreach ($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
-            Write-Log ("  stopping leftover process {0} (pid {1})" -f $name, $process.Id)
+    Write-Log ("  stopping {0} (status={1})" -f $Name, $service.Status)
+    Stop-Service -Name $Name -Force -ErrorAction SilentlyContinue
+    foreach ($processName in @('GCUService', 'GCUBridge')) {
+        foreach ($process in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
+            Write-Log ("  stopping leftover process {0} (pid {1})" -f $processName, $process.Id)
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         }
     }
-    & sc.exe delete $script:ServiceName | Out-Null
+    & sc.exe delete $Name | Out-Null
     $waited = 0
-    while ((Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue) -and $waited -lt 20) {
+    while ((Get-Service -Name $Name -ErrorAction SilentlyContinue) -and $waited -lt 20) {
         Start-Sleep -Milliseconds 500
         $waited++
     }
-    if (Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue) {
-        Write-Log '  WARNING: service still exists after delete attempt (may clear after reboot)'
+    if (Get-Service -Name $Name -ErrorAction SilentlyContinue) {
+        Write-Log ("  WARNING: service {0} still exists after delete attempt (may clear after reboot)" -f $Name)
     }
     else {
-        Write-Log '  service deleted'
+        Write-Log ("  service {0} deleted" -f $Name)
     }
 }
 

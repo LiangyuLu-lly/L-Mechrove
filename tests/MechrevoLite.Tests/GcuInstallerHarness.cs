@@ -79,9 +79,17 @@ internal static class GcuInstallerHarness
     /// <summary>Dot-sources an installer script and evaluates <paramref name="expression"/> in that scope.</summary>
     internal static PsResult RunDotSourced(string scriptRelative, string expression)
     {
-        string script = Path(scriptRelative.Split('\\'));
-        string escaped = script.Replace("'", "''");
-        string command = ". '" + escaped + "'; " + expression;
-        return RunCommand(command);
+        string escaped = Path(scriptRelative.Split('\\')).Replace("'", "''");
+        return RunCommand(". '" + escaped + "'; " + expression);
+    }
+
+    /// <summary>
+    /// Dot-sources an installer script WITH parameters (mandatory params would otherwise prompt)
+    /// and then evaluates <paramref name="expression"/> in that scope.
+    /// </summary>
+    internal static PsResult RunDotSourcedArgs(string scriptRelative, string dotSourceArgs, string expression)
+    {
+        string escaped = Path(scriptRelative.Split('\\')).Replace("'", "''");
+        return RunCommand(". '" + escaped + "' " + dotSourceArgs + "; " + expression);
     }
 }
