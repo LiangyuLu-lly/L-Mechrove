@@ -3787,7 +3787,13 @@ namespace MechrevoLite
 
             contextMenuStrip.Items.Add("-");
 
-            AddAction("键盘灯效", false, () => OpenRgbForm());
+            // N12 审计（死按钮）：仪表盘键盘行按能力隐藏，托盘入口却一直暴露——无键盘灯效的机器上
+            // 点开是一个空窗体。这里用与仪表盘行完全相同的判据；审计模式仍强制可见（布局基线依赖它）。
+            MechrevoDeviceCapabilities trayCaps = Program.hw?.Capabilities ?? _deviceCapabilities;
+            bool keyboardLighting = Program.UiAuditMode
+                || trayCaps.Keyboard
+                || Program.hw?.SupportsKeyboard == true;
+            if (keyboardLighting) AddAction("键盘灯效", false, () => OpenRgbForm());
             AddAction("悬浮监控", AppConfig.IsOverlay(), () => ToggleOverlay());   // Overlay 硬件状态悬浮窗
             AddAction("打开主界面", false, () => Program.SettingsToggle(false, true));
             // 导出诊断包：与 footer「诊断」键同一入口（本地打包，不联网）。
