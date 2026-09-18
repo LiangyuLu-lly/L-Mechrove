@@ -901,14 +901,24 @@ public class MechrevoService
         catch (Exception ex) { Logger.WriteLine("SetCustomProfileName fail: " + ex.Message); return false; }
     }
 
+    /// <summary>
+    /// N15 #13/#16②: the GPU-switch payload carries ONLY the action name. The previous payload added
+    /// an extra field that exists nowhere in the vendor binaries - it was our own invention (the
+    /// vendor service and both vendor consoles send the action alone:
+    /// GCUService.decompiled.cs:2375-2383). An unknown field is at best ignored and at worst
+    /// rejected, which is why iGPU switching silently failed across five machines and generations.
+    /// </summary>
     internal static Dictionary<string, object> CreateGpuModePayload(int mode) => mode switch
     {
-        GpuIGpu => new() { ["Action"] = "IGPU_ONLY_CONNECT_RB_ON", ["SetToWMIEC"] = "OK" },
-        GpuStandard => new() { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" },
+        GpuIGpu => new() { ["Action"] = "IGPU_ONLY_CONNECT_RB_ON" },
+        GpuStandard => new() { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF" },
         GpuDgpu => new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
         GpuAuto => new() { ["Action"] = "IGPU_ONLY_CONNECT_RB_AUTO" },
         _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
+
+    /// <summary>Test seam for the GPU-switch payload (N15 #13/#16②).</summary>
+    internal static Dictionary<string, object> GpuSwitchPayload(int mode) => CreateGpuModePayload(mode);
 
     internal static Dictionary<string, object> CreateGpuSwitchPayload(
         int mode,
@@ -1158,8 +1168,9 @@ public class MechrevoService
             Logger.WriteLine($"MechrevoService.SwitchGpuMode({mode}) -> {action}, leavingDirect={leavingDirect}, leavingIgpuOnly={leavingIgpuOnly}");
             if (mode == GpuDgpu)
             {
-                // 直连是独立 MUX 层；进入直连前先退出核显-only。
-                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" }).ConfigureAwait(false);
+                // 直连是独立 MUX 层；进入直连前先退出核显-only。载荷只带动作名（N15 #13/#16②：
+                // 厂商二进制里没有这个额外字段，多带未知字段会被忽略或拒绝）。
+                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF" }).ConfigureAwait(false);
                 await Task.Delay(300, requestCts.Token).ConfigureAwait(false);
             }
             requestCts.Token.ThrowIfCancellationRequested();
