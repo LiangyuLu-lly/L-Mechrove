@@ -510,6 +510,23 @@ public class KeyboardRgb : IDisposable
         StartMode(mode);
     }
 
+    /// <summary>
+    /// N9-2: apply the current <see cref="Brightness"/> to the device over HID and report whether the
+    /// write actually took effect. A device that is present but does not honour the brightness field
+    /// returns <c>false</c>, which routes the caller to the vendor (GCU) channel instead of silently
+    /// doing nothing. Returns <c>false</c> when there is no device at all.
+    /// </summary>
+    public bool ApplyBrightnessToDevice()
+    {
+        lock (_lock)
+        {
+            if (_stream is null) return false;
+            // The brightness rides on the frame's step3 feature report; a rejected write is the
+            // signal that this controller does not honour it.
+            return _stream.SetFeature(Step3);
+        }
+    }
+
     /// <summary>重新初始化自定义帧模式（官方固件效果执行后固件退出帧模式，HID 帧被忽略——切回时需重进）。</summary>
     public bool ReInitCustomMode()
     {

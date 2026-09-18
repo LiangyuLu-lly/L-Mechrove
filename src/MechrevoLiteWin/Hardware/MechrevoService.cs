@@ -2069,6 +2069,12 @@ public class MechrevoService
             return true;
         });
 
+    /// <summary>官方灯效命令的 function 字段值（N9-2：亮度只能随它打包下发）。</summary>
+    internal const string KeyboardEffectFunction = "SetEffectALL";
+
+    /// <summary>官方灯效命令的亮度字段名（0–4 档）。</summary>
+    internal const string KeyboardEffectLightField = "light";
+
     /// <summary>官方键盘灯效果（原版 Keyboard/Ctrl SetEffectALL 协议，固件执行）：
     /// effect=效果名（Single/Breathing/Wave/Rainbow...），light=亮度 0-4，speed=速度，direction=方向。</summary>
     public Task<bool> SetKeyboardEffect(string effect, int light = 4, int speed = 1, string direction = "None",
