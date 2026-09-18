@@ -1,3 +1,16 @@
+## 0.289.0-beta18 — 2026-09-18
+
+### 修复
+
+- 开机自启动在真机上「重启后不启动」——根因是权限：自启动自检走 `UnSchedule(); Schedule();`，删除总成功、重建在权限不足或任务被占用时会失败，用户因此永久失去自启动项，而失败只写进默认关闭的日志（静默失败）。改为就地覆盖注册（决策接口上不再有删除动作），`ReScheduleAdmin` 同样不再先删，并新增托盘气泡把「自启动没装上」对用户可见。
+
+### 变更
+
+- 应用改为框架依赖发布（`SelfContained=false`，仍 `win-x64`）：不再随包分发 .NET 运行时文件。实测决定 `PublishReadyToRun=false`（+8 MB）、`PublishSingleFile=false`（框架依赖单文件被 `NETSDK1151` 否决，因为被引用的 `Probe.exe` 是自包含的）。安装器新增 `[Code]`：复制文件前读 `HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App`（`HKLM64`，避免 32 位安装器命中 WOW6432Node）判断 10.x 是否已装；缺失时可自动下载安装（`DownloadTemporaryFile` + SHA-256，静默 `/install /quiet /norestart`）并复检；下载/安装失败或用户选择手动时打开官方下载页；`/VERYSILENT` 下失败即非零退出，不打开浏览器。不打包任何离线运行时。
+
+### 内部
+
+- 应用载荷 219,601,876 B（自包含单文件）→ 34,725,107 B（框架依赖，67 个文件）。`.iss` 改为暂存整个发布目录并排除 `*.pdb`；`Build-Installer.ps1` 断言发布必须为框架依赖，防止自包含产物无声回潮。
 # L-Mechrevo 更新日志
 
 格式约定：每个版本一个小节，标题为 `## <版本号> — <日期>`；变更按「新增功能 / 修复 / 界面与体验 / 安全加固 / 内部」分组，每条一行，写用户可感知的行为变化与根因。最新版本在最上面，新条目加在文件顶部。
