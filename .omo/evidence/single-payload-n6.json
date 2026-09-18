@@ -1,0 +1,63 @@
+{
+  "generatedUtc": "2026-09-18T11:05:00Z",
+  "task": "N6 - single payload (owner decision A): drop the 40-series trees from the package, add the self-check + visible fallback",
+  "published": false,
+  "gitTagCreated": false,
+  "uploaded": false,
+  "releaseUntouched": {
+    "verifiedAt": "filesystem level only (git ls-files release = 0; git cannot see it)",
+    "GCU-only": { "files": 276, "bytes": 85663993 },
+    "GCU-40-51749": { "files": 73, "bytes": 39266036 },
+    "GCU-40-51751": { "files": 75, "bytes": 56136429 },
+    "GCU-common": { "files": 4, "bytes": 60019 },
+    "releaseDirLastWriteTime": "2026-09-18T17:11:06 (unchanged since the restore)",
+    "note": "all four trees byte-exact to the restored baseline; nothing deleted, moved or modified"
+  },
+  "installer": {
+    "path": "artifacts\\run14-beta18-n6\\L-Mechrevo-beta18-setup.exe",
+    "bytes": 49062497,
+    "mb": 46.8,
+    "sha256": "101FA0933EFA745D592A628447CCC058BF39075A0764C0DC008067D88D1C9D0C",
+    "previousBytes": 82949213,
+    "previousMb": 79.1,
+    "deltaBytes": -33886716,
+    "deltaMb": -32.3
+  },
+  "payloadCarried": {
+    "trees": ["50"],
+    "50": { "files": 276, "source": "release\\GCU-only" },
+    "retiredTreesInPackage": { "40-51749": 0, "40-51751": 0, "common": 0 },
+    "verification": "innounp -v -b -u lists 276 lines under {app}\\GCU\\payload\\50 and zero under the retired keys"
+  },
+  "gcuCommonDecision": {
+    "staged": false,
+    "reason": "release\\GCU-common is byte-identical to release\\GCU-only\\UWACPIDriver (uwacpidriver.cat 11342, UWACPIDriver.inf 2034, UWACPIDriver.sys 46352 - same sizes and hashes), so staging it would only duplicate the driver. GCU-only carries its own UWACPIDriver."
+  },
+  "selfCheck": {
+    "where": "installer\\Install-Gcu.ps1 Test-GcuPostInstall (four invariants) + Get-GcuFallbackGuidance",
+    "checks": ["single-service", "single-13688-owner", "item-support", "service-ready"],
+    "onFailure": "writes a 'failed' status file, logs 'FATAL: post-install verification failed' with the failing check, prints FALLBACK: guidance, exits non-zero",
+    "fallbackMechanism": "names the exact payload to fetch (release\\GCU-40-51751 or release\\GCU-40-51749) and where it lives, plus the manual install command",
+    "honestLimitation": "this project has NO download server, so there is no one-click cloud download; the guidance says so explicitly and a test asserts that wording so it cannot silently become a lie",
+    "testIds": [
+      "GcuSelfCheckN6Tests.AHealthyInstallPassesEveryCheck",
+      "GcuSelfCheckN6Tests.AMissingServiceFailsTheSelfCheck",
+      "GcuSelfCheckN6Tests.AServiceThatNeverBecameReadyFailsTheSelfCheck",
+      "GcuSelfCheckN6Tests.AnEmptyItemSupportFailsTheSelfCheck",
+      "GcuSelfCheckN6Tests.TheFallbackNamesTheExactPayloadToFetchAndWhereItLives",
+      "GcuSelfCheckN6Tests.TheFallbackDoesNotPretendADownloadServerExists",
+      "GcuSelfCheckN6Tests.TheSelfCheckFailureIsSurfacedNotSwallowed"
+    ]
+  },
+  "selector": {
+    "mode": "single-payload resolver",
+    "platformCodeHeuristic": "deleted (PH4*/PH6* gone; axis 1 must not decide axis 2)",
+    "undeterminableGeneration": "non-zero exit, no fallback",
+    "variantOverride": "refused; /GCUVARIANT is a user-visible contract change"
+  },
+  "g0Superseded": {
+    "recordedIn": ".omo\\plans\\gcu-30-50-model-adaptation.md (one appended line)",
+    "reason": "newest GCU is backward compatible to 30-series (10/20 likely unsupported); the vendor ships one GCU/console for all 24 platform codes; release\\GCU-only\\...\\UserFanTables carries all 24 per-model chassis dirs + the 23 flat files while the 40-series payloads carry zero per-model dirs - so the newest payload is the superset",
+    "ownerSideTesting": "now confirmatory, not a precondition"
+  }
+}
