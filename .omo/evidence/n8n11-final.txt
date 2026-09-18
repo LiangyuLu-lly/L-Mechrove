@@ -1,0 +1,18 @@
+qa_id: n8n11-final
+verdict: PASS
+command: dotnet test tests\MechrevoLite.Tests\MechrevoLite.Tests.csproj -c Debug --settings tests\MechrevoLite.Tests\xunit.runsettings --logger "trx;LogFileName=n8n11-final.trx"
+exit_code: 0
+started_utc: 2026-09-18T12:39:10.3201844Z
+finished_utc: 2026-09-18T12:45:20.7347076Z
+git_head: bdc717772455f65184866c1ac50cb4e7d14db2c3
+git_status_porcelain: (clean)
+trx: C:\Users\28717\Desktop\ControlCenterX_5.56.60.26_Mechrevo\tests\MechrevoLite.Tests\TestResults\n8n11-final.trx
+trx_sha256: 0e3195d5e694816c529870fd09551d02bfaf9346f69d68d76a72467a0c2b9b7e
+tests_total: 2470
+tests_executed: 2469
+tests_passed: 2469
+tests_failed: 0
+tests_skipped: 0
+script: scripts\run-qa.ps1
+script_sha256: c6bce3251b9cdf07b61491f92e0aef165b89957b5c74c46958ddb8e192d070fa
+problems: (none)
