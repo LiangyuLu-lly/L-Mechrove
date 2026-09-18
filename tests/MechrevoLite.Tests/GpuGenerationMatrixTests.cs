@@ -110,9 +110,11 @@ public class GpuGenerationMatrixTests
     [Fact]
     public void TheMatrixHasOneRowPerGenerationAndNeverUnknownOrNoDgpu()
     {
-        Assert.Equal(3, DisplayRouteMatrix.Rows.Count);
+        // N11: the 40-series has two capability tiers (with / without 双显三模), so there are four
+        // rows: 30, 40-with-3-mode, 40-without-3-mode, 50.
+        Assert.Equal(4, DisplayRouteMatrix.Rows.Count);
         Assert.Equal(
-            new[] { DgpuGenerationKind.Gen30, DgpuGenerationKind.Gen40, DgpuGenerationKind.Gen50 },
+            new[] { DgpuGenerationKind.Gen30, DgpuGenerationKind.Gen40, DgpuGenerationKind.Gen40, DgpuGenerationKind.Gen50 },
             DisplayRouteMatrix.Rows.Select(row => row.Generation).OrderBy(value => value).ToArray());
         Assert.Null(DisplayRouteMatrix.Find(DgpuGenerationKind.Unknown));
         Assert.Null(DisplayRouteMatrix.Find(DgpuGenerationKind.NoDgpu));

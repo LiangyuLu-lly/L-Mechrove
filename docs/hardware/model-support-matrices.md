@@ -126,6 +126,7 @@
   "dgpuGenerations": {
     "30": { "consoleProtocol": "INFERRED", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
     "40": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN", "restart": "PROVEN" },
+  "40-no3mode": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN" },
     "50": { "consoleProtocol": "PROVEN", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN", "restart": "PROVEN" }
   },
   "vendorSysPowerModes": {

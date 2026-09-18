@@ -186,12 +186,15 @@ internal sealed record HardwareDocsParity(
                 foreach (string field in new[] { "consoleProtocol", "serviceWritePath", "igpuOnly", "restart" })
                     marks[$"{generation.Name}.{field}"] = generation.Value.GetProperty(field).GetString() ?? "";
             }
+            // N11: the 40-series has two capability tiers, so the doc carries a "40" row (with
+            // 双显三模) and a "40-no3mode" row (without). Each matrix row is checked against its own
+            // doc row; the tier is part of the key.
             foreach (GenerationRouteFacts row in DisplayRouteMatrix.Rows)
             {
                 string key = row.Generation switch
                 {
                     DgpuGenerationKind.Gen30 => "30",
-                    DgpuGenerationKind.Gen40 => "40",
+                    DgpuGenerationKind.Gen40 => row.ThreeMode == false ? "40-no3mode" : "40",
                     DgpuGenerationKind.Gen50 => "50",
                     _ => ((int)row.Generation).ToString(),
                 };
