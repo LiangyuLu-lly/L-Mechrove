@@ -1,0 +1,30 @@
+{
+  "generatedUtc": "2026-09-18T10:35:00Z",
+  "task": "fix the installer's .NET 10 runtime detection false-negative",
+  "published": false,
+  "gitTagCreated": false,
+  "rootCause": {
+    "defect1": "RegGetSubkeyNames reads SUBKEY names, but the .NET installer records installed versions as VALUE names (REG_DWORD 1, e.g. a value named '10.0.8'). The key has no subkeys, so the loop never executed and detection always returned False.",
+    "defect2": "The key was read from HKLM64 only. On this machine the 64-bit view of ...\\x64\\sharedfx\\Microsoft.WindowsDesktop.App is EMPTY; the populated key is in the 32-bit view.",
+    "evidence": {
+      "regQuery64": "reg query \"HKLM\\SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x64\\sharedfx\\Microsoft.WindowsDesktop.App\" /reg:64 -> (empty)",
+      "regQuery32": "reg query ... /reg:32 -> 8.0.7, 9.0.7, 6.0.25, 8.0.27, 10.0.8 (all REG_DWORD 0x1)",
+      "onDisk": "C:\\Program Files\\dotnet\\shared\\Microsoft.WindowsDesktop.App -> 10.0.8, 6.0.25, 8.0.27, 8.0.7, 9.0.7",
+      "dotnetListRuntimes": "Microsoft.WindowsDesktop.App 10.0.8 present"
+    }
+  },
+  "fix": {
+    "iss": "installer\\L-Mechrevo.iss [Code]: RegGetValueNames instead of RegGetSubkeyNames; both HKLM64 and HKLM32 consulted; FindFirst wildcard probe of {commonpf}\\dotnet\\shared\\Microsoft.WindowsDesktop.App\\10.* as an independent fallback.",
+    "predicate": "installer\\Test-DotNetDesktopRuntime.ps1 - testable mirror of the decision (Inno Pascal is not unit-testable); -KeyPath / -NoDirectoryFallback let the false case be proven without uninstalling anything.",
+    "downloadDiagnostics": "TryInstallDesktopRuntime now logs the URL, the expected SHA256, and GetExceptionMessage verbatim (HTTP status / TLS / proxy / redirect / SHA-256 mismatch) instead of a bare 'failed'."
+  },
+  "verification": {
+    "red": "RuntimeDetectionTests: 7 of 9 failed before the fix (predicate absent, .iss still used RegGetSubkeyNames/HKLM64 only).",
+    "green": "RuntimeDetectionTests: 9/9 pass. Predicate on this machine: 'DETECTED Microsoft.WindowsDesktop.App 10.0.8 (x64)', exit 0.",
+    "falseCase": "With -NoDirectoryFallback and a nonexistent key -> 'MISSING ...', exit 1. With an existing but 10.x-free key (Windows NT\\CurrentVersion) -> 'MISSING ...', exit 1. The directory fallback alone (registry pointed at a nonexistent key, fallback enabled) -> 'DETECTED ... (from the shared framework directory)', exit 0.",
+    "installerCompiles": "ISCC exit 0; artifacts\\run13-beta18-rt\\L-Mechrevo-beta18-setup.exe = 82,949,213 B, SHA256 3E1910B6..."
+  },
+  "downloadFailureReason": "Not reproducible here: the in-installer download was never exercised on this machine (the runtime is already present, so PrepareToInstall exits early). The concrete reason is now logged verbatim by the fix; the pinned SHA256 is for the immutable versioned blob URL, so a mismatch would indicate a changed artifact rather than a moving target.",
+  "runbook": "docs\\hardware\\first-machine-runbook.md Step 10.0 - run installer\\Test-DotNetDesktopRuntime.ps1 before installing on a machine that already has .NET 10; expect DETECTED + exit 0, and the installer must not prompt to download.",
+  "g0Gate": { "status": "NOT PASSED", "consequence": "40-series trees still bundled" }
+}
