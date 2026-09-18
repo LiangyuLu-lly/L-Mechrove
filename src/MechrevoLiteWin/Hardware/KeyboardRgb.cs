@@ -499,6 +499,17 @@ public class KeyboardRgb : IDisposable
     internal static bool ShouldRestartEffect(int requestedMode, int activeMode, bool stopping, bool threadAlive) =>
         requestedMode != activeMode || stopping || !threadAlive;
 
+    /// <summary>
+    /// 强制重启效果线程：即使 <see cref="ActiveMode"/> 已等于目标、线程 <c>IsAlive</c>，也先停后起。
+    /// 系统唤醒后固件可能已退出帧模式、旧线程可能卡在失效句柄上——"看起来在跑"不等于"还在亮"。
+    /// </summary>
+    public void StartModeForced(int mode)
+    {
+        // 强制先停：清 _activeMode/_effectThread，使 StartMode 的 ShouldRestartEffect 必真。
+        StopCurrentEffect();
+        StartMode(mode);
+    }
+
     /// <summary>重新初始化自定义帧模式（官方固件效果执行后固件退出帧模式，HID 帧被忽略——切回时需重进）。</summary>
     public bool ReInitCustomMode()
     {

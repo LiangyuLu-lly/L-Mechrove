@@ -1228,7 +1228,9 @@ namespace MechrevoLite
                     // 固件抢占后 HID 句柄可能仍存在但已不能接收帧，重新枚举一次设备。
                     if (!rgb.Connect()) return false;
                 }
-                rgb.StartMode(rgb.KbHidMode);
+                // 唤醒后的强制恢复必须先停后起：旧线程 IsAlive 不代表还在亮（固件可能已退出帧模式）。
+                if (forceEffectRestore) rgb.StartModeForced(rgb.KbHidMode);
+                else rgb.StartMode(rgb.KbHidMode);
                 MarkKeyboardCustomStatusBaseline();
                 Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 0);
                 Volatile.Write(ref _keyboardRestoreAppliedRequestId, requestId);
@@ -1471,15 +1473,29 @@ namespace MechrevoLite
             SchedulePowerCheck();
         }
 
-        static void ScheduleKeyboardLightingRestoreAfterResume()
+        internal static bool ResumeKeyboardRestorePending => Volatile.Read(ref _resumeKeyboardRestorePending) != 0;
+
+        internal static void ScheduleKeyboardLightingRestoreAfterResume()
         {
+            KeyboardRgb? keyboard = rgb;
+            if (keyboard is null)
+            {
+                Logger.WriteLine("RGB 唤醒恢复：键盘对象尚未创建，跳过");
+                return;
+            }
             if (Interlocked.Exchange(ref _resumeKeyboardRestorePending, 1) != 0) return;
+
+            // 只有用户开着灯才发效果重放令牌；关灯时绝不重放（不得把灯点亮），
+            // 但仍走一次协调把「关闭」落地。令牌在调度点同步推进：调用方看到的就是本次唤醒的恢复请求数。
+            if (KeyboardResumePolicy.ShouldRestoreEffect(keyboard.KbPowerOn))
+                Interlocked.Increment(ref _lightingRestoreRequestId);   // 系统唤醒后允许把灯效重新落地一次
+            else
+                Logger.WriteLine("RGB 唤醒恢复：用户已关闭键盘灯，不重放效果");
             _ = Task.Run(async () =>
             {
                 try
                 {
                     await Task.Delay(1200).ConfigureAwait(false);
-                    Interlocked.Increment(ref _lightingRestoreRequestId);   // 系统唤醒后允许把外置灯效重新落地一次
                     await RestoreLightingWithRetryAsync(force: true).ConfigureAwait(false);
                 }
                 catch (Exception ex) { Logger.WriteLine("RGB 唤醒恢复失败: " + ex.Message); }
