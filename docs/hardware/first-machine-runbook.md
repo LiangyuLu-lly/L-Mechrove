@@ -431,6 +431,40 @@ case 14650HX), or a mode shows a fabricated wattage when the EC bytes are unread
 
 ---
 
+## Section 2b — N8 widened support gate + N9-2 keyboard brightness (field bugs)
+
+### Step 2b.1 — A service-served machine is no longer locked read-only (N8)
+
+Field bug: on a real 30-series machine (`Taitan Series GM7TG0M`, decoded project code `GK7NXXR`) the
+app showed `当前机型不在支持列表（识别到 GK7NXXR），已进入只读模式`, yet the vendor console works
+there. The gate now follows the vendor: a machine the service serves is usable.
+
+```powershell
+Get-Service GCUBridge | Select-Object Status
+(Get-ItemProperty 'HKLM:\SOFTWARE\OEM\GamingCenter2\ItemSupport' -ErrorAction SilentlyContinue).PSObject.Properties.Count
+Select-String -LiteralPath $log -Pattern '不在支持列表|只读模式' | Select-Object -Last 3 | ForEach-Object { $_.Line }
+```
+
+Expected on a service-served machine: **no** "不在支持列表/只读模式" line; GPU mode, fans and
+temperature are all usable. On a machine the service does NOT serve (service absent/stopped,
+`ItemSupport` empty) the notice and read-only degrade must still appear.
+
+### Step 2b.2 — Keyboard brightness on a machine whose HID write does not take effect (N9-2)
+
+Field bug on a 40-series machine: the vendor console can adjust keyboard brightness, ours cannot.
+The keyboard is multi-colour (not a `SingleColorKeyboardProjectIDs` machine) and the machine is not
+read-only. The brightness slider now falls back to the vendor channel when the HID write does not
+take effect.
+
+```powershell
+Select-String -LiteralPath $log -Pattern 'SetLightEffect\(Keyboard/Ctrl' | Select-Object -Last 3 | ForEach-Object { $_.Line }
+```
+
+Expected: moving the brightness slider on such a machine produces a `SetLightEffect(Keyboard/Ctrl,
+<effect>, light=<0-4>, ...)` line and the keyboard brightness actually changes. **BLOCKED-HW**: the
+real-device end-to-end (does the vendor channel actually change the LED on that specific 40-series
+machine) needs that machine; the decision logic is fake-tested.
+
 ## Section 3a — N7 vendor-console takeover (installer removes it, leaving only ours)
 
 Owner correction: the installer MUST remove the vendor's official console as well as the existing
