@@ -3,11 +3,13 @@ using System.Text.Json;
 namespace MechrevoLite.Tests;
 
 /// <summary>
-/// T22: the installer carries a single GCU payload (release\GCU-only) instead of one tree per
-/// GPU generation. G0 (real 30/40 hardware proving the 1.2.0.0 payload serves them) is NOT
-/// passed, so the single-payload path is implemented behind an explicit -SinglePayload switch /
-/// #ifdef SingleGcuPayload define and stays OFF by default; the deletion of the 40-series trees
-/// is BLOCKED-HW on G0. These tests pin the ready path AND its fail-loud contract.
+/// T22 / N6: the installer carries a single GCU payload (release\GCU-only) instead of one tree per
+/// GPU generation. The old G0 gate is superseded (owner): the newest GCU is backward compatible to
+/// 30-series, the vendor ships one GCU/console for all 24 platform codes, and
+/// release\GCU-only\...\UserFanTables carries all 24 per-model chassis dirs + the 23 flat files
+/// while the 40-series payloads carry zero per-model dirs - so the newest payload is the superset.
+/// Single payload is now the ONLY mode; there is no switch and no define. These tests pin the
+/// resolver AND its fail-loud contract.
 /// </summary>
 public class InstallerPayloadSingleTests
 {
@@ -18,7 +20,7 @@ public class InstallerPayloadSingleTests
     public void SinglePayloadBundle_StagesOnlyGcuOnly()
     {
         PsResult result = GcuInstallerHarness.RunDotSourced(Selector,
-            "ConvertTo-Json -InputObject @(Get-GcuPayloadBundle -SinglePayload) -Depth 4");
+            "ConvertTo-Json -InputObject @(Get-GcuPayloadBundle) -Depth 4");
         Assert.Equal(0, result.ExitCode);
         using JsonDocument doc = JsonDocument.Parse(result.StdOut.Trim());
         JsonElement root = doc.RootElement;
@@ -35,7 +37,7 @@ public class InstallerPayloadSingleTests
     public void SingleMode_SelectsGcuOnlyForEverySupportedGeneration(string gpuName, string deviceId, string expectedGeneration)
     {
         PsResult result = GcuInstallerHarness.RunScript(Selector,
-            "-SinglePayload", "-GpuName", gpuName, "-DeviceId", deviceId, "-AsJson");
+            "-GpuName", gpuName, "-DeviceId", deviceId, "-AsJson");
         Assert.Equal(0, result.ExitCode);
         using JsonDocument doc = JsonDocument.Parse(result.StdOut.Trim());
         Assert.Equal("50", doc.RootElement.GetProperty("Variant").GetString());
@@ -49,68 +51,50 @@ public class InstallerPayloadSingleTests
     public void SingleMode_AutoVariantIsAccepted()
     {
         PsResult result = GcuInstallerHarness.RunScript(Selector,
-            "-SinglePayload", "-Variant", "Auto", "-GpuName", "NVIDIA GeForce RTX 4070 Laptop GPU", "-AsJson");
+            "-Variant", "Auto", "-GpuName", "NVIDIA GeForce RTX 4070 Laptop GPU", "-AsJson");
         Assert.Equal(0, result.ExitCode);
         using JsonDocument doc = JsonDocument.Parse(result.StdOut.Trim());
         Assert.Equal("50", doc.RootElement.GetProperty("Variant").GetString());
     }
 
     [Fact]
-    public void Iss_SinglePayloadDefine_StagesOnlyTheGcuOnlyTree()
+    public void Iss_StagesOnlyTheGcuOnlyTree()
     {
         string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
-        const string marker = "#ifdef SingleGcuPayload";
-        string? single = null;
-        string? multi = null;
-        for (int at = iss.IndexOf(marker, StringComparison.Ordinal);
-             at >= 0;
-             at = iss.IndexOf(marker, at + 1, StringComparison.Ordinal))
-        {
-            int elseIndex = iss.IndexOf("#else", at, StringComparison.Ordinal);
-            int endIf = iss.IndexOf("#endif", elseIndex, StringComparison.Ordinal);
-            Assert.True(elseIndex > at && endIf > elseIndex, "SingleGcuPayload must be an #ifdef/#else/#endif block");
-            string candidate = iss.Substring(at, elseIndex - at);
-            if (candidate.Contains("Source:", StringComparison.Ordinal))
-            {
-                single = candidate;
-                multi = iss.Substring(elseIndex, endIf - elseIndex);
-                break;
-            }
-        }
-        Assert.True(single is not null && multi is not null,
-            "L-Mechrevo.iss must gate the GCU [Files] payload list on #ifdef SingleGcuPayload");
+        int files = iss.IndexOf("[Files]", StringComparison.Ordinal);
+        Assert.True(files >= 0, "L-Mechrevo.iss has no [Files] section");
+        string tail = iss.Substring(files);
+        int next = tail.IndexOf("\n[", 1, StringComparison.Ordinal);
+        string block = next >= 0 ? tail.Substring(0, next) : tail;
 
-        int singleSources = single.Split('\n').Count(line => line.TrimStart().StartsWith("Source:", StringComparison.Ordinal));
-        Assert.Equal(1, singleSources);
-        Assert.Contains("release\\GCU-only", single, StringComparison.Ordinal);
-        Assert.DoesNotContain("GCU-40-", single, StringComparison.Ordinal);
-        Assert.DoesNotContain("GCU-common", single, StringComparison.Ordinal);
+        string[] sources = block.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("Source:", StringComparison.Ordinal))
+            .ToArray();
 
-        Assert.Contains("release\\GCU-40-51749", multi, StringComparison.Ordinal);
-        Assert.Contains("release\\GCU-40-51751", multi, StringComparison.Ordinal);
-        Assert.Contains("release\\GCU-common", multi, StringComparison.Ordinal);
+        Assert.Contains(sources, l => l.Contains("release\\GCU-only", StringComparison.Ordinal));
+        Assert.DoesNotContain(sources, l => l.Contains("GCU-40-", StringComparison.Ordinal));
+        Assert.DoesNotContain(sources, l => l.Contains("GCU-common", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void BuildInstaller_SinglePayload_WiresDefineAndBundleValidation()
+    public void BuildInstaller_ValidatesTheBundleItShips()
     {
         string build = GcuInstallerHarness.Read("installer", "Build-Installer.ps1");
-        Assert.Contains("[switch]$SinglePayload", build, StringComparison.Ordinal);
-        // The build validates the same bundle the installer ships.
-        Assert.Contains("Assert-GcuPayloadDirs -Root $root -SinglePayload:$SinglePayload", build, StringComparison.Ordinal);
-        // -SinglePayload must reach ISCC as the SingleGcuPayload define.
-        Assert.Contains("/DSingleGcuPayload=1", build, StringComparison.Ordinal);
+        // The build validates the same bundle the installer ships, and hard-fails when it is missing.
+        Assert.Contains("Assert-GcuPayloadDirs -Root $root", build, StringComparison.Ordinal);
+        Assert.Contains("release\\GCU-only", build, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AssertGcuPayloadDirs_MissingGcuOnly_FailsForSinglePayload()
+    public void AssertGcuPayloadDirs_MissingGcuOnly_FailsTheBuild()
     {
         string temp = Path.Combine(Path.GetTempPath(), "L-Mechrevo-tests", "payload-missing-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         try
         {
             PsResult result = GcuInstallerHarness.RunDotSourced(Selector,
-                "try { Assert-GcuPayloadDirs -Root '" + temp.Replace("'", "''") + "' -SinglePayload | Out-Null; Write-Output 'NO-THROW'; exit 0 } "
+                "try { Assert-GcuPayloadDirs -Root '" + temp.Replace("'", "''") + "' | Out-Null; Write-Output 'NO-THROW'; exit 0 } "
                 + "catch { Write-Output ('CAUGHT: ' + $_.Exception.Message); exit 3 }");
             Assert.Equal(3, result.ExitCode);
             Assert.Contains("CAUGHT:", result.StdOut, StringComparison.Ordinal);
@@ -136,7 +120,7 @@ public class InstallerPayloadNoFallbackFailTests
     public void SingleMode_UnknownGpu_FailsWithoutFallback()
     {
         PsResult result = GcuInstallerHarness.RunScript(Selector,
-            "-SinglePayload", "-GpuName", "Intel(R) Graphics", "-DeviceId", "DEV_7D67");
+            "-GpuName", "Intel(R) Graphics", "-DeviceId", "DEV_7D67");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("fallback", result.Combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("40-51751", result.StdOut, StringComparison.Ordinal);
@@ -147,7 +131,7 @@ public class InstallerPayloadNoFallbackFailTests
     {
         // Axis 1 (platform code) must not decide axis 2 (dGPU generation); a BIOS code alone
         // cannot justify installing a GPU service.
-        PsResult result = GcuInstallerHarness.RunScript(Selector, "-SinglePayload", "-BiosProjectId", "PH6TRX1");
+        PsResult result = GcuInstallerHarness.RunScript(Selector, "-BiosProjectId", "PH6TRX1");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("generation", result.Combined, StringComparison.OrdinalIgnoreCase);
     }
@@ -156,9 +140,9 @@ public class InstallerPayloadNoFallbackFailTests
     public void SingleMode_VariantOverrideIsRefused()
     {
         PsResult result = GcuInstallerHarness.RunScript(Selector,
-            "-SinglePayload", "-Variant", "40-51749", "-GpuName", "NVIDIA GeForce RTX 4090 Laptop GPU");
+            "-Variant", "40-51749", "-GpuName", "NVIDIA GeForce RTX 4090 Laptop GPU");
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("Variant", result.Combined, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("single-payload", result.Combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("retired", result.Combined, StringComparison.OrdinalIgnoreCase);
     }
 }
