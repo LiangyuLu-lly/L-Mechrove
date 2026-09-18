@@ -55,6 +55,15 @@ public sealed class MechrevoDeviceCapabilities
     public bool LiquidCoolingAutoMode { get; init; }
     public bool Numpad { get; init; }
     public bool AcRecovery { get; init; }
+
+    /// <summary>
+    /// N15 #17: the AC-recovery ("来电自启") on/off state, or <c>null</c> when it cannot be read.
+    /// The vendor service exposes two fields: <c>AcRecoverySwitch_Status</c> (a string) and
+    /// <c>ACRecoveryStatus</c> (a hex-encoded byte, GCUService.decompiled.cs:21092). The string is
+    /// primary; the byte is the fallback. <c>null</c> means unknown - it must never be reported as
+    /// OFF, which is what made the icon show OFF while the feature was actually ON.
+    /// </summary>
+    public bool? AcRecoveryOn { get; init; }
     public bool LcdOverdrive { get; init; }
     public bool LocalDimming { get; init; }
     public bool TurboMode { get; init; }
@@ -321,6 +330,9 @@ public sealed class MechrevoDeviceCapabilities
             LiquidCoolingAutoMode = Flag("LiquidCoolingAutoModeSupport", "WaterCoolingAutoModeSupport"),
             Numpad = Flag("NumPadSupport", "NumpadSupport"),
             AcRecovery = Flag("AcRecoverySwitchSupport") || Flag("AcRecoverySwitchBiosSupport"),
+            // N15 #17: the string field is primary; the vendor's hex byte is the fallback. Neither
+            // present => null (unknown), never false.
+            AcRecoveryOn = AcRecoveryState(Value("AcRecoverySwitch_Status"), Value("ACRecoveryStatus")),
             LcdOverdrive = Flag("LCDOverdriveSupport"),
             LocalDimming = Flag("LocalDimmingSupport"),
             TurboMode = Flag("TurboModeSupport"),
@@ -339,6 +351,30 @@ public sealed class MechrevoDeviceCapabilities
             KeyboardType = keyboardType,
             DisplayRefreshLevel = refreshLevel,
         };
+    }
+
+    /// <summary>
+    /// N15 #17: resolve the AC-recovery on/off state. The vendor's string field
+    /// (<c>AcRecoverySwitch_Status</c>, values <c>ACRECOVERY_TOGGLE_ON</c>/<c>_OFF</c>) is primary;
+    /// the hex-encoded byte <c>ACRecoveryStatus</c> (GCUService.decompiled.cs:21092) is the fallback.
+    /// Returns <c>null</c> when neither is readable - unknown must not be reported as OFF.
+    /// </summary>
+    internal static bool? AcRecoveryState(object? statusString, object? statusByte)
+    {
+        string? text = statusString?.ToString();
+        if (!string.IsNullOrWhiteSpace(text))
+            return !text.Contains("OFF", StringComparison.OrdinalIgnoreCase);
+
+        string? hex = statusByte?.ToString()?.Trim();
+        if (!string.IsNullOrWhiteSpace(hex))
+        {
+            string digits = hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? hex[2..] : hex;
+            if (int.TryParse(digits, System.Globalization.NumberStyles.HexNumber,
+                    System.Globalization.CultureInfo.InvariantCulture, out int value))
+                return value != 0;
+        }
+
+        return null;
     }
 
     internal static bool HasLogoLightingRegistryLayout(
