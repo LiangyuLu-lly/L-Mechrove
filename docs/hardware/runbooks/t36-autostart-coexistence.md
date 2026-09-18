@@ -52,6 +52,21 @@ Expected: the process is running and `StartTime` is after the boot time. This is
 half; it is recorded as BLOCKED-HW until run on the affected model (see
 `.omo/evidence/t36-reboot-status.json`).
 
+## Step 3b — A failed registration is visible (permission root cause)
+
+The repair path no longer deletes the task before recreating it: the old `UnSchedule(); Schedule();`
+deleted first, so a denied re-register (insufficient rights / task in use) left the user with **no**
+autostart entry — and the failure went only to a log that is off by default. Registration is now an
+in-place overwrite, and a failure while autostart is enabled raises a **tray balloon**.
+
+```powershell
+Select-String -LiteralPath $log -Pattern 'Autostart registration failed' | Select-Object -Last 3 | ForEach-Object { $_.Line }
+schtasks /query /fo LIST /v | Select-String 'Last Result|上次结果'
+```
+
+Expected: no balloon / no matching log line on a healthy launch. If the balloon appears, the entry
+is absent or stale — record the balloon text and the log line, then re-run Step 2.
+
 ## Step 4 — Transient image must not register
 
 Run the app from a temp build output and toggle autostart on:

@@ -832,6 +832,23 @@ Get-Process L-Mechrevo -ErrorAction SilentlyContinue | Select-Object Id, StartTi
 Expected: the process is running with `StartTime` after the boot time. (This is the BLOCKED-HW
 half until run on the affected model; recorded in `.omo\evidence\t36-reboot-status.json`.)
 
+### Step 10.3b — A failed registration must be visible, not silent
+
+Autostart repair now registers the task **in place** (it never deletes the existing entry first, so
+a denied re-register can no longer leave the user with no entry at all). If registration still
+fails while the user has autostart enabled, the app shows a **tray balloon** — the log is off by
+default, so the balloon is the only user-visible signal.
+
+```powershell
+Select-String -LiteralPath $log -Pattern 'Autostart registration failed' | Select-Object -Last 3 | ForEach-Object { $_.Line }
+schtasks /query /tn "LMechrevo_<your SID>" /fo LIST /v | Select-String 'Last Result|上次结果'
+```
+
+Expected: no balloon and no log line on a healthy launch; the task's last result is `0x0`
+(`0x41303` = "has not run yet" is normal before the first reboot). If the balloon **does** appear,
+re-run step 10.2 and record the balloon text plus the `Autostart registration failed` line — that
+is the permission denial this section exists to detect.
+
 ### Step 10.4 — Transient image must not register
 
 Run from a `%TEMP%` build output, toggle autostart on, and confirm no task is registered and the
