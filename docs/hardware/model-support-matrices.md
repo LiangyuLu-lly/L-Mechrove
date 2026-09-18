@@ -67,15 +67,21 @@
 
 ## 4. 逐代显卡/显示路由事实表（轴 2）
 
-只记录**厂商行为**与已证事实。**显示路由控制台只发 MQTT，从不写 `OemDisplayMode` 固件变量**；
-30/50 系服务侧写路径保持 **UNKNOWN**（30 系未反编译 `MySettingManager`，50 系服务 IL 混淆），
-只有 **40 系**服务侧写路径 PROVEN。
+只记录**厂商行为**与已证事实，并把证据**拆成两列**：**控制台侧协议**（控制台发什么：MQTT topic
++ 动作词汇，逐方法/逐符号反编译或 .NET Native 元数据+PDB 证实）与**服务侧写路径**（厂商服务怎么
+落地硬件）。**显示路由控制台只发 MQTT，从不写 `OemDisplayMode` 固件变量**；30/50 系服务侧写路径
+保持 **UNKNOWN**（30 系 `MySettingManager` 未反编译、50 系服务 IL 混淆），只有 **40 系**服务侧
+写路径 PROVEN。
 
-| 代际 | 服务侧写路径 | iGPU-only | RESTART | 热切换 |
-|---|---|---|---|---|
-| 30 | UNKNOWN | PROVEN_ABSENT（载荷 0 命中） | PROVEN_ABSENT（载荷 0 命中） | UNKNOWN |
-| 40 | PROVEN | PROVEN（40A WMI 0x30000000x） | PROVEN（`shutdown /r /t 0`） | UNKNOWN（0 命中） |
-| 50 | UNKNOWN | PROVEN（每 2 s 重发 / count>60 / 每第 4 次） | PROVEN（`Task.Delay(800)` 后发） | INFERRED（处理器 no-op） |
+| 代际 | 控制台侧协议 | 服务侧写路径 | iGPU-only | RESTART | 热切换 |
+|---|---|---|---|---|---|
+| 30 | PROVEN（`Setting/Control`；动作仅 `..._TOGGLE_ON/OFF`） | UNKNOWN | PROVEN_ABSENT | PROVEN_ABSENT | PROVEN_ABSENT（`HOTSWAP` 0 命中） |
+| 40 | PROVEN（`Setting/Control`；含 `..._IGPU`/`..._RESTART`/`IGPU_ONLY_*`） | PROVEN | PROVEN（40A WMI 0x30000000x） | PROVEN（`shutdown /r /t 0`） | UNKNOWN（0 命中） |
+| 50 | PROVEN（`Setting/Control`；含 `..._RESTART`/`IGPU_ONLY_*`/`GPU_HOTSWAP_*`） | UNKNOWN | PROVEN（每 2 s 重发 / count>60 / 每第 4 次） | PROVEN（`Task.Delay(800)` 后发） | INFERRED（处理器 no-op） |
+
+30 系控制台侧由 `.omo\evidence\g30-console-decompile.md` 证实（.NET Native 元数据堆 + 完整 PDB
+符号表；该程序集无 IL 可反编译）；`DGPU_DIRECT_CONNECT_TOGGLE_IGPU`、`..._RESTART`、`IGPU_ONLY_*`、
+`GPU_HOTSWAP_*`、`SetToWMIEC` 在整个 477 文件载荷中 0 命中。
 
 **平台代号 → 代际 = INFERRED（未决，非厂商验证）**。矛盾出处：
 `docs\upgrade-from-openrevo.md:140` 与 `docs\gcu-dependency-matrix.md:88` 相互矛盾，无可引用的
@@ -116,9 +122,9 @@
     "k16": 6
   },
   "dgpuGenerations": {
-    "30": { "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
-    "40": { "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN", "restart": "PROVEN" },
-    "50": { "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN", "restart": "PROVEN" }
+    "30": { "consoleProtocol": "PROVEN", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
+    "40": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN", "restart": "PROVEN" },
+    "50": { "consoleProtocol": "PROVEN", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN", "restart": "PROVEN" }
   },
   "vendorSysPowerModes": {
     "Performance": 1,
@@ -141,6 +147,7 @@
 - 新增机型：先在 `Resources\model-registry.json` 增加平台代号与风扇表分组，**再**同步本文件；
   测试会拒绝任何单边变更。
 - 代际事实变化（例如 30/50 系写路径被证实）：改 `Gpu\DisplayRouteMatrix.cs` 的 `RouteCell`，
-  同步本文件第 4 节与机器可读块；UNKNOWN 不得被"看起来应该"升级为 PROVEN。
+  同步本文件第 4 节与机器可读块（**两列都要**：`consoleProtocol` 控制台侧、`serviceWritePath`
+  服务侧）；UNKNOWN 不得被"看起来应该"升级为 PROVEN，`consoleProtocol` 升级必须附反编译/符号出处。
 - 本文件与 `docs\hardware\README.md`（寄存器/EC 数据底座）互补：本文件是**支持矩阵**，
   README 是**寄存器/协议勘查**。

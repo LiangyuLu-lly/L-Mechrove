@@ -258,6 +258,28 @@ Expected: a rejection line; **zero** `IGPU_ONLY_CONNECT_RB_*` and **zero**
 `DGPU_DIRECT_CONNECT_RESTART`; the machine does **not** reboot. 30-series iGPU-only and RESTART are
 `ProvenAbsent` in the matrix.
 
+### Step 2.7b — 30-series console-side protocol (actions differ from 40/50)
+
+The 30-series vendor console (`ControlCenter_4.17.47.13`, published .NET Native) is proven to send
+**only** two display-route actions on `Setting/Control`: `DGPU_DIRECT_CONNECT_TOGGLE_ON` and
+`DGPU_DIRECT_CONNECT_TOGGLE_OFF` (`.omo\evidence\g30-console-decompile.md`). It has **no**
+`..._TOGGLE_IGPU`, `..._RESTART`, `IGPU_ONLY_*`, `GPU_HOTSWAP_*`, and no `SetToWMIEC` payload field.
+
+On a **Gen30** machine switch to direct connect, then revert, and check:
+
+```powershell
+Select-String -LiteralPath $log -Pattern 'DGPU_DIRECT_CONNECT_TOGGLE_ON|DGPU_DIRECT_CONNECT_TOGGLE_OFF' |
+  Select-Object -Last 4 | ForEach-Object { $_.Line }
+Select-String -LiteralPath $log -Pattern 'IGPU_ONLY|_RESTART|GPU_HOTSWAP|TOGGLE_IGPU' |
+  Measure-Object | Select-Object -ExpandProperty Count
+```
+
+Expected: the in-direction publishes exactly one `..._TOGGLE_ON` and the revert exactly one
+`..._TOGGLE_OFF`, both on `Setting/Control`, with **no client-side retry** (the 30-series console has
+none); the second command returns **0**; the machine does **not** reboot. The panel route may or may
+not change — the 30-series **service-side** write path is UNKNOWN, so any change is recorded as
+UNKNOWN, never as proven.
+
 ### Step 2.8 — Guardrails: no firmware write, no EC write
 
 ```powershell
