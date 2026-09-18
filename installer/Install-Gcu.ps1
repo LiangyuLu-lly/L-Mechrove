@@ -21,6 +21,7 @@ param(
     [ValidateSet('Auto', '50', '40-51749', '40-51751')][string]$Variant = 'Auto',
     [string]$LogDir,
     [switch]$NoStart,
+    [switch]$SinglePayload,
     [switch]$DryRun
 )
 
@@ -217,11 +218,14 @@ try {
     Write-Log ("StagingRoot = {0}" -f $StagingRoot)
     Write-Log ("TargetDir   = {0}" -f $TargetDir)
     Write-Log ("Variant     = {0}" -f $Variant)
+    Write-Log ("SinglePayload = {0}" -f [bool]$SinglePayload)
     Write-Log ("DryRun      = {0}" -f [bool]$DryRun)
 
     $selectorScript = Join-Path $PSScriptRoot 'Select-GcuPayload.ps1'
     $selectorExe = Join-Path $PSHOME 'powershell.exe'
-    $selectionJson = & $selectorExe -NoProfile -ExecutionPolicy Bypass -File $selectorScript -Variant $Variant -AsJson
+    $selectorArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $selectorScript, '-Variant', $Variant, '-AsJson')
+    if ($SinglePayload) { $selectorArgs += '-SinglePayload' }
+    $selectionJson = & $selectorExe @selectorArgs
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($selectionJson | Out-String))) {
         throw ("GCU payload selection failed (exit {0})" -f $LASTEXITCODE)
     }

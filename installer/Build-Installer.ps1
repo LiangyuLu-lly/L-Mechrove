@@ -22,7 +22,8 @@ param(
     [string]$AppSourceDir,
     [string]$OutputDir,
     [string]$IsccPath,
-    [switch]$ProvisionCompiler
+    [switch]$ProvisionCompiler,
+    [switch]$SinglePayload
 )
 
 Set-StrictMode -Version 2.0
@@ -32,6 +33,10 @@ $root = Split-Path -Parent $PSScriptRoot
 $issPath = Join-Path $PSScriptRoot 'L-Mechrevo.iss'
 $toolsDir = Join-Path $env:TEMP 'ulw\tools'
 $innoDir = Join-Path $toolsDir 'innosetup'
+
+# Reuse the selector's payload bundle so what the build validates is what the installer ships.
+# Dot-sourcing Select-GcuPayload.ps1 is side-effect free (it returns early on dot-source).
+. (Join-Path $PSScriptRoot 'Select-GcuPayload.ps1')
 
 # Keep this script ASCII-only while still requiring Chinese user-facing filenames.
 $notesName = (-join @([char]0x66F4, [char]0x65B0, [char]0x65E5, [char]0x5FD7)) + '.txt'
@@ -145,14 +150,14 @@ foreach ($doc in @((Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NO
 }
 
 # --- GCU payload accounting --------------------------------------------------
-$payloads = @(
-    [pscustomobject]@{ Key = '50';       Dir = (Join-Path $root 'release\GCU-only') },
-    [pscustomobject]@{ Key = '40-51749'; Dir = (Join-Path $root 'release\GCU-40-51749') },
-    [pscustomobject]@{ Key = '40-51751'; Dir = (Join-Path $root 'release\GCU-40-51751') },
-    [pscustomobject]@{ Key = 'common';   Dir = (Join-Path $root 'release\GCU-common') }
-)
+# Specifying -SinglePayload stages release\GCU-only only (T22/G0); the default keeps all four
+# trees because G0 (real 30/40 hardware proof for the 1.2.0.0 payload) has not passed.
+$bundle = Assert-GcuPayloadDirs -Root $root -SinglePayload:$SinglePayload
+Write-Host ("GCU payload bundle: {0}" -f $(if ($SinglePayload) { 'single (release\GCU-only)' } else { 'multi (4 trees)' }))
+$payloads = foreach ($entry in $bundle) {
+    [pscustomobject]@{ Key = $entry.Key; Dir = (Join-Path $root $entry.RepoPayload) }
+}
 $payloadReport = foreach ($payload in $payloads) {
-    if (-not (Test-Path -LiteralPath $payload.Dir)) { throw ("GCU payload directory missing: {0}" -f $payload.Dir) }
     $measure = Get-ChildItem -LiteralPath $payload.Dir -Recurse -File | Measure-Object -Property Length -Sum
     [pscustomobject]@{ Key = $payload.Key; Dir = $payload.Dir; Files = $measure.Count; Bytes = $measure.Sum }
 }
@@ -192,6 +197,7 @@ $defineArgs = @(
     ('/DAppSourceDir={0}' -f $AppSourceDir),
     ('/O{0}' -f $OutputDir)
 )
+if ($SinglePayload) { $defineArgs += '/DSingleGcuPayload=1' }
 Write-Host ("== ISCC {0} {1}" -f ($defineArgs -join ' '), $issPath)
 $savedEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
@@ -218,6 +224,7 @@ $summary = [ordered]@{
     InstallerBytes  = $setupItem.Length
     InstallerSHA256 = $hash
     PayloadTotalBytes = $totalPayloadBytes
+    SinglePayload   = [bool]$SinglePayload
     Iscc            = $iscc
 }
 $summary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDir 'build-summary.json') -Encoding UTF8

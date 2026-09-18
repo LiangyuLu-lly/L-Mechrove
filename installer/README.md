@@ -1,8 +1,10 @@
 # L-Mechrevo installer (Inno Setup)
 
 Per-machine Windows installer for L-Mechrevo, built with Inno Setup 6.7.x. It ships the
-self-contained single-file app plus all four vendor GCU payload trees and installs the one
-that matches the machine's GPU generation.
+self-contained single-file app plus the vendor GCU payload trees and installs the one that
+matches the machine's GPU generation. A single-payload mode (50-series `release\GCU-only` only)
+is implemented behind `-SinglePayload` / `#ifdef SingleGcuPayload` but stays off until the G0
+gate passes (see "Single-payload mode" below).
 
 ## Build
 
@@ -47,8 +49,9 @@ because it injects the real version and source directory as `/D` defines.
 Shortcuts: Start Menu group `L-Mechrevo` (app, 使用前必看, 更新日志, 开源许可, Uninstall) and an
 optional desktop icon (unchecked task). The uninstaller is registered in Add/Remove Programs.
 
-All four GCU payload trees are bundled. The installer's GCU step selects exactly one at install
-time, so every bundled payload is reachable and none is silently dropped.
+All four GCU payload trees are bundled in the default (multi-payload) build. The installer's GCU
+step selects exactly one at install time, so every bundled payload is reachable and none is
+silently dropped. In single-payload mode only `{app}\GCU\payload\50` is staged.
 
 ## GCU selection rule
 
@@ -91,7 +94,7 @@ re-registered. `Uninstall-Gcu.ps1` stops/deletes the service, removes the firewa
 # silent install (per-machine; triggers UAC)
 L-Mechrevo-beta13-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
-# silent install with the 40-series override
+# silent install with the 40-series override (multi-payload builds only)
 L-Mechrevo-beta13-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /GCUVARIANT=40-51749
 
 # silent uninstall
@@ -101,6 +104,33 @@ L-Mechrevo-beta13-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /GCUVARIANT
 Inno flags: `/SILENT` (no prompts, shows progress), `/VERYSILENT` (no UI), `/SUPPRESSMSGBOXES`,
 `/NORESTART`, `/DIR="..."`, `/LOG="..."`, `/LANG=chinesesimplified|english`. The GCU step runs
 hidden and never prompts; its log is under `%ProgramData%\L-Mechrevo\logs`.
+
+## Single-payload mode (T22 / G0)
+
+Single-payload mode ships only `release\GCU-only` (the 1.2.0.0 `AiStoneService` payload) and serves
+every supported dGPU generation (30/40/50) with it. It is gated on **G0**: real 30-series **and**
+40-series hardware must prove that payload serves them (service ready, `ItemSupport` correct, GPU
+switch round-trip, `OemDisplayMode` read-back, fan table, charge limit, single TCP 13688 owner) before
+the gate may open. Until G0 passes, the 40-series trees stay bundled and the default build is
+multi-payload.
+
+How to build and install the single-payload artifact once G0 has passed:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File installer\Build-Installer.ps1 -SinglePayload
+```
+
+Behaviour in single-payload mode:
+
+- The `[Files]` list stages only `release\GCU-only\*`; `Build-Installer.ps1 -SinglePayload` validates
+  only that tree and fails the build if it is missing (the `.iss` source is also missing, so ISCC
+  fails too).
+- `Select-GcuPayload.ps1 -SinglePayload` decides the dGPU generation from the GPU marketing name or
+  the NVIDIA PCI device-id high byte only. `BIOS_PROJECT_ID` is axis 1 (platform code) and is never
+  consulted for the payload. An undeterminable generation exits non-zero with a readable reason and
+  never falls back to a 40-series payload.
+- **Breaking, user-visible:** `/GCUVARIANT=40-51749` no longer works in single-payload mode; there is
+  no second payload to select. `Select-GcuPayload.ps1` refuses any explicit `-Variant`.
 
 ## Notes and limitations
 
