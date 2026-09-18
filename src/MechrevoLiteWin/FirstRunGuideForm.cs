@@ -6,7 +6,6 @@ namespace MechrevoLite;
 /// <summary>One-time setup guide shown after the main window has painted.</summary>
 public sealed class FirstRunGuideForm : RForm
 {
-    internal const string OfficialDownloadsUrl = "https://www.mechrevo.com/cn/downloads";
 
     public FirstRunGuideForm()
     {
@@ -85,10 +84,12 @@ public sealed class FirstRunGuideForm : RForm
             BackColor = UiVisualStyle.Window,
         };
         steps.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        steps.Controls.Add(CreateStep("1", "安装官方 50 系最新控制台",
-            "前往机械革命官网，按机型或 SN 下载并安装最新版控制台。不要卸载它，本程序需要其中的 GCU 服务和驱动。"), 0, 0);
-        steps.Controls.Add(CreateStep("2", "隔离官方界面与托盘",
-            "打开本程序的“系统”页，点击“隔离官方界面与托盘”，只保留 GCU 在后台运行。"), 0, 1);
+        // N10: the installer already set up the GCU service and removed the vendor console, so the
+        // guide must NOT send the user to download it - that would reinstall what we just removed.
+        steps.Controls.Add(CreateStep("1", "无需安装任何其他控制台",
+            "安装器已经装好 GCU 服务与驱动，本程序自带全部必要组件。厂商「官方控制台」已由安装器清理并替换为 L-Mechrevo，不需要再下载或安装它。"), 0, 0);
+        steps.Controls.Add(CreateStep("2", "直接开始使用",
+            "打开本程序的“系统”页即可设置开机启动、性能模式、显卡模式与灯效；GCU 服务在后台运行，无需额外操作。"), 0, 1);
         steps.Controls.Add(CreateStep("!", "退出其他灯效控制软件",
             "不要同时运行 BetterRGB、OpenRGB 或其他厂商灯效程序，否则多个程序抢占 HID 设备可能导致灯效失效或设备访问冲突。", warning: true), 0, 2);
         scroll.Controls.Add(steps);
@@ -109,16 +110,14 @@ public sealed class FirstRunGuideForm : RForm
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
         actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var official = CreateButton("官方下载");
-        official.Click += (_, _) => OpenOfficialDownloads();
+        // N10: no "official download" button - the vendor console is removed by the installer.
         var later = CreateButton("稍后");
         later.DialogResult = DialogResult.Cancel;
         var system = CreateButton("前往系统页");
         system.DialogResult = DialogResult.OK;
         UiVisualStyle.ApplyPrimaryButton(system);
-        actions.Controls.Add(official, 0, 0);
-        actions.Controls.Add(later, 1, 0);
-        actions.Controls.Add(system, 2, 0);
+        actions.Controls.Add(later, 0, 0);
+        actions.Controls.Add(system, 1, 0);
         root.Controls.Add(actions, 0, 2);
 
         AcceptButton = system;
@@ -204,17 +203,4 @@ public sealed class FirstRunGuideForm : RForm
         Secondary = true,
     };
 
-    private static void OpenOfficialDownloads()
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo(OfficialDownloadsUrl) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Logger.WriteLine("Cannot open official downloads: " + ex.Message);
-            MessageBox.Show("无法打开浏览器，请访问机械革命官网的“驱动下载”页面。", "打开失败",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-    }
 }
