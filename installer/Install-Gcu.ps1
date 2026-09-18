@@ -271,6 +271,177 @@ function Test-GcuPostInstall {
     return [pscustomobject]@{ Ok = ($failed.Count -eq 0); Checks = $checks; Failed = $failed }
 }
 
+# ---------------------------------------------------------------------------
+# N7 (owner correction): remove the vendor's official console as well as the
+# existing GCU service, leaving only our console. The earlier "prompt the user,
+# never delete" rule was the orchestrator's invention and is withdrawn.
+#
+# Removing a vendor application is destructive, so the scope is pinned by the
+# predicate below: vendor-console + GCU artefacts ARE removable; unrelated
+# software is NOT. Every step is announced and logged; a locked component is
+# reported and skipped, never fatal.
+# ---------------------------------------------------------------------------
+
+# Concrete, verifiable vendor identifiers. Grounded in the app-side
+# OfficialConsoleIsolation markers and the vendor packages documented in
+# docs\hardware\README.md (GamingCenter3_Cross.UWP_5.17.*, CCU.WinUI).
+$script:VendorPackageMarkers = @(
+    'CCU.WinUI', 'GamingCenter3_Cross.UWP', 'GamingCenterU', 'ControlCenterU', 'GCUUI'
+)
+$script:VendorProcessNames = @(
+    'CCUWinUI', 'SystrayComponent', 'ControlCenterU', 'GamingCenterU', 'GCUUI'
+)
+# ASCII-only file: the Chinese display names are built from code points, never typed literally.
+$script:VendorUninstallMarkers = @(
+    'GamingCenter', 'ControlCenter', 'Mechrevo Gaming', 'AISTONE', 'Uniwill',
+    (-join @([char]0x7535, [char]0x7ADE, [char]0x63A7, [char]0x5236, [char]0x53F0)),   # dian jing kong zhi tai
+    (-join @([char]0x63A7, [char]0x5236, [char]0x53F0))                                # kong zhi tai
+)
+# Only these exact directories may be removed. Never a parent, never a wildcard.
+$script:VendorDirectoryAllowList = @(
+    'L-Mechrevo\GCU', 'L-Mechrevo\GCU\AiStoneService', 'L-Mechrevo\GCU\UniwillService',
+    'L-Mechrevo\GCU\UWACPIDriver', 'L-Mechrevo\GCU\payload'
+)
+
+function Test-VendorArtefactRemovable {
+    # The single decision point for "may this be removed?". Pure and testable: no I/O.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('package', 'directory', 'uninstall', 'shortcut', 'autostart', 'process')]
+        [string]$Kind,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return 'KEEP' }
+
+    switch ($Kind) {
+        'package' {
+            foreach ($marker in $script:VendorPackageMarkers) {
+                if ($Value -like ('*' + $marker + '*')) { return 'REMOVABLE' }
+            }
+            return 'KEEP'
+        }
+        'process' {
+            foreach ($name in $script:VendorProcessNames) {
+                if ($Value -ieq $name) { return 'REMOVABLE' }
+            }
+            return 'KEEP'
+        }
+        'uninstall' {
+            foreach ($marker in $script:VendorUninstallMarkers) {
+                if ($Value -like ('*' + $marker + '*')) { return 'REMOVABLE' }
+            }
+            return 'KEEP'
+        }
+        'shortcut' {
+            # A shortcut is removable only when its own file name carries a vendor marker.
+            $leaf = Split-Path -Leaf $Value
+            foreach ($marker in @('GamingCenter', 'ControlCenter', 'CCUWinUI', 'SystrayComponent', 'GCUUI')) {
+                if ($leaf -like ('*' + $marker + '*')) { return 'REMOVABLE' }
+            }
+            return 'KEEP'
+        }
+        'autostart' {
+            foreach ($marker in @('CCUWinUI.exe', 'SystrayComponent.exe', 'ControlCenterU.exe', 'GamingCenterU.exe', 'GCUUI.exe')) {
+                if ($Value -like ('*' + $marker + '*')) { return 'REMOVABLE' }
+            }
+            return 'KEEP'
+        }
+        'directory' {
+            # Allow-list only: the value must END with one of the exact vendor GCU paths.
+            $normalized = $Value.TrimEnd('\')
+            foreach ($allowed in $script:VendorDirectoryAllowList) {
+                if ($normalized -like ('*' + $allowed)) { return 'REMOVABLE' }
+            }
+            return 'KEEP'
+        }
+        default { return 'KEEP' }
+    }
+}
+
+function Remove-VendorConsole {
+    # Idempotent, logged, non-fatal. Reports what was found, removed and skipped.
+    $removed = New-Object System.Collections.Generic.List[string]
+    $skipped = New-Object System.Collections.Generic.List[string]
+
+    # 1. UWP/MSIX package form.
+    $packages = @()
+    try {
+        $packages = @(Get-AppxPackage -ErrorAction Stop | Where-Object {
+            (Test-VendorArtefactRemovable -Kind 'package' -Value $_.Name) -eq 'REMOVABLE'
+        })
+    }
+    catch { Write-Log ('  could not enumerate Appx packages: ' + $_.Exception.Message) }
+
+    if ($packages.Count -eq 0) {
+        Write-Log '  no official console package found'
+    }
+    foreach ($package in $packages) {
+        Write-Log ('  found official console package: {0}' -f $package.PackageFullName)
+        try {
+            Remove-AppxPackage -Package $package.PackageFullName -ErrorAction Stop
+            $removed.Add($package.PackageFullName)
+            Write-Log ('  removed official console package: {0}' -f $package.PackageFullName)
+        }
+        catch {
+            $skipped.Add($package.PackageFullName)
+            Write-Log ('  official console package could not be removed ({0}); continuing: {1}' -f $package.PackageFullName, $_.Exception.Message)
+        }
+    }
+
+    # 2. Desktop-exe form: stop the UI processes, then remove the allow-listed dirs.
+    foreach ($name in $script:VendorProcessNames) {
+        foreach ($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
+            Write-Log ('  stopping official console process: {0} (pid {1})' -f $name, $process.Id)
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $programRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }
+    foreach ($root in $programRoots) {
+        foreach ($allowed in $script:VendorDirectoryAllowList) {
+            $candidate = Join-Path $root $allowed
+            if (-not (Test-Path -LiteralPath $candidate)) { continue }
+            if ((Test-VendorArtefactRemovable -Kind 'directory' -Value $candidate) -ne 'REMOVABLE') {
+                Write-Log ('  refusing to remove non-allow-listed directory: {0}' -f $candidate)
+                continue
+            }
+            Write-Log ('  found official console directory: {0}' -f $candidate)
+            try {
+                Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction Stop
+                $removed.Add($candidate)
+                Write-Log ('  removed official console directory: {0}' -f $candidate)
+            }
+            catch {
+                $skipped.Add($candidate)
+                Write-Log ('  official console directory could not be removed ({0}); continuing: {1}' -f $candidate, $_.Exception.Message)
+            }
+        }
+    }
+
+    # 3. Autostart entries pointing at a vendor console executable.
+    foreach ($hive in @('HKCU:', 'HKLM:')) {
+        foreach ($sub in @('SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce')) {
+            $key = Join-Path $hive $sub
+            if (-not (Test-Path -LiteralPath $key)) { continue }
+            foreach ($property in @((Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' })) {
+                if ((Test-VendorArtefactRemovable -Kind 'autostart' -Value ([string]$property.Value)) -ne 'REMOVABLE') { continue }
+                Write-Log ('  found official console autostart entry: {0} = {1}' -f $property.Name, $property.Value)
+                try {
+                    Remove-ItemProperty -LiteralPath $key -Name $property.Name -ErrorAction Stop
+                    $removed.Add(('{0}\{1}' -f $key, $property.Name))
+                    Write-Log ('  removed official console autostart entry: {0}' -f $property.Name)
+                }
+                catch {
+                    $skipped.Add(('{0}\{1}' -f $key, $property.Name))
+                    Write-Log ('  autostart entry could not be removed ({0}); continuing: {1}' -f $property.Name, $_.Exception.Message)
+                }
+            }
+        }
+    }
+
+    return [pscustomobject]@{ Removed = $removed; Skipped = $skipped }
+}
+
 function Get-GcuFallbackGuidance {
     # N6: the visible fallback that replaces the retired G0 gate. HONEST LIMITATION: this project
     # has no download server, so there is no one-click cloud download. The guidance tells the user
@@ -605,15 +776,37 @@ try {
         }
     }
 
-    Write-Log '[1/6] removing any prior generation service/registration (uninstall-first)'
+    Write-Log '[1/8] removing any prior generation service/registration (uninstall-first)'
+    $existingService = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
+    if ($existingService) {
+        Write-Log ('  found existing GCU service: {0} (status={1}); removing it' -f $script:ServiceName, $existingService.Status)
+    }
+    else {
+        Write-Log '  no existing GCU service found'
+    }
     Invoke-PriorGenerationUninstall -TargetDir $TargetDir -UninstallScriptPath $UninstallScriptPath -LogDir $LogDir -DryRun:$DryRun
     if (-not $DryRun) { Assert-Port13688Free }
 
-    Write-Log ('[2/6] copying {0} payload' -f $selection.Variant)
+    # N7 (owner correction): the vendor's official console is removed too, so only our console
+    # remains. Announced and logged; a locked component is reported and skipped, never fatal.
+    Write-Log '[2/8] removing the vendor official console (packages, directories, autostart)'
+    if ($DryRun) {
+        Write-Log '  DRY RUN: vendor-console removal skipped'
+    }
+    else {
+        $vendorResult = Remove-VendorConsole
+        Write-Log ('  vendor-console removal done: {0} removed, {1} skipped' -f $vendorResult.Removed.Count, $vendorResult.Skipped.Count)
+        if ($vendorResult.Skipped.Count -gt 0) {
+            Write-Log '  the following vendor artefacts could not be removed and need a manual step or a reboot:'
+            foreach ($item in $vendorResult.Skipped) { Write-Log ('    - ' + $item) }
+        }
+    }
+
+    Write-Log ('[3/8] copying {0} payload' -f $selection.Variant)
     Copy-Tree -Source $serviceSource -Destination $serviceTarget
     Copy-Tree -Source $driverSource -Destination $driverTarget
 
-    Write-Log '[3/6] verifying Authenticode signatures'
+    Write-Log '[4/8] verifying Authenticode signatures'
     Assert-SignedFile -Path $serviceExe -Label 'GCUBridge'
     Assert-SignedFile -Path $gcuServiceExe -Label 'GCUService'
     Assert-SignedFile -Path $driverSys -Label 'UWACPIDriver'
@@ -624,13 +817,13 @@ try {
         exit 0
     }
 
-    Write-Log '[4/6] installing UWACPI kernel driver'
+    Write-Log '[5/8] installing UWACPI kernel driver'
     Install-UwacpiDriver -DriverDir $driverTarget
 
-    Write-Log '[5/6] registering GCUBridge service'
+    Write-Log '[6/8] registering GCUBridge service'
     Install-Service -ServiceExe $serviceExe
 
-    Write-Log '[6/6] firewall rule + service start'
+    Write-Log '[7/8] firewall rule + service start'
     Ensure-FirewallRule
     if ($NoStart) {
         Write-Log '  -NoStart set; service left stopped'
@@ -661,7 +854,7 @@ try {
     Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion
 
     # N5: acquire every privilege the app needs, once, while we are elevated.
-    Write-Log '[7/7] privileges: autostart task (highest), directory ACLs, device access'
+    Write-Log '[8/8] privileges: autostart task (highest), directory ACLs, device access'
     if ([string]::IsNullOrWhiteSpace($AppExe)) {
         $AppExe = Join-Path (Split-Path -Parent $TargetDir) 'L-Mechrevo.exe'
     }
