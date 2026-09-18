@@ -116,6 +116,12 @@ public static class ModelRegistry
         }
     }
 
+    /// <summary>
+    /// 这个名字是否是厂商 <c>ProjectID</c> 枚举的成员（注册表数据的一致性校验用）。
+    /// <c>PH4AQxx</c> 有风扇表目录但不是枚举成员，故返回 <c>false</c>。
+    /// </summary>
+    internal static bool IsKnownProjectName(string name) => ProjectIdNames.Values.Contains(name, StringComparer.Ordinal);
+
     static string ReadBiosProjectIdName(IEcReadTransport transport)
     {
         int raw = transport.ReadByte(BiosProjectByteAddress);

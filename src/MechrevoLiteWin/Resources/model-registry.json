@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "_comment": "T2 identity data only. No capability bits and no per-code dGPU generation: capabilities are derived live (T6) and the generation is a runtime GPU probe (axis 2). BIOS_PROJECT_ID is a different ID space and is never a generation source.",
+  "platformCodes": [
+    { "code": "PH4AQE3", "projectId": 6154 },
+    { "code": "PH4AQxx", "projectId": null },
+    { "code": "PH4ARxx", "projectId": 5889 },
+    { "code": "PH4AUxf", "projectId": 5895 },
+    { "code": "PH4AUxx", "projectId": 5890 },
+    { "code": "PH4AXxx", "projectId": 5891 },
+    { "code": "PH4PGx1", "projectId": 6147 },
+    { "code": "PH4PGx2", "projectId": 6148 },
+    { "code": "PH4PRxx", "projectId": 6145 },
+    { "code": "PH4PUxx", "projectId": 6146 },
+    { "code": "PH4TQx1", "projectId": 20 },
+    { "code": "PH4TRX1", "projectId": 18 },
+    { "code": "PH4TUX1", "projectId": 19 },
+    { "code": "PH6AQxx", "projectId": 5892 },
+    { "code": "PH6ARxx", "projectId": 5893 },
+    { "code": "PH6PG0x", "projectId": 6151 },
+    { "code": "PH6PG0x150W", "projectId": 6155 },
+    { "code": "PH6PG3x", "projectId": 6152 },
+    { "code": "PH6PG3x150W", "projectId": 6156 },
+    { "code": "PH6PG7x", "projectId": 6153 },
+    { "code": "PH6PG7x150W", "projectId": 6157 },
+    { "code": "PH6PGEx", "projectId": 6150 },
+    { "code": "PH6PRxx", "projectId": 6149 },
+    { "code": "PH6TRX1", "projectId": 21 }
+  ],
+  "biosProjectBytes": [
+    { "masked": 0, "name": "IDR" },
+    { "masked": 1, "name": "IDX" },
+    { "masked": 2, "name": "IDV" },
+    { "masked": 3, "name": "IDO" },
+    { "masked": 4, "name": "IDP" },
+    { "masked": 5, "name": "IDS" },
+    { "masked": 6, "name": "IDY" },
+    { "masked": 7, "name": "IDW" },
+    { "masked": 8, "name": "IDM" },
+    { "masked": 9, "name": "IDE" },
+    { "masked": 10, "name": "IDN" },
+    { "masked": 11, "name": "IDZ" },
+    { "masked": 12, "name": "IDXQ" },
+    { "masked": 13, "name": "IDQ" },
+    { "masked": 14, "name": "IDO3" },
+    { "masked": 15, "name": "ID1" },
+    { "masked": 16, "name": "ID2" }
+  ],
+  "vendorLists": {
+    "commercial": [
+      "PF", "PF4MU_PF4MN_PF5MU", "GM5MU1Y", "PH4TRX1", "PH4TUX1", "PH4TQx1", "PH6TRX1",
+      "PHxAxxx", "PH4ARxx", "PH4AUxx", "PH4AXxx", "PH6AQxx", "PH6ARxx", "PH4AUxf",
+      "PHxPxxx", "PH4PRxx", "PH4PUxx", "PH4PGx1", "PH4PGx2", "PH6PRxx", "PH6PGEx",
+      "PH6PG0x", "PH6PG3x", "PH6PG7x", "PH4AQE3", "PH6PG0x150W", "PH6PG3x150W", "PH6PG7x150W"
+    ],
+    "commercialHave20Db": [
+      "PF", "PF4MU_PF4MN_PF5MU", "GM5MU1Y", "PH4TRX1", "PH4TUX1", "PH4TQx1", "PH6TRX1",
+      "PHxAxxx", "PH4ARxx", "PH4AUxx", "PH4AXxx", "PH6AQxx", "PH6ARxx", "PH4AUxf"
+    ],
+    "singleColorKeyboard": [
+      "PF", "PF4MU_PF4MN_PF5MU", "PH4TRX1", "PH4TUX1", "PH4TQx1", "PH6TRX1",
+      "PH6TQxx", "PHxAxxx", "PHxPxxx"
+    ],
+    "nonNumpad": [ "PH4TRX1", "PH4TUX1", "PH4TQx1" ],
+    "idpIdy": [ "IDP", "IDY_6Y", "IDY_7Y" ]
+  },
+  "gpuSkus": {
+    "gn20": [ "NA", "E3", "E4", "E5", "MaxQ", "E7", "P0", "P1", "E6", "E8" ],
+    "gn21": [
+      "NA", "N18P", "E3", "E4", "E5", "MaxQ", "E7", "P0", "P1", "E6",
+      "E8", "P0R", "P1R", "X2", "X4", "X6", "X9", "X11", "X2R"
+    ]
+  },
+  "fanTableGroups": [
+    {
+      "id": "k9",
+      "keys": [ "CPU", "CpuTemp_DefaultMaxLevel", "GPU", "GpuTemp_DefaultMaxLevel", "PL1", "PL1_dc", "PL2", "PL2_dc", "TCC" ],
+      "models": [ "PH4PRxx", "PH4PUxx", "PH4TRX1", "PH4TUX1", "PH6TRX1" ]
+    },
+    {
+      "id": "k11",
+      "keys": [ "CPU", "CpuTemp_DefaultMaxLevel", "DB", "GPU", "GpuTemp_DefaultMaxLevel", "PL1", "PL1_dc", "PL2", "PL2_dc", "TCC", "WM" ],
+      "models": [ "PH4AQxx", "PH4ARxx", "PH4AUxf", "PH4AUxx", "PH4AXxx", "PH4TQx1", "PH6AQxx", "PH6ARxx" ]
+    },
+    {
+      "id": "k12",
+      "keys": [ "CPU", "CTGP", "CpuTemp_DefaultMaxLevel", "DB", "GPU", "GpuTemp_DefaultMaxLevel", "PL1", "PL1_dc", "PL2", "PL2_dc", "TCC", "WM" ],
+      "models": [ "PH4AQE3", "PH4PGx1", "PH4PGx2", "PH6PGEx", "PH6PRxx" ]
+    },
+    {
+      "id": "k16",
+      "keys": [ "CPU", "CTGP", "CTGP2", "CpuTemp_DefaultMaxLevel", "DB", "DB2", "GPU", "GpuTemp_DefaultMaxLevel", "PL1", "PL1_S2", "PL1_dc", "PL2", "PL2_S2", "PL2_dc", "TCC", "WM" ],
+      "models": [ "PH6PG0x", "PH6PG0x150W", "PH6PG3x", "PH6PG3x150W", "PH6PG7x", "PH6PG7x150W" ]
+    }
+  ],
+  "dgpuGenerations": [ 30, 40, 50 ]
+}

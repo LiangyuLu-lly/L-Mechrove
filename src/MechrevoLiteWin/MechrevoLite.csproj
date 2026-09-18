@@ -138,6 +138,10 @@
     <EmbeddedResource Include="Pawn\RyzenSMU.bin">
       <LogicalName>LMechrevo.RyzenSMU.bin</LogicalName>
     </EmbeddedResource>
+    <!-- T2 机型身份注册表（只含身份，见 Resources\model-registry.json 的 _comment）。 -->
+    <EmbeddedResource Include="Resources\model-registry.json">
+      <LogicalName>LMechrevo.model-registry.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 	<Target Name="StopRunningLMechrevo" BeforeTargets="Build" Condition="'$(GITHUB_ACTIONS)'!='true'">
