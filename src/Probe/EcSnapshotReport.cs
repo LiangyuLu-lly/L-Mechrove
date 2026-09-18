@@ -232,27 +232,23 @@ public static class EcSnapshotReport
         {
             // 服务端把 client id 绑到凭据：UWPClient_User_5 只接受 client id UWPClient_5，
             // 其余一律 CONNACK=ClientIdentifierNotValid（与 MqttProbe 一致）。
-            IMqttClient client = await MqttProbe.Connect("UWPClient_5");
-            client.ApplicationMessageReceivedAsync += e =>
+            await using var transport = await MqttProbe.Connect("UWPClient_5");
+            transport.MessageReceived += (topic, payload) =>
             {
-                string topic = e.ApplicationMessage.Topic;
-                string payload = e.ApplicationMessage.ConvertPayloadToString();
                 lock (frames) frames.Add(new(topic, payload));
                 Console.WriteLine($"[mqtt] {topic}: {payload}");
-                return Task.CompletedTask;
             };
-            await MqttProbe.Subscribe(client, new[]
+            await MqttProbe.Subscribe(transport, new[]
             {
                 "Fan/Status", "System/FanInfo", "System/CpuInfo", "System/GpuInfo",
                 "System/BatteryInfo", "System/BatteryProtection", "Setting/Status",
             });
+            IMqttClient client = transport.Client ?? throw new InvalidOperationException("MQTT 未连接");
             await MqttProbe.Publish(client, "System/Control", new { Action = "System_ON" });
             await MqttProbe.Publish(client, "Fan/Control", new { Action = "GETSTATUS" });
             await MqttProbe.Publish(client, "Setting/Control", new { Action = "GETSTATUS" });
             await MqttProbe.Publish(client, "BatteryProtection/Control", new { Report = "GET" });
             await Task.Delay(TimeSpan.FromSeconds(seconds));
-            await client.DisconnectAsync();
-            client.Dispose();
         }
         catch (Exception ex)
         {

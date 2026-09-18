@@ -81,6 +81,16 @@
 
   <ItemGroup>
     <!--
+      T31 接缝位置（唯一选项）：应用（net10.0-windows10.0.19041.0）消费 Probe（net10.0）的
+      只读接缝 IEcReadTransport / IMqttTransport；反向不可行（Probe 的 net10.0 装不下 windows TFM）。
+      Probe 是 Exe + IsPublishable=false，引用合法：应用入口仍由上面的 StartupObject 指定为
+      MechrevoLite.Program，Probe 的 Main 不会成为本应用的入口（有测试盯着 EntryPoint）。
+    -->
+    <ProjectReference Include="..\Probe\Probe.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       FftSharp 曾用于 Helpers/AudioVisualizer.cs 的频谱分析。该类的 Shared 单例
       在整个代码库里没有任何订阅者（Settings.VisualiseAudio 自身也无调用者），
       属于 g-helper 的 Slash/AnimeMatrix 音频律动灯效残留，已随类一并删除。

@@ -119,6 +119,21 @@ public sealed class MechrevoDeviceCapabilities
         lock (CurrentLock) _current = capabilities;
     }
 
+    /// <summary>
+    /// 机型注入变量（T31，供 UI 审计子进程用）：非空即把身份字段覆盖成该代号。
+    /// 只改身份，能力位仍取本机服务画像——审计要在真机上跑，不能把画像清空。
+    /// </summary>
+    internal const string ModelOverrideVariable = "LMECHREVO_MODEL_OVERRIDE";
+
+    internal static string? ModelOverride
+    {
+        get
+        {
+            string? value = Environment.GetEnvironmentVariable(ModelOverrideVariable);
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+    }
+
     public static MechrevoDeviceCapabilities Load()
     {
         var values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -153,6 +168,15 @@ public sealed class MechrevoDeviceCapabilities
                     Logger.WriteLine($"Cannot read device capabilities from {path} ({view}): {ex.Message}");
                 }
             }
+        }
+
+        string? modelOverride = ModelOverride;
+        if (modelOverride is not null)
+        {
+            // 子进程注入（UI 审计的 LMECHREVO_MODEL_OVERRIDE=<代号>）：覆盖身份来源，
+            // 不碰注册表；能力位仍来自本机服务画像。
+            values["BIOS_PROJECT_ID"] = modelOverride;
+            identity["SystemProductName"] = modelOverride;
         }
 
         var capabilities = FromValues(values, identity, DetectLogoLightingRegistry());

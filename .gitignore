@@ -9,6 +9,7 @@ obj/
 dist/
 dist-verify/
 artifacts/
+TestResults/
 .build/
 size_analysis/
 

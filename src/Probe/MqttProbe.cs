@@ -1,90 +1,88 @@
-﻿using MQTTnet;
+using MQTTnet;
+using MQTTnet.Protocol;
 
 namespace Probe;
 
 public static class MqttProbe
 {
-    const string Host = "localhost";
-    const int Port = 13688;
-    const string User = "UWPClient_User_5";
-    const string Pwd = "UWPClient_Pwd888881772688_5";
-
-    static readonly MqttClientFactory Factory = new();
-
-    public static MqttClientOptions Opts(string clientId) => new MqttClientOptionsBuilder()
-        .WithTcpServer(Host, Port).WithCredentials(User, Pwd).WithClientId(clientId)
-        .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V311)
-        .WithCleanSession(false).Build();
-
-    public static async Task<IMqttClient> Connect(string clientId)
+    /// <summary>
+    /// 连接（唯一的 options/client 构造点已移入 <see cref="MqttNetTransport"/>）；
+    /// 返回的实例同时带诊断发布所需的客户端句柄。
+    /// </summary>
+    public static async Task<MqttNetTransport> Connect(string clientId)
     {
-        var c = Factory.CreateMqttClient();
-        var res = await c.ConnectAsync(Opts(clientId));
-        Console.WriteLine($"[{clientId}] Connect: {res.ResultCode} Reason={res.ReasonString}");
-        return c;
+        var transport = new MqttNetTransport();
+        await transport.ConnectAsync(clientId);
+        return transport;
     }
 
-    public static async Task Subscribe(IMqttClient c, IEnumerable<string> topics)
+    /// <summary>
+    /// 连接 → 订阅 → 把收到的帧交给 <paramref name="onFrame"/>，持续 <c>plan.Seconds</c> 秒。
+    /// 连不上直接返回 false 且**不订阅**（fail-closed）。这是探针 CLI（GoldenCapture / EcSnapshotReport）
+    /// 的公共上层——单元 TDD 用进程内假传输驱动，不碰 broker。
+    /// </summary>
+    public static async Task<bool> CollectFramesAsync(IMqttTransport transport, MqttCollectPlan plan, Action<string, string> onFrame)
     {
-        foreach (var t in topics)
-        {
-            await c.SubscribeAsync(new MqttTopicFilterBuilder().WithTopic(t).WithQualityOfServiceLevel(
-                MQTTnet.Protocol.MqttQualityOfServiceLevel.AtMostOnce).Build());
-        }
-        Console.WriteLine($"[{c.Options.ClientId}] subscribed {string.Join(",", topics)}");
+        if (!await transport.ConnectAsync(plan.ClientId)) return false;
+        transport.MessageReceived += onFrame;   // 先挂收帧再订阅：SUBACK 与首帧之间没有空窗
+        await transport.SubscribeAsync(plan.Topics);
+        if (plan.Seconds > 0) await Task.Delay(TimeSpan.FromSeconds(plan.Seconds));
+        return true;
     }
 
-    public static async Task Publish(IMqttClient c, string topic, object payload, bool retain = false)
+    /// <summary>订阅走 <see cref="IMqttTransport"/>；发布不在此列（见 <see cref="MqttNetTransport"/>）。</summary>
+    public static Task Subscribe(IMqttTransport transport, IEnumerable<string> topics) =>
+        transport.SubscribeAsync(topics.ToArray());
+
+    /// <summary>诊断发布：唯一实现，句柄来自传输自身的连接。</summary>
+    public static async Task Publish(IMqttClient client, string topic, object payload, bool retain = false)
     {
         var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-        Console.WriteLine($"[{c.Options.ClientId}] PUB {topic} <- {json}");
-        await c.PublishStringAsync(topic, json, MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce, retain);
+        Console.WriteLine($"[{client.Options.ClientId}] PUB {topic} <- {json}");
+        await client.PublishStringAsync(topic, json, MqttQualityOfServiceLevel.ExactlyOnce, retain);
     }
 
-    public static void WirePrint(IMqttClient c, string tag)
+    /// <summary>把接缝的收帧/断线通知打到控制台。</summary>
+    public static void WirePrint(IMqttTransport transport, string tag)
     {
-        c.ApplicationMessageReceivedAsync += e =>
-        {
-            Console.WriteLine($"[{tag}] << {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-            return Task.CompletedTask;
-        };
-        c.DisconnectedAsync += e =>
-        {
-            Console.WriteLine($"[{tag}] DISCONNECTED: {e.Reason}");
-            return Task.CompletedTask;
-        };
+        transport.MessageReceived += (topic, payload) => Console.WriteLine($"[{tag}] << {topic}: {payload}");
+        transport.Disconnected += reason => Console.WriteLine($"[{tag}] DISCONNECTED: {reason}");
     }
+
+    static IMqttClient ClientOf(MqttNetTransport transport) =>
+        transport.Client ?? throw new InvalidOperationException("MQTT 未连接");
 
     public static async Task Handshake()
     {
         var topics = new[] { "Customize/#", "System/#", "Fan/#", "Setting/#", "Keyboard/#", "GPUDevice/#", "BatteryProtection/#", "HidLightbar/#", "MyRgbLightbar/#", "Languages/#", "OSD/#", "Display/#", "WhisperMode/#", "BT_LC/#", "LCHWOC/#", "GameProfile/#", "GamingMonitor/#", "Doudou/#", "OTA/#", "Settings/#" };
 
-        // 绗?1 姝ワ細浠呰繛鎺?+ 璁㈤槄锛屼笉鍙戝竷
-        var c1 = await Connect("UWPClient_5");
-        WirePrint(c1, "step1");
-        await Subscribe(c1, topics);
+        // 第 1 步：只连接 + 订阅，不发布
+        await using var transport = await Connect("UWPClient_5");
+        IMqttClient client = ClientOf(transport);
+        WirePrint(transport, "step1");
+        await Subscribe(transport, topics);
         Console.WriteLine(">>> [step1] connect+subscribe only, wait 15s");
         await Task.Delay(15000);
 
-        // 绗?2 姝ワ細Keyboard/Ctrl Init锛圲I 鍚姩鍒濆鍖栵級
-        await Publish(c1, "Keyboard/Ctrl", new { function = "Init" });
+        // 第 2 步：Keyboard/Ctrl Init（UI 启动初始化）
+        await Publish(client, "Keyboard/Ctrl", new { function = "Init" });
         Console.WriteLine(">>> [step2] Keyboard Init, wait 15s");
         await Task.Delay(15000);
 
-        // 绗?3 姝ワ細Customize/Control GETSUPPORT
-        await Publish(c1, "Customize/Control", new { Action = "GETSUPPORT" });
+        // 第 3 步：Customize/Control GETSUPPORT
+        await Publish(client, "Customize/Control", new { Action = "GETSUPPORT" });
         Console.WriteLine(">>> [step3] Customize GETSUPPORT, wait 15s");
         await Task.Delay(15000);
 
-        // 绗?4 姝ワ細鍚?GETSTATUS
-        await Publish(c1, "Fan/Control", new { Action = "GETSTATUS" });
-        await Publish(c1, "Setting/Control", new { Action = "GETSTATUS" });
-        await Publish(c1, "Keyboard/Ctrl", new { Action = "GETSTATUS" });
+        // 第 4 步：批量 GETSTATUS
+        await Publish(client, "Fan/Control", new { Action = "GETSTATUS" });
+        await Publish(client, "Setting/Control", new { Action = "GETSTATUS" });
+        await Publish(client, "Keyboard/Ctrl", new { Action = "GETSTATUS" });
         Console.WriteLine(">>> [step4] GETSTATUS batch, wait 15s");
         await Task.Delay(15000);
 
-        // 绗?5 姝ワ細System_ON 瑙﹀彂閬ユ祴
-        await Publish(c1, "System/Control", new { Action = "System_ON" });
+        // 第 5 步：System_ON 触发遥测
+        await Publish(client, "System/Control", new { Action = "System_ON" });
         Console.WriteLine(">>> [step5] System_ON, wait 30s");
         await Task.Delay(30000);
 
@@ -93,10 +91,11 @@ public static class MqttProbe
 
     public static async Task Sniff(int seconds)
     {
-        var c = await Connect("UWPClient_5");
-        WirePrint(c, "mqtt");
-        await Subscribe(c, new[] { "System/#", "Fan/#", "Setting/#", "EC/#", "Keyboard/#", "MyRgbLightbar/#", "HidLightbar/#", "GPUDevice/#" });
-        await Publish(c, "System/Control", new { Action = "System_ON" });
+        await using var transport = await Connect("UWPClient_5");
+        IMqttClient client = ClientOf(transport);
+        WirePrint(transport, "mqtt");
+        await Subscribe(transport, new[] { "System/#", "Fan/#", "Setting/#", "EC/#", "Keyboard/#", "MyRgbLightbar/#", "HidLightbar/#", "GPUDevice/#" });
+        await Publish(client, "System/Control", new { Action = "System_ON" });
 
         var snapDir = Path.Combine(AppContext.BaseDirectory, "snaps");
         Directory.CreateDirectory(snapDir);
@@ -107,48 +106,56 @@ public static class MqttProbe
             IntPtr h = EcProbe.OpenDriver();
             if (h != new IntPtr(-1))
             {
-                for (int a = 0; a < 0x80; a++) snap.Add(EcProbe.ReadReg(h, a).ToString("X2"));
+                // 读不到记 ??，不再把 -1 记成 0xFF（0xFF 是合法读值）。
+                for (int a = 0; a < 0x80; a++)
+                {
+                    int value = EcProbe.ReadReg(h, a);
+                    snap.Add(value < 0 ? "??" : value.ToString("X2"));
+                }
                 EcProbe.CloseDriver(h);
             }
             File.WriteAllText(Path.Combine(snapDir, $"{DateTime.Now:HHmmss}.txt"), string.Join(" ", snap));
             await Task.Delay(1000);
         }
-        Console.WriteLine(">>> 蹇収鐩綍: " + snapDir);
+        Console.WriteLine(">>> 快照目录: " + snapDir);
     }
 
     /// <summary>
-    /// 瑁稿彂閫侊細probe send &lt;topic&gt; &lt;json&gt; [waitSeconds]銆傝闃?Setting/# 涓?Fan/#
-    /// 鍚庡彂甯冪粰瀹氳浇鑽凤紝鎶婄瓑寰呮湡闂存敹鍒扮殑鍥炴樉鍘熸牱鎵撳嵃鈥斺€旂敤浜庡瘎瀛樺櫒绾цˉ鏁戝拰鍗忚褰㈢姸楠岃瘉銆?    /// </summary>
+    /// 裸发送：probe send &lt;topic&gt; &lt;json&gt; [waitSeconds]。订阅 Setting/# 与 Fan/#
+    /// 后发布给定载荷，把等待期间收到的回显原样打印——用于寄存器级补救和协议形状验证。
+    /// </summary>
     public static async Task Send(string topic, string json, int waitSeconds)
     {
         // PowerShell 5.1 向原生程序传参会剥内嵌双引号，JSON 走文件最稳。
         if (File.Exists(json)) json = File.ReadAllText(json);
-        var c = await Connect("UWPClient_5");
-        WirePrint(c, "send");
-        await Subscribe(c, new[] { "Setting/#", "Fan/#" });
-        await Publish(c, topic, Newtonsoft.Json.Linq.JToken.Parse(json));
+        await using var transport = await Connect("UWPClient_5");
+        IMqttClient client = ClientOf(transport);
+        WirePrint(transport, "send");
+        await Subscribe(transport, new[] { "Setting/#", "Fan/#" });
+        await Publish(client, topic, Newtonsoft.Json.Linq.JToken.Parse(json));
         await Task.Delay(TimeSpan.FromSeconds(waitSeconds));
         Console.WriteLine("send done");
     }
 
     public static async Task ModeTest()
     {
-        var c = await Connect("UWPClient_5");
-        WirePrint(c, "mode");
-        await Subscribe(c, new[] { "Fan/Status" });
+        await using var transport = await Connect("UWPClient_5");
+        IMqttClient client = ClientOf(transport);
+        WirePrint(transport, "mode");
+        await Subscribe(transport, new[] { "Fan/Status" });
         var modes = new (string Name, string Action)[]
         {
-            ("鍔炲叕 Office", "OPERATING_OFFICE_MODE"),
-            ("娓告垙 Gaming", "OPERATING_GAMING_MODE"),
-            ("鏋侀€?Turbo", "OPERATING_TURBO_MODE"),
-            ("鑷畾涔?Custom", "OPERATING_CUSTOM_MODE"),
+            ("办公 Office", "OPERATING_OFFICE_MODE"),
+            ("游戏 Gaming", "OPERATING_GAMING_MODE"),
+            ("极致 Turbo", "OPERATING_TURBO_MODE"),
+            ("自定义 Custom", "OPERATING_CUSTOM_MODE"),
         };
         foreach (var (name, action) in modes)
         {
-            Console.WriteLine($"=== 鍒囨崲鍒?{name} ===");
-            await Publish(c, "Fan/Control", new { Action = action });
+            Console.WriteLine($"=== 切换到 {name} ===");
+            await Publish(client, "Fan/Control", new { Action = action });
             await Task.Delay(4000);
-            await Publish(c, "Fan/Control", new { Action = "GETSTATUS" });
+            await Publish(client, "Fan/Control", new { Action = "GETSTATUS" });
             await Task.Delay(3000);
         }
         Console.WriteLine("mode test done");
@@ -156,14 +163,15 @@ public static class MqttProbe
 
     public static async Task SelfTest(int rounds = 3)
     {
-        var c = await Connect("UWPClient_5");
-        WirePrint(c, "st");
-        await Subscribe(c, new[] { "Fan/Status", "Fan/Table", "System/FanInfo" });
+        await using var transport = await Connect("UWPClient_5");
+        IMqttClient client = ClientOf(transport);
+        WirePrint(transport, "st");
+        await Subscribe(transport, new[] { "Fan/Status", "Fan/Table", "System/FanInfo" });
         var modes = new (int G, string Name, string Action)[]
         {
-            (2, "鍔炲叕Office", "OPERATING_OFFICE_MODE"),
-            (0, "娓告垙Gaming", "OPERATING_GAMING_MODE"),
-            (1, "澧炲己Turbo", "OPERATING_TURBO_MODE"),
+            (2, "办公Office", "OPERATING_OFFICE_MODE"),
+            (0, "游戏Gaming", "OPERATING_GAMING_MODE"),
+            (1, "增强Turbo", "OPERATING_TURBO_MODE"),
         };
         for (int r = 0; r < rounds; r++)
         {
@@ -171,11 +179,11 @@ public static class MqttProbe
             foreach (var (g, name, action) in modes)
             {
                 Console.WriteLine($"--- [{name}] expectG={g} ---");
-                await Publish(c, "Fan/Control", new { Action = action, ProfileIndex = "0" });
+                await Publish(client, "Fan/Control", new { Action = action, ProfileIndex = "0" });
                 await Task.Delay(3000);
-                await Publish(c, "Fan/Control", new { Action = "GETSTATUS" });
+                await Publish(client, "Fan/Control", new { Action = "GETSTATUS" });
                 await Task.Delay(1000);
-                await Publish(c, "Fan/Control", new { Action = "GET_FAN_SPEED_CURVE_SETTING" });
+                await Publish(client, "Fan/Control", new { Action = "GET_FAN_SPEED_CURVE_SETTING" });
                 await Task.Delay(1500);
             }
         }

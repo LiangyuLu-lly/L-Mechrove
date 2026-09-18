@@ -8,20 +8,24 @@ namespace Probe;
 /// </summary>
 public interface IEcReadTransport
 {
-    /// <summary>读一个 EC 字节；失败返回 -1（0xFF 是合法读值，不表示失败）。</summary>
+    /// <summary>
+    /// 读一个 EC 字节；失败返回 -1（0xFF 是合法读值，不表示失败）。
+    /// 传输层抛异常（总线卡死/超时/句柄失效）等价于该地址读不到：上层记录原因并继续，不中断整份快照。
+    /// </summary>
     int ReadByte(int address);
 }
 
 /// <summary>
-/// <c>\\.\ACPIDriver</c> 只读通道。形状照抄 live-verified 的
+/// <c>\\.\ACPIDriver</c> 的唯一 interop 集（T31 合并）：只读传输与探针 CLI 的写/MM 路径共用，
+/// 此前 <c>EcProbe</c> 自带的那份已删除。形状照抄 live-verified 的
 /// <c>src\MechrevoLiteWin\Hardware\EcChargeLimit.cs</c>：读 IOCTL 0x9C40A488，
 /// 入参 <c>[u32 地址]</c>（4 B），出参 16 B，首字节即值。
-/// 有意不抄 <c>EcProbe.ReadReg</c> 的 2 字节入参——docs/ec-per-generation.md §1.2 明确说那是错的。
+/// 有意不抄 <c>EcProbe.ReadReg</c> 旧的 2 字节入参——docs/ec-per-generation.md §1.2 明确说那是错的。
 /// </summary>
-public sealed class AcpiDriverReadTransport : IEcReadTransport, IDisposable
+internal static class AcpiDriverIo
 {
-    const uint IoctlEcRead = 0x9C40A488; // EcChargeLimit 同值
-    const string DevicePath = @"\\.\ACPIDriver";
+    internal const uint IoctlEcRead = 0x9C40A488; // EcChargeLimit 同值
+    internal const string DevicePath = @"\\.\ACPIDriver";
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
@@ -30,33 +34,24 @@ public sealed class AcpiDriverReadTransport : IEcReadTransport, IDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool DeviceIoControl(IntPtr handle, uint code, IntPtr inBuffer, int inSize, IntPtr outBuffer, int outSize, out int returned, IntPtr overlapped);
 
-    IntPtr _handle;
-    AcpiDriverReadTransport(IntPtr handle) => _handle = handle;
+    /// <summary>打开设备；失败返回 <c>-1</c>（INVALID_HANDLE_VALUE）。</summary>
+    internal static IntPtr Open() => CreateFile(DevicePath, 0xC0000000u, 3u, IntPtr.Zero, 3u, 0u, IntPtr.Zero);
 
-    /// <summary>打开设备。失败时 <paramref name="error"/> 是逐字的 Win32 错误描述；调用方必须 STOP，不得安装/启动任何驱动或服务。</summary>
-    public static bool TryOpen(out AcpiDriverReadTransport? transport, out string error)
+    internal static void Close(IntPtr handle)
     {
-        IntPtr handle = CreateFile(DevicePath, 0xC0000000u, 3u, IntPtr.Zero, 3u, 0u, IntPtr.Zero);
-        if (handle == new IntPtr(-1))
-        {
-            int code = Marshal.GetLastWin32Error();
-            error = $"CreateFile(\"{DevicePath}\") failed: Win32 error {code} (0x{code:X8}) {new System.ComponentModel.Win32Exception(code).Message}";
-            transport = null;
-            return false;
-        }
-        transport = new AcpiDriverReadTransport(handle);
-        error = "";
-        return true;
+        if (handle == new IntPtr(-1)) return;
+        CloseHandle(handle);
     }
 
-    public int ReadByte(int address)
+    /// <summary>按 0x9C40A488 形状读一个字节；失败返回 -1。</summary>
+    internal static int ReadByte(IntPtr handle, int address)
     {
         IntPtr inBuffer = Marshal.AllocHGlobal(4);
         IntPtr outBuffer = Marshal.AllocHGlobal(16);
         try
         {
             Marshal.WriteInt32(inBuffer, 0, address);
-            bool ok = DeviceIoControl(_handle, IoctlEcRead, inBuffer, 4, outBuffer, 16, out int returned, IntPtr.Zero);
+            bool ok = DeviceIoControl(handle, IoctlEcRead, inBuffer, 4, outBuffer, 16, out int returned, IntPtr.Zero);
             return ok && returned > 0 ? Marshal.ReadByte(outBuffer) : -1;
         }
         finally
@@ -66,12 +61,38 @@ public sealed class AcpiDriverReadTransport : IEcReadTransport, IDisposable
         }
     }
 
-    public void Dispose()
+    /// <summary>给探针 CLI 的写/MM 路径用的直通；IOCTL 码由调用方给（本文件不含任何写常量）。</summary>
+    internal static bool Ioctl(IntPtr handle, uint code, IntPtr inBuffer, int inSize, IntPtr outBuffer, int outSize, out int returned) =>
+        DeviceIoControl(handle, code, inBuffer, inSize, outBuffer, outSize, out returned, IntPtr.Zero);
+}
+
+/// <summary>
+/// <c>\\.\ACPIDriver</c> 只读通道（<see cref="AcpiDriverIo"/> 的传输实现）。
+/// </summary>
+public sealed class AcpiDriverReadTransport : IEcReadTransport, IDisposable
+{
+    IntPtr _handle;
+    AcpiDriverReadTransport(IntPtr handle) => _handle = handle;
+
+    /// <summary>打开设备。失败时 <paramref name="error"/> 是逐字的 Win32 错误描述；调用方必须 STOP，不得安装/启动任何驱动或服务。</summary>
+    public static bool TryOpen(out AcpiDriverReadTransport? transport, out string error)
     {
-        if (_handle == new IntPtr(-1)) return;
-        CloseHandle(_handle);
-        _handle = new IntPtr(-1);
+        IntPtr handle = AcpiDriverIo.Open();
+        if (handle == new IntPtr(-1))
+        {
+            int code = Marshal.GetLastWin32Error();
+            error = $"CreateFile(\"{AcpiDriverIo.DevicePath}\") failed: Win32 error {code} (0x{code:X8}) {new System.ComponentModel.Win32Exception(code).Message}";
+            transport = null;
+            return false;
+        }
+        transport = new AcpiDriverReadTransport(handle);
+        error = "";
+        return true;
     }
+
+    public int ReadByte(int address) => AcpiDriverIo.ReadByte(_handle, address);
+
+    public void Dispose() => AcpiDriverIo.Close(_handle);
 }
 
 /// <summary>一段 EC 地址范围，含端点。</summary>
@@ -99,7 +120,12 @@ public readonly record struct EcRange(int Start, int EndInclusive)
 }
 
 /// <summary>一次快照结果：成功读到的地址→字节，以及读失败的地址。</summary>
-public sealed record EcSnapshotResult(IReadOnlyDictionary<int, int> Bytes, IReadOnlyList<int> Errors, DateTimeOffset TakenUtc)
+/// <param name="ErrorDetails">读失败的逐条原因（含 -1 与传输异常）；为空表示 details 未采集。</param>
+public sealed record EcSnapshotResult(
+    IReadOnlyDictionary<int, int> Bytes,
+    IReadOnlyList<int> Errors,
+    DateTimeOffset TakenUtc,
+    IReadOnlyList<string>? ErrorDetails = null)
 {
     public int Count => Bytes.Count;
     public int ErrorCount => Errors.Count;
@@ -123,7 +149,10 @@ public static class EcSnapshot
         0x743, 0x744, 0x745, 0x746, 0x786, 0x787, 0x7E8, 0xB0, 0x72A, 0x7D2, 0xCB,
     };
 
-    /// <summary>逐地址读取；<paramref name="delayMs"/> 给 EC 总线留间隔。地址按范围顺序去重，读失败记入 Errors。</summary>
+    /// <summary>
+    /// 逐地址读取；<paramref name="delayMs"/> 给 EC 总线留间隔。地址按范围顺序去重，读失败记入 Errors。
+    /// 传输抛异常（超时/句柄失效）只作废该地址：原因进 <see cref="EcSnapshotResult.ErrorDetails"/>，快照继续。
+    /// </summary>
     public static EcSnapshotResult Capture(
         IEcReadTransport transport,
         IReadOnlyList<EcRange> ranges,
@@ -133,25 +162,40 @@ public static class EcSnapshot
     {
         var bytes = new SortedDictionary<int, int>();
         var errors = new List<int>();
+        var errorDetails = new List<string>();
         var seen = new HashSet<int>();
 
         foreach (EcRange range in ranges)
         {
             for (int address = range.Start; address <= range.EndInclusive; address++)
-                ReadOne(transport, address, bytes, errors, seen, delayMs, progress);
+                ReadOne(transport, address, bytes, errors, errorDetails, seen, delayMs, progress);
         }
         foreach (int address in breadcrumbs)
-            ReadOne(transport, address, bytes, errors, seen, delayMs, progress);
+            ReadOne(transport, address, bytes, errors, errorDetails, seen, delayMs, progress);
 
-        return new EcSnapshotResult(bytes, errors, DateTimeOffset.Now);
+        return new EcSnapshotResult(bytes, errors, DateTimeOffset.Now, errorDetails);
     }
 
     static void ReadOne(
         IEcReadTransport transport, int address, SortedDictionary<int, int> bytes,
-        List<int> errors, HashSet<int> seen, int delayMs, Action<int>? progress)
+        List<int> errors, List<string> errorDetails, HashSet<int> seen, int delayMs, Action<int>? progress)
     {
         if (!seen.Add(address)) return;
-        int value = transport.ReadByte(address);
+        int value;
+        try
+        {
+            value = transport.ReadByte(address);
+        }
+        catch (Exception ex)
+        {
+            // 单次读的传输异常（驱动超时、SEH、句柄失效）是外部边界故障：记为该地址读不到并继续，
+            // 一份带洞的快照远好过整个工具崩掉。异常类型与消息进 ErrorDetails，不静默吞。
+            errors.Add(address);
+            errorDetails.Add($"0x{address:X3}: {ex.GetType().Name}: {ex.Message}");
+            progress?.Invoke(address);
+            if (delayMs > 0) Thread.Sleep(delayMs);
+            return;
+        }
         if (value < 0) errors.Add(address);
         else bytes[address] = value;
         progress?.Invoke(address);
