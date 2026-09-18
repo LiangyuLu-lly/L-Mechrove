@@ -1,0 +1,53 @@
+{
+  "generatedUtc": "2026-09-18T09:45:00Z",
+  "task": "beta18 installer package (R1+R2+R4)",
+  "published": false,
+  "gitTagCreated": false,
+  "uploaded": false,
+  "command": "powershell -NoProfile -ExecutionPolicy Bypass -File installer\\Build-Installer.ps1 -OutputDir artifacts\\run11-beta18",
+  "installer": {
+    "path": "artifacts\\run11-beta18\\L-Mechrevo-beta18-setup.exe",
+    "bytes": 82949762,
+    "mb": 79.1,
+    "sha256": "74E5AA8FAADB22ED72226B62DEEE50214B7E5B435250C0113509F85B1B755506"
+  },
+  "sizeDelta": {
+    "baselineBeta17SelfContained": { "bytes": 128982939, "mb": 123.0 },
+    "beta18FrameworkDependent": { "bytes": 82949762, "mb": 79.1 },
+    "deltaBytes": -46033177,
+    "deltaMb": -43.9
+  },
+  "appPayload": {
+    "mode": "framework-dependent (SelfContained=false, win-x64)",
+    "files": 67,
+    "bytes": 34725107,
+    "selfContainedSingleFileBytes": 219601876,
+    "readyToRunBytes": 42781915,
+    "readyToRunChosen": false,
+    "singleFileChosen": false,
+    "singleFileRejectedReason": "NETSDK1151: a framework-dependent exe cannot reference the self-contained Probe.exe"
+  },
+  "runtimeDependency": {
+    "name": "Microsoft.WindowsDesktop.App 10.x (x64)",
+    "detection": "HKLM64\\SOFTWARE\\dotnet\\Setup\\InstalledVersions\\x64\\sharedfx\\Microsoft.WindowsDesktop.App has a 10.x subkey",
+    "downloadUrl": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.12/windowsdesktop-runtime-10.0.12-win-x64.exe",
+    "downloadSha256": "0B907E9312867172A4EB82F4B5AB3F7C2D25E27D8349546D77EEB5D5B8CBECAB9EBEBFED189B13E9669DC578D892756C548366DA539D47B3DDAC5EFCB7AE72FE",
+    "offlineFallbackBundled": false
+  },
+  "g0Gate": {
+    "status": "NOT PASSED",
+    "evidence": ".omo\\evidence\\f3-generation-status.json (30/40 = BLOCKED-HW)",
+    "consequence": "single-payload reduction stays OFF; the package MUST and DOES carry the 40-series trees"
+  },
+  "singlePayloadSwitch": false,
+  "bundle": "multi (4 trees)",
+  "payloadCarried": [
+    { "key": "50",       "files": 276 },
+    { "key": "40-51749", "files": 73 },
+    { "key": "40-51751", "files": 75 },
+    { "key": "common",   "files": 4 }
+  ],
+  "payloadTotalFiles": 428,
+  "payloadTotalBytes": 181126477,
+  "payloadVerification": "innounp -v -b -u on the produced setup lists 428 lines under {app}\\GCU\\payload\\ (50=276, 40-51749=73, 40-51751=75, common=4); 0 *.pdb staged; {app}\\L-Mechrevo.dll + L-Mechrevo.runtimeconfig.json present (framework-dependent)"
+}
