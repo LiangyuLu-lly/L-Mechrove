@@ -43,41 +43,43 @@ public class DeviceCapabilityTests
         Assert.True(profile.AmdPlatform);
     }
 
+    /// <summary>
+    /// T9：热切换判据 = 服务写入的两个值，<c>APVersionCheck</c> 这个数值代理已删除——
+    /// 23/24 都不得改变结论；任一值缺失或为 0 即不提供。
+    /// </summary>
     [Fact]
-    public void OfficialHotSwapGate_RequiresEveryOfficialRegistryValue()
+    public void OfficialHotSwapGate_RequiresTheTwoVendorValuesAndIgnoresTheVersionProxy()
     {
-        var enabled = MechrevoDeviceCapabilities.FromValues(new Dictionary<string, object?>
+        var version23 = MechrevoDeviceCapabilities.FromValues(new Dictionary<string, object?>
         {
-            ["IsNvGpu"] = 1,
-            ["iGPUModeOnlySupport"] = 1,
+            ["APVersionCheck"] = 23,
+            ["GpuHotSwapSwitchSupport"] = 1,
+            ["lgpuHotSwapSwitchStatus"] = 1,
+        });
+        var version24 = MechrevoDeviceCapabilities.FromValues(new Dictionary<string, object?>
+        {
             ["APVersionCheck"] = 24,
             ["GpuHotSwapSwitchSupport"] = 1,
             ["lgpuHotSwapSwitchStatus"] = 1,
         });
         var blocked = MechrevoDeviceCapabilities.FromValues(new Dictionary<string, object?>
         {
-            ["IsNvGpu"] = 1,
-            ["iGPUModeOnlySupport"] = 1,
-            ["APVersionCheck"] = 23,
             ["GpuHotSwapSwitchSupport"] = 1,
-            ["lgpuHotSwapSwitchStatus"] = 1,
+            ["lgpuHotSwapSwitchStatus"] = 0,
         });
 
-        Assert.True(enabled.GpuHotSwap);
+        Assert.True(version23.GpuHotSwap);
+        Assert.True(version24.GpuHotSwap);
         Assert.False(blocked.GpuHotSwap);
     }
 
     [Theory]
-    [InlineData("IsNvGpu")]
-    [InlineData("iGPUModeOnlySupport")]
     [InlineData("GpuHotSwapSwitchSupport")]
     [InlineData("lgpuHotSwapSwitchStatus")]
     public void OfficialHotSwapGate_MissingRequiredFlagIsUnsupported(string missingKey)
     {
         var values = new Dictionary<string, object?>
         {
-            ["IsNvGpu"] = 1,
-            ["iGPUModeOnlySupport"] = 1,
             ["APVersionCheck"] = 24,
             ["GpuHotSwapSwitchSupport"] = 1,
             ["lgpuHotSwapSwitchStatus"] = 1,

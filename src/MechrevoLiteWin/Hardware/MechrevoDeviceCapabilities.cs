@@ -290,8 +290,9 @@ public sealed class MechrevoDeviceCapabilities
             SmartBalance = Flag("IsSmartBalanceSupport"),
             RamFan15 = Flag("RamFan1p5Support"),
             NvidiaGpu = nvidiaGpu,
-            GpuHotSwap = nvidiaGpu && igpuOnly && Number("APVersionCheck") > 23 &&
-                Flag("GpuHotSwapSwitchSupport") && Flag("lgpuHotSwapSwitchStatus"),
+            // T9: the APVersionCheck>23 numeric proxy is gone. Hot swap is decided solely by the two
+            // service-written values; either missing => not offered (fail-closed). See t9-hotswap-values.json.
+            GpuHotSwap = Flag("GpuHotSwapSwitchSupport") && Flag("lgpuHotSwapSwitchStatus"),
             AmdPlatform = Flag("IsAMDPlatform", "IsAmdPlatform"),
             IsOldType = Flag("IsOldType"),
             KeyboardType = keyboardType,
