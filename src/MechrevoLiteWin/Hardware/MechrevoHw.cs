@@ -448,6 +448,17 @@ public class MechrevoHw : IDisposable
     public bool SupportsDgpuDirect => DgpuDirectStatusSupport ?? Capabilities.DgpuDirect;
     public bool SupportsIgpuOnly => IgpuOnlyStatusSupport ?? Capabilities.IgpuOnly;
     public bool SupportsGpuHotSwap => Capabilities.GpuHotSwap && SupportsIgpuOnly;
+
+    /// <summary>
+    /// **轴 2** dGPU 代际（运行时探测，见 <see cref="GpuGenerationProvider"/>）。
+    /// <c>Unknown</c> 与 <c>NoDgpu</c> 都是独立状态，绝不等于任何具体代际。
+    /// </summary>
+    public DgpuGenerationKind DgpuGeneration => GpuGenerationProvider.Current().Generation;
+
+    /// <summary>该显示路由动作是否被代际事实表允许；<c>Unknown</c>/<c>NoDgpu</c> 不套用具体代际的限制。</summary>
+    public bool IsGpuActionAllowedByGeneration(string action) =>
+        DisplayRoutePolicy.AllowsAction(DgpuGeneration, action);
+
     public bool SupportsKeyboard => Capabilities.Keyboard || KeyboardStatusSeen;
     public bool SupportsLightbar => Capabilities.Lightbar || LightbarStatusSeen;
     public bool SupportsLogoLight => Capabilities.LogoLight || LogoLightStatusSeen || LightbarLogoSupport == true;
