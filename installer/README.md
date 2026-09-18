@@ -80,20 +80,20 @@ the framework-dependent build (Inno already ships a folder, and FD+single-file i
 |---|---|
 | `{autopf}\L-Mechrevo` (`%ProgramFiles%\L-Mechrevo`) | the whole framework-dependent publish folder (`L-Mechrevo.exe`, `L-Mechrevo.dll`, `*.deps.json`, `*.runtimeconfig.json`, dependency DLLs; `*.pdb` excluded), `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`, `更新日志.txt`, `用前必看.txt` |
 | `{app}\GCU` | `Install-Gcu.ps1`, `Uninstall-Gcu.ps1`, `Select-GcuPayload.ps1` |
-| `{app}\GCU\payload\50` | 50-series payload from `release\GCU-only` (276 files, 85,663,993 B) |
-| `{app}\GCU\payload\40-51751` | 40-series `AiStoneService` payload from `release\GCU-40-51751` (75 files, 56,136,429 B) |
-| `{app}\GCU\payload\40-51749` | 40-series `UniwillService` payload from `release\GCU-40-51749` (73 files, 39,266,036 B) |
-| `{app}\GCU\payload\common` | shared `UWACPIDriver` from `release\GCU-common` (4 files, 60,019 B) |
-| `{app}\GCU\<ServiceDir>` | the selected payload copied here at install time (`AiStoneService` or `UniwillService`) |
-| `{app}\GCU\UWACPIDriver` | the driver copied here at install time |
+| `{app}\GCU\payload\50` | the newest payload from `release\GCU-only` (276 files, 85,663,993 B) |
+| `{app}\GCU\<ServiceDir>` | the payload copied here at install time (`AiStoneService`) |
+| `{app}\GCU\UWACPIDriver` | the driver copied here at install time (from `GCU-only\UWACPIDriver`) |
 | `%ProgramData%\L-Mechrevo\logs` | `gcu-install-*.log` / `gcu-uninstall-*.log` |
 
 Shortcuts: Start Menu group `L-Mechrevo` (app, 使用前必看, 更新日志, 开源许可, Uninstall) and an
 optional desktop icon (unchecked task). The uninstaller is registered in Add/Remove Programs.
 
-All four GCU payload trees are bundled in the default (multi-payload) build. The installer's GCU
-step selects exactly one at install time, so every bundled payload is reachable and none is
-silently dropped. In single-payload mode only `{app}\GCU\payload\50` is staged.
+**Exactly one GCU payload tree is bundled** (N6, owner decision A): `release\GCU-only`, the newest
+payload and the superset. It serves 30/40/50, carries its own `UWACPIDriver`, and its
+`UserFanTables` holds all 24 per-model chassis dirs + the 23 flat files (the retired 40-series
+payloads carry zero per-model dirs). `release\GCU-common` is **not** staged: it is byte-identical to
+`GCU-only\UWACPIDriver`, so staging it would only duplicate the driver. The 40-series trees stay on
+disk untouched as the material for the visible fallback.
 
 ## Privileges are acquired once, at install time (N5)
 
@@ -114,23 +114,21 @@ surfacing a tray balloon if it cannot.
 
 ## GCU selection rule
 
-`installer\Select-GcuPayload.ps1` maps hardware to a payload. Install-Gcu.ps1 invokes it and
-copies the result. Signals, strongest first:
+`installer\Select-GcuPayload.ps1` is a **single-payload resolver**: it verifies the machine is a
+supported generation and always returns `release\GCU-only`. Signals (axis 2 only):
 
-| Signal | 50-series | 40-series |
-|---|---|---|
-| GPU marketing name (`Win32_VideoController` / `Win32_PnPEntity`) | `RTX 50[5-9]x` | `RTX 40[5-9]x` |
-| NVIDIA PCI device id high byte | `0x2B/0x2C/0x2D/0x2E/0x2F` (Blackwell) | `0x26/0x27/0x28` (Ada) |
-| `HKLM\SOFTWARE\OEM\...\ItemSupport` `BIOS_PROJECT_ID` | `PH6*` | `PH4*` |
+| Signal | 30-series | 40-series | 50-series |
+|---|---|---|---|
+| GPU marketing name (`Win32_VideoController` / `Win32_PnPEntity`) | `RTX 30[5-9]x` | `RTX 40[5-9]x` | `RTX 50[5-9]x` |
+| NVIDIA PCI device id high byte | `0x22/0x24/0x25` (Ampere) | `0x26/0x27/0x28` (Ada) | `0x2B/0x2C/0x2D/0x2E/0x2F` (Blackwell) |
 
-Decision: any 50-series evidence -> `50` (`release\GCU-only`, `AiStoneService`). Otherwise ->
-`40-51751`. Unknown hardware also falls back to `40-51751`.
+Decision: any supported generation -> `release\GCU-only` (`AiStoneService`). An **undeterminable**
+generation exits non-zero with a readable reason and **never falls back** to a 40-series payload.
+`BIOS_PROJECT_ID` is deliberately **not** consulted: axis 1 (platform code) must not decide axis 2
+(dGPU generation).
 
-**40-series sub-variant:** no machine signal in this repo distinguishes the vendor's
-5.17.49.19 (`UniwillService`) build from the newer 5.17.51.34 (`AiStoneService`) build for the
-same 40-series hardware; they are two console versions, and `AiStoneService` matches the
-50-series naming. So 40-series defaults to the newer `40-51751` / `AiStoneService` payload.
-`40-51749` stays bundled and selectable via the override below.
+**Retired:** `/GCUVARIANT=` no longer has any effect - there is no second payload to select. This is
+a user-visible contract change.
 
 Verify the rule on any machine:
 
@@ -153,8 +151,7 @@ re-registered. `Uninstall-Gcu.ps1` stops/deletes the service, removes the firewa
 # silent install (per-machine; triggers UAC)
 L-Mechrevo-beta18-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
-# silent install with the 40-series override (multi-payload builds only)
-L-Mechrevo-beta18-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /GCUVARIANT=40-51749
+# /GCUVARIANT= is retired: only one payload ships, so the flag has no effect.
 
 # silent uninstall
 "%ProgramFiles%\L-Mechrevo\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
@@ -164,41 +161,48 @@ Inno flags: `/SILENT` (no prompts, shows progress), `/VERYSILENT` (no UI), `/SUP
 `/NORESTART`, `/DIR="..."`, `/LOG="..."`, `/LANG=chinesesimplified|english`. The GCU step runs
 hidden and never prompts; its log is under `%ProgramData%\L-Mechrevo\logs`.
 
-## Single-payload mode (T22 / G0)
+## Single payload (N6) and the self-check that replaces G0
 
-Single-payload mode ships only `release\GCU-only` (the 1.2.0.0 `AiStoneService` payload) and serves
-every supported dGPU generation (30/40/50) with it. It is gated on **G0**: real 30-series **and**
-40-series hardware must prove that payload serves them (service ready, `ItemSupport` correct, GPU
-switch round-trip, `OemDisplayMode` read-back, fan table, charge limit, single TCP 13688 owner) before
-the gate may open. Until G0 passes, the 40-series trees stay bundled and the default build is
-multi-payload.
+The installer ships only `release\GCU-only` (the newest `AiStoneService` payload) and serves every
+supported dGPU generation (30/40/50) with it. The old **G0** gate is **superseded** (owner): the
+newest GCU is backward compatible to 30-series, the vendor ships one GCU/console for all 24 platform
+codes, and `release\GCU-only\...\UserFanTables` carries all 24 per-model chassis dirs + the 23 flat
+files while the 40-series payloads carry zero per-model dirs - so the newest payload is the superset.
+Owner-side 30/40 real-machine testing is now **confirmatory**, not a precondition.
 
-How to build and install the single-payload artifact once G0 has passed:
+Build (no switch needed - single payload is the only mode):
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File installer\Build-Installer.ps1 -SinglePayload
+powershell -NoProfile -ExecutionPolicy Bypass -File installer\Build-Installer.ps1
 ```
 
-Behaviour in single-payload mode:
+- The `[Files]` list stages only `release\GCU-only\*`; `Build-Installer.ps1` validates that tree and
+  **hard-fails the build** if it is missing.
+- `Select-GcuPayload.ps1` decides the dGPU generation from the GPU marketing name or the NVIDIA PCI
+  device-id high byte only. `BIOS_PROJECT_ID` is axis 1 (platform code) and is never consulted. An
+  undeterminable generation exits non-zero with a readable reason and never falls back.
+- **Breaking, user-visible:** `/GCUVARIANT=` no longer has any effect.
 
-- The `[Files]` list stages only `release\GCU-only\*`; `Build-Installer.ps1 -SinglePayload` validates
-  only that tree and fails the build if it is missing (the `.iss` source is also missing, so ISCC
-  fails too).
-- `Select-GcuPayload.ps1 -SinglePayload` decides the dGPU generation from the GPU marketing name or
-  the NVIDIA PCI device-id high byte only. `BIOS_PROJECT_ID` is axis 1 (platform code) and is never
-  consulted for the payload. An undeterminable generation exits non-zero with a readable reason and
-  never falls back to a 40-series payload.
-- **Breaking, user-visible:** `/GCUVARIANT=40-51749` no longer works in single-payload mode; there is
-  no second payload to select. `Select-GcuPayload.ps1` refuses any explicit `-Variant`.
+### The safety net: post-install self-check + visible fallback
+
+`Install-Gcu.ps1` runs a four-invariant self-check after install (`single-service`,
+`single-13688-owner`, `item-support`, `service-ready`). On failure it writes a `failed` status file,
+logs `FATAL: post-install verification failed` with the failing check, and exits non-zero.
+
+It then prints `FALLBACK:` guidance naming the exact payload to fetch (`release\GCU-40-51751` or
+`release\GCU-40-51749`) and where it lives. **Honest limitation: this project has no download
+server**, so there is no one-click cloud download - the fallback is "fetch this tree from the source
+repo and install it by hand", and the message says so.
 
 ## Notes and limitations
 
 - The app is framework-dependent, so the .NET Desktop Runtime 10 (x64) is required; the installer
   checks for it and can download it (see ".NET Desktop Runtime requirement" above). No runtime
-  installer is bundled. All GCU payloads are bundled, so the GCU step itself needs no network.
+  installer is bundled. The GCU payload is bundled, so the GCU step itself needs no network.
 - Inno Setup produces an EXE; it does not emit MSI. Use `/VERYSILENT` for unattended deployment.
-- Compression is `lzma2/max` with solid compression; total bundled source is ~216 MB
-  (app 34,725,107 B + GCU 181,126,477 B + docs/scripts), down from ~401 MB when the app was
+- Compression is `lzma2/max` with solid compression; total bundled source is ~120 MB
+  (app 34,725,107 B + GCU 85,663,993 B + docs/scripts), down from ~216 MB when all four GCU trees
+  were bundled and ~401 MB when the app was
   self-contained. The beta18 installer size is measured by the build, not assumed.
   Pass `/DCompression=lzma2/ultra64` to ISCC for a smaller/faster-to-ship build at the cost of
   compile time.

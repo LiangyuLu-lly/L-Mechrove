@@ -431,6 +431,45 @@ case 14650HX), or a mode shows a fabricated wattage when the EC bytes are unread
 
 ---
 
+## Section 3b — N6 single-payload self-check (replaces the G0 gate)
+
+The installer now ships **only** the newest GCU payload (`release\GCU-only`). The old G0 gate is
+superseded (owner): the newest GCU is backward compatible to 30-series, the vendor ships one
+GCU/console for all 24 platform codes, and `release\GCU-only\...\UserFanTables` carries all 24
+per-model chassis dirs + the 23 flat files while the 40-series payloads carry zero per-model dirs -
+so the newest payload is the superset. **Owner-side 30/40 real-machine testing is now a
+CONFIRMATORY step, not a precondition.**
+
+The safety net that replaces G0 is the post-install self-check plus a visible fallback.
+
+### Step 3b.1 — The self-check ran and passed
+
+```powershell
+$status = "$env:ProgramData\L-Mechrevo\logs\gcu-install-status.json"
+Get-Content -LiteralPath $status -Raw
+```
+
+Expected: `Status` = `ready`, `Checks` length 4, empty `Failed`. The four checks are
+`single-service`, `single-13688-owner`, `item-support`, `service-ready`.
+
+### Step 3b.2 — A failure is visible and actionable, never silent
+
+```powershell
+Select-String -LiteralPath "$env:ProgramData\L-Mechrevo\logs\gcu-install-*.log" -Pattern 'FATAL: post-install verification failed|FALLBACK:' |
+  Select-Object -Last 12 | ForEach-Object { $_.Line }
+```
+
+Expected on a healthy machine: no matches. On a failure: a `FATAL:` line naming the failed check,
+followed by `FALLBACK:` lines that name the exact payload to fetch (`release\GCU-40-51751` or
+`release\GCU-40-51749`) and where it lives. **Honest limitation:** this project has no download
+server, so the fallback is "fetch this tree from the source repo and install it by hand" - there is
+no one-click cloud download, and the message says so.
+
+### Step 3b.3 — Confirmatory 30/40 check (no longer a precondition)
+
+On a 30-series and a 40-series machine, install and confirm the self-check passes and the fan table
+for that machine's ProjectID is served. A failure here is the signal to use the fallback above.
+
 ## Section 4 — T22 + G0 payload gate (seven evidence items, per-generation pairs)
 
 Task: `build(installer): ship only the newest 50-series GCU payload`.
