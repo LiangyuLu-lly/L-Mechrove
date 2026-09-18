@@ -237,11 +237,19 @@ public class RgbForm : RForm
         _hidPanel.Enabled = enabled;
     }
 
-    /// <summary>唯一接缝的窗内读法：确定性「不支持」且官方通道可用时，键盘电源/亮度走 GCU 回退。</summary>
+    /// <summary>
+    /// N9-2：HID 亮度写入是否生效。默认 true（未观测到失败前 HID 是主路径）——绝不能由构造期的
+    /// 写入置为 false：那时设备尚不存在，会把 Unknown 判定永久路由到 GCU 并跳过 HID 探测
+    /// （5a6cf0a 被回退的原因）。只有运行时真实效果帧失败才置 false。
+    /// </summary>
+    bool _hidBrightnessTookEffect = true;
+
+    /// <summary>唯一接缝的窗内读法：确定性「不支持」或 HID 亮度写入未生效且官方通道可用时，键盘电源/亮度走 GCU 回退。</summary>
     bool IsGcuKeyboardFallback() =>
         KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
             _rgb.ControllerAvailability, _rgb.IsConnected,
-            Program.service is not null && Program.hw is { IsConnected: true });
+            Program.service is not null && Program.hw is { IsConnected: true },
+            _hidBrightnessTookEffect);
 
     /// <summary>
     /// 回退态 UI：HID 专属控件全部禁用（本机没有软件灯效控制器，它们毫无意义），仅亮度滑条保持
@@ -549,6 +557,9 @@ public class RgbForm : RForm
         _brightSlider = Slider(0, 100, _rgb.Brightness, v =>
         {
             _rgb.Brightness = v;   // UI 亮度持久化（回退态下也是亮度载体的输入档）
+            // N9-2：只有设备真的在、且这次写入真的失败，才把 HID 判为「亮度不生效」并回退官方通道。
+            // 设备不在时保持 true（未观测到失败），否则构造期/断连期会把 Unknown 永久路由到 GCU。
+            if (_rgb.IsConnected) _hidBrightnessTookEffect = _rgb.ApplyBrightnessToDevice();
             if (IsGcuKeyboardFallback()) PublishGcuBrightness();
         });
         AddRow("亮度", _brightSlider);

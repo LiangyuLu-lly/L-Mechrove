@@ -510,6 +510,22 @@ public class KeyboardRgb : IDisposable
         StartMode(mode);
     }
 
+    /// <summary>
+    /// N9-2：把当前 <see cref="Brightness"/> 经 HID 下发到设备，并报告这次写入是否真的生效。
+    /// 设备在但亮度字段不被接受时返回 <c>false</c>，调用方据此回退官方（GCU）通道，而不是静默无操作。
+    /// 无设备时返回 <c>false</c>——调用方必须先确认 <see cref="IsConnected"/> 再采信本结果，
+    /// 否则构造期/断连期会把判定污染成「亮度不生效」。
+    /// </summary>
+    public bool ApplyBrightnessToDevice()
+    {
+        lock (_lock)
+        {
+            if (_stream is null) return false;
+            // 亮度随效果帧的 step3 feature report 下发；写入被拒即是「该控制器不接受亮度字段」的信号。
+            return _stream.SetFeature(Step3);
+        }
+    }
+
     /// <summary>重新初始化自定义帧模式（官方固件效果执行后固件退出帧模式，HID 帧被忽略——切回时需重进）。</summary>
     public bool ReInitCustomMode()
     {

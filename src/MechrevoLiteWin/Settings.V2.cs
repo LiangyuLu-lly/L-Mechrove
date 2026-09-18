@@ -720,12 +720,14 @@ public partial class SettingsForm
 
     /// <summary>
     /// 唯一接缝（防双发）：当前运行态下键盘可见光是否只能走官方（GCU）通道。
-    /// 纯策略只吃 (判定, HID 连接态, GCU 可用) 三个值；调用方一律独占提前返回，绝不穿透。
+    /// 纯策略吃 (判定, HID 连接态, GCU 可用, HID 亮度写入是否生效)；调用方一律独占提前返回，绝不穿透。
+    /// 本处是仪表盘键盘行（电源开关），没有亮度写入结果，故传 true——未观测到失败前 HID 是主路径。
     /// </summary>
     static bool ShouldUseGcuKeyboardFallback(KeyboardRgb? rgb) =>
         rgb is not null && KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
             rgb.ControllerAvailability, rgb.IsConnected,
-            Program.service is not null && Program.hw is { IsConnected: true });
+            Program.service is not null && Program.hw is { IsConnected: true },
+            hidBrightnessTookEffect: true);
 
     void SyncLightRows()
     {
