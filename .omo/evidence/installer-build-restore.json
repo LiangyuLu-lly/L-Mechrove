@@ -1,0 +1,38 @@
+{
+  "generatedUtc": "2026-09-18T09:25:00Z",
+  "task": "build the L-Mechrevo installer package after the GCU payload restore",
+  "published": false,
+  "gitTagCreated": false,
+  "uploaded": false,
+  "command": "powershell -NoProfile -ExecutionPolicy Bypass -File installer\\Build-Installer.ps1 -OutputDir artifacts\\run10-restore-beta17",
+  "outputDir": "artifacts\\run10-restore-beta17",
+  "installer": {
+    "path": "artifacts\\run10-restore-beta17\\L-Mechrevo-beta17-setup.exe",
+    "bytes": 128982939,
+    "mb": 123.0,
+    "sha256": "71AD8EEF46A9AB4C12A26E7FFA8FECCCF76F508F5A94370ACE117C45461133A8",
+    "isccCompileSeconds": 38.609
+  },
+  "appSource": {
+    "version": "0.289.0-beta17",
+    "dir": "dist\\beta17",
+    "exeBytes": 219601876,
+    "singleFile": true
+  },
+  "g0Gate": {
+    "status": "NOT PASSED",
+    "evidence": ".omo\\evidence\\f3-generation-status.json (30/40 = BLOCKED-HW, no real hardware)",
+    "consequence": "single-payload reduction stays OFF; the package MUST and DOES carry the 40-series trees"
+  },
+  "singlePayloadSwitch": false,
+  "bundle": "multi (4 trees)",
+  "payloadCarried": [
+    { "key": "50",       "releasePath": "release\\GCU-only",     "files": 276, "source": "release\\GCU-only" },
+    { "key": "40-51749", "releasePath": "release\\GCU-40-51749", "files": 73,  "source": "release\\GCU-40-51749" },
+    { "key": "40-51751", "releasePath": "release\\GCU-40-51751", "files": 75,  "source": "release\\GCU-40-51751" },
+    { "key": "common",   "releasePath": "release\\GCU-common",   "files": 4,   "source": "release\\GCU-common" }
+  ],
+  "payloadTotalFiles": 428,
+  "payloadTotalBytes": 181126477,
+  "payloadVerification": "innounp -v -b -u on the produced setup lists 428 lines under {app}\\GCU\\payload\\: 50=276, 40-51749=73, 40-51751=75, common=4"
+}
