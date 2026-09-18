@@ -1,0 +1,98 @@
+﻿{
+    "generatedUtc":  "2026-09-18T09:11:45.4768982Z",
+    "job":  "release GCU payload restore after data loss",
+    "repoRoot":  "C:\\Users\\28717\\Desktop\\ControlCenterX_5.56.60.26_Mechrevo",
+    "releaseDirLastWriteTime":  "2026-09-18T17:11:06.5461579+08:00",
+    "releaseWasEmpty":  true,
+    "forensics":  {
+                      "releaseEmptyAt":  "2026-09-18T09:30:26 (local)",
+                      "siblingOrRenamedTreeFound":  false,
+                      "recycleBinEntryFound":  false,
+                      "standaloneGcuZipFound":  false,
+                      "gitWorktree":  "C:\\Users\\28717\\AppData\\Local\\Temp\\opencode\\lm-waveA (detached); its release\\ was a Junction -\u003e repo release\\ (created 2026-09-18T09:19:12)",
+                      "note":  "release/ is gitignored; all checks done at filesystem level"
+                  },
+    "authoritativeByteSource":  {
+                                    "file":  "artifacts\\run9-beta17\\L-Mechrevo-beta17-setup.exe",
+                                    "sha256":  "408A51B58D29F615BF5B128E20A3C167D317CA736269C9873EF789DA3D0F003B",
+                                    "method":  "innounp 2.70.1 -x -b -y -m -q -u -d \u003cout\u003e \u003csetup\u003e",
+                                    "extractedPayload":  "{app}\\GCU\\payload\\{50,40-51749,40-51751,common}",
+                                    "payloadStagingEvidence":  "artifacts\\run9-beta17\\payload-staging.txt (276/85,663,993 | 73/39,266,036 | 75/56,136,429 | 4/60,019)"
+                                },
+    "corroboratingSources":  {
+                                 "vendorInstaller49":  "ControlCenter_5.17.49.19_Mechrevo\\ControlCenter_5.17.49.19_Mechrevo\\ControlCenter_5.17.49.19_Mechrevo.exe (innounp -\u003e {app}\\UniwillService, 72 files/39,257,156 B excl MicrosoftEdgeWebView2RuntimeInstallerX64.exe)",
+                                 "vendorInstaller51":  "ControlCenter_5.17.51.34_Mechrevo\\ControlCenter_5.17.51.34_Mechrevo\\ControlCenter_5.17.51.34_Mechrevo.exe (innounp -\u003e {app}\\AiStoneService, 74 files/56,127,324 B excl WebView2)",
+                                 "installed50":  "C:\\Program Files\\L-Mechrevo\\GCU (268 files) and D:\\GCU (275 files) - 50-series only",
+                                 "officialConsoles":  "official-consoles\\GCUService.exe == release\\GCU-only AiStoneService GCUService.exe (4F0F74E6...)"
+                             },
+    "trees":  [
+                  {
+                      "key":  "50",
+                      "releasePath":  "release\\GCU-only",
+                      "files":  276,
+                      "bytes":  85663993,
+                      "expectedFiles":  276,
+                      "expectedBytes":  85663993,
+                      "countMatches":  true,
+                      "bytesMatch":  true,
+                      "sha256sumsFile":  null,
+                      "sha256sumsEntriesChecked":  0,
+                      "sha256sumsMismatches":  0,
+                      "sha256sumsResult":  "ABSENT_in_payload",
+                      "manifestRows":  276,
+                      "manifestVerified":  276
+                  },
+                  {
+                      "key":  "40-51749",
+                      "releasePath":  "release\\GCU-40-51749",
+                      "files":  73,
+                      "bytes":  39266036,
+                      "expectedFiles":  73,
+                      "expectedBytes":  39266036,
+                      "countMatches":  true,
+                      "bytesMatch":  true,
+                      "sha256sumsFile":  "SHA256SUMS.txt",
+                      "sha256sumsEntriesChecked":  72,
+                      "sha256sumsMismatches":  0,
+                      "sha256sumsResult":  "MATCH",
+                      "manifestRows":  0,
+                      "manifestVerified":  0
+                  },
+                  {
+                      "key":  "40-51751",
+                      "releasePath":  "release\\GCU-40-51751",
+                      "files":  75,
+                      "bytes":  56136429,
+                      "expectedFiles":  75,
+                      "expectedBytes":  56136429,
+                      "countMatches":  true,
+                      "bytesMatch":  true,
+                      "sha256sumsFile":  "SHA256SUMS.txt",
+                      "sha256sumsEntriesChecked":  74,
+                      "sha256sumsMismatches":  0,
+                      "sha256sumsResult":  "MATCH",
+                      "manifestRows":  0,
+                      "manifestVerified":  0
+                  },
+                  {
+                      "key":  "common",
+                      "releasePath":  "release\\GCU-common",
+                      "files":  4,
+                      "bytes":  60019,
+                      "expectedFiles":  4,
+                      "expectedBytes":  60019,
+                      "countMatches":  true,
+                      "bytesMatch":  true,
+                      "sha256sumsFile":  "SHA256SUMS.txt",
+                      "sha256sumsEntriesChecked":  3,
+                      "sha256sumsMismatches":  0,
+                      "sha256sumsResult":  "MATCH",
+                      "manifestRows":  0,
+                      "manifestVerified":  0
+                  }
+              ],
+    "totals":  {
+                   "files":  428,
+                   "bytes":  181126477
+               }
+}
