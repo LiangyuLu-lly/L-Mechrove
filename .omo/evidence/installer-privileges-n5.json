@@ -1,0 +1,46 @@
+{
+  "generatedUtc": "2026-09-18T10:05:00Z",
+  "task": "N5 - acquire all privileges once at install time",
+  "published": false,
+  "gitTagCreated": false,
+  "uploaded": false,
+  "installer": {
+    "path": "artifacts\\run12-beta18-n5\\L-Mechrevo-beta18-setup.exe",
+    "bytes": 82948808,
+    "mb": 79.1,
+    "sha256": "117F8DCFD5D3F3DA235FDEF312B4610F89FC4027BD9233BDBA8B3EFB80AD2A94"
+  },
+  "autostartTask": {
+    "createdBy": "installer (installer\\Install-Gcu.ps1, run by the elevated Inno [Run] step)",
+    "appSidePath": "no-op when the task exists; repairs a missing task only as a degraded fallback",
+    "name": "LMechrevo_<SID>",
+    "runLevel": "Highest",
+    "action": "the app exe with NO arguments (no -Argument passed to New-ScheduledTaskAction)",
+    "triggers": ["LogonTrigger (PT10S)", "SessionStateChangeTrigger ConsoleConnect (PT10S)"],
+    "registration": "Register-ScheduledTask -Force (in-place overwrite, no delete window)"
+  },
+  "aclGrants": [
+    { "path": "{app} (install dir)", "rights": "Modify", "principal": "installing user only" },
+    { "path": "{app}\\GCU", "rights": "Modify", "principal": "installing user only" },
+    { "path": "%AppData%\\MechrevoLite (config + logs)", "rights": "Modify", "principal": "installing user only" },
+    { "path": "%SystemRoot%\\System32\\drivers\\UWACPIDriver.sys", "rights": "ReadAndExecute", "principal": "installing user only" }
+  ],
+  "aclRationale": "Modify = read/write/delete for the app's own files; not a broad principal and not the widest right. The driver grant makes the \\\\.\\ACPIDriver access explicit and idempotent; running elevated already covers it and no EC/firmware write is added.",
+  "uninstall": {
+    "script": "installer\\Uninstall-Gcu.ps1",
+    "removes": "Remove-AutostartTask -> Unregister-ScheduledTask for LMechrevo_<SID> plus legacy names, before the service/firewall/driver steps",
+    "invokedBy": "L-Mechrevo.iss [UninstallRun]"
+  },
+  "silentCatchesMadeVisible": [
+    "Install-Gcu.ps1 Get-InstalledMarker: a denied marker read now logs (it silently disabled the anti-downgrade check)",
+    "Install-Gcu.ps1 Get-GcuPostInstallFacts: a denied ItemSupport read now logs (it looked identical to 'absent')"
+  ],
+  "verification": {
+    "unit": "tests\\MechrevoLite.Tests\\InstallerPrivilegesTests.cs - 10 tests, RED (6 failed) then GREEN (10 passed)",
+    "packagedScripts": "innounp extraction of the produced setup confirms Install-Gcu.ps1 carries Register-ScheduledTask/-RunLevel Highest/Set-Acl and Uninstall-Gcu.ps1 carries Unregister-ScheduledTask",
+    "runbook": "docs\\hardware\\first-machine-runbook.md Step 10.3a + docs\\hardware\\runbooks\\t36-autostart-coexistence.md Step 3a",
+    "blockedHw": "real task creation, ACL effect, no-UAC launch and post-reboot autostart are real-machine checks (BLOCKED-HW)"
+  },
+  "g0Gate": { "status": "NOT PASSED", "consequence": "40-series trees still bundled" },
+  "payloadCarried": { "50": 276, "40-51749": 73, "40-51751": 75, "common": 4, "totalFiles": 428 }
+}
