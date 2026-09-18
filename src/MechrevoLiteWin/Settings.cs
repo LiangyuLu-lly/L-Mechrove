@@ -666,10 +666,20 @@ namespace MechrevoLite
                         cb.Enabled = false;
                         try
                         {
+                            ScreenBlankOutcome? blankOutcome = null;
                             if (NativeMethods.HasFreshUserInput())
-                                ScreenBlankController.Dim();
+                                blankOutcome = ScreenBlankController.Dim();
                             else
                                 Logger.WriteLine("Screen blank ignored: no fresh user input.");
+                            // 失败必须可检测：不再静默当"已熄屏"。
+                            if (blankOutcome is ScreenBlankOutcome.ReadFailed or ScreenBlankOutcome.WriteFailed)
+                            {
+                                Logger.WriteLine("SCREEN_BLANK_FAILED: " + ScreenBlankController.LastFailureReason);
+                                if (!Program.UiAuditMode)
+                                    MessageBox.Show(
+                                        "息屏未能生效（屏幕亮度接口不可用）。\r\n" + ScreenBlankController.LastFailureReason,
+                                        "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            }
                         }
                         catch (Exception ex) { Logger.WriteLine("Screen blank failed: " + ex.Message); }
                         finally

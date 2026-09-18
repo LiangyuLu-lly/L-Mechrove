@@ -3,6 +3,16 @@ using MechrevoLite.Helpers;
 
 namespace MechrevoLite.Display;
 
+/// <summary>一次「息屏」尝试的结果。只有 <see cref="Dimmed"/> 表示屏幕真的被压黑。</summary>
+internal enum ScreenBlankOutcome
+{
+    Dimmed,
+    AlreadyDimmed,
+    ReadFailed,
+    WriteFailed,
+}
+
+
 /// <summary>
 /// 「息屏（不睡眠）」控制器。
 ///
@@ -57,48 +67,54 @@ internal static class ScreenBlankController
     static int _savedBrightness = -1;
     static DateTime _blankStartedUtc;
     static bool _dimmed;
+    static string? _lastFailureReason;
 
     internal static bool IsDimmed { get { lock (Gate) return _dimmed; } }
 
-    /// <summary>真实用户动作：保存当前亮度 → 压到最低 → 顶住待机 → 开始轮询恢复。</summary>
-    internal static void Dim()
+    /// <summary>上一次息屏失败的原因（可检测提示用）；成功或未尝试时为 <c>null</c>。</summary>
+    internal static string? LastFailureReason { get { lock (Gate) return _lastFailureReason; } }
+
+    /// <summary>
+    /// 真实用户动作：保存当前亮度 → 压到最低 → 顶住待机 → 开始轮询恢复。
+    /// **返回值即结果**：读不到 WMI 或写不下去时返回失败，绝不把"没做"当"已熄屏"。
+    /// </summary>
+    internal static ScreenBlankOutcome Dim()
     {
         lock (Gate)
         {
-            if (_dimmed) return;
+            if (_dimmed) return ScreenBlankOutcome.AlreadyDimmed;
 
             int current;
             try
             {
                 if (!ScreenBrightness.TryGet(out current))
-                {
-                    Logger.WriteLine("Screen blank ignored: brightness read failed (no WMI instance).");
-                    return;
-                }
+                    return FailLocked("brightness read failed (no WMI instance)", ScreenBlankOutcome.ReadFailed);
             }
             catch (Exception ex)
             {
-                Logger.WriteLine("Screen blank ignored: brightness read threw " + ex.Message);
-                return;
+                return FailLocked("brightness read threw " + ex.Message, ScreenBlankOutcome.ReadFailed);
             }
 
-            try
-            {
-                ScreenBrightness.Set(BlankLevel);
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine("Screen blank aborted: brightness write failed " + ex.Message);
-                return;
-            }
+            if (!ScreenBrightness.TrySet(BlankLevel))
+                return FailLocked($"brightness write to {BlankLevel}% failed", ScreenBlankOutcome.WriteFailed);
 
             _savedBrightness = current;
             _blankStartedUtc = Now();
             _dimmed = true;
+            _lastFailureReason = null;
             ApplyExecutionState(BlankExecutionState);
             StartPolling();
             Logger.WriteLine($"Screen blank: dimmed to {BlankLevel}% (was {current}%); system held awake (ES_SYSTEM_REQUIRED|ES_DISPLAY_REQUIRED).");
+            return ScreenBlankOutcome.Dimmed;
         }
+    }
+
+    /// <summary>在持有 <see cref="Gate"/> 时记录可检测的失败；绝不置 <c>_dimmed</c>。</summary>
+    static ScreenBlankOutcome FailLocked(string reason, ScreenBlankOutcome outcome)
+    {
+        _lastFailureReason = reason;
+        Logger.WriteLine("Screen blank failed: " + reason);
+        return outcome;
     }
 
     /// <summary>首次真实输入 / watchdog 到期：恢复原亮度并清除执行状态标志。幂等。</summary>

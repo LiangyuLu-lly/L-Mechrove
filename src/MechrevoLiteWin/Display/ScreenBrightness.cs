@@ -70,6 +70,45 @@
             }
         }
 
+        /// <summary>
+        /// 写亮度并**报告是否真的写下去了**：没有可写的 WMI 实例、或写抛异常 -> <c>false</c>。
+        /// 静默当成功正是「屏幕无法熄屏」缺陷的来源：调用方必须据此给出可检测的失败。
+        /// </summary>
+        public static bool TrySet(int brightness)
+        {
+            if (WriteOverride is { } write)
+            {
+                try { write(brightness); return true; }
+                catch (Exception ex)
+                {
+                    Logger.WriteLine("Screen brightness write failed: " + ex.Message);
+                    return false;
+                }
+            }
+
+            try
+            {
+                using var mclass = new ManagementClass("WmiMonitorBrightnessMethods")
+                {
+                    Scope = new ManagementScope(@"\\.\root\wmi")
+                };
+                using var instances = mclass.GetInstances();
+                var args = new object[] { 1, brightness };
+                bool wroteAny = false;
+                foreach (ManagementObject instance in instances)
+                {
+                    instance.InvokeMethod("WmiSetBrightness", args);
+                    wroteAny = true;
+                }
+                return wroteAny;
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("Screen brightness write failed: " + ex.Message);
+                return false;
+            }
+        }
+
         public static int Adjust(int delta)
         {
             int brightness = Get();
