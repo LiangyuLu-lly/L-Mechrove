@@ -642,15 +642,21 @@ public class MechrevoService
         {
             if (_hw is not { IsConnected: true } || !_hw.SupportsColorCalibration) return false;
             bool expectedOn = mode != 0;
-            if (expectedOn && _readHdrEnabled())
+            int currentMode = ReadColorCalibrationMode();
+            bool currentOn = ReadColorCalibrationOn();
+            ColorCalibrationDecision decision = ColorCalibrationSwitchPolicy.Decide(
+                connectedAndSupported: true,
+                expectedOn,
+                hdrEnabled: expectedOn && _readHdrEnabled(),
+                currentOn,
+                currentMode,
+                mode);
+            if (decision == ColorCalibrationDecision.HdrBlocked)
             {
                 Logger.WriteLine($"SetColorCalibration(mode {mode}) blocked: HDR is enabled");
                 return false;
             }
-
-            int currentMode = ReadColorCalibrationMode();
-            bool currentOn = ReadColorCalibrationOn();
-            if (currentOn == expectedOn && (!expectedOn || currentMode == mode))
+            if (decision == ColorCalibrationDecision.AlreadyApplied)
             {
                 Logger.WriteLine($"SetColorCalibration(mode {mode}) already applied");
                 return true;
@@ -700,7 +706,7 @@ public class MechrevoService
             // 切 sRGB 后屏幕确实变色、档位也回读到 2，开关却还是 False。要求两者同时成立
             // 会让每次成功的切换都判失败：界面先闪"切换失败"再被回显纠正回"当前：sRGB"。
             // 关方向没有档位可用，仍然看开关。
-            bool stateMatches = expectedOn ? actualMode == mode : actualOn == expectedOn;
+            bool stateMatches = ColorCalibrationSwitchPolicy.StateMatches(expectedOn, actualOn, actualMode, mode);
             bool freshCalibrationStatus = _hw.ColorCalibrationStatusVersion > initialCalibrationStatusVersion;
             int result = _hw.ColorCalibrationResult;
 
