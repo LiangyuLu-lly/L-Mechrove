@@ -431,6 +431,51 @@ case 14650HX), or a mode shows a fabricated wattage when the EC bytes are unread
 
 ---
 
+## Section 3a — N7 vendor-console takeover (installer removes it, leaving only ours)
+
+Owner correction: the installer MUST remove the vendor's official console as well as the existing
+GCU service, leaving only our console. The earlier "prompt the user, never delete" rule was the
+orchestrator's invention and is withdrawn.
+
+### Step 3a.1 — Before install: record what the vendor left behind
+
+```powershell
+Get-AppxPackage | Where-Object { $_.Name -match 'CCU.WinUI|GamingCenter|ControlCenter|GCUUI' } |
+  Select-Object Name, PackageFullName
+Get-ChildItem "$env:ProgramFiles\L-Mechrevo\GCU" -ErrorAction SilentlyContinue | Select-Object Name
+Get-Service GCUBridge -ErrorAction SilentlyContinue | Select-Object Status, StartType
+```
+
+Expected: the vendor console package and/or its `%ProgramFiles%\L-Mechrevo\GCU` directory are
+present, and `GCUBridge` may be running. Record this as the "before" state.
+
+### Step 3a.2 — After install: only our console remains
+
+```powershell
+Get-AppxPackage | Where-Object { $_.Name -match 'CCU.WinUI|GamingCenter|ControlCenter|GCUUI' } |
+  Select-Object Name, PackageFullName
+Get-Service GCUBridge | Select-Object Status, StartType
+Get-NetTCPConnection -LocalPort 13688 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object OwningProcess
+```
+
+Expected: **no** vendor console package remains; exactly one `GCUBridge` service, `Running`; exactly
+one listener on 13688. Unrelated software (NVIDIA, Realtek, Autodesk, `MRAfterSaleService`) is
+untouched.
+
+### Step 3a.3 — The install output names each removal step
+
+```powershell
+Get-ChildItem "$env:ProgramData\L-Mechrevo\logs\gcu-install-*.log" |
+  Sort-Object LastWriteTime -Descending | Select-Object -First 1 |
+  ForEach-Object { Select-String -LiteralPath $_.FullName -Pattern 'found existing GCU service|found official console|removed official console|could not be removed' }
+```
+
+Expected: a line for each step — `found existing GCU service`, `found official console package` /
+`directory`, `removed official console ...`, and, for anything locked, `could not be removed ...
+continuing`. In an interactive install the same steps appear as Inno status text; under
+`/VERYSILENT` the log is the record. A locked component is reported and skipped, never fatal.
+
 ## Section 3b — N6 single-payload self-check (replaces the G0 gate)
 
 The installer now ships **only** the newest GCU payload (`release\GCU-only`). The old G0 gate is
