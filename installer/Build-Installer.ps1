@@ -140,9 +140,18 @@ $AppSourceDir = (Resolve-Path -LiteralPath $AppSourceDir).Path
 $appExe = Join-Path $AppSourceDir 'L-Mechrevo.exe'
 if (-not (Test-Path -LiteralPath $appExe)) { throw ("published executable not found: {0}" -f $appExe) }
 $appExeItem = Get-Item -LiteralPath $appExe
-$singleFile = -not (Test-Path -LiteralPath (Join-Path $AppSourceDir 'L-Mechrevo.dll'))
+
+# R2: the shipped app is framework-dependent on purpose - no .NET runtime DLLs are bundled,
+# the installer detects/downloads the .NET Desktop Runtime 10 (x64) instead. Assert that here
+# so a self-contained or single-file publish cannot silently slip back into the package.
+$appDll = Join-Path $AppSourceDir 'L-Mechrevo.dll'
+$appRuntimeConfig = Join-Path $AppSourceDir 'L-Mechrevo.runtimeconfig.json'
+if (-not (Test-Path -LiteralPath $appDll) -or -not (Test-Path -LiteralPath $appRuntimeConfig)) {
+    throw ("app source is not a framework-dependent publish (missing L-Mechrevo.dll / L-Mechrevo.runtimeconfig.json): {0}. Publish with --self-contained false -p:PublishSingleFile=false." -f $AppSourceDir)
+}
+$appMeasure = Get-ChildItem -LiteralPath $AppSourceDir -Recurse -File | Measure-Object -Property Length -Sum
 Write-Host ("AppSource   : {0}" -f $AppSourceDir)
-Write-Host ("App exe     : {0} ({1:N1} MB, singleFile={2})" -f $appExeItem.Name, ($appExeItem.Length / 1MB), $singleFile)
+Write-Host ("App payload : {0} files, {1:N1} MB (framework-dependent; needs .NET Desktop Runtime 10 x64)" -f $appMeasure.Count, ($appMeasure.Sum / 1MB))
 
 # --- docs --------------------------------------------------------------------
 foreach ($doc in @((Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NOTICES.txt'), (Join-Path $root $notesName), (Join-Path $root $guideName))) {
@@ -219,7 +228,9 @@ $summary = [ordered]@{
     AppLabel        = $label
     AppSourceDir    = $AppSourceDir
     AppExeBytes     = $appExeItem.Length
-    SingleFile      = $singleFile
+    AppFiles        = $appMeasure.Count
+    AppPayloadBytes = $appMeasure.Sum
+    RuntimeDependency = 'Microsoft.WindowsDesktop.App 10.x (x64)'
     Installer       = $setupItem.FullName
     InstallerBytes  = $setupItem.Length
     InstallerSHA256 = $hash
@@ -235,7 +246,7 @@ $lines.Add('=====================================')
 $lines.Add(('GeneratedUtc : {0}' -f $summary.GeneratedUtc))
 $lines.Add(('AppVersion   : {0}' -f $versions.Version))
 $lines.Add(('AppSourceDir : {0}' -f $AppSourceDir))
-$lines.Add(('App exe      : {0} bytes, singleFile={1}' -f $appExeItem.Length, $singleFile))
+$lines.Add(('App payload  : {0} files, {1} bytes (framework-dependent; .NET Desktop Runtime 10 x64 required)' -f $appMeasure.Count, $appMeasure.Sum))
 $lines.Add('')
 $lines.Add('GCU payload trees bundled (each staged under {app}\GCU\payload\):')
 foreach ($row in $payloadReport) {

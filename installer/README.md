@@ -1,12 +1,23 @@
 # L-Mechrevo installer (Inno Setup)
 
 Per-machine Windows installer for L-Mechrevo, built with Inno Setup 6.7.x. It ships the
-self-contained single-file app plus the vendor GCU payload trees and installs the one that
-matches the machine's GPU generation. A single-payload mode (50-series `release\GCU-only` only)
-is implemented behind `-SinglePayload` / `#ifdef SingleGcuPayload` but stays off until the G0
-gate passes (see "Single-payload mode" below).
+**framework-dependent** app plus the vendor GCU payload trees and installs the one that
+matches the machine's GPU generation. The app needs the **.NET Desktop Runtime 10 (x64)**;
+the installer detects it, can download/install it, and falls back to the browser (see
+".NET Desktop Runtime requirement" below). A single-payload mode (50-series `release\GCU-only`
+only) is implemented behind `-SinglePayload` / `#ifdef SingleGcuPayload` but stays off until
+the G0 gate passes (see "Single-payload mode" below).
 
 ## Build
+
+The installer consumes a **framework-dependent** publish under `dist\<label>\`. Produce it with:
+
+```powershell
+dotnet publish src\MechrevoLiteWin\MechrevoLite.csproj -c Release -r win-x64 `
+  --self-contained false -p:PublishSingleFile=false -p:PublishReadyToRun=false -o dist\beta18
+```
+
+then build the package:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File installer\Build-Installer.ps1
@@ -15,11 +26,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File installer\Build-Installer.ps
 What the build script does:
 
 1. Reads `<Version>` / `<AssemblyVersion>` from `src\MechrevoLiteWin\MechrevoLite.csproj`
-   (currently `0.289.0-beta13`) and derives the release label (`beta13`).
+   (currently `0.289.0-beta18`) and derives the release label (`beta18`).
 2. Picks the publish directory: `dist\<label>\` if it holds `L-Mechrevo.exe`, otherwise the
    newest `dist\*` directory that does. Override with `-AppSourceDir <dir>`.
-3. Validates the four shipped documents and the four GCU payload trees, then records their
-   file counts and sizes.
+3. **Asserts the app source is framework-dependent** (`L-Mechrevo.dll` +
+   `L-Mechrevo.runtimeconfig.json` present) so a self-contained/single-file publish cannot
+   silently slip back into the package; then validates the four shipped documents and the four
+   GCU payload trees, recording file counts and sizes.
 4. Ensures an `ISCC.exe` compiler exists. If none is found it downloads the Inno Setup 6.7.3
    installer, unpacks it with `innounp` into `%TEMP%\ulw\tools\innosetup\`, and fetches the
    official `ChineseSimplified.isl`. No system-wide Inno Setup install is performed.
@@ -29,14 +42,43 @@ What the build script does:
 Useful switches: `-OutputDir <dir>`, `-IsccPath <ISCC.exe>`, `-ProvisionCompiler`, `-AppSourceDir <dir>`.
 
 The `.iss` can also be compiled directly when `ISCC.exe` is on `PATH`; its `#ifndef` defaults
-target `dist\beta13` and the current version. `Build-Installer.ps1` is the supported path
+target `dist\beta18` and the current version. `Build-Installer.ps1` is the supported path
 because it injects the real version and source directory as `/D` defines.
+
+## .NET Desktop Runtime requirement
+
+The packaged app is **framework-dependent** (`SelfContained=false`), so no .NET runtime DLLs are
+bundled. Before any file is copied, `[Code]`'s `PrepareToInstall` checks the runtime's own
+registry manifest:
+
+```
+HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App  ->  a "10.x" subkey
+```
+
+A registry read is used instead of `dotnet --list-runtimes` because the installer must not assume
+`dotnet` is on `PATH`; `HKLM64` is used because a 32-bit setup reading plain `HKLM` would see
+`WOW6432Node` and always conclude "missing".
+
+If the runtime is missing:
+
+| Mode | Behaviour |
+|---|---|
+| Interactive | Prompts; on **Yes** downloads the pinned Microsoft installer (`DownloadTemporaryFile` with a SHA-256), installs it silently (`/install /quiet /norestart`), then **re-checks** before continuing. On download/install failure, or on **No**, it opens `https://dotnet.microsoft.com/download/dotnet/10.0` and aborts. |
+| `/SILENT` / `/VERYSILENT` | Attempts the download+install automatically; on failure it **aborts non-zero** instead of opening a browser. |
+
+No offline fallback exists: a runtime installer is deliberately **not** bundled.
+
+**Measured app payload (win-x64, Release):** self-contained single-file `219,601,876 B` →
+framework-dependent `34,725,107 B` (67 files). `PublishReadyToRun` was measured at
+`42,781,915 B` (adds ~8 MB for startup speed) and is **off**; `PublishSingleFile` is **off** for
+the framework-dependent build (Inno already ships a folder, and FD+single-file is rejected with
+`NETSDK1151` because the referenced `Probe.exe` is self-contained).
 
 ## What it installs where
 
 | Destination | Contents |
 |---|---|
-| `{autopf}\L-Mechrevo` (`%ProgramFiles%\L-Mechrevo`) | `L-Mechrevo.exe` (self-contained, no .NET download), `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`, `更新日志.txt`, `用前必看.txt` |
+| `{autopf}\L-Mechrevo` (`%ProgramFiles%\L-Mechrevo`) | the whole framework-dependent publish folder (`L-Mechrevo.exe`, `L-Mechrevo.dll`, `*.deps.json`, `*.runtimeconfig.json`, dependency DLLs; `*.pdb` excluded), `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt`, `更新日志.txt`, `用前必看.txt` |
 | `{app}\GCU` | `Install-Gcu.ps1`, `Uninstall-Gcu.ps1`, `Select-GcuPayload.ps1` |
 | `{app}\GCU\payload\50` | 50-series payload from `release\GCU-only` (276 files, 85,663,993 B) |
 | `{app}\GCU\payload\40-51751` | 40-series `AiStoneService` payload from `release\GCU-40-51751` (75 files, 56,136,429 B) |
@@ -92,10 +134,10 @@ re-registered. `Uninstall-Gcu.ps1` stops/deletes the service, removes the firewa
 
 ```powershell
 # silent install (per-machine; triggers UAC)
-L-Mechrevo-beta13-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+L-Mechrevo-beta18-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 # silent install with the 40-series override (multi-payload builds only)
-L-Mechrevo-beta13-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /GCUVARIANT=40-51749
+L-Mechrevo-beta18-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /GCUVARIANT=40-51749
 
 # silent uninstall
 "%ProgramFiles%\L-Mechrevo\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
@@ -134,11 +176,13 @@ Behaviour in single-payload mode:
 
 ## Notes and limitations
 
-- No .NET runtime download and no internet access are required: the app is published
-  self-contained single-file and every GCU payload is bundled.
+- The app is framework-dependent, so the .NET Desktop Runtime 10 (x64) is required; the installer
+  checks for it and can download it (see ".NET Desktop Runtime requirement" above). No runtime
+  installer is bundled. All GCU payloads are bundled, so the GCU step itself needs no network.
 - Inno Setup produces an EXE; it does not emit MSI. Use `/VERYSILENT` for unattended deployment.
-- Compression is `lzma2/max` with solid compression; total bundled source is ~401 MB
-  (app 220,082,336 B + GCU 181,126,477 B + docs/scripts). The beta13 installer is ~123 MB.
+- Compression is `lzma2/max` with solid compression; total bundled source is ~216 MB
+  (app 34,725,107 B + GCU 181,126,477 B + docs/scripts), down from ~401 MB when the app was
+  self-contained. The beta18 installer size is measured by the build, not assumed.
   Pass `/DCompression=lzma2/ultra64` to ISCC for a smaller/faster-to-ship build at the cost of
   compile time.
 - The published `L-Mechrevo.exe` staged here is unsigned. Sign the app and/or the installer with

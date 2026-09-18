@@ -18,19 +18,19 @@
   #define AppPublisher "L-Mechrevo contributors"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.289.0-beta16"
+  #define AppVersion "0.289.0-beta18"
 #endif
 #ifndef AppVersionNumeric
   #define AppVersionNumeric "0.289.0.0"
 #endif
 #ifndef AppLabel
-  #define AppLabel "beta16"
+  #define AppLabel "beta18"
 #endif
 #ifndef RepoRoot
   #define RepoRoot AddBackslash(SourcePath) + ".."
 #endif
 #ifndef AppSourceDir
-  #define AppSourceDir RepoRoot + "\dist\beta16"
+  #define AppSourceDir RepoRoot + "\dist\beta18"
 #endif
 #ifndef OutputDir
   #define OutputDir "output"
@@ -99,13 +99,22 @@ chinesesimplified.GcuStatus=正在安装 GCU 硬件服务（按显卡代际自�
 english.GcuStatus=Installing the GCU hardware service (payload selected by GPU generation)...
 chinesesimplified.LaunchApp=运行 {#AppName}
 english.LaunchApp=Launch {#AppName}
+chinesesimplified.RuntimeRequired=本程序需要 .NET 桌面运行时 10（x64），当前未安装。{break}{break}是否现在从 Microsoft 官方地址自动下载并安装？
+english.RuntimeRequired=This app needs the .NET Desktop Runtime 10 (x64), which is not installed.{break}{break}Download and install it now from Microsoft?
+chinesesimplified.RuntimeFailed=自动下载或安装 .NET 桌面运行时失败，无法继续。{break}{break}将打开官方下载页面，请手动安装后重新运行本安装程序。
+english.RuntimeFailed=Automatic download/install of the .NET Desktop Runtime failed.{break}{break}The official download page will open; install it manually and run setup again.
+chinesesimplified.RuntimeDeclined=缺少 .NET 桌面运行时 10（x64），安装无法继续。{break}{break}将打开官方下载页面。
+english.RuntimeDeclined=.NET Desktop Runtime 10 (x64) is missing; setup cannot continue.{break}{break}The official download page will open.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; --- application (self-contained single-file publish; no .NET download needed) ---
-Source: "{#AppSourceDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; --- application (framework-dependent publish: the whole publish folder, not a single file) ---
+; The app is NOT self-contained; it needs the .NET Desktop Runtime 10 (x64), which [Code]
+; verifies (and can download) before any file is copied. Staging the entire folder is what
+; makes a framework-dependent app runnable; shipping only the .exe would produce a broken install.
+Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; --- shipped documents ---
 Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "{#RepoRoot}\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
@@ -158,3 +167,117 @@ Type: filesandordirs; Name: "{commonappdata}\L-Mechrevo\logs"
 Type: filesandordirs; Name: "{app}\GCU\AiStoneService"
 Type: filesandordirs; Name: "{app}\GCU\UniwillService"
 Type: filesandordirs; Name: "{app}\GCU\UWACPIDriver"
+
+[Code]
+; ============================================================================
+;  .NET Desktop Runtime 10 (x64) detection + in-installer download (R2).
+;
+;  The app is framework-dependent: no runtime DLLs are shipped, so the runtime
+;  must already be installed or be obtained here. We read the runtime's own
+;  registry manifest instead of invoking `dotnet --list-runtimes`, because the
+;  installer must not assume `dotnet` is on PATH.
+;
+;  No offline fallback exists by design: the owner forbade bundling a runtime
+;  installer. The in-installer download is the only automatic path; if it fails
+;  the browser opens at the official page (interactive) or setup exits non-zero
+;  (silent).
+; ============================================================================
+const
+  DotNetDesktopSharedFxKey = 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
+  // Versioned Microsoft blob URL is immutable, so the pinned SHA256 stays valid.
+  DotNetRuntimeUrl = 'https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.12/windowsdesktop-runtime-10.0.12-win-x64.exe';
+  DotNetRuntimeSha256 = '0B907E9312867172A4EB82F4B5AB3F7C2D25E27D8349546D77EEB5D5B8CBECAB9EBEBFED189B13E9669DC578D892756C548366DA539D47B3DDAC5EFCB7AE72FE';
+  DotNetRuntimeFileName = 'windowsdesktop-runtime-10.0.12-win-x64.exe';
+  DotNetDownloadPage = 'https://dotnet.microsoft.com/download/dotnet/10.0';
+
+function MajorVersionOf(const Value: String): Integer;
+var
+  Separator: Integer;
+begin
+  Separator := Pos('.', Value);
+  if Separator > 0 then
+    Result := StrToIntDef(Copy(Value, 1, Separator - 1), 0)
+  else
+    Result := StrToIntDef(Value, 0);
+end;
+
+function IsDesktopRuntime10Installed: Boolean;
+var
+  Names: TArrayOfString;
+  Index: Integer;
+begin
+  Result := False;
+  // HKLM64: the .NET installer writes the 64-bit view; a 32-bit setup reading plain
+  // HKLM would see WOW6432Node and always conclude "missing".
+  if RegGetSubkeyNames(HKLM64, DotNetDesktopSharedFxKey, Names) then
+    for Index := 0 to GetArrayLength(Names) - 1 do
+      if MajorVersionOf(Names[Index]) = 10 then
+      begin
+        Result := True;
+        Exit;
+      end;
+end;
+
+function TryInstallDesktopRuntime: Boolean;
+var
+  ExitCode: Integer;
+  Installer: String;
+begin
+  Result := False;
+  if not DownloadTemporaryFile(DotNetRuntimeUrl, DotNetRuntimeFileName, DotNetRuntimeSha256) then
+  begin
+    Log('DownloadTemporaryFile failed: ' + DotNetRuntimeUrl);
+    Exit;
+  end;
+  Installer := ExpandConstant('{tmp}\') + DotNetRuntimeFileName;
+  if not Exec(Installer, '/install /quiet /norestart', '', SW_SHOW, ewWaitUntilTerminated, ExitCode) then
+  begin
+    Log('Could not launch the runtime installer: ' + Installer);
+    Exit;
+  end;
+  Log(Format('Desktop runtime installer exit code: %d', [ExitCode]));
+  // 0 = installed, 1638 = a newer version is already present, 3010 = installed + reboot pending
+  Result := (ExitCode = 0) or (ExitCode = 1638) or (ExitCode = 3010);
+end;
+
+function OpenRuntimeDownloadPage: Boolean;
+var
+  ExitCode: Integer;
+begin
+  Result := ShellExec('open', DotNetDownloadPage, '', '', SW_SHOWNORMAL, ExitCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Answer: Integer;
+begin
+  Result := '';
+  if IsDesktopRuntime10Installed then
+    Exit;
+
+  if WizardSilent then
+  begin
+    // Unattended: try to install it; on failure fail the setup instead of opening a browser
+    // nobody is looking at. The non-empty result aborts with a non-zero exit code.
+    if (not TryInstallDesktopRuntime) or (not IsDesktopRuntime10Installed) then
+    begin
+      Result := 'The .NET Desktop Runtime 10 (x64) is required and could not be installed automatically.';
+      Exit;
+    end;
+    Exit;
+  end;
+
+  Answer := MsgBox(ExpandConstant('{cm:RuntimeRequired}'), mbConfirmation, MB_YESNO);
+  if Answer <> IDYES then
+  begin
+    OpenRuntimeDownloadPage;
+    Result := ExpandConstant('{cm:RuntimeDeclined}');
+    Exit;
+  end;
+
+  if (not TryInstallDesktopRuntime) or (not IsDesktopRuntime10Installed) then
+  begin
+    OpenRuntimeDownloadPage;
+    Result := ExpandConstant('{cm:RuntimeFailed}');
+  end;
+end;
