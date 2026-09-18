@@ -26,10 +26,18 @@ public sealed record RouteCell(EvidenceMark Mark, string Detail, string Source);
 /// </summary>
 public sealed record OemDisplayModeEncoding(string Platform, int Direct, int Hybrid, int Igpu, string Source);
 
-/// <summary>一个代际的显示路由事实。</summary>
+/// <summary>
+/// 一个代际的显示路由事实。证据**拆成两列**，不允许互相顶替：
+/// <list type="bullet">
+/// <item><see cref="ConsoleProtocol"/>——**控制台侧协议**：控制台在哪个 MQTT 主题上发哪些动作
+/// （由逐方法反编译，或对 .NET Native 程序集的元数据/PDB 符号级证实）。</item>
+/// <item><see cref="ServiceWritePath"/>——**服务侧 / 硬件行为**：厂商服务拿到动作后到底怎么写
+/// 硬件（NVRAM/EC/DLL）。控制台只发 MQTT，故这一列独立于控制台侧。</item>
+/// </list>
+/// </summary>
 public sealed record GenerationRouteFacts(
     DgpuGenerationKind Generation,
-    RouteCell ConsoleCarrier,
+    RouteCell ConsoleProtocol,
     RouteCell ServiceWritePath,
     RouteCell IgpuOnly,
     RouteCell Restart,
@@ -44,8 +52,10 @@ public sealed record GenerationRouteFacts(
 /// <para>本表只记录"厂商控制台会发什么 / 厂商服务怎么写"，本产品**只发 MQTT**：
 /// 控制台不写 <c>OemDisplayMode</c>、不写任何固件变量、没有写固件变量的接缝。</para>
 ///
-/// <para><b>关键分界</b>：<c>ServiceWritePath</c>（路由到底怎么落地）只有 40 系 PROVEN；
-/// 30/50 系保持 UNKNOWN（30 系未反编译 MySettingManager，50 系服务 IL 混淆）。</para>
+/// <para><b>关键分界（两列）</b>：<c>ConsoleProtocol</c>（控制台发什么）30/40/50 三代都 **PROVEN**——
+/// 30 系程序集是 .NET Native（无 IL），其控制台侧由 **元数据标识符堆 + 完整 PDB 符号表**证实
+/// （见 <c>.omo\evidence\g30-console-decompile.md</c>）。<c>ServiceWritePath</c>（路由到底怎么落地）
+/// 只有 40 系 PROVEN；30/50 系保持 UNKNOWN（30 系服务 MySettingManager 未反编译，50 系服务 IL 混淆）。</para>
 /// </summary>
 public static class DisplayRouteMatrix
 {
@@ -65,25 +75,32 @@ public static class DisplayRouteMatrix
     {
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen30,
-            new RouteCell(EvidenceMark.Proven, "MQTT Setting/Control", "g30svc.w.txt:7468,7497 / g30svc.a.txt:5144,5438"),
+            new RouteCell(EvidenceMark.Proven,
+                "控制台侧：MQTT `Setting/Control`；动作词汇仅 DGPU_DIRECT_CONNECT_TOGGLE_ON/_OFF；" +
+                "DgpuSwitchView.Toggle_PointerPressed(d__18) + SettingViewModel.DGpuDirectConnectionSwitch；" +
+                "DGPU_DIRECT_CONNECT_TOGGLE_IGPU 不在枚举内。载荷字段名为家族推断（.NET Native 无 IL）",
+                ".omo/evidence/g30-console-decompile.md（cc-41747-13/decompiled/30-series-console-protocol.md）"),
             new RouteCell(EvidenceMark.Unknown,
                 "NvramVariable.SetFwVars(\"OemDisplayMode\") 字符串在，但 30 系服务 MySettingManager 未反编译，写路径形态未知",
                 "gpu-mode-matrix.md A (30 行, UNKNOWN#5)"),
             new RouteCell(EvidenceMark.ProvenAbsent,
-                "30 系载荷里 IGPU_ONLY_* 0 命中",
-                "gpu-mode-matrix.md A / console-compare g30* 全量字符串检索"),
+                "30 系 .NET Native 元数据枚举堆里 DGPU_DIRECT_CONNECT_* 只有 _ON/_OFF；IGPU_ONLY_* / IGPUonly/* 全载荷 0 命中，无 PDB 符号",
+                "g30-console-decompile.md / cc-41747-13/scans/absence.txt"),
             new RouteCell(EvidenceMark.ProvenAbsent,
-                "30 系载荷里 *_RESTART 0 命中",
-                "gpu-mode-matrix.md A / console-compare g30* 全量字符串检索"),
-            new RouteCell(EvidenceMark.Unknown,
-                "30 系载荷无 GPU_HOTSWAP_* 字符串，wire 用法未证",
-                "gpu-mode-matrix.md A"),
+                "30 系载荷 *_RESTART 0 命中，无 PDB 符号（唯一 restart 命中是 BCL FileSystemWatcher.Restart）",
+                "g30-console-decompile.md / cc-41747-13/scans/absence.txt"),
+            new RouteCell(EvidenceMark.ProvenAbsent,
+                "30 系载荷 HOTSWAP 0 命中（大小写不敏感），无 PDB 符号",
+                "g30-console-decompile.md / cc-41747-13/scans/absence.txt"),
             new[] { ToggleOn, ToggleOff },
             Array.Empty<OemDisplayModeEncoding>()),
 
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen40,
-            new RouteCell(EvidenceMark.Proven, "MQTT Setting/Control", "MySettingManager.cs:1229-1271 / GCUService.decompiled.cs:45504-45532"),
+            new RouteCell(EvidenceMark.Proven,
+                "控制台侧：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF/IGPU、" +
+                "DGPU_DIRECT_CONNECT_RESTART、IGPU_ONLY_CONNECT_RB_ON/OFF（40A）、GETSTATUS",
+                "MyControlCenter/Topic.cs:51,123-125 / MyControlCenter/MqttClientCtrl.cs:59-65,92-113 / MySettingManager.cs:1229-1271"),
             new RouteCell(EvidenceMark.Proven,
                 "服务侧 SetFwVars(\"OemDisplayMode\")（40A NVRAM + WMI 0x30000000x iGPU-only；40B 仅 NVRAM）",
                 "MySettingManager.cs:1229-1271 / WMIEC.cs:403-472 / GCUService.decompiled.cs:45504-45532"),
@@ -105,7 +122,10 @@ public static class DisplayRouteMatrix
 
         new GenerationRouteFacts(
             DgpuGenerationKind.Gen50,
-            new RouteCell(EvidenceMark.Proven, "MQTT Setting/Control", "CCUWinUI.decompiled.cs:86477-86515,53527-53729,139137-139174"),
+            new RouteCell(EvidenceMark.Proven,
+                "控制台侧：MQTT `Setting/Control`；动作词汇 DGPU_DIRECT_CONNECT_TOGGLE_ON/OFF/IGPU、" +
+                "IGPU_ONLY_CONNECT_RB_ON/OFF/AUTO、DGPU_DIRECT_CONNECT_RESTART、GPU_HOTSWAP_ON/OFF",
+                "CCUWinUI.decompiled.cs:86477-86515,53527-53729,139137-139174"),
             new RouteCell(EvidenceMark.Unknown,
                 "50 系服务 IL 混淆，实际写路径（NVRAM/EC/DLL）不可静态确定",
                 "gpu-mode-matrix.md A (50 行) / UNKNOWN#1"),
@@ -134,7 +154,7 @@ public static class DisplayRouteMatrix
     public static bool IsDisplayRouteWritePathProven(DgpuGenerationKind generation) =>
         ServiceWritePathMark(generation) == EvidenceMark.Proven;
 
-    /// <summary>该代际的控制台是否有 iGPU-only 动作。30 系确证不存在。</summary>
+    /// <summary>该代际的控制台是否有 iGPU-only 动作。30 系确证不存在（元数据枚举堆 + PDB 符号 + 全载荷 0 命中）。</summary>
     public static bool AllowsIgpuOnly(DgpuGenerationKind generation)
     {
         IReadOnlyList<string> actions = ConsoleActions(generation);
@@ -143,11 +163,11 @@ public static class DisplayRouteMatrix
                actions.Contains(IgpuOnlyAuto, StringComparer.Ordinal);
     }
 
-    /// <summary>该代际的控制台是否有 RESTART 动作。30 系确证不存在。</summary>
+    /// <summary>该代际的控制台是否有 RESTART 动作。30 系确证不存在（同上）。</summary>
     public static bool AllowsRestart(DgpuGenerationKind generation) =>
         ConsoleActions(generation).Contains(Restart, StringComparer.Ordinal);
 
-    /// <summary>该代际的控制台是否有热切换动作。仅 50 系出现该动作词汇（处理器 no-op，见事实表）。</summary>
+    /// <summary>该代际的控制台是否有热切换动作。30 系确证不存在；仅 50 系出现该动作词汇（处理器 no-op，见事实表）。</summary>
     public static bool AllowsHotSwap(DgpuGenerationKind generation)
     {
         IReadOnlyList<string> actions = ConsoleActions(generation);

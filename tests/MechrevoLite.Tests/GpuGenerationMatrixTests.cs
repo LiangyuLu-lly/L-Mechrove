@@ -166,7 +166,7 @@ public class GpuGenerationMatrixTests
     {
         foreach (GenerationRouteFacts row in DisplayRouteMatrix.Rows)
         {
-            RouteCell[] cells = { row.ConsoleCarrier, row.ServiceWritePath, row.IgpuOnly, row.Restart, row.HotSwap };
+            RouteCell[] cells = { row.ConsoleProtocol, row.ServiceWritePath, row.IgpuOnly, row.Restart, row.HotSwap };
             foreach (RouteCell cell in cells)
             {
                 Assert.False(string.IsNullOrWhiteSpace(cell.Source), $"{row.Generation} cell without source");
@@ -178,13 +178,49 @@ public class GpuGenerationMatrixTests
     }
 
     [Fact]
-    public void TheDisplayRouteCarrierIsMqttForEveryGeneration()
+    public void TheConsoleSideProtocolIsMqttAndProvenForEveryGeneration()
     {
         foreach (GenerationRouteFacts row in DisplayRouteMatrix.Rows)
         {
-            Assert.Equal(EvidenceMark.Proven, row.ConsoleCarrier.Mark);
-            Assert.Contains("MQTT", row.ConsoleCarrier.Detail, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(EvidenceMark.Proven, row.ConsoleProtocol.Mark);
+            Assert.Contains("MQTT", row.ConsoleProtocol.Detail, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public void Gen30ConsoleSideProtocolIsProvenFromTheDecompiledConsole()
+    {
+        GenerationRouteFacts row = DisplayRouteMatrix.Find(DgpuGenerationKind.Gen30)!;
+
+        // 控制台侧协议：反编译（.NET Native 元数据 + 完整 PDB）证实 topic/动作词汇/处理器。
+        Assert.Equal(EvidenceMark.Proven, row.ConsoleProtocol.Mark);
+        Assert.Contains("Setting/Control", row.ConsoleProtocol.Detail, StringComparison.Ordinal);
+        Assert.Contains("g30-console-decompile", row.ConsoleProtocol.Source, StringComparison.OrdinalIgnoreCase);
+
+        // 30 系只有 TOGGLE_ON/OFF 两个动作——不多不少。
+        Assert.Equal(
+            new[] { DisplayRouteMatrix.ToggleOn, DisplayRouteMatrix.ToggleOff }.OrderBy(value => value),
+            row.ConsoleActions.OrderBy(value => value));
+
+        // 服务侧写路径仍 UNKNOWN（只有控制台侧被证实）。
+        Assert.Equal(EvidenceMark.Unknown, row.ServiceWritePath.Mark);
+    }
+
+    [Fact]
+    public void EveryGenerationSeparatesTheConsoleSideFromTheServiceSide()
+    {
+        foreach (GenerationRouteFacts row in DisplayRouteMatrix.Rows)
+        {
+            // 两列必须是各自独立的格：控制台侧已证实 / 服务侧另有其标记。
+            Assert.Equal(EvidenceMark.Proven, row.ConsoleProtocol.Mark);
+            Assert.False(string.IsNullOrWhiteSpace(row.ConsoleProtocol.Detail));
+            Assert.False(string.IsNullOrWhiteSpace(row.ServiceWritePath.Detail));
+            Assert.NotEqual(row.ConsoleProtocol.Detail, row.ServiceWritePath.Detail);
+        }
+
+        Assert.Equal(EvidenceMark.Proven, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen40)!.ServiceWritePath.Mark);
+        Assert.Equal(EvidenceMark.Unknown, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen30)!.ServiceWritePath.Mark);
+        Assert.Equal(EvidenceMark.Unknown, DisplayRouteMatrix.Find(DgpuGenerationKind.Gen50)!.ServiceWritePath.Mark);
     }
 
     [Fact]

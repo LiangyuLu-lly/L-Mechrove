@@ -103,7 +103,7 @@ public class GpuGenerationMatrixFailTests
         {
             Assert.True(row.Generation is DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50,
                 $"{row.Generation} must not be a matrix row");
-            Assert.NotEqual(EvidenceMark.Unknown, row.ConsoleCarrier.Mark);
+            Assert.NotEqual(EvidenceMark.Unknown, row.ConsoleProtocol.Mark);
         });
     }
 

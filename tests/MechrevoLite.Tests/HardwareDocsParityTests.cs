@@ -183,7 +183,7 @@ internal sealed record HardwareDocsParity(
             var marks = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (JsonProperty generation in root.GetProperty("dgpuGenerations").EnumerateObject())
             {
-                foreach (string field in new[] { "serviceWritePath", "igpuOnly", "restart" })
+                foreach (string field in new[] { "consoleProtocol", "serviceWritePath", "igpuOnly", "restart" })
                     marks[$"{generation.Name}.{field}"] = generation.Value.GetProperty(field).GetString() ?? "";
             }
             foreach (GenerationRouteFacts row in DisplayRouteMatrix.Rows)
@@ -195,6 +195,7 @@ internal sealed record HardwareDocsParity(
                     DgpuGenerationKind.Gen50 => "50",
                     _ => ((int)row.Generation).ToString(),
                 };
+                AssertMark(marks, key, "consoleProtocol", row.ConsoleProtocol.Mark);
                 AssertMark(marks, key, "serviceWritePath", row.ServiceWritePath.Mark);
                 AssertMark(marks, key, "igpuOnly", row.IgpuOnly.Mark);
                 AssertMark(marks, key, "restart", row.Restart.Mark);
