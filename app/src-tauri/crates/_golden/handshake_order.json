@@ -1,0 +1,42 @@
+[
+  {
+    "topic": "System/Control",
+    "payload": { "Action": "System_ON" }
+  },
+  {
+    "topic": "Fan/Control",
+    "payload": { "Action": "GETSTATUS" }
+  },
+  {
+    "topic": "Fan/Control",
+    "payload": { "Action": "GET_FAN_SPEED_CURVE_SETTING" }
+  },
+  {
+    "topic": "Setting/Control",
+    "payload": { "Action": "GETSTATUS" }
+  },
+  {
+    "topic": "LCHWOC/Control",
+    "payload": { "Action": "GETSTATUS" }
+  },
+  {
+    "topic": "Keyboard/Ctrl",
+    "payload": { "Action": "GETSTATUS" }
+  },
+  {
+    "topic": "HidLightbar/Ctrl",
+    "payload": { "Action": "GETSTATUS" }
+  },
+  {
+    "topic": "HidLightbar_Logo/Ctrl",
+    "payload": { "Action": "GETSTATUS" }
+  },
+  {
+    "topic": "BT_LC/Control",
+    "payload": { "Action": "GETSTATUS" }
+  },
+  {
+    "topic": "BatteryProtection/Control",
+    "payload": { "Report": "GET" }
+  }
+]

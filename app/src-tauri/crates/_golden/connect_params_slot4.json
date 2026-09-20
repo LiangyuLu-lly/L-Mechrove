@@ -1,0 +1,10 @@
+{
+  "host": "127.0.0.1",
+  "port": 13688,
+  "client_id": "UWPClient_4",
+  "username": "UWPClient_User_4",
+  "password": "UWPClient_Pwd888881772688_4",
+  "protocol": "3.1.1",
+  "clean_session": true,
+  "keepalive_secs": 3
+}

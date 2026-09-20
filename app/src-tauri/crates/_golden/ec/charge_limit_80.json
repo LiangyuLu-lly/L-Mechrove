@@ -1,0 +1,8 @@
+{
+  "percent": 80,
+  "hysteresis": 5,
+  "writes": [
+    { "addr": 1977, "value": 80 },
+    { "addr": 2000, "value": 75 }
+  ]
+}

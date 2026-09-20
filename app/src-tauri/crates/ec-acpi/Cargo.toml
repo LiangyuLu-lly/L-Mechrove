@@ -1,0 +1,22 @@
+[package]
+name = "ec-acpi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+real-ioctl = ["dep:windows-sys"]
+
+[dependencies]
+thiserror = "2"
+windows-sys = { version = "0.61", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+] }
+
+[dev-dependencies]
+serde_json = "1"

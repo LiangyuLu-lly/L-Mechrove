@@ -1,0 +1,55 @@
+{
+  "table": [
+    {
+      "hid": "Unsupported",
+      "hidConnected": false,
+      "serviceConnected": true,
+      "hidBrightnessTookEffect": true,
+      "useGcu": true
+    },
+    {
+      "hid": "Supported",
+      "hidConnected": true,
+      "serviceConnected": true,
+      "hidBrightnessTookEffect": false,
+      "useGcu": true
+    },
+    {
+      "hid": "Supported",
+      "hidConnected": true,
+      "serviceConnected": true,
+      "hidBrightnessTookEffect": true,
+      "useGcu": false
+    },
+    {
+      "hid": "Supported",
+      "hidConnected": true,
+      "serviceConnected": false,
+      "hidBrightnessTookEffect": false,
+      "useGcu": false
+    },
+    {
+      "hid": "Unknown",
+      "hidConnected": true,
+      "serviceConnected": true,
+      "hidBrightnessTookEffect": false,
+      "useGcu": false
+    }
+  ],
+  "matrix": [
+    { "hid": "Unknown", "hidConnected": false, "serviceConnected": true, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Unknown", "hidConnected": true, "serviceConnected": true, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Unknown", "hidConnected": false, "serviceConnected": false, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Unknown", "hidConnected": true, "serviceConnected": false, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Unsupported", "hidConnected": false, "serviceConnected": true, "hidBrightnessTookEffect": true, "useGcu": true },
+    { "hid": "Unsupported", "hidConnected": true, "serviceConnected": true, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Unsupported", "hidConnected": false, "serviceConnected": false, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Unsupported", "hidConnected": true, "serviceConnected": false, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Supported", "hidConnected": false, "serviceConnected": true, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Supported", "hidConnected": true, "serviceConnected": true, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Supported", "hidConnected": false, "serviceConnected": false, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Supported", "hidConnected": true, "serviceConnected": false, "hidBrightnessTookEffect": true, "useGcu": false },
+    { "hid": "Supported", "hidConnected": true, "serviceConnected": true, "hidBrightnessTookEffect": false, "useGcu": true },
+    { "hid": "Supported", "hidConnected": true, "serviceConnected": false, "hidBrightnessTookEffect": false, "useGcu": false }
+  ]
+}

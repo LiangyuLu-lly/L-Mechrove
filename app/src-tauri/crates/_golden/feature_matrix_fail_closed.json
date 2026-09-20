@@ -1,0 +1,23 @@
+{
+  "missing_policy": "FailClosed",
+  "bits": [
+    { "bit": "AcRecoveryBios", "key": "AcRecoverySwitchBiosSupport" },
+    { "bit": "ColorCalibration", "key": "ColorCalibrationSupport" },
+    { "bit": "DgpuDirect", "key": "DGpuDirectConnectionSupport" },
+    { "bit": "FanBoost", "key": "FanBoostBtnSupport" },
+    { "bit": "AmdPlatform", "key": "IsAMDPlatform" },
+    { "bit": "NvidiaGpu", "key": "IsNvGpu" },
+    { "bit": "Lightbar", "key": "LightbarSupport" },
+    { "bit": "RgbLightbar", "key": "RGBLightbarSupport" },
+    { "bit": "Numpad", "key": "NumPadSupport" },
+    { "bit": "LiquidCooling", "key": "LiquidCoolingSupport" },
+    { "bit": "LiquidCoolingAutoMode", "key": "LiquidCoolingAutoModeSupport" },
+    { "bit": "RamFan15", "key": "RamFan1p5Support" },
+    { "bit": "TurboMode", "key": "TurboModeSupport" },
+    { "bit": "TypeC", "key": "TypeCSupport" },
+    { "bit": "Commercial", "key": "IsProjectIdCommercial" },
+    { "bit": "CommercialHave20Db", "key": "IsProjectIdCommercialHAVE20DB" },
+    { "bit": "GpuHotSwapSwitch", "key": "GpuHotSwapSwitchSupport" },
+    { "bit": "HotSwapStatus", "key": "lgpuHotSwapSwitchStatus" }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "generation": 40,
+  "tiers": [
+    {
+      "threeMode": true,
+      "actions": [
+        "DGPU_DIRECT_CONNECT_TOGGLE_ON",
+        "DGPU_DIRECT_CONNECT_TOGGLE_OFF",
+        "DGPU_DIRECT_CONNECT_TOGGLE_IGPU",
+        "IGPU_ONLY_CONNECT_RB_ON",
+        "IGPU_ONLY_CONNECT_RB_OFF",
+        "DGPU_DIRECT_CONNECT_RESTART"
+      ]
+    },
+    {
+      "threeMode": false,
+      "actions": [
+        "DGPU_DIRECT_CONNECT_TOGGLE_ON",
+        "DGPU_DIRECT_CONNECT_TOGGLE_OFF",
+        "DGPU_DIRECT_CONNECT_TOGGLE_IGPU",
+        "DGPU_DIRECT_CONNECT_RESTART"
+      ]
+    }
+  ]
+}
