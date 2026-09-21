@@ -1,6 +1,6 @@
 .telemetry-row {
   --telemetry-row-height: 1.125rem;
-  --telemetry-row-pad-left: 2.625rem;
+  --telemetry-row-pad-left: var(--space-xl);
   --telemetry-rest-min: 5.25rem;
   display: flex;
   align-items: center;

@@ -28,6 +28,8 @@
   --font-body: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Consolas", "Cascadia Mono", ui-monospace, monospace;
   --fan-curve-height: 10rem;
+  --slider-fill: var(--accent);
+  --row-value-min: 4ch;
 }
 
 :root[data-theme="night"] {
@@ -221,6 +223,7 @@ input:focus-visible {
 
 .row__value {
   margin-left: var(--space-sm);
+  min-width: var(--row-value-min);
   font-family: var(--font-mono);
   font-size: var(--type-body);
   color: var(--muted);
@@ -261,13 +264,35 @@ input:focus-visible {
   font-weight: 600;
 }
 
+.segmented--body .segmented__option {
+  font-family: var(--font-body);
+}
+
 .slider {
   flex: 1 1 120px;
   min-width: 120px;
   height: var(--slider-track-height);
   appearance: none;
-  background: var(--track);
+  background: linear-gradient(
+    to right,
+    var(--slider-fill) 0,
+    var(--slider-fill) var(--slider-progress, 0%),
+    var(--track) var(--slider-progress, 0%),
+    var(--track) 100%
+  );
   border-radius: var(--slider-track-height);
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: var(--slider-track-height);
+  border-radius: var(--slider-track-height);
+  background: linear-gradient(
+    to right,
+    var(--slider-fill) 0,
+    var(--slider-fill) var(--slider-progress, 0%),
+    var(--track) var(--slider-progress, 0%),
+    var(--track) 100%
+  );
 }
 
 .slider::-webkit-slider-thumb {

@@ -23,7 +23,7 @@ export function Battery({ percent }: BatteryProps) {
   }
 
   return (
-    <Row name="电池" status="限充">
+    <Row name="电池">
       <Slider value={value} min={40} max={100} step={1} onChange={onChange} />
       <span className="row__value">{value}%</span>
     </Row>

@@ -17,10 +17,10 @@ describe("Gpu", () => {
     cleanup()
   })
 
-  it("shows dash and omits 自动 when no actions are offered", () => {
+  it("renders nothing when no actions are offered", () => {
     render(<Gpu actions={[]} />)
-    expect(screen.getByText("显卡模式")).toBeTruthy()
-    expect(screen.getByText("—")).toBeTruthy()
+    expect(screen.queryByText("显卡模式")).toBeNull()
+    expect(screen.queryByText("—")).toBeNull()
     expect(screen.queryByText("自动")).toBeNull()
   })
 

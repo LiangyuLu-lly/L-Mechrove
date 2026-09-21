@@ -34,7 +34,7 @@ export function Gpu({ actions }: GpuProps) {
   const [selected, setSelected] = useState(options[0]?.value ?? "")
 
   if (options.length === 0) {
-    return <Row name="显卡模式" status="—" />
+    return null
   }
 
   async function onChange(next: string): Promise<void> {

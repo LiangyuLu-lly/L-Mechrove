@@ -72,6 +72,7 @@ pt → CSS (96dpi, 1pt ≈ 1.333px). Root `html { font-size: 16px }`. Tokens onl
 
 - Body: `"Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif`
 - Mono (temp / % / version / segment ticks): `"Consolas", "Cascadia Mono", ui-monospace, monospace` + `--muted`
+- Segmented: CJK labels (静音模式 / 平衡模式 / 狂暴 / 自定义, 集显 / 标准 / 直连) use `--font-body` (`.segmented--body`). Numeric ticks (60 / 165) stay `--font-mono`.
 - No italic. CJK + ASCII: half-width space (盘古之白).
 - Exception (root §3): toast countdown 36px / `2.25rem` — not a scale step.
 
@@ -95,7 +96,9 @@ Base 4px. `UiVisualStyle.Space` unchanged.
 - Row: title 26px, controls 32px, no card stroke, transparent on `--window`.
 - Collapse groups: 1px `--border` full-width; default **collapsed** (液冷 / 灯光 / 更多开关); remember last.
 - Segmented radius 8px; 3px inset; selected = `--accent` + `--accent-text` + 600.
-- Slider: 4px `--track`, `--accent` fill, 14px thumb (white + 3px accent ring).
+- Slider: 4px `--track`, `--slider-fill` (`--accent`) from left to thumb via `--slider-progress` (0–100%), 14px thumb (white + 3px accent ring).
+- `--row-value-min`: `4ch` — right-aligned live % so 70% and 100% share a column.
+- Telemetry row indent: `--space-xl` (24px) — name column, not 42px.
 - Fan curve plot: height `--fan-curve-height` (`10rem` / 160px).
 - Switch: 38×20 track (`--input` + `--border`); on = `--accent` + white thumb.
 - Footer: `--surface` + top 1px `--border`; height 51px; ghost keys 46×36; hover `--surface-raised`. Version label caps at `--footer-version-max` (96px) so the full release label (`0.289.0-beta18`) fits without ellipsis.
