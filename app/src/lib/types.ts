@@ -33,6 +33,14 @@ export type HwSnapshot = {
   readonly gpuRpm?: number
   readonly cpuWatt?: number
   readonly gpuWatt?: number
+  readonly keyboardHidUnavailable: boolean
+  readonly lightingOffOnBattery: boolean
+  readonly lightingIdleSeconds: number
+  readonly modelReason: string
+  readonly projectId: string
+  readonly ocRequiresElevation: boolean
+  readonly themeMode: "night" | "day"
+  readonly releaseLabel: string
 }
 
 export type UpdateDto = {

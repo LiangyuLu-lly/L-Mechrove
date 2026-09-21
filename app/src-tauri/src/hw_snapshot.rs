@@ -66,6 +66,22 @@ pub struct HwSnapshot {
     pub cpu_watt: Option<f64>,
     #[serde(rename = "gpuWatt", skip_serializing_if = "Option::is_none")]
     pub gpu_watt: Option<f64>,
+    #[serde(rename = "keyboardHidUnavailable")]
+    pub keyboard_hid_unavailable: bool,
+    #[serde(rename = "lightingOffOnBattery")]
+    pub lighting_off_on_battery: bool,
+    #[serde(rename = "lightingIdleSeconds")]
+    pub lighting_idle_seconds: i32,
+    #[serde(rename = "modelReason")]
+    pub model_reason: String,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "ocRequiresElevation")]
+    pub oc_requires_elevation: bool,
+    #[serde(rename = "themeMode")]
+    pub theme_mode: String,
+    #[serde(rename = "releaseLabel")]
+    pub release_label: String,
 }
 
 impl Backend {
@@ -99,6 +115,14 @@ impl Backend {
                 gpu_rpm: state.gpu_rpm,
                 cpu_watt: state.cpu_watt,
                 gpu_watt: state.gpu_watt,
+                keyboard_hid_unavailable: false,
+                lighting_off_on_battery: false,
+                lighting_idle_seconds: 0,
+                model_reason: String::new(),
+                project_id: String::new(),
+                oc_requires_elevation: false,
+                theme_mode: "night".to_owned(),
+                release_label: env!("CARGO_PKG_VERSION").to_owned(),
             },
             Self::Real => HwSnapshot {
                 mqtt: MqttStatus::Error,
@@ -120,6 +144,14 @@ impl Backend {
                 gpu_rpm: None,
                 cpu_watt: None,
                 gpu_watt: None,
+                keyboard_hid_unavailable: false,
+                lighting_off_on_battery: false,
+                lighting_idle_seconds: 0,
+                model_reason: String::new(),
+                project_id: String::new(),
+                oc_requires_elevation: false,
+                theme_mode: "night".to_owned(),
+                release_label: env!("CARGO_PKG_VERSION").to_owned(),
             },
         }
     }

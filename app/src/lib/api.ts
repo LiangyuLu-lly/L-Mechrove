@@ -25,6 +25,14 @@ export const VITE_FALLBACK_SNAPSHOT: HwSnapshot = {
   ocSettings: false,
   silentTurbo: false,
   dcHzSeen: false,
+  keyboardHidUnavailable: false,
+  lightingOffOnBattery: false,
+  lightingIdleSeconds: 0,
+  modelReason: "",
+  projectId: "",
+  ocRequiresElevation: false,
+  themeMode: "night",
+  releaseLabel: "0.1.0",
 }
 
 export async function hwSnapshot(): Promise<HwSnapshot> {
@@ -148,4 +156,53 @@ export function appQuit(): Promise<void> {
 
 export function setOfficialIsolation(on: boolean): Promise<void> {
   return invoke("set_official_isolation", { isolate: on })
+}
+
+export function updatesInstall(): Promise<void> {
+  return invoke("updates_install")
+}
+
+export function updatesOpenPage(): Promise<void> {
+  return invoke("updates_open_page")
+}
+
+export type OverlayPrefs = {
+  readonly scalePercent?: number
+  readonly mode?: string
+}
+
+export function overlayUpdate(prefs: OverlayPrefs): Promise<void> {
+  return invoke("overlay_update", { prefs })
+}
+
+export function setThemeMode(mode: "night" | "day"): Promise<void> {
+  return invoke("set_theme_mode", { mode })
+}
+
+export function setUiLanguage(code: string): Promise<void> {
+  return invoke("set_ui_language", { code })
+}
+
+export function setProjectId(id: string): Promise<void> {
+  return invoke("set_project_id", { id })
+}
+
+export type LightingPolicy = {
+  readonly offOnBattery: boolean
+  readonly idleSeconds: number
+}
+
+export function setLightingPolicy(policy: LightingPolicy): Promise<void> {
+  return invoke("set_lighting_policy", {
+    offOnBattery: policy.offOnBattery,
+    idleSeconds: policy.idleSeconds,
+  })
+}
+
+export function openCustomModeWindow(): Promise<void> {
+  return invoke("open_custom_mode_window")
+}
+
+export function closeCustomModeWindow(): Promise<void> {
+  return invoke("close_custom_mode_window")
 }

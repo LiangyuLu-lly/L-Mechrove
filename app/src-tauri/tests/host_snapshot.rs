@@ -95,3 +95,25 @@ fn snapshot_real_omits_overlay_telemetry() {
     assert_eq!(snapshot.cpu_watt, None);
     assert_eq!(snapshot.gpu_watt, None);
 }
+
+#[test]
+fn snapshot_includes_parity_dto_fields() {
+    // Given: Fake backend snapshot serialized to JSON
+    let backend = Backend::fake_from_json("{}").expect("empty ItemSupport");
+    let value = serde_json::to_value(backend.snapshot()).expect("serialize");
+    let obj = value.as_object().expect("object");
+
+    // When/Then: C# parity DTO keys are present on the wire
+    for key in [
+        "keyboardHidUnavailable",
+        "lightingOffOnBattery",
+        "lightingIdleSeconds",
+        "modelReason",
+        "projectId",
+        "ocRequiresElevation",
+        "themeMode",
+        "releaseLabel",
+    ] {
+        assert!(obj.contains_key(key), "missing serde key {key}");
+    }
+}

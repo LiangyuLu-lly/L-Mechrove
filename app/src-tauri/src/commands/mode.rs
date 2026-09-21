@@ -10,3 +10,13 @@ pub async fn set_performance_mode(mode: String, state: State<'_, AppState>) -> R
         .await
         .map_err(|err| err.to_string())
 }
+
+#[tauri::command]
+pub fn open_custom_mode_window() -> Result<(), String> {
+    Err("not implemented".to_string())
+}
+
+#[tauri::command]
+pub fn close_custom_mode_window() -> Result<(), String> {
+    Err("not implemented".to_string())
+}

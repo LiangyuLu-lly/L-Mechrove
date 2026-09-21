@@ -16,3 +16,9 @@ pub fn overlay_set(on: bool, app: AppHandle) -> Result<(), String> {
         hud.hide().map_err(|err| err.to_string())
     }
 }
+
+#[tauri::command]
+pub fn overlay_update(prefs: serde_json::Value) -> Result<(), String> {
+    let _ = prefs;
+    Err("not implemented".to_string())
+}

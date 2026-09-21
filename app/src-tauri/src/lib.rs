@@ -31,11 +31,13 @@ pub use hw_error::HostError;
 pub use hw_snapshot::{HwSnapshot, MqttStatus};
 
 use commands::{
-    app_quit, diagnostics_export, hw_snapshot, overlay_set, set_auto_refresh_rate, set_brightness,
-    set_calibration, set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost,
-    set_fan_curve, set_gpu_route, set_lc_fan, set_lc_pump, set_light_effect, set_light_power,
+    app_quit, close_custom_mode_window, diagnostics_export, hw_snapshot, open_custom_mode_window,
+    overlay_set, overlay_update, set_auto_refresh_rate, set_brightness, set_calibration,
+    set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost, set_fan_curve, set_gpu_route,
+    set_lc_fan, set_lc_pump, set_light_effect, set_light_power, set_lighting_policy,
     set_local_dimming, set_monitor_off, set_official_isolation, set_overdrive, set_performance_mode,
-    set_quick_switch, updates_check,
+    set_project_id, set_quick_switch, set_theme_mode, set_ui_language, updates_check,
+    updates_install, updates_open_page,
 };
 use hw_backend::{AppState, Backend as HwBackend};
 use tauri::Manager;
@@ -92,7 +94,16 @@ pub fn run() {
             overlay_set,
             diagnostics_export,
             app_quit,
-            set_official_isolation
+            set_official_isolation,
+            updates_install,
+            updates_open_page,
+            overlay_update,
+            set_theme_mode,
+            set_ui_language,
+            set_project_id,
+            set_lighting_policy,
+            open_custom_mode_window,
+            close_custom_mode_window
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

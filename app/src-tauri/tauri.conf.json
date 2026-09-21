@@ -30,6 +30,14 @@
         "skipTaskbar": true,
         "resizable": false,
         "shadow": false
+      },
+      {
+        "label": "custom-mode",
+        "width": 420,
+        "height": 529,
+        "visible": false,
+        "url": "index.html?window=custom",
+        "decorations": true
       }
     ],
     "security": {
