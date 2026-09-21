@@ -62,3 +62,21 @@ as CANNOT-VERIFY with its cheapest falsifier — never as done.
   device handle is not implemented). This file was NOT audited arm-by-arm; it is the first item for the next
   session, not an accepted debt.
 - Usage telemetry is off (the vendor ships it on by default).
+
+## Open defects found by the display audit (commit bf0d89e)
+
+The display audit answered the open question: the twelve unavailable tokens in `hw_display.rs` are one
+non-Windows live-WMI fallback, the STA plumbing, and the live COM/WMI failure points — **no unimplemented
+user-visible display feature**. They now collapse into one constructor (12 → 1 token). But it surfaced three
+real items that are NOT fixed:
+
+1. **`RealState.hdr_on` is never filled from inbound MQTT** (`hw_real.rs`, outside the audited file). HDR
+   blocking therefore never activates on the real path; only the fake path is covered by a test. Falsifier:
+   turn HDR on with the machine, try to change calibration, see whether it is refused.
+2. **`set_calibration` always sends `FileName=Default`** (`color_calibration_file_name(0)`). C# sends the file
+   name of the current mode, so returning from sRGB to the default may not restore the right profile.
+   Falsifier: switch to sRGB and back, compare the panel.
+3. **CI hazard**: integration tests compile the library without `cfg(test)`, so a real brightness call that
+   does not install the injected sink would open live WMI on a Windows runner. Mitigation in place: the sink
+   test holds `BRIGHTNESS_SEAM` and no sink-less real brightness test may be added.
+
