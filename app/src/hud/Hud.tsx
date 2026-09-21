@@ -3,12 +3,9 @@ import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { overlayUpdate } from "../lib/api"
 import type { HwSnapshot } from "../lib/types"
-import { HudControls } from "./HudControls"
 import {
   EMPTY_HUD_SNAPSHOT,
   overlayShouldShow,
-  persistPrefsForBlock,
-  type HudBlockKey,
   type OverlayPersistPrefs,
 } from "./hudOverlay"
 import {
@@ -119,17 +116,8 @@ export function HudPanel(props: HudPanelProps) {
   const { onHostError } = props
   const [mode, setMode] = useState<OverlayModeName>(props.mode ?? "default")
   const [scalePercent, setScalePercent] = useState(props.scalePercent ?? 100)
-  const [gameOnly, setGameOnly] = useState(props.gameOnly ?? false)
-  const [displayOff, setDisplayOff] = useState(props.displayOff ?? false)
-  const [flags, setFlags] = useState(() => ({
-    showTemp: props.showTemp ?? true,
-    showFans: props.showFans ?? true,
-    showPower: props.showPower ?? true,
-    showUsage: props.showUsage ?? true,
-    showRam: props.showRam ?? true,
-    showBattery: props.showBattery ?? true,
-    names: props.names ?? false,
-  }))
+  const gameOnly = props.gameOnly ?? false
+  const displayOff = props.displayOff ?? false
   const scale = clampScalePercent(scalePercent)
   const visible = overlayShouldShow({
     gameOnly,
@@ -137,11 +125,10 @@ export function HudPanel(props: HudPanelProps) {
     displayOff,
     display_off: props.display_off,
   })
-  const lines = hudLinesFromSnapshot(props.snapshot, {
-    ...viewFromProps(props, mode),
-    ...flags,
-    mode,
-  })
+  const lines = hudLinesFromSnapshot(
+    props.snapshot,
+    viewFromProps(props, mode),
+  )
 
   useLayoutEffect(() => {
     rootRef.current?.style.setProperty("--hud-scale", String(scale / 100))
@@ -149,11 +136,6 @@ export function HudPanel(props: HudPanelProps) {
 
   if (!visible) {
     return null
-  }
-
-  function applyBlock(key: HudBlockKey, on: boolean): void {
-    setFlags((prev) => ({ ...prev, [key]: on }))
-    persistOverlay(persistPrefsForBlock(key, on), onHostError)
   }
 
   return (
@@ -191,20 +173,6 @@ export function HudPanel(props: HudPanelProps) {
           <HudMetric className="hud__battery" value={line.battery} />
         </div>
       ))}
-      <HudControls
-        gameOnly={gameOnly}
-        displayOff={displayOff}
-        flags={flags}
-        onGameOnly={(checked) => {
-          setGameOnly(checked)
-          persistOverlay({ gameOnly: checked }, onHostError)
-        }}
-        onDisplayOff={(checked) => {
-          setDisplayOff(checked)
-          persistOverlay({ displayOff: checked }, onHostError)
-        }}
-        onBlock={applyBlock}
-      />
     </div>
   )
 }

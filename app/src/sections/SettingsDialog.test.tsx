@@ -69,4 +69,63 @@ describe("SettingsDialog", () => {
       isolate: true,
     })
   })
+
+  it("renders overlay prefs standalone without an overlay prop", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    expect(screen.getByRole("checkbox", { name: "仅游戏显示" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "熄屏挂起" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "温度" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "风扇" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "功耗" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "占用" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "内存" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "电池" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "名称" })).toBeTruthy()
+  })
+
+  it("persists gameOnly through overlayUpdate from overlay prefs", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅游戏显示" }))
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { gameOnly: true },
+    })
+  })
+
+  it("persists displayOff through overlayUpdate from overlay prefs", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole("checkbox", { name: "熄屏挂起" }))
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { displayOff: true },
+    })
+  })
+
+  it("persists per-block 风扇 through overlayUpdate from overlay prefs", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole("checkbox", { name: "风扇" }))
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { showFans: false },
+    })
+  })
+
+  it("seeds overlay checkboxes from the overlay prop", () => {
+    render(
+      <SettingsDialog
+        hdrOn={false}
+        onClose={() => undefined}
+        overlay={{ gameOnly: true, names: true, showFans: false }}
+      />,
+    )
+    expect(
+      (screen.getByRole("checkbox", { name: "仅游戏显示" }) as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    expect(
+      (screen.getByRole("checkbox", { name: "名称" }) as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    expect(
+      (screen.getByRole("checkbox", { name: "风扇" }) as HTMLInputElement)
+        .checked,
+    ).toBe(false)
+  })
 })
