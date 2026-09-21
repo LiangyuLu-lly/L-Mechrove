@@ -228,8 +228,8 @@ impl Backend {
                 let result = reconcile(
                     &mut state.client,
                     &state.item_support,
-                    false,
-                    0,
+                    crate::hw_lighting_inputs::on_battery(),
+                    crate::hw_lighting_inputs::idle_ms(),
                     &mut suspended,
                     LightingPolicy {
                         off_on_battery,

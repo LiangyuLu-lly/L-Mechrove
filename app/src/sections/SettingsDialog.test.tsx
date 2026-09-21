@@ -42,16 +42,55 @@ describe("SettingsDialog", () => {
     expect(screen.getByRole("radio", { name: "English" })).toBeTruthy()
   })
 
+  it("does not offer English as a selectable language", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    const english = screen.queryByRole("radio", { name: /English/ })
+    if (english === null) {
+      expect(english).toBeNull()
+      return
+    }
+    expect((english as HTMLButtonElement).disabled).toBe(true)
+    const accessibleName = english.getAttribute("aria-label") ?? english.textContent ?? ""
+    const reason = screen.queryByText(/尚无字符串表|暂不可用/)
+    expect(
+      accessibleName.includes("尚无字符串表") ||
+        accessibleName.includes("暂不可用") ||
+        reason !== null,
+    ).toBe(true)
+  })
+
+  it("caps --settings-width at the main window width", async () => {
+    const css = await Bun.file(new URL("../App.css", import.meta.url)).text()
+    const tauri = (await Bun.file(
+      new URL("../../src-tauri/tauri.conf.json", import.meta.url),
+    ).json()) as {
+      readonly app: {
+        readonly windows: readonly {
+          readonly label?: string
+          readonly width: number
+        }[]
+      }
+    }
+    const main = tauri.app.windows.find((window) => window.label === "main")
+    expect(main).toBeDefined()
+    const token = css.match(/--settings-width:\s*([^;]+)/)
+    expect(token).toBeTruthy()
+    const px = Number.parseFloat(token?.[1]?.trim() ?? "")
+    expect(Number.isFinite(px)).toBe(true)
+    expect(px).toBeLessThanOrEqual(main?.width ?? 0)
+    expect(css).toMatch(/\.settings-dialog__panel\s*\{[^}]*max-width:\s*100%/)
+  })
+
   it("invokes set_theme_mode when 日间 is clicked", () => {
     render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
     fireEvent.click(screen.getByRole("radio", { name: "日间" }))
     expect(invoke).toHaveBeenCalledWith("set_theme_mode", { mode: "day" })
   })
 
-  it("invokes set_ui_language when English is clicked", () => {
+  it("does not invoke set_ui_language when English is clicked", () => {
     render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
-    fireEvent.click(screen.getByRole("radio", { name: "English" }))
-    expect(invoke).toHaveBeenCalledWith("set_ui_language", { code: "en" })
+    fireEvent.click(screen.getByRole("radio", { name: /English/ }))
+    expect(invoke).not.toHaveBeenCalledWith("set_ui_language", { code: "en" })
   })
 
   it("renders overlay prefs standalone without an overlay prop", () => {

@@ -1,6 +1,7 @@
 export type SegmentOption<T extends string> = {
   readonly value: T
   readonly label: string
+  readonly disabled?: boolean
 }
 
 export type SegmentedProps<T extends string> = {
@@ -24,6 +25,7 @@ export function Segmented<T extends string>({
     >
       {options.map((option) => {
         const selected = option.value === value
+        const optionDisabled = option.disabled === true
         return (
           <button
             key={option.value}
@@ -33,7 +35,11 @@ export function Segmented<T extends string>({
             }
             role="radio"
             aria-checked={selected}
+            disabled={optionDisabled}
             onClick={() => {
+              if (optionDisabled) {
+                return
+              }
               onChange(option.value)
             }}
           >

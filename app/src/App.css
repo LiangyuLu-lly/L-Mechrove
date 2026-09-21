@@ -19,7 +19,7 @@
   --footer-key-width: 46px;
   --footer-key-height: 36px;
   --footer-version-max: 96px;
-  --settings-width: 470px;
+  --settings-width: 420px;
   --icon-size: 16px;
   --slider-track-height: 4px;
   --slider-thumb-size: 14px;
@@ -269,6 +269,15 @@ input:focus-visible {
   font-family: var(--font-body);
 }
 
+.segmented__option:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.segmented__option:disabled:hover {
+  background: transparent;
+}
+
 .slider {
   flex: 1 1 120px;
   min-width: 120px;
@@ -389,10 +398,12 @@ input:focus-visible {
 }
 
 .settings-dialog__panel {
-  width: var(--settings-width);
+  width: min(var(--settings-width), 100%);
   max-width: 100%;
+  min-width: 0;
   max-height: 100%;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   padding: var(--space-md) var(--space-lg);
@@ -434,6 +445,21 @@ input:focus-visible {
   margin: 0 0 var(--space-xs);
   font-size: var(--type-caption);
   font-weight: 400;
+  color: var(--muted);
+}
+
+.settings-dialog__language {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-xs);
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-dialog__lang-note {
+  margin: 0;
+  font-size: var(--type-caption);
   color: var(--muted);
 }
 

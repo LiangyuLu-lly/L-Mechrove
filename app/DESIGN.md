@@ -150,7 +150,7 @@ Left: version `--type-caption` `--muted`. Right, equal columns, locked order:
 | # | Label | Glyph (linear, not emoji) | Command |
 |---|---|---|---|
 | 1 | 悬浮窗 | Overlay (circle-dot) | `overlay_set` — active = `--accent` icon+text |
-| 2 | 设置 | Gear | settings dialog (470px, root §0.5) |
+| 2 | 设置 | Gear | settings dialog (`--settings-width` 420px, ≤ shell) |
 | 3 | 更新 | Refresh | `updates_check` **or** snapshot `updateAvailable` — 有新版本 badge (accent pip, text in DOM, does not grow the 46×36 key) |
 | 4 | **诊断** | Package | `diagnostics_export` — accessible name 导出诊断包 |
 | 5 | 赞助 | Heart (stroke, not emoji) | donate — opens DonateDialog (title 赞助支持). No network. |
@@ -162,8 +162,8 @@ Host snapshot event `hw_snapshot` is the live DTO. UI-read hub fields: `batteryH
 
 ### SettingsDialog
 
-- Width 470px. Zones: 外观 / 悬浮窗. Overlay toggle lives only on footer 悬浮窗.
-- 外观 maps C# 界面: theme **日间 / 夜间 only** (no 跟随系统). Language combo **中文 / English**; persist `lmechrevo.language` (`zh-CN` / `en`); `window.confirm` restart prompt.
+- Width `--settings-width` **420px** (≤ shell). `max-width: 100%`; overflow-y auto, never clip. Zones: 外观 / 悬浮窗. Overlay toggle lives only on footer 悬浮窗.
+- 外观 maps C# 界面: theme **日间 / 夜间 only** (no 跟随系统). Language: **中文** is the working option. **English** stays visible but disabled — 暂不可用：尚无字符串表. Do not write `en`. Host key `lmechrevo.language` is left untouched.
 - Official-console isolation is not on this surface. The official console must be uninstalled; the port does not isolate it.
 
 ### DonateDialog

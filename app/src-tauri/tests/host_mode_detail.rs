@@ -1,11 +1,64 @@
 //! AMD SET_OPERATING_MODE_DETAIL remap. No millivolt undervolt MQTT field.
 
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use app_lib::{Backend, HostError};
+use serde_json::Value;
+
+static PROFILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 async fn started(json: &str) -> Backend {
     let mut backend = Backend::fake_from_json(json).expect("ItemSupport");
     backend.start().await.expect("fake handshake");
     backend
+}
+
+async fn started_custom(json: &str) -> Backend {
+    let mut backend = started(json).await;
+    backend
+        .set_performance_mode("custom")
+        .await
+        .expect("current_mode custom");
+    backend
+}
+
+fn unique_profile_dir() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "lmechrevo-mode-detail-{}-{}",
+        std::process::id(),
+        PROFILE_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&dir).expect("temp mode profile dir");
+    dir
+}
+
+async fn started_with_profiles() -> (Backend, PathBuf) {
+    let dir = unique_profile_dir();
+    let mut backend = Backend::fake_from_json("{}")
+        .expect("ItemSupport")
+        .with_profile_dir(dir.clone());
+    backend.start().await.expect("fake handshake");
+    (backend, dir)
+}
+
+fn read_profiles(dir: &Path) -> Value {
+    let text = fs::read_to_string(dir.join("mode-profiles.json"))
+        .unwrap_or_else(|err| panic!("mode-profiles.json: {err}"));
+    serde_json::from_str(&text).expect("mode-profiles.json JSON")
+}
+
+fn mode_detail_after(backend: &Backend, start: usize) -> Vec<Value> {
+    backend
+        .recorded_publishes()
+        .into_iter()
+        .skip(start)
+        .filter(|(topic, value)| {
+            topic == "Fan/Control" && value["Action"] == "SET_OPERATING_MODE_DETAIL"
+        })
+        .map(|(_, value)| value)
+        .collect()
 }
 
 fn last_detail(backend: &Backend) -> serde_json::Value {
@@ -22,7 +75,7 @@ fn last_detail(backend: &Backend) -> serde_json::Value {
 
 #[tokio::test]
 async fn amd_pl1_publishes_cpu_amd_spl_string_without_pl1_key() {
-    let mut backend = started(r#"{"IsAMDPlatform":1}"#).await;
+    let mut backend = started_custom(r#"{"IsAMDPlatform":1}"#).await;
     backend
         .set_custom_detail("PL1", "45")
         .await
@@ -41,7 +94,7 @@ async fn amd_pl1_publishes_cpu_amd_spl_string_without_pl1_key() {
 
 #[tokio::test]
 async fn empty_item_support_pl1_stays_intel_pl1_string() {
-    let mut backend = started("{}").await;
+    let mut backend = started_custom("{}").await;
     backend
         .set_custom_detail("PL1", "45")
         .await
@@ -56,7 +109,7 @@ async fn empty_item_support_pl1_stays_intel_pl1_string() {
 
 #[tokio::test]
 async fn amd_cpu_tcc_offset_publishes_cpu_amd_tcc_target_string() {
-    let mut backend = started(r#"{"IsAMDPlatform":1}"#).await;
+    let mut backend = started_custom(r#"{"IsAMDPlatform":1}"#).await;
     backend
         .set_custom_detail("CpuTccOffset", "10")
         .await
@@ -71,7 +124,7 @@ async fn amd_cpu_tcc_offset_publishes_cpu_amd_tcc_target_string() {
 
 #[tokio::test]
 async fn empty_item_support_pl2_publishes_pl2_json_string() {
-    let mut backend = started("{}").await;
+    let mut backend = started_custom("{}").await;
     backend
         .set_custom_detail("PL2", "45")
         .await
@@ -162,4 +215,104 @@ async fn restore_publishes_both_restore_actions_with_table_name_when_fake_broker
         "Name must be a JSON string: {curve:?}"
     );
     assert_eq!(curve["Name"], TABLE_NAME);
+}
+
+#[tokio::test]
+async fn persists_pl1_under_office_key_when_current_mode_is_office() {
+    // Given: current mode is Office with a profile dir
+    let (mut backend, dir) = started_with_profiles().await;
+    backend
+        .set_performance_mode("office")
+        .await
+        .expect("current_mode office");
+
+    // When: a detail field is changed while still on Office
+    backend
+        .set_custom_detail("PL1", "45")
+        .await
+        .expect("save PL1");
+
+    // Then: the value is filed under the Office key, not Custom
+    let store = read_profiles(&dir);
+    assert_eq!(store["office"]["pl1"], "45");
+    assert!(
+        store.get("custom").and_then(|slot| slot.get("pl1")).is_none(),
+        "Office change must not be filed under custom: {store}"
+    );
+}
+
+#[tokio::test]
+async fn does_not_publish_operating_mode_detail_when_current_mode_is_office() {
+    // Given: current mode is Office
+    let (mut backend, _dir) = started_with_profiles().await;
+    backend
+        .set_performance_mode("office")
+        .await
+        .expect("current_mode office");
+    let start = backend.recorded_publishes().len();
+
+    // When: a detail field is changed while still on Office
+    backend
+        .set_custom_detail("PL1", "45")
+        .await
+        .expect("save PL1");
+
+    // Then: vendor console only publishes SET_OPERATING_MODE_DETAIL in Custom
+    let published = mode_detail_after(&backend, start);
+    assert!(
+        published.is_empty(),
+        "Office must not publish SET_OPERATING_MODE_DETAIL by default: {published:?}"
+    );
+}
+
+#[tokio::test]
+async fn persists_pl1_under_custom_key_when_current_mode_is_custom() {
+    // Given: current mode is Custom with a profile dir
+    let (mut backend, dir) = started_with_profiles().await;
+    backend
+        .set_performance_mode("custom")
+        .await
+        .expect("current_mode custom");
+
+    // When: a detail field is changed while still on Custom
+    backend
+        .set_custom_detail("PL1", "45")
+        .await
+        .expect("save PL1");
+
+    // Then: the value is filed under the Custom key
+    let store = read_profiles(&dir);
+    assert_eq!(store["custom"]["pl1"], "45");
+    assert!(
+        store.get("office").and_then(|slot| slot.get("pl1")).is_none(),
+        "Custom change must not be filed under office: {store}"
+    );
+}
+
+#[tokio::test]
+async fn publishes_operating_mode_detail_when_current_mode_is_custom() {
+    // Given: current mode is Custom
+    let (mut backend, _dir) = started_with_profiles().await;
+    backend
+        .set_performance_mode("custom")
+        .await
+        .expect("current_mode custom");
+    let start = backend.recorded_publishes().len();
+
+    // When: a detail field is changed while still on Custom
+    backend
+        .set_custom_detail("PL1", "45")
+        .await
+        .expect("save PL1");
+
+    // Then: SET_OPERATING_MODE_DETAIL payload shape stays the vendor-matched string
+    let published = mode_detail_after(&backend, start);
+    assert_eq!(published.len(), 1, "Custom must publish once: {published:?}");
+    assert!(
+        published[0]["PL1"].is_string(),
+        "PL1 must be a JSON string: {:?}",
+        published[0]
+    );
+    assert_eq!(published[0]["PL1"], "45");
+    assert_eq!(published[0]["Action"], "SET_OPERATING_MODE_DETAIL");
 }

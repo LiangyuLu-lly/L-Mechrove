@@ -152,7 +152,9 @@ impl Backend {
                     state.profile_dir.as_deref(),
                     &mut state.custom_profile_index,
                 )?;
-                crate::hw_mode::apply_performance_mode(&mut state.client, mode, slot).await
+                crate::hw_mode::apply_performance_mode(&mut state.client, mode, slot).await?;
+                state.current_mode = Some(mode.to_owned());
+                Ok(())
             }
         }
     }

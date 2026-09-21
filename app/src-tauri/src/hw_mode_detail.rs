@@ -29,6 +29,17 @@ pub fn is_custom_detail_field(field: &str) -> bool {
     CUSTOM_DETAIL_FIELDS.contains(&field)
 }
 
+/// Per-mode firmware writes for Office/Gaming/Turbo. Off until a machine test.
+pub(crate) const PUBLISH_NON_CUSTOM_MODE_DETAIL: bool = false;
+
+pub(crate) fn should_publish_operating_mode_detail(current_mode: Option<&str>) -> bool {
+    match current_mode {
+        Some("custom") => true,
+        Some(_) => PUBLISH_NON_CUSTOM_MODE_DETAIL,
+        None => false,
+    }
+}
+
 fn remap_detail_field<'a>(item_support: &ItemSupport, field: &'a str) -> &'a str {
     if !item_support.is_truthy("IsAMDPlatform") {
         return field;

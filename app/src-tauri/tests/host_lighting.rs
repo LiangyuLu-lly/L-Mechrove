@@ -820,6 +820,99 @@ async fn real_transport_reconcile_uses_live_item_support_and_never_sends_close_t
     }
 }
 
+#[tokio::test]
+async fn real_reconcile_fires_lighting_off_when_injected_ac_says_on_battery() {
+    // Given: Real-shaped transport, off-on-battery enabled, injected AC = on battery
+    let _inputs = Backend::inject_lighting_inputs(true, 0);
+    let mut transport = RecordingTransport::new();
+    let live = live_lightbar_item();
+
+    // When: reconcile reads live AC/idle instead of hardcoded false/0
+    let _suspended = Backend::reconcile_lighting_on(
+        &mut transport,
+        &live,
+        true,
+        0,
+        Backend::live_on_battery(),
+        Backend::live_idle_ms(),
+        false,
+    )
+    .await
+    .expect("on-battery reconcile");
+
+    // Then: lighting-off SetPower on every offered channel
+    let publishes = transport.publishes();
+    for topic in OFFERED_CTRL {
+        assert!(
+            set_power_on_topic(&publishes, topic, 0),
+            "on-battery must SetPower 0 on {topic}: {publishes:?}"
+        );
+    }
+    assert_no_close_timer(&publishes);
+}
+
+#[tokio::test]
+async fn real_reconcile_fires_lighting_off_when_injected_idle_window_elapses() {
+    // Given: Real-shaped transport, 10s idle policy, injected idle already elapsed
+    let _inputs = Backend::inject_lighting_inputs(false, 10_000);
+    let mut transport = RecordingTransport::new();
+    let live = live_lightbar_item();
+
+    // When: reconcile reads the injected idle window
+    let _suspended = Backend::reconcile_lighting_on(
+        &mut transport,
+        &live,
+        false,
+        10,
+        Backend::live_on_battery(),
+        Backend::live_idle_ms(),
+        false,
+    )
+    .await
+    .expect("idle reconcile");
+
+    // Then: lighting-off SetPower on every offered channel
+    let publishes = transport.publishes();
+    for topic in OFFERED_CTRL {
+        assert!(
+            set_power_on_topic(&publishes, topic, 0),
+            "elapsed idle must SetPower 0 on {topic}: {publishes:?}"
+        );
+    }
+    assert_no_close_timer(&publishes);
+}
+
+#[tokio::test]
+async fn real_reconcile_does_not_fire_lighting_off_when_on_ac_with_no_idle() {
+    // Given: Real-shaped transport, both policies armed, injected AC + idle are inert
+    let _inputs = Backend::inject_lighting_inputs(false, 0);
+    let mut transport = RecordingTransport::new();
+    let live = live_lightbar_item();
+
+    // When: reconcile reads live AC/idle
+    let _suspended = Backend::reconcile_lighting_on(
+        &mut transport,
+        &live,
+        true,
+        10,
+        Backend::live_on_battery(),
+        Backend::live_idle_ms(),
+        false,
+    )
+    .await
+    .expect("ac no-idle reconcile");
+
+    // Then: no lighting-off publish
+    let publishes = transport.publishes();
+    assert!(
+        !publishes.iter().any(|(_, payload)| {
+            payload["function"] == "SetPower" && payload["powerstatus"] == 0
+        }),
+        "on AC with no idle must not SetPower 0: {publishes:?}"
+    );
+    assert_no_close_timer(&publishes);
+}
+
 #[test]
 fn keyboard_hid_absent_fails_closed_and_sets_unavailable() {
     // Given: Real backend parts and no ITE8291 device

@@ -275,6 +275,10 @@ async fn set_custom_detail_pl1_value_is_string() {
     let mut backend = Backend::fake_from_json("{}").expect("parse");
     backend.start().await.expect("start");
     backend
+        .set_performance_mode("custom")
+        .await
+        .expect("current_mode custom");
+    backend
         .set_custom_detail("PL1", "45")
         .await
         .expect("Backend::set_custom_detail");

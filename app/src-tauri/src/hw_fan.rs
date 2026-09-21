@@ -5,8 +5,11 @@ use gcu_mqtt::payloads::{fan_boost_off, fan_boost_on};
 use gcu_mqtt::topics::FAN_CONTROL;
 use serde_json::{json, Map, Value};
 
+use std::path::Path;
+
 use crate::hw_backend::Backend;
 use crate::hw_error::HostError;
+use crate::hw_mode_detail::{is_custom_detail_field, should_publish_operating_mode_detail};
 use crate::hw_mode_profile::ModeProfiles;
 
 const ACTION: &str = "SET_FAN_SPEED_CURVE_SETTING";
@@ -178,31 +181,31 @@ impl Backend {
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
-                crate::hw_mode_detail::apply_custom_detail(
-                    &mut state.broker,
-                    &state.item_support,
-                    field,
-                    value,
-                )
-                .await?;
-                let dir = state.profile_dir.clone();
                 let mode = state.current_mode.clone();
-                if let (Some(dir), Some(mode)) = (dir, mode) {
-                    ModeProfiles::new(&dir).put_detail(&mode, field, value)?;
+                if should_apply_detail_publish(mode.as_deref(), field) {
+                    crate::hw_mode_detail::apply_custom_detail(
+                        &mut state.broker,
+                        &state.item_support,
+                        field,
+                        value,
+                    )
+                    .await?;
                 }
+                persist_detail(state.profile_dir.as_deref(), mode.as_deref(), field, value)?;
                 Ok(())
             }
             Self::Real { state } => {
-                crate::hw_mode_detail::apply_custom_detail(
-                    &mut state.client,
-                    &state.item_support,
-                    field,
-                    value,
-                )
-                .await?;
-                if let Some(dir) = state.profile_dir.clone() {
-                    ModeProfiles::new(&dir).put_detail("custom", field, value)?;
+                let mode = state.current_mode.clone();
+                if should_apply_detail_publish(mode.as_deref(), field) {
+                    crate::hw_mode_detail::apply_custom_detail(
+                        &mut state.client,
+                        &state.item_support,
+                        field,
+                        value,
+                    )
+                    .await?;
                 }
+                persist_detail(state.profile_dir.as_deref(), mode.as_deref(), field, value)?;
                 if field == "ProfileIndex" {
                     if let Ok(index) = value.parse::<u8>() {
                         if index <= 3 {
@@ -214,6 +217,22 @@ impl Backend {
             }
         }
     }
+}
+
+fn should_apply_detail_publish(current_mode: Option<&str>, field: &str) -> bool {
+    !is_custom_detail_field(field) || should_publish_operating_mode_detail(current_mode)
+}
+
+fn persist_detail(
+    dir: Option<&Path>,
+    mode: Option<&str>,
+    field: &str,
+    value: &str,
+) -> Result<(), HostError> {
+    if let (Some(dir), Some(mode)) = (dir, mode) {
+        ModeProfiles::new(dir).put_detail(mode, field, value)?;
+    }
+    Ok(())
 }
 
 pub async fn apply_fan_boost<T: MqttTransport>(

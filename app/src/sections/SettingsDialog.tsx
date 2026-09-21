@@ -18,7 +18,7 @@ type ThemeMode = (typeof THEME_OPTIONS)[number]["value"]
 
 const LANGUAGE_OPTIONS = [
   { value: "zh-CN", label: "中文" },
-  { value: "en", label: "English" },
+  { value: "en", label: "English", disabled: true },
 ] as const
 
 type UiLanguage = (typeof LANGUAGE_OPTIONS)[number]["value"]
@@ -129,11 +129,16 @@ export function SettingsDialog({ onClose, overlay }: SettingsDialogProps) {
             />
           </Row>
           <Row name="语言">
-            <Segmented
-              value={language}
-              options={LANGUAGE_OPTIONS}
-              onChange={onLanguage}
-            />
+            <div className="settings-dialog__language">
+              <Segmented
+                value={language}
+                options={LANGUAGE_OPTIONS}
+                onChange={onLanguage}
+              />
+              <p className="settings-dialog__lang-note">
+                English 暂不可用：尚无字符串表
+              </p>
+            </div>
           </Row>
         </section>
         <section className="settings-dialog__zone">

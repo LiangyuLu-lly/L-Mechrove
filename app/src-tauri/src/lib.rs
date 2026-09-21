@@ -15,6 +15,7 @@ pub mod hw_item_support_win;
 pub mod hw_lc;
 mod hw_lighting;
 mod hw_lighting_cfg;
+mod hw_lighting_inputs;
 mod hw_lighting_payload;
 mod hw_mode;
 mod hw_mode_detail;
@@ -38,6 +39,7 @@ pub mod updates;
 
 pub use hw_backend::Backend;
 pub use hw_error::HostError;
+pub use hw_lighting_inputs::LightingInputGuard;
 pub use hw_gpu::apply_gpu_route;
 pub use hw_snapshot::{HwSnapshot, MqttStatus};
 pub use secrets::slot4_params;
