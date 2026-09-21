@@ -17,4 +17,16 @@ describe("footerLayout", () => {
     expect(key).toContain("flex: 0 0")
     expect(key).toContain("white-space: nowrap")
   })
+
+  it("keeps the shell fluid capped at 420 so a scrollbar cannot force horizontal overflow", async () => {
+    const css = await Bun.file(new URL("../App.css", import.meta.url)).text()
+
+    const declarations = declarationBlock(css, ".shell")
+      .split(";")
+      .map((declaration) => declaration.trim())
+
+    expect(declarations).toContain("width: 100%")
+    expect(declarations).toContain("max-width: 420px")
+    expect(declarations).not.toContain("width: 420px")
+  })
 })

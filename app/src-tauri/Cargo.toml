@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "app"
-version = "0.1.0"
+version = "0.289.0-beta18"
 description = "L-Mechrevo"
 authors = ["you"]
 edition = "2021"

@@ -103,8 +103,9 @@ input:focus-visible {
 }
 
 .shell {
-  width: 420px;
-  min-height: 100%;
+  width: 100%;
+  max-width: 420px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--window);
@@ -112,6 +113,7 @@ input:focus-visible {
 
 .shell__body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: var(--space-sm) var(--space-lg);
   display: flex;

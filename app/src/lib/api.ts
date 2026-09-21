@@ -33,7 +33,7 @@ export const VITE_FALLBACK_SNAPSHOT: HwSnapshot = {
   projectId: "",
   ocRequiresElevation: false,
   themeMode: "night",
-  releaseLabel: "0.1.0",
+  releaseLabel: "0.289.0-beta18",
 }
 
 export async function hwSnapshot(): Promise<HwSnapshot> {
