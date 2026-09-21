@@ -50,6 +50,7 @@ const EMPTY_SNAPSHOT: HudTelemetry = {
   ocSettings: false,
   silentTurbo: false,
   dcHzSeen: false,
+  colorCalibration: false,
   keyboardHidUnavailable: false,
   lightingOffOnBattery: false,
   lightingIdleSeconds: 0,

@@ -17,40 +17,49 @@ describe("SettingsDialog", () => {
     cleanup()
   })
 
-  it("renders 外观 显示 系统 and omits overlay toggle", () => {
+  it("omits migrated 校色 局部调光 PL1 熄屏 and 跟随系统", () => {
     render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
-    expect(screen.getByText("外观")).toBeTruthy()
-    expect(screen.getByText("显示")).toBeTruthy()
-    expect(screen.getByText("系统")).toBeTruthy()
-    expect(screen.queryByText("悬浮窗")).toBeNull()
-  })
-
-  it("omits calibration radios when hdrOn is true", () => {
-    render(<SettingsDialog hdrOn={true} onClose={() => undefined} />)
+    expect(screen.queryByText("校色")).toBeNull()
     expect(screen.queryByRole("radio", { name: "sRGB" })).toBeNull()
-    expect(screen.queryByRole("radio", { name: "默认" })).toBeNull()
     expect(screen.queryByRole("radio", { name: "P3" })).toBeNull()
     expect(screen.queryByRole("radio", { name: "Adobe" })).toBeNull()
-    expect(screen.getByText("显示")).toBeTruthy()
-    expect(screen.getByText("响应加速")).toBeTruthy()
+    expect(screen.queryByText("局部调光")).toBeNull()
+    expect(screen.queryByRole("spinbutton", { name: "PL1" })).toBeNull()
+    expect(screen.queryByText("PL1")).toBeNull()
+    expect(screen.queryByText("熄屏")).toBeNull()
+    expect(screen.queryByRole("button", { name: "立即熄屏" })).toBeNull()
+    expect(screen.queryByRole("radio", { name: "跟随系统" })).toBeNull()
+    expect(screen.queryByText("跟随系统")).toBeNull()
+    expect(screen.queryByText("显示")).toBeNull()
   })
 
-  it("invokes set_calibration with SRGB when sRGB is clicked and HDR is off", () => {
+  it("renders 外观 theme 日间/夜间 and 语言 中文/English", () => {
     render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
-    fireEvent.click(screen.getByRole("radio", { name: "sRGB" }))
-    expect(invoke).toHaveBeenCalledWith("set_calibration", {
-      mode: "COLOR_CALIBRATION_ON_SRGB",
-    })
+    expect(screen.getByText("外观")).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "日间" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "夜间" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "中文" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "English" })).toBeTruthy()
   })
 
-  it("shows 隔离官方界面与托盘 and omits 跟随系统", () => {
+  it("invokes set_theme_mode when 日间 is clicked", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole("radio", { name: "日间" }))
+    expect(invoke).toHaveBeenCalledWith("set_theme_mode", { mode: "day" })
+  })
+
+  it("invokes set_ui_language when English is clicked", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole("radio", { name: "English" }))
+    expect(invoke).toHaveBeenCalledWith("set_ui_language", { code: "en" })
+  })
+
+  it("shows 隔离官方界面与托盘 and 恢复官方控制台", () => {
     render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
     expect(
       screen.getByRole("button", { name: "隔离官方界面与托盘" }),
     ).toBeTruthy()
     expect(screen.getByRole("button", { name: "恢复官方控制台" })).toBeTruthy()
-    expect(screen.queryByRole("radio", { name: "跟随系统" })).toBeNull()
-    expect(screen.queryByText("跟随系统")).toBeNull()
   })
 
   it("invokes set_official_isolation true when 隔离官方界面与托盘 is clicked", () => {

@@ -25,6 +25,7 @@ export const VITE_FALLBACK_SNAPSHOT: HwSnapshot = {
   ocSettings: false,
   silentTurbo: false,
   dcHzSeen: false,
+  colorCalibration: false,
   keyboardHidUnavailable: false,
   lightingOffOnBattery: false,
   lightingIdleSeconds: 0,

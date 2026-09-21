@@ -27,6 +27,7 @@ export type HwSnapshot = {
   readonly ocSettings: boolean
   readonly silentTurbo: boolean
   readonly dcHzSeen: boolean
+  readonly colorCalibration: boolean
   readonly cpuTempC?: number
   readonly gpuTempC?: number
   readonly cpuRpm?: number

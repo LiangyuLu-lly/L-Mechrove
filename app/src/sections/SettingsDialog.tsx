@@ -1,14 +1,7 @@
 import { useState } from "react"
 import { Row } from "../components/Row"
 import { Segmented } from "../components/Segmented"
-import {
-  setCalibration,
-  setCustomDetail,
-  setLocalDimming,
-  setMonitorOff,
-  setOfficialIsolation,
-  setOverdrive,
-} from "../lib/api"
+import { setOfficialIsolation, setThemeMode, setUiLanguage } from "../lib/api"
 
 const THEME_OPTIONS = [
   { value: "night", label: "夜间" },
@@ -17,21 +10,12 @@ const THEME_OPTIONS = [
 
 type ThemeMode = (typeof THEME_OPTIONS)[number]["value"]
 
-const CALIBRATION_OPTIONS = [
-  { value: "COLOR_CALIBRATION_ON_DEFAULT", label: "默认" },
-  { value: "COLOR_CALIBRATION_ON_SRGB", label: "sRGB" },
-  { value: "COLOR_CALIBRATION_ON_P3", label: "P3" },
-  { value: "COLOR_CALIBRATION_ON_ADOBERGB", label: "Adobe" },
+const LANGUAGE_OPTIONS = [
+  { value: "zh-CN", label: "中文" },
+  { value: "en", label: "English" },
 ] as const
 
-type CalibrationMode = (typeof CALIBRATION_OPTIONS)[number]["value"]
-
-const ON_OFF = [
-  { value: "on", label: "开" },
-  { value: "off", label: "关" },
-] as const
-
-type OnOff = (typeof ON_OFF)[number]["value"]
+type UiLanguage = (typeof LANGUAGE_OPTIONS)[number]["value"]
 
 export type SettingsDialogProps = {
   readonly hdrOn: boolean
@@ -49,37 +33,20 @@ async function swallowHostError(run: () => Promise<unknown>): Promise<void> {
   }
 }
 
-function applyTheme(mode: ThemeMode): void {
-  document.documentElement.dataset.theme = mode
-}
-
-export function SettingsDialog({ hdrOn, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ onClose }: SettingsDialogProps) {
   const [theme, setTheme] = useState<ThemeMode>("night")
-  const [calibration, setCalibrationMode] = useState<CalibrationMode>(
-    "COLOR_CALIBRATION_ON_DEFAULT",
-  )
-  const [overdrive, setOverdriveOn] = useState<OnOff>("off")
-  const [localDimming, setLocalDimmingOn] = useState<OnOff>("off")
+  const [language, setLanguage] = useState<UiLanguage>("zh-CN")
   const [isolated, setIsolated] = useState(false)
 
   function onTheme(next: ThemeMode): void {
     setTheme(next)
-    applyTheme(next)
+    document.documentElement.dataset.theme = next
+    void swallowHostError(() => setThemeMode(next))
   }
 
-  function onCalibration(next: CalibrationMode): void {
-    setCalibrationMode(next)
-    void swallowHostError(() => setCalibration(next))
-  }
-
-  function onOverdrive(next: OnOff): void {
-    setOverdriveOn(next)
-    void swallowHostError(() => setOverdrive(next === "on"))
-  }
-
-  function onLocalDimming(next: OnOff): void {
-    setLocalDimmingOn(next)
-    void swallowHostError(() => setLocalDimming(next === "on"))
+  function onLanguage(next: UiLanguage): void {
+    setLanguage(next)
+    void swallowHostError(() => setUiLanguage(next))
   }
 
   function onIsolation(on: boolean): void {
@@ -88,11 +55,7 @@ export function SettingsDialog({ hdrOn, onClose }: SettingsDialogProps) {
   }
 
   return (
-    <div
-      className="settings-dialog"
-      role="presentation"
-      onClick={onClose}
-    >
+    <div className="settings-dialog" role="presentation" onClick={onClose}>
       <div
         className="settings-dialog__panel"
         role="dialog"
@@ -133,61 +96,16 @@ export function SettingsDialog({ hdrOn, onClose }: SettingsDialogProps) {
               onChange={onTheme}
             />
           </Row>
-        </section>
-        <section className="settings-dialog__zone">
-          <h3 className="settings-dialog__zone-title">显示</h3>
-          {hdrOn ? null : (
-            <Row name="校色">
-              <Segmented
-                value={calibration}
-                options={CALIBRATION_OPTIONS}
-                onChange={onCalibration}
-              />
-            </Row>
-          )}
-          <Row name="响应加速">
+          <Row name="语言">
             <Segmented
-              value={overdrive}
-              options={ON_OFF}
-              onChange={onOverdrive}
-            />
-          </Row>
-          <Row name="局部调光">
-            <Segmented
-              value={localDimming}
-              options={ON_OFF}
-              onChange={onLocalDimming}
+              value={language}
+              options={LANGUAGE_OPTIONS}
+              onChange={onLanguage}
             />
           </Row>
         </section>
         <section className="settings-dialog__zone">
           <h3 className="settings-dialog__zone-title">系统</h3>
-          <Row name="PL1">
-            <input
-              className="settings-dialog__number"
-              type="number"
-              min={15}
-              max={150}
-              defaultValue={45}
-              aria-label="PL1"
-              onBlur={(event) => {
-                void swallowHostError(() =>
-                  setCustomDetail("PL1", event.target.value),
-                )
-              }}
-            />
-          </Row>
-          <Row name="熄屏">
-            <button
-              type="button"
-              className="settings-dialog__action"
-              onClick={() => {
-                void swallowHostError(() => setMonitorOff())
-              }}
-            >
-              立即熄屏
-            </button>
-          </Row>
           <Row name="官方控制台" status={isolated ? "已隔离" : "未隔离"}>
             <div className="settings-dialog__actions">
               <button

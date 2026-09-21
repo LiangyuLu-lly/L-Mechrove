@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react"
 import { Footer } from "./components/Footer"
 import { StatusPill } from "./components/StatusPill"
+import { Toast } from "./components/Toast"
 import { hwSnapshot, VITE_FALLBACK_SNAPSHOT } from "./lib/api"
 import type { HwSnapshot } from "./lib/types"
 import { Battery } from "./sections/Battery"
-import { Fan } from "./sections/Fan"
 import { Gpu } from "./sections/Gpu"
 import { Lighting } from "./sections/Lighting"
 import { LiquidCooling } from "./sections/LiquidCooling"
+import { ModelBanner } from "./sections/ModelBanner"
 import { MoreSwitches } from "./sections/MoreSwitches"
 import { Performance } from "./sections/Performance"
 import { FirstRun } from "./sections/FirstRun"
 import { Screen } from "./sections/Screen"
 import { SettingsDialog } from "./sections/SettingsDialog"
+import { TelemetryRow } from "./sections/TelemetryRow"
+import { UpdateDialog } from "./sections/UpdateDialog"
 import "./App.css"
 
 function dismissFirstRun(): void {
@@ -29,6 +32,8 @@ function dismissFirstRun(): void {
 export default function App() {
   const [snapshot, setSnapshot] = useState<HwSnapshot>(VITE_FALLBACK_SNAPSHOT)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const [firstRunOpen, setFirstRunOpen] = useState(() => {
     try {
       return window.localStorage.getItem("lmechrevo.firstRun.done") !== "1"
@@ -36,6 +41,10 @@ export default function App() {
       return true
     }
   })
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = snapshot.themeMode
+  }, [snapshot.themeMode])
 
   useEffect(() => {
     let cancelled = false
@@ -60,25 +69,40 @@ export default function App() {
     <div className="shell">
       <div className="shell__body">
         <StatusPill mqtt={snapshot.mqtt} />
-        {snapshot.writeAllowed ? null : (
-          <p className="readonly-banner" role="status">
-            机型只读：硬件写入已关闭
-          </p>
-        )}
-        <Performance
-          tccAdjustable={snapshot.tccAdjustable}
-          ocSettings={snapshot.ocSettings}
-          silentTurbo={snapshot.silentTurbo}
+        <ModelBanner
+          writeAllowed={snapshot.writeAllowed}
+          modelReason={snapshot.modelReason}
+          projectId={snapshot.projectId}
         />
-        <Fan />
+        <Performance
+          silentTurbo={snapshot.silentTurbo}
+          onHostError={setToast}
+        />
+        <TelemetryRow snapshot={snapshot} />
         <Gpu actions={snapshot.gpuActions} />
-        <Screen hzList={snapshot.hzList} dcHzSeen={snapshot.dcHzSeen} />
+        <Screen
+          hzList={snapshot.hzList}
+          dcHzSeen={snapshot.dcHzSeen}
+          colorCalibration={snapshot.colorCalibration}
+        />
         <Battery percent={snapshot.chargePercent} />
         <LiquidCooling liquidCooling={snapshot.liquidCooling} />
-        <Lighting lighting={snapshot.lighting} />
+        <Lighting
+          lighting={snapshot.lighting}
+          keyboardHidUnavailable={snapshot.keyboardHidUnavailable}
+        />
         <MoreSwitches offered={snapshot.offeredSwitches} />
       </div>
-      <Footer hdrOn={snapshot.hdrOn} />
+      <Footer
+        onSettings={() => {
+          setSettingsOpen(true)
+        }}
+        onUpdates={() => {
+          setUpdateOpen(true)
+        }}
+        onHostError={setToast}
+        releaseLabel={snapshot.releaseLabel}
+      />
       {firstRunOpen ? (
         <FirstRun
           onLater={() => {
@@ -100,6 +124,19 @@ export default function App() {
           }}
         />
       ) : null}
+      {updateOpen ? (
+        <UpdateDialog
+          onClose={() => {
+            setUpdateOpen(false)
+          }}
+        />
+      ) : null}
+      <Toast
+        message={toast}
+        onDismiss={() => {
+          setToast(null)
+        }}
+      />
     </div>
   )
 }

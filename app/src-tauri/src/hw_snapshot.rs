@@ -54,6 +54,8 @@ pub struct HwSnapshot {
     pub silent_turbo: bool,
     #[serde(rename = "dcHzSeen", default)]
     pub dc_hz_seen: bool,
+    #[serde(rename = "colorCalibration")]
+    pub color_calibration: bool,
     #[serde(rename = "cpuTempC", skip_serializing_if = "Option::is_none")]
     pub cpu_temp_c: Option<f64>,
     #[serde(rename = "gpuTempC", skip_serializing_if = "Option::is_none")]
@@ -109,6 +111,8 @@ impl Backend {
                 oc_settings: state.item_support.is_truthy("OcSettingsSupport"),
                 silent_turbo: silent_turbo(&state.item_support),
                 dc_hz_seen: state.dc_hz_seen,
+                color_calibration: FeatureMatrix::from_values(&state.item_support)
+                    .is_supported(FeatureBit::ColorCalibration),
                 cpu_temp_c: state.cpu_temp_c,
                 gpu_temp_c: state.gpu_temp_c,
                 cpu_rpm: state.cpu_rpm,
@@ -138,6 +142,7 @@ impl Backend {
                 oc_settings: false,
                 silent_turbo: false,
                 dc_hz_seen: false,
+                color_calibration: false,
                 cpu_temp_c: None,
                 gpu_temp_c: None,
                 cpu_rpm: None,

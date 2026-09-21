@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import { Performance } from "./Performance"
 
@@ -54,20 +54,28 @@ describe("Performance", () => {
     expect(invoke).toHaveBeenCalledWith("set_performance_mode", { mode: "custom" })
   })
 
-  it("invokes set_custom_detail with PL1 string when PL1 changes", () => {
+  it("opens the custom-mode window when 自定义 is clicked", async () => {
     render(<Performance />)
-    fireEvent.change(screen.getByRole("spinbutton", { name: "PL1" }), {
-      target: { value: "50" },
-    })
-    expect(invoke).toHaveBeenCalledWith("set_custom_detail", {
-      field: "PL1",
-      value: "50",
+    fireEvent.click(screen.getByRole("radio", { name: "自定义" }))
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window")
     })
   })
 
-  it("omits TCC row when tccAdjustable is false", () => {
-    render(<Performance tccAdjustable={false} />)
+  it("keeps the main column free of the custom editor", () => {
+    render(<Performance tccAdjustable={true} ocSettings={true} />)
+    expect(screen.queryByRole("spinbutton")).toBeNull()
+    expect(screen.queryByText("PL1")).toBeNull()
     expect(screen.queryByText("TCC")).toBeNull()
-    expect(screen.queryByLabelText("TCC")).toBeNull()
+  })
+
+  it("reports a host failure through onHostError instead of swallowing it", async () => {
+    const onHostError = mock(() => {})
+    invoke.mockRejectedValueOnce(new Error("host down"))
+    render(<Performance onHostError={onHostError} />)
+    fireEvent.click(screen.getByRole("radio", { name: "狂暴" }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onHostError).toHaveBeenCalledWith("host down")
   })
 })

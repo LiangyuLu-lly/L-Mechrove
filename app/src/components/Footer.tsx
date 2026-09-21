@@ -1,12 +1,6 @@
 import { useState, type ReactNode } from "react"
 import { assertNever } from "../lib/assertNever"
-import {
-  appQuit,
-  diagnosticsExport,
-  overlaySet,
-  updatesCheck,
-} from "../lib/api"
-import { SettingsDialog } from "../sections/SettingsDialog"
+import { appQuit, diagnosticsExport, overlaySet } from "../lib/api"
 import "./Footer.css"
 
 type FooterKeyId =
@@ -77,6 +71,16 @@ const FOOTER_KEYS: readonly FooterKey[] = [
     ),
   },
   {
+    id: "donate",
+    label: "赞助",
+    ariaLabel: "赞助",
+    icon: (
+      <LinearIcon>
+        <path d="M8 13.2S3.2 10 3.2 6.6A2.7 2.7 0 0 1 8 5.2 2.7 2.7 0 0 1 12.8 6.6C12.8 10 8 13.2 8 13.2z" />
+      </LinearIcon>
+    ),
+  },
+  {
     id: "diagnostics",
     label: "诊断",
     ariaLabel: "导出诊断包",
@@ -84,16 +88,6 @@ const FOOTER_KEYS: readonly FooterKey[] = [
       <LinearIcon>
         <path d="M4 3.5h5.2L12.5 6.8V12.5H4z" />
         <path d="M9.2 3.5V6.8H12.5" />
-      </LinearIcon>
-    ),
-  },
-  {
-    id: "donate",
-    label: "赞助",
-    ariaLabel: "赞助",
-    icon: (
-      <LinearIcon>
-        <path d="M8 13.2S3.2 10 3.2 6.6A2.7 2.7 0 0 1 8 5.2 2.7 2.7 0 0 1 12.8 6.6C12.8 10 8 13.2 8 13.2z" />
       </LinearIcon>
     ),
   },
@@ -109,24 +103,38 @@ const FOOTER_KEYS: readonly FooterKey[] = [
   },
 ]
 
-async function swallowHostError(run: () => Promise<unknown>): Promise<void> {
+async function runHost(
+  run: () => Promise<unknown>,
+  onHostError: ((message: string) => void) | undefined,
+): Promise<void> {
   try {
     await run()
   } catch (error) {
     if (error instanceof Error) {
-      return
+      if (onHostError) {
+        onHostError(error.message)
+        return
+      }
+      throw error
     }
     throw error
   }
 }
 
 export type FooterProps = {
-  readonly hdrOn?: boolean
+  readonly releaseLabel?: string
+  readonly onSettings?: () => void
+  readonly onUpdates?: () => void
+  readonly onHostError?: (message: string) => void
 }
 
-export function Footer({ hdrOn = false }: FooterProps) {
+export function Footer({
+  releaseLabel = "",
+  onSettings,
+  onUpdates,
+  onHostError,
+}: FooterProps) {
   const [overlayOn, setOverlayOn] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [donateOpen, setDonateOpen] = useState(false)
 
   function onFooterKey(id: FooterKeyId): void {
@@ -134,23 +142,23 @@ export function Footer({ hdrOn = false }: FooterProps) {
       case "overlay": {
         const next = !overlayOn
         setOverlayOn(next)
-        void swallowHostError(() => overlaySet(next))
+        void runHost(() => overlaySet(next), onHostError)
         return
       }
       case "settings":
-        setSettingsOpen(true)
+        onSettings?.()
         return
       case "updates":
-        void swallowHostError(() => updatesCheck())
+        onUpdates?.()
         return
       case "diagnostics":
-        void swallowHostError(() => diagnosticsExport())
+        void runHost(() => diagnosticsExport(), onHostError)
         return
       case "donate":
         setDonateOpen(true)
         return
       case "quit":
-        void swallowHostError(() => appQuit())
+        void runHost(() => appQuit(), onHostError)
         return
       default:
         assertNever(id)
@@ -159,7 +167,7 @@ export function Footer({ hdrOn = false }: FooterProps) {
 
   return (
     <footer className="footer">
-      <span className="footer__version">0.1.0</span>
+      <span className="footer__version">{releaseLabel}</span>
       <div className="footer__keys">
         {FOOTER_KEYS.map((key) => (
           <button
@@ -181,14 +189,6 @@ export function Footer({ hdrOn = false }: FooterProps) {
           </button>
         ))}
       </div>
-      {settingsOpen ? (
-        <SettingsDialog
-          hdrOn={hdrOn}
-          onClose={() => {
-            setSettingsOpen(false)
-          }}
-        />
-      ) : null}
       {donateOpen ? (
         <div
           className="settings-dialog"

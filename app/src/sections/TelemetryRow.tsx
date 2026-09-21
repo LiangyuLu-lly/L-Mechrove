@@ -1,10 +1,12 @@
 import type { HwSnapshot } from "../lib/types"
 import "./TelemetryRow.css"
 
-export type TelemetryRowProps = Pick<
-  HwSnapshot,
-  "cpuTempC" | "gpuTempC" | "cpuRpm" | "gpuRpm" | "cpuWatt" | "gpuWatt"
->
+export type TelemetryRowProps = {
+  readonly snapshot: Pick<
+    HwSnapshot,
+    "cpuTempC" | "gpuTempC" | "cpuRpm" | "gpuRpm" | "cpuWatt" | "gpuWatt"
+  >
+}
 
 const MISSING = "—"
 
@@ -24,14 +26,8 @@ function restText(watt: number | undefined, rpm: number | undefined): string {
   return `${formatWatt(watt)} ${formatRpm(rpm)}`
 }
 
-export function TelemetryRow({
-  cpuTempC,
-  gpuTempC,
-  cpuRpm,
-  gpuRpm,
-  cpuWatt,
-  gpuWatt,
-}: TelemetryRowProps) {
+export function TelemetryRow({ snapshot }: TelemetryRowProps) {
+  const { cpuTempC, gpuTempC, cpuRpm, gpuRpm, cpuWatt, gpuWatt } = snapshot
   return (
     <div className="telemetry-row">
       <span className="telemetry-row__name">CPU</span>

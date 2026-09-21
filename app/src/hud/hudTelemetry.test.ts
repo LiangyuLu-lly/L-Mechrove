@@ -21,6 +21,15 @@ const BASE_SNAPSHOT: HwSnapshot = {
   ocSettings: false,
   silentTurbo: false,
   dcHzSeen: false,
+  colorCalibration: false,
+  keyboardHidUnavailable: false,
+  lightingOffOnBattery: false,
+  lightingIdleSeconds: 0,
+  modelReason: "",
+  projectId: "",
+  ocRequiresElevation: false,
+  themeMode: "night",
+  releaseLabel: "",
 }
 
 const DEFAULT_TELEMETRY = {

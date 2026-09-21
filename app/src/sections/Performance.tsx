@@ -1,9 +1,8 @@
 import { useState } from "react"
 import { Row } from "../components/Row"
 import { Segmented } from "../components/Segmented"
-import { setPerformanceMode } from "../lib/api"
+import { openCustomModeWindow, setPerformanceMode } from "../lib/api"
 import type { PerformanceMode } from "../lib/types"
-import { PerformanceWattage } from "./PerformanceWattage"
 
 const ALWAYS_OPTIONS = [
   { value: "office", label: "静音模式" },
@@ -21,9 +20,8 @@ const TAIL_OPTIONS = [
 ] as const
 
 export type PerformanceProps = {
-  readonly tccAdjustable?: boolean
-  readonly ocSettings?: boolean
   readonly silentTurbo?: boolean
+  readonly onHostError?: (message: string) => void
 }
 
 function performanceOptions(silentTurbo: boolean) {
@@ -34,9 +32,8 @@ function performanceOptions(silentTurbo: boolean) {
 }
 
 export function Performance({
-  tccAdjustable = false,
-  ocSettings = false,
   silentTurbo = false,
+  onHostError,
 }: PerformanceProps) {
   const [mode, setMode] = useState<PerformanceMode>("office")
 
@@ -45,27 +42,26 @@ export function Performance({
     try {
       await setPerformanceMode(next)
     } catch (error) {
-      if (error instanceof Error) {
-        return
+      onHostError?.(error instanceof Error ? error.message : String(error))
+    }
+    // Opening the editor is the user's request; a failed mode switch must not
+    // swallow it.
+    if (next === "custom") {
+      try {
+        await openCustomModeWindow()
+      } catch (error) {
+        onHostError?.(error instanceof Error ? error.message : String(error))
       }
-      throw error
     }
   }
 
   return (
-    <>
-      <Row name="性能模式">
-        <Segmented
-          value={mode}
-          options={performanceOptions(silentTurbo)}
-          onChange={onChange}
-        />
-      </Row>
-      <PerformanceWattage
-        tccAdjustable={tccAdjustable}
-        ocSettings={ocSettings}
-        customMode={mode === "custom"}
+    <Row name="性能模式">
+      <Segmented
+        value={mode}
+        options={performanceOptions(silentTurbo)}
+        onChange={onChange}
       />
-    </>
+    </Row>
   )
 }

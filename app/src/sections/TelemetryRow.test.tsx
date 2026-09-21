@@ -17,13 +17,13 @@ describe("TelemetryRow", () => {
   })
 
   it("renders CPU and GPU labels", () => {
-    render(<TelemetryRow {...FAKE} />)
+    render(<TelemetryRow snapshot={FAKE} />)
     expect(screen.getByText("CPU")).toBeTruthy()
     expect(screen.getByText("GPU")).toBeTruthy()
   })
 
   it("renders fake fixture temp watt rpm", () => {
-    const { container } = render(<TelemetryRow {...FAKE} />)
+    const { container } = render(<TelemetryRow snapshot={FAKE} />)
     const text = container.textContent ?? ""
     expect(text).toContain("78°C")
     expect(text).toContain("2100rpm")
@@ -31,12 +31,12 @@ describe("TelemetryRow", () => {
   })
 
   it("renders an em dash when sensors are undefined", () => {
-    render(<TelemetryRow />)
+    render(<TelemetryRow snapshot={{}} />)
     expect(screen.getAllByText("—").length).toBeGreaterThan(0)
   })
 
   it("contains no slider and no input", () => {
-    const { container } = render(<TelemetryRow {...FAKE} />)
+    const { container } = render(<TelemetryRow snapshot={FAKE} />)
     expect(screen.queryByRole("slider")).toBeNull()
     expect(container.querySelector("input")).toBeNull()
   })
