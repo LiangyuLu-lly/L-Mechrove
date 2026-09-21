@@ -7,7 +7,8 @@ use std::time::Duration;
 use app_lib::hw_display::{
     apply_auto_refresh_rate, apply_brightness, apply_calibration, apply_direct_connect_restart,
     apply_display_hz, apply_local_dimming, apply_overdrive, color_calibration_file_name,
-    BrightnessQueue, BrightnessSink,
+    hdr_acm_from_active_color_mode, hdr_acm_from_legacy_color_info, is_advanced_color_enabled,
+    AdvancedColorProbe, AdvancedColorQuery, BrightnessQueue, BrightnessSink,
 };
 use app_lib::hw_wmi::FakeWmi;
 use app_lib::{Backend, HostError};
@@ -153,6 +154,7 @@ async fn real_inbound_does_not_invent_mqtt_hdr_and_calibration_is_fail_closed() 
     // wired as _readHdrEnabled = IsAdvancedColorEnabled (MechrevoService.cs:118).
     // There is no MQTT topic or field. An inbound Setting/Status must not
     // silently pass the S4-style guard on the Real path.
+    let _seam = CCD_SEAM.lock().expect("ccd seam");
     let mut backend = Backend::real();
     backend.apply_inbound(
         "Setting/Status",
@@ -165,10 +167,14 @@ async fn real_inbound_does_not_invent_mqtt_hdr_and_calibration_is_fail_closed() 
         .await
         .expect_err("unobserved HDR must refuse calibration");
 
-    // Then: DisplayDenied, no silent pass
+    // Then: fail-closed with the unavailable reason, no silent pass, no invented MQTT field
     assert!(
-        matches!(err, HostError::DisplayDenied(ref action) if action == "COLOR_CALIBRATION_ON_SRGB"),
-        "expected DisplayDenied(COLOR_CALIBRATION_ON_SRGB), got {err}"
+        matches!(
+            err,
+            HostError::DisplayDenied(ref msg)
+                if msg.contains("COLOR_CALIBRATION_ON_SRGB") && msg.contains("unavailable")
+        ),
+        "expected DisplayDenied with unavailable reason, got {err}"
     );
 }
 
@@ -584,5 +590,132 @@ async fn real_set_brightness_runs_wmi_on_sta_thread_not_tokio_worker() {
             payload.get("Action").and_then(|value| value.as_str()) != Some("SETSCREENBRIGHTNESS")
         }),
         "brightness must not publish SETSCREENBRIGHTNESS, got {publishes:?}"
+    );
+}
+
+static CCD_SEAM: Mutex<()> = Mutex::new(());
+
+struct RecordingCcd {
+    result: AdvancedColorQuery,
+    calls: Mutex<u32>,
+}
+
+impl RecordingCcd {
+    fn new(result: AdvancedColorQuery) -> Arc<Self> {
+        Arc::new(Self {
+            result,
+            calls: Mutex::new(0),
+        })
+    }
+}
+
+impl AdvancedColorProbe for RecordingCcd {
+    fn query(&self) -> AdvancedColorQuery {
+        *self.calls.lock().expect("calls") += 1;
+        self.result
+    }
+}
+
+#[test]
+fn advanced_color_enabled_matches_csharp_is_advanced_color_enabled() {
+    // MechrevoService.cs:972, 974-975: IsAdvancedColorEnabled = state != Off.
+    assert!(is_advanced_color_enabled(true, false));
+    assert!(is_advanced_color_enabled(false, true));
+    assert!(is_advanced_color_enabled(true, true));
+    assert!(!is_advanced_color_enabled(false, false));
+}
+
+#[test]
+fn advanced_color_v2_mode_matches_screenccd() {
+    // ScreenCCD.cs:69-70: HDR=2, WCG/ACM=1.
+    assert_eq!(hdr_acm_from_active_color_mode(2), (true, false));
+    assert_eq!(hdr_acm_from_active_color_mode(1), (false, true));
+    assert_eq!(hdr_acm_from_active_color_mode(0), (false, false));
+}
+
+#[test]
+fn advanced_color_v1_bits_match_screenccd() {
+    // ScreenCCD.cs:89-90.
+    assert_eq!(
+        hdr_acm_from_legacy_color_info(true, false, 8),
+        (true, false)
+    );
+    assert_eq!(
+        hdr_acm_from_legacy_color_info(true, true, 10),
+        (false, true)
+    );
+    assert_eq!(
+        hdr_acm_from_legacy_color_info(true, true, 8),
+        (false, false)
+    );
+    assert_eq!(
+        hdr_acm_from_legacy_color_info(false, false, 10),
+        (false, false)
+    );
+}
+
+#[tokio::test]
+async fn real_calibration_refuses_when_advanced_color_on() {
+    // Given: Real path + injected CCD probe reporting advanced colour on
+    // (C# `_readHdrEnabled = IsAdvancedColorEnabled`, MechrevoService.cs:118, 972).
+    let _seam = CCD_SEAM.lock().expect("ccd seam");
+    let probe = RecordingCcd::new(AdvancedColorQuery::Enabled);
+    let _guard =
+        Backend::inject_advanced_color_probe(Arc::clone(&probe) as Arc<dyn AdvancedColorProbe>);
+    let mut backend = Backend::real();
+
+    // When: calibration ON is requested
+    let err = backend
+        .set_calibration("COLOR_CALIBRATION_ON_SRGB")
+        .await
+        .expect_err("advanced colour on must refuse calibration");
+
+    // Then: DisplayDenied the action (not the unavailable reason); probe was used
+    assert_eq!(*probe.calls.lock().expect("calls"), 1);
+    assert!(
+        matches!(err, HostError::DisplayDenied(ref action) if action == "COLOR_CALIBRATION_ON_SRGB"),
+        "expected DisplayDenied(COLOR_CALIBRATION_ON_SRGB), got {err}"
+    );
+}
+
+#[tokio::test]
+async fn real_calibration_proceeds_when_advanced_color_off() {
+    // Given: Real path + injected CCD probe reporting advanced colour off
+    let _seam = CCD_SEAM.lock().expect("ccd seam");
+    let probe = RecordingCcd::new(AdvancedColorQuery::Disabled);
+    let _guard =
+        Backend::inject_advanced_color_probe(Arc::clone(&probe) as Arc<dyn AdvancedColorProbe>);
+    let mut backend = Backend::real();
+
+    // When: calibration ON is requested
+    backend
+        .set_calibration("COLOR_CALIBRATION_ON_SRGB")
+        .await
+        .expect("advanced colour off must proceed");
+
+    // Then: the CCD probe was consulted (live device never opened)
+    assert_eq!(*probe.calls.lock().expect("calls"), 1);
+}
+
+#[tokio::test]
+async fn real_calibration_refuses_when_advanced_color_query_unavailable() {
+    // Given: Real path with no injected CCD probe (non-Windows / API fail / test binary)
+    let _seam = CCD_SEAM.lock().expect("ccd seam");
+    let mut backend = Backend::real();
+
+    // When: calibration ON is requested
+    let err = backend
+        .set_calibration("COLOR_CALIBRATION_ON_SRGB")
+        .await
+        .expect_err("unavailable query must fail-closed");
+
+    // Then: refuse and say the query could not run
+    assert!(
+        matches!(
+            err,
+            HostError::DisplayDenied(ref msg)
+                if msg.contains("COLOR_CALIBRATION_ON_SRGB") && msg.contains("unavailable")
+        ),
+        "expected DisplayDenied with unavailable reason, got {err}"
     );
 }

@@ -2,6 +2,7 @@ mod commands;
 mod events;
 mod hw_backend;
 pub mod hw_ble;
+mod hw_ccd;
 mod hw_diagnostics;
 pub mod hw_display;
 mod hw_error;
@@ -46,9 +47,8 @@ use commands::{
     set_charge_full, set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost,
     set_fan_curve, set_gpu_route, set_lc_connect, set_lc_disconnect, set_lc_fan, set_lc_pump,
     set_light_effect, set_light_power, set_lighting_policy, set_local_dimming, set_monitor_off,
-    set_official_isolation, set_overdrive,
-    set_performance_mode, set_project_id, set_quick_switch, set_theme_mode, set_ui_language,
-    updates_check, updates_install, updates_open_page,
+    set_official_isolation, set_overdrive, set_performance_mode, set_project_id, set_quick_switch,
+    set_theme_mode, set_ui_language, updates_check, updates_install, updates_open_page,
 };
 use hw_backend::{AppState, Backend as HwBackend};
 use tauri::Manager;

@@ -12,6 +12,11 @@ use crate::hw_backend::Backend;
 use crate::hw_error::HostError;
 use crate::hw_wmi::FakeWmi;
 
+pub use crate::hw_ccd::{
+    hdr_acm_from_active_color_mode, hdr_acm_from_legacy_color_info, is_advanced_color_enabled,
+    AdvancedColorProbe, AdvancedColorQuery, InjectedAdvancedColorGuard,
+};
+
 const WMI_BRIGHTNESS_TIMEOUT: u32 = 1;
 
 #[derive(Serialize)]
@@ -389,6 +394,13 @@ impl Backend {
         InjectedBrightnessGuard
     }
 
+    /// Install a CCD advanced-colour probe for the Real path. Never opens live display config.
+    pub fn inject_advanced_color_probe(
+        probe: Arc<dyn AdvancedColorProbe>,
+    ) -> InjectedAdvancedColorGuard {
+        crate::hw_ccd::inject(probe)
+    }
+
     pub async fn set_brightness(&mut self, percent: u8) -> Result<(), HostError> {
         match self {
             Self::Fake { state } => {
@@ -417,10 +429,19 @@ impl Backend {
                 Ok(())
             }
             Self::Real { state } => {
-                // C# HDR is ScreenCCD (ScreenCCD.cs:11, MechrevoService.cs:956-970),
-                // not MQTT. Unobserved HDR must fail-closed rather than silently pass.
+                // C# `_readHdrEnabled = IsAdvancedColorEnabled` (MechrevoService.cs:118, 972)
+                // via ScreenCCD.GetHDRStatus (ScreenCCD.cs:11). Not MQTT.
+                let hdr_on = match crate::hw_ccd::query_advanced_color() {
+                    AdvancedColorQuery::Enabled => true,
+                    AdvancedColorQuery::Disabled => false,
+                    AdvancedColorQuery::Unavailable => {
+                        return Err(HostError::DisplayDenied(format!(
+                            "{mode}: advanced-colour query unavailable"
+                        )));
+                    }
+                };
                 let file_name = color_calibration_file_name(state.color_calibration_mode);
-                apply_calibration(&mut state.client, mode, true, file_name).await?;
+                apply_calibration(&mut state.client, mode, hdr_on, file_name).await?;
                 if let Some(parsed) = color_calibration_mode_from_action(mode) {
                     state.color_calibration_mode = parsed;
                 }

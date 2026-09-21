@@ -39,10 +39,7 @@ async fn set_battery_protection_publishes_performancedmode_when_mode_0() {
     let mut backend = Backend::fake_from_json("{}").expect("fixture");
 
     // When: battery protection performance / 满充
-    backend
-        .set_battery_protection(0)
-        .await
-        .expect("mode 0");
+    backend.set_battery_protection(0).await.expect("mode 0");
 
     // Then: BatteryProtection/Control {"Action":"PERFORMANCEDMODE"}
     let payloads = protection_payloads(&backend);
@@ -60,10 +57,7 @@ async fn set_battery_protection_publishes_balancedmode_when_mode_1() {
     let mut backend = Backend::fake_from_json("{}").expect("fixture");
 
     // When: battery protection balanced
-    backend
-        .set_battery_protection(1)
-        .await
-        .expect("mode 1");
+    backend.set_battery_protection(1).await.expect("mode 1");
 
     // Then: BatteryProtection/Control {"Action":"BALANCEDMODE"}
     let payloads = protection_payloads(&backend);
@@ -81,10 +75,7 @@ async fn set_battery_protection_publishes_healthymode_when_mode_2() {
     let mut backend = Backend::fake_from_json("{}").expect("fixture");
 
     // When: battery protection healthy
-    backend
-        .set_battery_protection(2)
-        .await
-        .expect("mode 2");
+    backend.set_battery_protection(2).await.expect("mode 2");
 
     // Then: BatteryProtection/Control {"Action":"HEALTHYMODE"}
     let payloads = protection_payloads(&backend);

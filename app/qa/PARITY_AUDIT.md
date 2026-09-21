@@ -50,6 +50,7 @@ as CANNOT-VERIFY with its cheapest falsifier — never as done.
 | The HID keyboard path on a device that has one | plug the machine's own keyboard |
 | Authenticode on the update package | `signtool`; the port checks sha256 only |
 | Live sensor telemetry (LHM) | inject a sensor seam; live numbers stay absent |
+| Live CCD advanced-colour matches the panel HDR/ACM switch | turn HDR on, calibration refused; HDR off, calibration proceeds; ACM-on also refused (`IsAdvancedColorEnabled`). Unit tests cover the three branches via an injected probe and never open live display config. |
 
 ## Known deviations, deliberate
 
@@ -67,17 +68,21 @@ as CANNOT-VERIFY with its cheapest falsifier — never as done.
 
 The display audit's three open items are closed by test. C# HDR is **not** an MQTT field.
 
-1. **HDR guard on the real path — fail-closed.** C# reads HDR from `ScreenCCD.GetHDRStatus`
+1. **HDR guard on the real path — resolved.** C# reads advanced colour from `ScreenCCD.GetHDRStatus`
    (`Display/ScreenCCD.cs:11`) via `MechrevoService.GetAdvancedColorState` / `IsHdrEnabled`
    (`Hardware/MechrevoService.cs:956-970`), injected as `_readHdrEnabled = IsAdvancedColorEnabled`
    (`MechrevoService.cs:118`) and applied in `SetColorCalibration` (`MechrevoService.cs:752`).
-   There is no MQTT topic or payload field. Inventing one would be a false source. The Real arm
-   therefore refuses calibration when HDR has never been observed from CCD
-   (`real_inbound_does_not_invent_mqtt_hdr_and_calibration_is_fail_closed`). Fake still uses
-   `hdr_on` (`hdr_on_blocks_color_calibration_without_publish`). Live CCD query is not ported;
-   until it is, Real calibration stays refused. Falsifier on the machine: turn HDR on, try to
-   change calibration — must be refused; with HDR off, calibration still cannot proceed until CCD
-   is wired.
+   There is no MQTT topic or payload field. The Real arm now calls the same user32 CCD APIs
+   (`GetDisplayConfigBufferSizes` / `QueryDisplayConfig` / `DisplayConfigGetDeviceInfo` packet
+   types 15 then 9) behind a `cfg(windows)` seam with an injected probe. Refuse when the query
+   reports on; proceed when it reports off; fail-closed with an unavailable reason when the query
+   cannot run (non-Windows, API failure, or a test binary with no probe). Evidence:
+   `real_calibration_refuses_when_advanced_color_on`,
+   `real_calibration_proceeds_when_advanced_color_off`,
+   `real_calibration_refuses_when_advanced_color_query_unavailable`,
+   `real_inbound_does_not_invent_mqtt_hdr_and_calibration_is_fail_closed`. Fake still uses
+   `hdr_on` (`hdr_on_blocks_color_calibration_without_publish`). Live CCD vs the panel switch is
+   not a unit-test claim — see the cannot-verify table.
 2. **`set_calibration` OFF sends the current mode's file name.** C# `SetColorCalibration` off-path
    publishes `ColorCalibrationFileName(currentMode)` (`MechrevoService.cs:778-779, 986-992`).
    Current mode is `MechrevoHw.ColorCalibrationMode` from Setting/Status FirstField

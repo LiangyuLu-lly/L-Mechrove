@@ -135,9 +135,13 @@ fn apply_setting_status(live: &mut InboundLive, value: &Value) -> bool {
 }
 
 fn color_calibration_mode_from_status(value: &Value) -> Option<i32> {
-    let token = ["CurrentColorCalibration", "ColorCalibrationMode", "ColorCalibration"]
-        .iter()
-        .find_map(|key| value.get(*key).filter(|item| !item.is_null()))?;
+    let token = [
+        "CurrentColorCalibration",
+        "ColorCalibrationMode",
+        "ColorCalibration",
+    ]
+    .iter()
+    .find_map(|key| value.get(*key).filter(|item| !item.is_null()))?;
     let parsed = json_i64(Some(token))
         .and_then(|n| i32::try_from(n).ok())
         .unwrap_or_else(|| match token.as_str().unwrap_or("").to_ascii_lowercase() {

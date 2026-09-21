@@ -315,7 +315,11 @@ fn progress_event_json_is_received_and_total() {
     })
     .expect("serialize Progress");
     let obj = value.as_object().expect("Progress JSON object");
-    assert_eq!(obj.len(), 2, "progress event must have exactly two keys: {obj:?}");
+    assert_eq!(
+        obj.len(),
+        2,
+        "progress event must have exactly two keys: {obj:?}"
+    );
     assert_eq!(obj.get("received"), Some(&serde_json::json!(3)));
     assert_eq!(obj.get("total"), Some(&serde_json::json!(9)));
 }
