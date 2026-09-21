@@ -1,10 +1,9 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
 import { Collapse } from "../components/Collapse"
 import { Row } from "../components/Row"
 import { Segmented } from "../components/Segmented"
 import { assertNever } from "../lib/assertNever"
-import { setLcFan, setLcPump, setLightEffect } from "../lib/api"
+import { setLcConnect, setLcDisconnect, setLcFan, setLcPump, setLightEffect } from "../lib/api"
 import "./LiquidCooling.css"
 
 const PUMP_OPTIONS = [
@@ -63,48 +62,54 @@ export type LcConnection = keyof typeof CHIP_COPY
 export type LiquidCoolingProps = {
   readonly liquidCooling: boolean
   readonly connection?: LcConnection
+  readonly onHostError?: (message: string) => void
 }
 
-async function invokeSafe(run: () => Promise<void>): Promise<void> {
+async function invokeSafe(
+  run: () => Promise<void>,
+  onHostError?: (message: string) => void,
+): Promise<void> {
   try {
     await run()
   } catch (error) {
-    if (error instanceof Error) {
-      return
-    }
-    throw error
+    onHostError?.(error instanceof Error ? error.message : String(error))
   }
 }
 
 export function LiquidCooling({
   liquidCooling,
   connection = "none",
+  onHostError,
 }: LiquidCoolingProps) {
   if (!liquidCooling) {
     return null
   }
   return (
     <Collapse name="液冷">
-      <PumpRow />
-      <FanRow />
-      <LightRow connection={connection} />
+      <PumpRow onHostError={onHostError} />
+      <FanRow onHostError={onHostError} />
+      <LightRow connection={connection} onHostError={onHostError} />
     </Collapse>
   )
 }
 
-function PumpRow() {
+function PumpRow({
+  onHostError,
+}: {
+  readonly onHostError?: (message: string) => void
+}) {
   const [index, setIndex] = useState<PumpIndex>("1")
 
   async function onChange(next: PumpIndex): Promise<void> {
     setIndex(next)
     switch (next) {
       case "auto":
-        await invokeSafe(() => setLcFan(4))
+        await invokeSafe(() => setLcFan(4), onHostError)
         return
       case "0":
       case "1":
       case "2":
-        await invokeSafe(() => setLcPump(Number(next)))
+        await invokeSafe(() => setLcPump(Number(next)), onHostError)
         return
       default:
         assertNever(next)
@@ -118,12 +123,16 @@ function PumpRow() {
   )
 }
 
-function FanRow() {
+function FanRow({
+  onHostError,
+}: {
+  readonly onHostError?: (message: string) => void
+}) {
   const [index, setIndex] = useState<FanIndex>("4")
 
   async function onChange(next: FanIndex): Promise<void> {
     setIndex(next)
-    await invokeSafe(() => setLcFan(Number(next)))
+    await invokeSafe(() => setLcFan(Number(next)), onHostError)
   }
 
   return (
@@ -133,7 +142,13 @@ function FanRow() {
   )
 }
 
-function LightRow({ connection }: { readonly connection: LcConnection }) {
+function LightRow({
+  connection,
+  onHostError,
+}: {
+  readonly connection: LcConnection
+  readonly onHostError?: (message: string) => void
+}) {
   const [chip, setChip] = useState<LcConnection>(connection)
   const [menuOpen, setMenuOpen] = useState(false)
   const [color, setColor] = useState("#00ffff")
@@ -142,14 +157,14 @@ function LightRow({ connection }: { readonly connection: LcConnection }) {
     switch (chip) {
       case "none":
         setChip("direct")
-        await invokeSafe(() => invoke("set_lc_connect"))
+        await invokeSafe(() => setLcConnect(), onHostError)
         return
       case "direct":
         setChip("none")
-        await invokeSafe(() => invoke("set_lc_disconnect"))
+        await invokeSafe(() => setLcDisconnect(), onHostError)
         return
       case "gcu":
-        await invokeSafe(() => invoke("set_lc_connect"))
+        await invokeSafe(() => setLcConnect(), onHostError)
         return
       default:
         assertNever(chip)
@@ -157,13 +172,14 @@ function LightRow({ connection }: { readonly connection: LcConnection }) {
   }
 
   async function onEffect(effect: string): Promise<void> {
-    await invokeSafe(() => setLightEffect("liquid", effect))
+    await invokeSafe(() => setLightEffect("liquid", effect), onHostError)
   }
 
   async function onColor(next: string): Promise<void> {
     setColor(next)
-    await invokeSafe(() =>
-      setLightEffect("liquid", "custom_static", { color: next }),
+    await invokeSafe(
+      () => setLightEffect("liquid", "custom_static", { color: next }),
+      onHostError,
     )
   }
 

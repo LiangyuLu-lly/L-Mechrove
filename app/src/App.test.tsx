@@ -104,4 +104,32 @@ describe("App main column", () => {
     fireEvent.click(screen.getByRole("button", { name: "设置" }))
     expect(screen.getAllByRole("dialog", { name: "设置" })).toHaveLength(1)
   })
+
+  it("passes battery health and charge labels from the snapshot", async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === "hw_snapshot") {
+        return Promise.resolve(
+          snapshot({
+            batteryHealth: "循环 12 次",
+            chargeStatus: "充电: 20.0W",
+          }),
+        )
+      }
+      return Promise.reject(new Error("no host"))
+    })
+    render(<App />)
+    expect(await screen.findByText("循环 12 次")).toBeTruthy()
+    expect(screen.getByText("充电: 20.0W")).toBeTruthy()
+  })
+
+  it("shows 过驱动 when the snapshot offers overdrive", async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === "hw_snapshot") {
+        return Promise.resolve(snapshot({ overdrive: true }))
+      }
+      return Promise.reject(new Error("no host"))
+    })
+    render(<App />)
+    expect(await screen.findByRole("checkbox", { name: "过驱动" })).toBeTruthy()
+  })
 })

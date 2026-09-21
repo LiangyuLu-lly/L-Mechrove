@@ -258,4 +258,24 @@ describe("Lighting", () => {
         idleSeconds: 1800,
       })
     })
+
+    it("reports set_lighting_policy failure through onHostError instead of swallowing it", async () => {
+      const onHostError = mock(() => {})
+      invoke.mockRejectedValueOnce(new Error("policy host down"))
+      render(
+        <Lighting
+          lighting={{
+            keyboard: true,
+            lightbar: false,
+            logo: false,
+            keyboardType: 0,
+          }}
+          onHostError={onHostError}
+        />,
+      )
+      fireEvent.click(screen.getByRole("checkbox", { name: "离电自动关闭全部灯效" }))
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(onHostError).toHaveBeenCalledWith("policy host down")
+    })
   })

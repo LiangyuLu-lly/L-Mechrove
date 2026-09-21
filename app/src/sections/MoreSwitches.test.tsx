@@ -124,4 +124,15 @@ describe("MoreSwitches", () => {
       expect(commands).not.toContain(mqttCommand)
     }
   })
+
+  it("reports set_quick_switch failure through onHostError instead of swallowing it", async () => {
+    const onHostError = mock(() => {})
+    invoke.mockRejectedValueOnce(new Error("switch host down"))
+    render(<MoreSwitches offered={["touchpad"]} onHostError={onHostError} />)
+    fireEvent.click(screen.getByRole("button", { name: "更多开关" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: "触摸板" }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onHostError).toHaveBeenCalledWith("switch host down")
+  })
 })

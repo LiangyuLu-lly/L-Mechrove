@@ -55,4 +55,19 @@ describe("Gpu", () => {
     expect(screen.queryByText("自动")).toBeNull()
     expect(screen.getByRole("radio", { name: "直连" })).toBeTruthy()
   })
+
+  it("reports set_gpu_route failure through onHostError instead of swallowing it", async () => {
+    const onHostError = mock(() => {})
+    invoke.mockRejectedValueOnce(new Error("gpu host down"))
+    render(
+      <Gpu
+        actions={["igpu", "standard", "dgpu"]}
+        onHostError={onHostError}
+      />,
+    )
+    fireEvent.click(screen.getByRole("radio", { name: "直连" }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onHostError).toHaveBeenCalledWith("gpu host down")
+  })
 })

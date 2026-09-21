@@ -388,4 +388,32 @@ impl Backend {
             }
         }
     }
+
+    pub async fn set_lc_connect(&mut self) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state.ensure_writable()?;
+                apply_lc_connect(&mut state.broker, &state.item_support).await?;
+                Ok(())
+            }
+            Self::Real { state } => {
+                apply_lc_connect(&mut state.client, &state.item_support).await?;
+                Ok(())
+            }
+        }
+    }
+
+    pub async fn set_lc_disconnect(&mut self) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state.ensure_writable()?;
+                apply_lc_disconnect(&mut state.broker, &state.item_support).await?;
+                Ok(())
+            }
+            Self::Real { state } => {
+                apply_lc_disconnect(&mut state.client, &state.item_support).await?;
+                Ok(())
+            }
+        }
+    }
 }

@@ -1,14 +1,14 @@
 import { useState } from "react"
-import { invoke } from "@tauri-apps/api/core"
 import { Row } from "../components/Row"
 import { Slider } from "../components/Slider"
-import { setChargeLimit } from "../lib/api"
+import { setChargeFull, setChargeLimit } from "../lib/api"
 import "./Battery.css"
 
 export type BatteryProps = {
   readonly percent: number
   readonly health?: string
   readonly chargeStatus?: string
+  readonly chargeFullOffered?: boolean
   readonly onHostError?: (message: string) => void
 }
 
@@ -23,6 +23,7 @@ export function Battery({
   percent,
   health,
   chargeStatus,
+  chargeFullOffered = true,
   onHostError,
 }: BatteryProps) {
   const [value, setValue] = useState(percent)
@@ -38,7 +39,7 @@ export function Battery({
 
   async function onFullCharge(): Promise<void> {
     try {
-      await invoke("set_charge_full")
+      await setChargeFull()
     } catch (error) {
       reportHostError(onHostError, error)
     }
@@ -51,15 +52,17 @@ export function Battery({
       ) : null}
       <Slider value={value} min={40} max={100} step={1} onChange={onChange} />
       <span className="row__value">{value}%</span>
-      <button
-        type="button"
-        className="battery__full"
-        onClick={() => {
-          void onFullCharge()
-        }}
-      >
-        充满电
-      </button>
+      {chargeFullOffered ? (
+        <button
+          type="button"
+          className="battery__full"
+          onClick={() => {
+            void onFullCharge()
+          }}
+        >
+          充满电
+        </button>
+      ) : null}
     </Row>
   )
 }

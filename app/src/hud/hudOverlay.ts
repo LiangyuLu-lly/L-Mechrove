@@ -29,6 +29,15 @@ export const EMPTY_HUD_SNAPSHOT: HudTelemetry = {
   ocRequiresElevation: false,
   themeMode: "night",
   releaseLabel: "",
+  batteryHealth: "",
+  chargeStatus: "",
+  chargeFullOffered: true,
+  overdrive: false,
+  localDimming: false,
+  customProfileOffered: true,
+  lcConnection: "none",
+  fanCurveTableName: "M4T1",
+  updateAvailable: false,
 }
 
 export const HUD_BLOCK_TOGGLES = [

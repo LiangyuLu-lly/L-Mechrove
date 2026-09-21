@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Toast } from "../components/Toast"
 import { hwSnapshot } from "../lib/api"
 import { FanCurve } from "./FanCurve"
 import { PerformanceCustom } from "./PerformanceCustom"
@@ -27,6 +28,8 @@ export function CustomModeWindow({
 }: CustomModeWindowProps) {
   const [ocSettings, setOcSettings] = useState(ocSettingsProp ?? false)
   const [curveOpen, setCurveOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [hostTableName, setHostTableName] = useState(tableName)
   const [cpuDuties, setCpuDuties] = useState<readonly number[]>(
     duties ?? EMPTY_FAN_DUTIES,
   )
@@ -53,12 +56,12 @@ export function CustomModeWindow({
         if (typeof snap.ocSettings === "boolean") {
           setOcSettings(snap.ocSettings)
         }
+        if (snap.fanCurveTableName.length > 0) {
+          setHostTableName(snap.fanCurveTableName)
+        }
       })
       .catch((error: unknown) => {
-        if (error instanceof Error) {
-          return
-        }
-        throw error
+        setToast(error instanceof Error ? error.message : String(error))
       })
     return () => {
       cancelled = true
@@ -71,7 +74,7 @@ export function CustomModeWindow({
         <h1 className="row__name">自定义性能模式</h1>
         <PerformanceCustom
           ocSettings={ocSettings}
-          tableName={tableName ?? tableNameForProfile("0")}
+          tableName={hostTableName ?? tableNameForProfile("0")}
           powerWallVerdict={powerWallVerdict}
           onOpenFanCurve={() => {
             setCurveOpen(true)
@@ -83,9 +86,16 @@ export function CustomModeWindow({
             gpuDuties={gpuCurveDuties}
             onCpuChange={setCpuDuties}
             onGpuChange={setGpuCurveDuties}
+            onHostError={setToast}
           />
         ) : null}
       </div>
+      <Toast
+        message={toast}
+        onDismiss={() => {
+          setToast(null)
+        }}
+      />
     </div>
   )
 }

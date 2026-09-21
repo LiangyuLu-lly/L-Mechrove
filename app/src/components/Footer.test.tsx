@@ -88,6 +88,12 @@ describe("Footer", () => {
     expect(screen.queryByRole("dialog", { name: "赞助支持" })).toBeNull()
   })
 
+  it("shows 有新版本 on 更新 when the snapshot says an update is available", () => {
+    render(<Footer updateAvailable />)
+    expect(screen.getByText("有新版本")).toBeTruthy()
+    expect(invoke).not.toHaveBeenCalledWith("updates_check")
+  })
+
   it("shows 有新版本 on 更新 when updates_check reports an update", async () => {
     invoke.mockImplementation((command: string) => {
       if (command === "updates_check") {

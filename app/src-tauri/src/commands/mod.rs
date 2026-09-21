@@ -12,7 +12,7 @@ mod snapshot;
 mod switches;
 mod updates;
 
-pub use battery::set_charge_limit;
+pub use battery::{set_charge_full, set_charge_limit};
 pub use diagnostics::diagnostics_export;
 pub use display::{
     set_auto_refresh_rate, set_brightness, set_calibration, set_display_hz, set_local_dimming,
@@ -24,7 +24,7 @@ pub use host::{
     app_quit, set_lighting_policy, set_official_isolation, set_project_id, set_theme_mode,
     set_ui_language,
 };
-pub use lc::{set_lc_fan, set_lc_pump};
+pub use lc::{set_lc_connect, set_lc_disconnect, set_lc_fan, set_lc_pump};
 pub use lighting::{set_light_effect, set_light_power};
 pub use mode::{close_custom_mode_window, open_custom_mode_window, set_performance_mode};
 pub use overlay::{overlay_set, overlay_update};

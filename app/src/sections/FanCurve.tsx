@@ -22,6 +22,7 @@ type FanCurvePlotProps = {
   readonly type: FanCurveType
   readonly duties: readonly number[]
   readonly onChange?: (duties: readonly number[]) => void
+  readonly onHostError?: (message: string) => void
 }
 
 export type FanCurveProps = {
@@ -29,6 +30,7 @@ export type FanCurveProps = {
   readonly gpuDuties: readonly number[]
   readonly onCpuChange?: (duties: readonly number[]) => void
   readonly onGpuChange?: (duties: readonly number[]) => void
+  readonly onHostError?: (message: string) => void
 }
 
 function clampDuty(value: number): number {
@@ -60,14 +62,14 @@ function keyDelta(key: string): number {
   return 0
 }
 
-async function swallow(run: () => Promise<unknown>): Promise<void> {
+async function runHost(
+  run: () => Promise<unknown>,
+  onHostError?: (message: string) => void,
+): Promise<void> {
   try {
     await run()
   } catch (error) {
-    if (error instanceof Error) {
-      return
-    }
-    throw error
+    onHostError?.(error instanceof Error ? error.message : String(error))
   }
 }
 
@@ -76,22 +78,33 @@ export function FanCurve({
   gpuDuties,
   onCpuChange,
   onGpuChange,
+  onHostError,
 }: FanCurveProps) {
   return (
     <div className="fan-curve-pair">
-      <FanCurvePlot type="CPU" duties={cpuDuties} onChange={onCpuChange} />
-      <FanCurvePlot type="GPU" duties={gpuDuties} onChange={onGpuChange} />
+      <FanCurvePlot
+        type="CPU"
+        duties={cpuDuties}
+        onChange={onCpuChange}
+        onHostError={onHostError}
+      />
+      <FanCurvePlot
+        type="GPU"
+        duties={gpuDuties}
+        onChange={onGpuChange}
+        onHostError={onHostError}
+      />
     </div>
   )
 }
 
-function FanCurvePlot({ type, duties, onChange }: FanCurvePlotProps) {
+function FanCurvePlot({ type, duties, onChange, onHostError }: FanCurvePlotProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
 
   function publish(next: readonly number[]): void {
     onChange?.(next)
-    void swallow(() => setFanCurve("curve", type, next))
+    void runHost(() => setFanCurve("curve", type, next), onHostError)
   }
 
   function replaceDuty(index: number, duty: number): void {

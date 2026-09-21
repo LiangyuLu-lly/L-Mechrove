@@ -34,6 +34,15 @@ export const VITE_FALLBACK_SNAPSHOT: HwSnapshot = {
   ocRequiresElevation: false,
   themeMode: "night",
   releaseLabel: "0.289.0-beta18",
+  batteryHealth: "",
+  chargeStatus: "",
+  chargeFullOffered: true,
+  overdrive: false,
+  localDimming: false,
+  customProfileOffered: true,
+  lcConnection: "none",
+  fanCurveTableName: "M4T1",
+  updateAvailable: false,
 }
 
 export async function hwSnapshot(): Promise<HwSnapshot> {
@@ -53,6 +62,10 @@ export function setPerformanceMode(mode: PerformanceMode): Promise<void> {
 
 export function setChargeLimit(percent: number): Promise<number> {
   return invoke("set_charge_limit", { percent })
+}
+
+export function setChargeFull(): Promise<number> {
+  return invoke("set_charge_full")
 }
 
 export function setGpuRoute(action: string): Promise<void> {
@@ -137,6 +150,14 @@ export function setLcPump(index: number): Promise<void> {
 
 export function setLcFan(index: number): Promise<void> {
   return invoke("set_lc_fan", { index })
+}
+
+export function setLcConnect(): Promise<void> {
+  return invoke("set_lc_connect")
+}
+
+export function setLcDisconnect(): Promise<void> {
+  return invoke("set_lc_disconnect")
 }
 
 export function updatesCheck(): Promise<UpdateDto> {

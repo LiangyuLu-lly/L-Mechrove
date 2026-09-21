@@ -69,9 +69,10 @@ const GROUPED_KEYS: ReadonlySet<string> = new Set(
 
 export type MoreSwitchesProps = {
   readonly offered: readonly string[]
+  readonly onHostError?: (message: string) => void
 }
 
-export function MoreSwitches({ offered }: MoreSwitchesProps) {
+export function MoreSwitches({ offered, onHostError }: MoreSwitchesProps) {
   const visible = offered.filter((key) => key !== "whisper")
   const visibleSet = new Set(visible)
   const groups = SWITCH_GROUPS.map((group) => ({
@@ -86,12 +87,12 @@ export function MoreSwitches({ offered }: MoreSwitchesProps) {
         <section key={group.title} className="more-switches__group">
           <p className="more-switches__group-label">{group.title}</p>
           {group.keys.map((key) => (
-            <SwitchRow key={key} switchKey={key} />
+            <SwitchRow key={key} switchKey={key} onHostError={onHostError} />
           ))}
         </section>
       ))}
       {extras.map((key) => (
-        <SwitchRow key={key} switchKey={key} />
+        <SwitchRow key={key} switchKey={key} onHostError={onHostError} />
       ))}
     </Collapse>
   )
@@ -99,9 +100,10 @@ export function MoreSwitches({ offered }: MoreSwitchesProps) {
 
 type SwitchRowProps = {
   readonly switchKey: string
+  readonly onHostError?: (message: string) => void
 }
 
-function SwitchRow({ switchKey }: SwitchRowProps) {
+function SwitchRow({ switchKey, onHostError }: SwitchRowProps) {
   const [checked, setChecked] = useState(false)
   const label = SWITCH_LABELS[switchKey] ?? switchKey
 
@@ -110,10 +112,7 @@ function SwitchRow({ switchKey }: SwitchRowProps) {
     try {
       await setQuickSwitch(switchKey, next)
     } catch (error) {
-      if (error instanceof Error) {
-        return
-      }
-      throw error
+      onHostError?.(error instanceof Error ? error.message : String(error))
     }
   }
 

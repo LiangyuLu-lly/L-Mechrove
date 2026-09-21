@@ -7,6 +7,8 @@ import {
   setBrightness,
   setCalibration,
   setDisplayHz,
+  setLocalDimming,
+  setOverdrive,
 } from "../lib/api"
 
 const CALIB_DEFAULT = "COLOR_CALIBRATION_ON_DEFAULT"
@@ -16,17 +18,32 @@ export type ScreenProps = {
   readonly hzList: readonly string[]
   readonly dcHzSeen?: boolean
   readonly colorCalibration?: boolean
+  readonly overdrive?: boolean
+  readonly localDimming?: boolean
+  readonly onHostError?: (message: string) => void
+}
+
+function reportHostError(
+  onHostError: ((message: string) => void) | undefined,
+  error: unknown,
+): void {
+  onHostError?.(error instanceof Error ? error.message : String(error))
 }
 
 export function Screen({
   hzList,
   dcHzSeen = false,
   colorCalibration = false,
+  overdrive = false,
+  localDimming = false,
+  onHostError,
 }: ScreenProps) {
   const [hz, setHz] = useState(hzList[0] ?? "60")
   const [brightness, setBright] = useState(70)
   const [autoHz, setAutoHz] = useState(false)
   const [calib, setCalib] = useState(CALIB_DEFAULT)
+  const [odOn, setOdOn] = useState(false)
+  const [ldOn, setLdOn] = useState(false)
   const options = hzList.map((value) => ({
     value,
     label: value,
@@ -37,10 +54,7 @@ export function Screen({
     try {
       await setDisplayHz(next)
     } catch (error) {
-      if (error instanceof Error) {
-        return
-      }
-      throw error
+      reportHostError(onHostError, error)
     }
   }
 
@@ -49,10 +63,7 @@ export function Screen({
     try {
       await setAutoRefreshRate(next)
     } catch (error) {
-      if (error instanceof Error) {
-        return
-      }
-      throw error
+      reportHostError(onHostError, error)
     }
   }
 
@@ -61,10 +72,7 @@ export function Screen({
     try {
       await setBrightness(next)
     } catch (error) {
-      if (error instanceof Error) {
-        return
-      }
-      throw error
+      reportHostError(onHostError, error)
     }
   }
 
@@ -73,10 +81,25 @@ export function Screen({
     try {
       await setCalibration(next)
     } catch (error) {
-      if (error instanceof Error) {
-        return
-      }
-      throw error
+      reportHostError(onHostError, error)
+    }
+  }
+
+  async function onOverdrive(next: boolean): Promise<void> {
+    setOdOn(next)
+    try {
+      await setOverdrive(next)
+    } catch (error) {
+      reportHostError(onHostError, error)
+    }
+  }
+
+  async function onLocalDimming(next: boolean): Promise<void> {
+    setLdOn(next)
+    try {
+      await setLocalDimming(next)
+    } catch (error) {
+      reportHostError(onHostError, error)
     }
   }
 
@@ -119,6 +142,32 @@ export function Screen({
         onChange={onBrightness}
       />
       <span className="row__value">{brightness}%</span>
+      {overdrive ? (
+        <label className="auto-hz">
+          <input
+            type="checkbox"
+            aria-label="过驱动"
+            checked={odOn}
+            onChange={(event) => {
+              void onOverdrive(event.target.checked)
+            }}
+          />
+          过驱动
+        </label>
+      ) : null}
+      {localDimming ? (
+        <label className="auto-hz">
+          <input
+            type="checkbox"
+            aria-label="局部调光"
+            checked={ldOn}
+            onChange={(event) => {
+              void onLocalDimming(event.target.checked)
+            }}
+          />
+          局部调光
+        </label>
+      ) : null}
     </Row>
   )
 }

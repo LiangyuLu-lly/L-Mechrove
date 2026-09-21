@@ -137,6 +137,7 @@ export type FooterProps = {
   readonly onSettings?: () => void
   readonly onUpdates?: () => void
   readonly onHostError?: (message: string) => void
+  readonly updateAvailable?: boolean
 }
 
 export function Footer({
@@ -144,12 +145,20 @@ export function Footer({
   onSettings,
   onUpdates,
   onHostError,
+  updateAvailable: updateAvailableProp = false,
 }: FooterProps) {
   const [overlayOn, setOverlayOn] = useState(false)
   const [donateOpen, setDonateOpen] = useState(false)
-  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(updateAvailableProp)
 
   useEffect(() => {
+    setUpdateAvailable(updateAvailableProp)
+  }, [updateAvailableProp])
+
+  useEffect(() => {
+    if (updateAvailableProp) {
+      return
+    }
     let cancelled = false
     void updatesCheck()
       .then((dto) => {
@@ -166,7 +175,7 @@ export function Footer({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [updateAvailableProp])
 
   function onFooterKey(id: FooterKeyId): void {
     switch (id) {

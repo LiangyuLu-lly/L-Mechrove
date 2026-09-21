@@ -21,18 +21,23 @@ const TAIL_OPTIONS = [
 
 export type PerformanceProps = {
   readonly silentTurbo?: boolean
+  readonly customProfileOffered?: boolean
   readonly onHostError?: (message: string) => void
 }
 
-function performanceOptions(silentTurbo: boolean) {
+function performanceOptions(silentTurbo: boolean, customProfileOffered: boolean) {
+  const tail = customProfileOffered
+    ? TAIL_OPTIONS
+    : TAIL_OPTIONS.filter((option) => option.value !== "custom")
   if (silentTurbo) {
-    return [...ALWAYS_OPTIONS, SILENT_TURBO_OPTION, ...TAIL_OPTIONS]
+    return [...ALWAYS_OPTIONS, SILENT_TURBO_OPTION, ...tail]
   }
-  return [...ALWAYS_OPTIONS, ...TAIL_OPTIONS]
+  return [...ALWAYS_OPTIONS, ...tail]
 }
 
 export function Performance({
   silentTurbo = false,
+  customProfileOffered = true,
   onHostError,
 }: PerformanceProps) {
   const [mode, setMode] = useState<PerformanceMode>("office")
@@ -59,7 +64,7 @@ export function Performance({
     <Row name="性能模式">
       <Segmented
         value={mode}
-        options={performanceOptions(silentTurbo)}
+        options={performanceOptions(silentTurbo, customProfileOffered)}
         onChange={onChange}
       />
     </Row>

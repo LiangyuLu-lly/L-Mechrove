@@ -59,4 +59,14 @@ describe("Screen", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "自动刷新率" }))
     expect(invoke).toHaveBeenCalledWith("set_auto_refresh_rate", { on: true })
   })
+
+  it("reports set_display_hz failure through onHostError instead of swallowing it", async () => {
+    const onHostError = mock(() => {})
+    invoke.mockRejectedValueOnce(new Error("hz host down"))
+    render(<Screen hzList={["60", "165"]} onHostError={onHostError} />)
+    fireEvent.click(screen.getByRole("radio", { name: /^165$/ }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onHostError).toHaveBeenCalledWith("hz host down")
+  })
 })

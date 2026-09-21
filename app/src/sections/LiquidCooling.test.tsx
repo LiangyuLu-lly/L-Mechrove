@@ -135,4 +135,15 @@ describe("LiquidCooling", () => {
     container.style.width = "420px"
     expect(getComputedStyle(chip).height).toBe("32px")
   })
+
+  it("reports set_lc_pump failure through onHostError instead of swallowing it", async () => {
+    const onHostError = mock(() => {})
+    invoke.mockRejectedValueOnce(new Error("lc host down"))
+    render(<LiquidCooling liquidCooling={true} onHostError={onHostError} />)
+    fireEvent.click(screen.getByRole("button", { name: "液冷" }))
+    fireEvent.click(screen.getByRole("radio", { name: "高" }))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onHostError).toHaveBeenCalledWith("lc host down")
+  })
 })

@@ -19,3 +19,21 @@ pub async fn set_lc_fan(index: u8, state: State<'_, AppState>) -> Result<(), Str
         .await
         .map_err(|err| err.to_string())
 }
+
+#[tauri::command]
+pub async fn set_lc_connect(state: State<'_, AppState>) -> Result<(), String> {
+    let mut backend = state.backend.lock().await;
+    backend
+        .set_lc_connect()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn set_lc_disconnect(state: State<'_, AppState>) -> Result<(), String> {
+    let mut backend = state.backend.lock().await;
+    backend
+        .set_lc_disconnect()
+        .await
+        .map_err(|err| err.to_string())
+}

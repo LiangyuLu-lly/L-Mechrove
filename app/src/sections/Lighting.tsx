@@ -11,6 +11,7 @@ export type LightingProps = {
   readonly keyboardHidUnavailable?: boolean
   readonly lightingOffOnBattery?: boolean
   readonly lightingIdleSeconds?: number
+  readonly onHostError?: (message: string) => void
 }
 
 const KEYBOARD_HID_UNAVAILABLE_CAPTION =
@@ -28,14 +29,15 @@ const IDLE_OPTIONS = [
   { label: "2 小时", idleSeconds: 7200 },
 ] as const
 
-async function invokePolicy(offOnBattery: boolean, idleSeconds: number): Promise<void> {
+async function invokePolicy(
+  offOnBattery: boolean,
+  idleSeconds: number,
+  onHostError?: (message: string) => void,
+): Promise<void> {
   try {
     await setLightingPolicy({ offOnBattery, idleSeconds })
   } catch (error) {
-    if (error instanceof Error) {
-      return
-    }
-    throw error
+    onHostError?.(error instanceof Error ? error.message : String(error))
   }
 }
 
@@ -49,6 +51,7 @@ export function Lighting({
   keyboardHidUnavailable = false,
   lightingOffOnBattery = false,
   lightingIdleSeconds = 0,
+  onHostError,
 }: LightingProps) {
   const visible = lighting.keyboard || lighting.lightbar || lighting.logo
   if (!visible) {
@@ -64,7 +67,7 @@ export function Lighting({
           checked={lightingOffOnBattery}
           label="离电自动关闭全部灯效"
           onChange={(checked) => {
-            void invokePolicy(checked, selectedIdle)
+            void invokePolicy(checked, selectedIdle, onHostError)
           }}
         />
         <select
@@ -75,6 +78,7 @@ export function Lighting({
             void invokePolicy(
               lightingOffOnBattery,
               idleSecondsFromValue(event.currentTarget.value),
+              onHostError,
             )
           }}
         >

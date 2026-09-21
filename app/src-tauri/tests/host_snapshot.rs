@@ -163,3 +163,54 @@ fn snapshot_includes_parity_dto_fields() {
         assert!(obj.contains_key(key), "missing serde key {key}");
     }
 }
+
+#[test]
+fn snapshot_includes_hub_fields_the_ui_reads() {
+    // Given: Fake backend with empty ItemSupport (fail-closed catalog)
+    let backend = Backend::fake_from_json("{}").expect("empty ItemSupport");
+    let snapshot = backend.snapshot();
+    let value = serde_json::to_value(&snapshot).expect("serialize");
+    let obj = value.as_object().expect("object");
+
+    // When/Then: every field a landed UI surface reads is on the wire
+    for key in [
+        "batteryHealth",
+        "chargeStatus",
+        "chargeFullOffered",
+        "overdrive",
+        "localDimming",
+        "customProfileOffered",
+        "lcConnection",
+        "fanCurveTableName",
+        "updateAvailable",
+    ] {
+        assert!(obj.contains_key(key), "missing serde key {key}");
+    }
+    assert_eq!(snapshot.battery_health, "");
+    assert_eq!(snapshot.charge_status, "");
+    assert!(snapshot.charge_full_offered);
+    assert!(!snapshot.overdrive);
+    assert!(!snapshot.local_dimming);
+    assert!(
+        snapshot.custom_profile_offered,
+        "FanSettings is vendor-constant-on for non-commercial"
+    );
+    assert_eq!(snapshot.lc_connection, "none");
+    assert_eq!(snapshot.fan_curve_table_name, "M4T1");
+    assert!(!snapshot.update_available);
+}
+
+#[test]
+fn snapshot_offers_overdrive_and_local_dimming_from_item_support() {
+    // Given: ItemSupport bits the Screen row reads
+    let backend = Backend::fake_from_json(
+        r#"{"LcdOverDriveSupport":1,"LocalDimmingSupport":1,"LiquidCoolingSupport":1}"#,
+    )
+    .expect("parse");
+    let snapshot = backend.snapshot();
+
+    // When/Then: offered flags follow ItemSupport, LC chip is GCU when MQTT LC is up
+    assert!(snapshot.overdrive);
+    assert!(snapshot.local_dimming);
+    assert_eq!(snapshot.lc_connection, "gcu");
+}

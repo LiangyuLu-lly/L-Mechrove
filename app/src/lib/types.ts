@@ -42,6 +42,15 @@ export type HwSnapshot = {
   readonly ocRequiresElevation: boolean
   readonly themeMode: "night" | "day"
   readonly releaseLabel: string
+  readonly batteryHealth: string
+  readonly chargeStatus: string
+  readonly chargeFullOffered: boolean
+  readonly overdrive: boolean
+  readonly localDimming: boolean
+  readonly customProfileOffered: boolean
+  readonly lcConnection: "none" | "direct" | "gcu"
+  readonly fanCurveTableName: string
+  readonly updateAvailable: boolean
 }
 
 export type UpdateDto = {

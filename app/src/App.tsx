@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { listen } from "@tauri-apps/api/event"
 import { Footer } from "./components/Footer"
 import { StatusPill } from "./components/StatusPill"
 import { Toast } from "./components/Toast"
@@ -17,6 +18,8 @@ import { SettingsDialog } from "./sections/SettingsDialog"
 import { TelemetryRow } from "./sections/TelemetryRow"
 import { UpdateDialog } from "./sections/UpdateDialog"
 import "./App.css"
+
+const SNAPSHOT_EVENT = "hw_snapshot"
 
 function dismissFirstRun(): void {
   try {
@@ -48,6 +51,7 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
+    let unlisten: (() => void) | undefined
     void hwSnapshot()
       .then((next) => {
         if (!cancelled) {
@@ -60,8 +64,25 @@ export default function App() {
         }
         throw error
       })
+    void listen<HwSnapshot>(SNAPSHOT_EVENT, (event) => {
+      setSnapshot(event.payload)
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn()
+          return
+        }
+        unlisten = fn
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error) {
+          return
+        }
+        throw error
+      })
     return () => {
       cancelled = true
+      unlisten?.()
     }
   }, [])
 
@@ -76,22 +97,44 @@ export default function App() {
         />
         <Performance
           silentTurbo={snapshot.silentTurbo}
+          customProfileOffered={snapshot.customProfileOffered}
           onHostError={setToast}
         />
         <TelemetryRow snapshot={snapshot} />
-        <Gpu actions={snapshot.gpuActions} />
+        <Gpu actions={snapshot.gpuActions} onHostError={setToast} />
         <Screen
           hzList={snapshot.hzList}
           dcHzSeen={snapshot.dcHzSeen}
           colorCalibration={snapshot.colorCalibration}
+          overdrive={snapshot.overdrive}
+          localDimming={snapshot.localDimming}
+          onHostError={setToast}
         />
-        <Battery percent={snapshot.chargePercent} />
-        <LiquidCooling liquidCooling={snapshot.liquidCooling} />
+        <Battery
+          percent={snapshot.chargePercent}
+          health={snapshot.batteryHealth === "" ? undefined : snapshot.batteryHealth}
+          chargeStatus={
+            snapshot.chargeStatus === "" ? undefined : snapshot.chargeStatus
+          }
+          chargeFullOffered={snapshot.chargeFullOffered}
+          onHostError={setToast}
+        />
+        <LiquidCooling
+          liquidCooling={snapshot.liquidCooling}
+          connection={snapshot.lcConnection}
+          onHostError={setToast}
+        />
         <Lighting
           lighting={snapshot.lighting}
           keyboardHidUnavailable={snapshot.keyboardHidUnavailable}
+          lightingOffOnBattery={snapshot.lightingOffOnBattery}
+          lightingIdleSeconds={snapshot.lightingIdleSeconds}
+          onHostError={setToast}
         />
-        <MoreSwitches offered={snapshot.offeredSwitches} />
+        <MoreSwitches
+          offered={snapshot.offeredSwitches}
+          onHostError={setToast}
+        />
       </div>
       <Footer
         onSettings={() => {
@@ -102,6 +145,7 @@ export default function App() {
         }}
         onHostError={setToast}
         releaseLabel={snapshot.releaseLabel}
+        updateAvailable={snapshot.updateAvailable}
       />
       {firstRunOpen ? (
         <FirstRun

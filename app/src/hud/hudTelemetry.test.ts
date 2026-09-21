@@ -31,6 +31,15 @@ const BASE_SNAPSHOT: HwSnapshot = {
   ocRequiresElevation: false,
   themeMode: "night",
   releaseLabel: "",
+  batteryHealth: "",
+  chargeStatus: "",
+  chargeFullOffered: true,
+  overdrive: false,
+  localDimming: false,
+  customProfileOffered: true,
+  lcConnection: "none",
+  fanCurveTableName: "M4T1",
+  updateAvailable: false,
 }
 
 const DEFAULT_TELEMETRY = {

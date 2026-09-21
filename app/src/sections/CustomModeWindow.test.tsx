@@ -247,4 +247,20 @@ describe("CustomModeWindow", () => {
     expect(screen.getByRole("button", { name: /温度与风扇/ })).toBeTruthy()
     expect(screen.getByRole("button", { name: /超频/ })).toBeTruthy()
   })
+
+  it("reports fan-curve host failure on Toast instead of swallowing it", async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === "set_fan_curve") {
+        return Promise.reject(new Error("curve host down"))
+      }
+      return Promise.resolve()
+    })
+    render(<CustomModeWindow duties={STORED_DUTIES} gpuDuties={GPU_DUTIES} />)
+    fireEvent.click(screen.getByRole("button", { name: "风扇曲线" }))
+    fireEvent.keyDown(screen.getByRole("slider", { name: "CPU T0 转速" }), {
+      key: "ArrowUp",
+    })
+    expect(await screen.findByRole("status")).toBeTruthy()
+    expect(screen.getByText("curve host down")).toBeTruthy()
+  })
 })

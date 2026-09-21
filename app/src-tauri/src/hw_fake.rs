@@ -58,6 +58,9 @@ pub struct FakeState {
     pub(crate) project_id: String,
     pub(crate) model_reason: String,
     pub(crate) write_override: Option<bool>,
+    pub(crate) battery_health: String,
+    pub(crate) charge_status: String,
+    pub(crate) update_available: bool,
 }
 
 impl FakeState {
@@ -99,6 +102,9 @@ impl FakeState {
             project_id: String::new(),
             model_reason: String::new(),
             write_override: None,
+            battery_health: String::new(),
+            charge_status: String::new(),
+            update_available: false,
         }
     }
 

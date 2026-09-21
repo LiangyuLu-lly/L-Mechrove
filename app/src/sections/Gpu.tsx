@@ -22,9 +22,10 @@ const DGPU_ACTIONS = new Set(["dgpu", "DGPU_DIRECT_CONNECT_TOGGLE_ON"])
 
 export type GpuProps = {
   readonly actions: readonly string[]
+  readonly onHostError?: (message: string) => void
 }
 
-export function Gpu({ actions }: GpuProps) {
+export function Gpu({ actions, onHostError }: GpuProps) {
   const options = actions
     .filter((action) => !HIDDEN_ACTIONS.has(action))
     .map((value) => ({
@@ -42,10 +43,7 @@ export function Gpu({ actions }: GpuProps) {
     try {
       await setGpuRoute(next)
     } catch (error) {
-      if (error instanceof Error) {
-        return
-      }
-      throw error
+      onHostError?.(error instanceof Error ? error.message : String(error))
     }
   }
 

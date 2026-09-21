@@ -116,4 +116,22 @@ describe("FanCurve", () => {
       }
     }
   })
+
+  it("reports setFanCurve failure through onHostError instead of swallowing it", async () => {
+    const onHostError = mock(() => {})
+    setFanCurve.mockRejectedValueOnce(new Error("curve host down"))
+    render(
+      <FanCurve
+        cpuDuties={CPU_INITIAL}
+        gpuDuties={GPU_INITIAL}
+        onHostError={onHostError}
+      />,
+    )
+    fireEvent.keyDown(screen.getByRole("slider", { name: "CPU T3 转速" }), {
+      key: "ArrowUp",
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onHostError).toHaveBeenCalledWith("curve host down")
+  })
 })

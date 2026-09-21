@@ -151,12 +151,14 @@ Left: version `--type-caption` `--muted`. Right, equal columns, locked order:
 |---|---|---|---|
 | 1 | 悬浮窗 | Overlay (circle-dot) | `overlay_set` — active = `--accent` icon+text |
 | 2 | 设置 | Gear | settings dialog (470px, root §0.5) |
-| 3 | 更新 | Refresh | `updates_check` — when host reports an update, a 有新版本 badge (accent pip, text in DOM, does not grow the 46×36 key) |
+| 3 | 更新 | Refresh | `updates_check` **or** snapshot `updateAvailable` — 有新版本 badge (accent pip, text in DOM, does not grow the 46×36 key) |
 | 4 | **诊断** | Package | `diagnostics_export` — accessible name 导出诊断包 |
 | 5 | 赞助 | Heart (stroke, not emoji) | donate — opens DonateDialog (title 赞助支持). No network. |
 | 6 | 退出 | Close | quit / tray |
 
 WinForms `BuildFooterV2` TLP currently places 赞助 before 诊断. **Tauri follows this table** (诊断 is 4th key). Ghost buttons: no border, ImageAboveText, `--type-caption`, hover `--surface-raised`.
+
+Host snapshot event `hw_snapshot` is the live DTO. UI-read hub fields: `batteryHealth` / `chargeStatus` / `chargeFullOffered`, `overdrive` / `localDimming`, `customProfileOffered`, `lcConnection` (`none`\|`direct`\|`gcu`), `fanCurveTableName` (`M4T1`…), `updateAvailable`. Host errors surface on Toast via `onHostError`; never swallow.
 
 ### SettingsDialog
 

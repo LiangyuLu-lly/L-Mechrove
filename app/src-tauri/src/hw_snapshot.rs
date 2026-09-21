@@ -20,6 +20,20 @@ fn silent_turbo(item_support: &ItemSupport) -> bool {
     item_support.is_truthy("IsTurboSubModeSupport")
 }
 
+fn fan_curve_table_name(index: u8) -> String {
+    format!("M4T{}", u16::from(index) + 1)
+}
+
+fn lc_connection_label(direct: bool, gcu: bool) -> String {
+    if direct {
+        "direct".to_owned()
+    } else if gcu {
+        "gcu".to_owned()
+    } else {
+        "none".to_owned()
+    }
+}
+
 /// GCU connection pill. Serialized as a PascalCase string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MqttStatus {
@@ -85,6 +99,23 @@ pub struct HwSnapshot {
     pub theme_mode: String,
     #[serde(rename = "releaseLabel")]
     pub release_label: String,
+    #[serde(rename = "batteryHealth")]
+    pub battery_health: String,
+    #[serde(rename = "chargeStatus")]
+    pub charge_status: String,
+    #[serde(rename = "chargeFullOffered")]
+    pub charge_full_offered: bool,
+    pub overdrive: bool,
+    #[serde(rename = "localDimming")]
+    pub local_dimming: bool,
+    #[serde(rename = "customProfileOffered")]
+    pub custom_profile_offered: bool,
+    #[serde(rename = "lcConnection")]
+    pub lc_connection: String,
+    #[serde(rename = "fanCurveTableName")]
+    pub fan_curve_table_name: String,
+    #[serde(rename = "updateAvailable")]
+    pub update_available: bool,
 }
 
 /// Inputs shared by Fake and Real so the catalog cannot diverge.
@@ -112,6 +143,13 @@ pub struct SnapshotParts<'a> {
     pub project_id: String,
     pub oc_requires_elevation: bool,
     pub theme_mode: String,
+    pub battery_health: String,
+    pub charge_status: String,
+    pub charge_full_offered: bool,
+    pub lc_direct: bool,
+    pub lc_mqtt_connected: bool,
+    pub custom_profile_index: u8,
+    pub update_available: bool,
 }
 
 pub fn snapshot_from(parts: SnapshotParts<'_>) -> HwSnapshot {
@@ -153,6 +191,21 @@ pub fn snapshot_from(parts: SnapshotParts<'_>) -> HwSnapshot {
         oc_requires_elevation: parts.oc_requires_elevation,
         theme_mode: parts.theme_mode,
         release_label: env!("CARGO_PKG_VERSION").to_owned(),
+        battery_health: parts.battery_health,
+        charge_status: parts.charge_status,
+        charge_full_offered: parts.charge_full_offered,
+        overdrive: parts.item_support.is_truthy("LcdOverDriveSupport"),
+        local_dimming: parts.item_support.is_truthy("LocalDimmingSupport"),
+        custom_profile_offered: FeatureMatrix::from_values(parts.item_support)
+            .is_supported(FeatureBit::FanSettings),
+        lc_connection: lc_connection_label(
+            parts.lc_direct,
+            parts.lc_mqtt_connected
+                && FeatureMatrix::from_values(parts.item_support)
+                    .is_supported(FeatureBit::LiquidCooling),
+        ),
+        fan_curve_table_name: fan_curve_table_name(parts.custom_profile_index),
+        update_available: parts.update_available,
     }
 }
 
@@ -183,6 +236,13 @@ impl Backend {
                 project_id: state.project_id.clone(),
                 oc_requires_elevation: false,
                 theme_mode: "night".to_owned(),
+                battery_health: state.battery_health.clone(),
+                charge_status: state.charge_status.clone(),
+                charge_full_offered: true,
+                lc_direct: false,
+                lc_mqtt_connected: !state.lc_mqtt_disconnected,
+                custom_profile_index: state.custom_profile_index,
+                update_available: state.update_available,
             }),
             Self::Real { state } => {
                 let mqtt_connected = state.mqtt_status == MqttStatus::Connected;
@@ -211,6 +271,13 @@ impl Backend {
                     project_id: state.project_id.clone(),
                     oc_requires_elevation: false,
                     theme_mode: state.theme_mode.clone(),
+                    battery_health: String::new(),
+                    charge_status: String::new(),
+                    charge_full_offered: true,
+                    lc_direct: false,
+                    lc_mqtt_connected: mqtt_connected,
+                    custom_profile_index: state.custom_profile_index,
+                    update_available: false,
                 })
             }
         }
