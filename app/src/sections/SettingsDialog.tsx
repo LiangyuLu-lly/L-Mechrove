@@ -7,12 +7,7 @@ import {
   type HudBlockKey,
   type OverlayPersistPrefs,
 } from "../hud/hudOverlay"
-import {
-  overlayUpdate,
-  setOfficialIsolation,
-  setThemeMode,
-  setUiLanguage,
-} from "../lib/api"
+import { overlayUpdate, setThemeMode, setUiLanguage } from "../lib/api"
 
 const THEME_OPTIONS = [
   { value: "night", label: "夜间" },
@@ -76,7 +71,6 @@ function flagsFromOverlay(overlay: OverlaySettings): HudBlockFlags {
 export function SettingsDialog({ onClose, overlay }: SettingsDialogProps) {
   const [theme, setTheme] = useState<ThemeMode>("night")
   const [language, setLanguage] = useState<UiLanguage>("zh-CN")
-  const [isolated, setIsolated] = useState(false)
   const [gameOnly, setGameOnly] = useState(overlay?.gameOnly ?? false)
   const [displayOff, setDisplayOff] = useState(overlay?.displayOff ?? false)
   const [flags, setFlags] = useState(() => flagsFromOverlay(overlay ?? {}))
@@ -90,11 +84,6 @@ export function SettingsDialog({ onClose, overlay }: SettingsDialogProps) {
   function onLanguage(next: UiLanguage): void {
     setLanguage(next)
     void swallowHostError(() => setUiLanguage(next))
-  }
-
-  function onIsolation(on: boolean): void {
-    setIsolated(on)
-    void swallowHostError(() => setOfficialIsolation(on))
   }
 
   return (
@@ -168,31 +157,6 @@ export function SettingsDialog({ onClose, overlay }: SettingsDialogProps) {
               }}
             />
           </div>
-        </section>
-        <section className="settings-dialog__zone">
-          <h3 className="settings-dialog__zone-title">系统</h3>
-          <Row name="官方控制台" status={isolated ? "已隔离" : "未隔离"}>
-            <div className="settings-dialog__actions">
-              <button
-                type="button"
-                className="settings-dialog__action"
-                onClick={() => {
-                  onIsolation(true)
-                }}
-              >
-                隔离官方界面与托盘
-              </button>
-              <button
-                type="button"
-                className="settings-dialog__action"
-                onClick={() => {
-                  onIsolation(false)
-                }}
-              >
-                恢复官方控制台
-              </button>
-            </div>
-          </Row>
         </section>
       </div>
     </div>

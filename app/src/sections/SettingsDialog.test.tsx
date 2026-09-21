@@ -54,22 +54,6 @@ describe("SettingsDialog", () => {
     expect(invoke).toHaveBeenCalledWith("set_ui_language", { code: "en" })
   })
 
-  it("shows 隔离官方界面与托盘 and 恢复官方控制台", () => {
-    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
-    expect(
-      screen.getByRole("button", { name: "隔离官方界面与托盘" }),
-    ).toBeTruthy()
-    expect(screen.getByRole("button", { name: "恢复官方控制台" })).toBeTruthy()
-  })
-
-  it("invokes set_official_isolation true when 隔离官方界面与托盘 is clicked", () => {
-    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
-    fireEvent.click(screen.getByRole("button", { name: "隔离官方界面与托盘" }))
-    expect(invoke).toHaveBeenCalledWith("set_official_isolation", {
-      isolate: true,
-    })
-  })
-
   it("renders overlay prefs standalone without an overlay prop", () => {
     render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
     expect(screen.getByRole("checkbox", { name: "仅游戏显示" })).toBeTruthy()

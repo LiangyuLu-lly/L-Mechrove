@@ -23,7 +23,7 @@ cargo test --manifest-path app/src-tauri/Cargo.toml --test transcript_diff -- --
 
 Do these **before** trusting a live console. The cargo tests themselves stay on Fake.
 
-1. Quit the vendor console **normally** from its own UI. Never kill the process, never task-kill, never use this port's isolation as a killer.
+1. Quit the vendor console **normally** from its own UI. Never kill the process, never task-kill. This port has no isolation command.
 2. Confirm the vendor UI process is gone (`ControlCenterX` / vendor executable not listed). If it is still running, wait; do not kill it.
 3. Start this app so it owns **slot 4** (`UWPClient_4`) alone. Do not start a second client. Do not use slot 5.
 4. On the running app, walk the same command surface the dump drives: office mode, custom slot 2, a lighting power change, a Windows personalization switch (dark theme), charge limit 80, overlay toggle, then quit so shutdown publishes `System_OFF`.

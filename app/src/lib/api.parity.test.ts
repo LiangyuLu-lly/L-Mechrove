@@ -41,7 +41,6 @@ const UI_COMMANDS = [
   "overlay_set",
   "diagnostics_export",
   "app_quit",
-  "set_official_isolation",
   "updates_install",
   "updates_open_page",
   "overlay_update",

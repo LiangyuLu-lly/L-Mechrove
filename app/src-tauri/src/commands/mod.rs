@@ -21,8 +21,7 @@ pub use display::{
 pub use fan::{set_custom_detail, set_fan_boost, set_fan_curve};
 pub use gpu::set_gpu_route;
 pub use host::{
-    app_quit, set_lighting_policy, set_official_isolation, set_project_id, set_theme_mode,
-    set_ui_language,
+    app_quit, set_lighting_policy, set_project_id, set_theme_mode, set_ui_language,
 };
 pub use lc::{set_lc_connect, set_lc_disconnect, set_lc_fan, set_lc_pump};
 pub use lighting::{set_light_effect, set_light_power};

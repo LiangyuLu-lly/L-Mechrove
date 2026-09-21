@@ -10,7 +10,6 @@ pub mod hw_exec_state;
 mod hw_fake;
 pub mod hw_fan;
 mod hw_gpu;
-pub mod hw_isolation;
 pub mod hw_item_support_win;
 pub mod hw_lc;
 mod hw_lighting;
@@ -47,7 +46,7 @@ use commands::{
     set_charge_full, set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost,
     set_fan_curve, set_gpu_route, set_lc_connect, set_lc_disconnect, set_lc_fan, set_lc_pump,
     set_light_effect, set_light_power, set_lighting_policy, set_local_dimming, set_monitor_off,
-    set_official_isolation, set_overdrive, set_performance_mode, set_project_id, set_quick_switch,
+    set_overdrive, set_performance_mode, set_project_id, set_quick_switch,
     set_theme_mode, set_ui_language, updates_check, updates_install, updates_open_page,
 };
 use hw_backend::{AppState, Backend as HwBackend};
@@ -129,7 +128,6 @@ pub fn run() {
             overlay_set,
             diagnostics_export,
             app_quit,
-            set_official_isolation,
             updates_install,
             updates_open_page,
             overlay_update,

@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 use crate::hw_backend::AppState;
 use crate::hw_prefs;
@@ -12,17 +12,6 @@ pub async fn app_quit(app: AppHandle) -> Result<(), String> {
     }
     app.exit(0);
     Ok(())
-}
-
-#[tauri::command]
-pub async fn set_official_isolation(
-    isolate: bool,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let mut backend = state.backend.lock().await;
-    backend
-        .set_official_isolation(isolate)
-        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

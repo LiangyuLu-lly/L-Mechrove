@@ -448,23 +448,6 @@ impl Backend {
         }
     }
 
-    pub fn set_official_isolation(&mut self, on: bool) -> Result<(), HostError> {
-        match self {
-            Self::Fake { state } => {
-                state.official_isolation = Some(on);
-                Ok(())
-            }
-            Self::Real { .. } => crate::hw_isolation::apply_real(on),
-        }
-    }
-
-    pub fn recorded_official_isolation(&self) -> Option<bool> {
-        match self {
-            Self::Fake { state } => state.official_isolation,
-            Self::Real { .. } => None,
-        }
-    }
-
     pub fn recorded_hid_feature_reports(&self) -> Vec<Vec<u8>> {
         match self {
             Self::Fake { state } => state.hid.feature_reports().to_vec(),

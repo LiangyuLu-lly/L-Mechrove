@@ -30,7 +30,7 @@ as CANNOT-VERIFY with its cheapest falsifier — never as done.
 | Charge limit writes only 0x7B9/0x7D0 | `scenario_s3_charge_limit` |
 | Battery protection publishes; full-charge exists | `host_battery` |
 | Update: 2-key check DTO, sha256-gated install, open page, notes/progress | `host_updates` |
-| Autostart task, shell personalisation, vendor isolation (no process kill) | `host_startup`, `host_shell`, `host_isolation` |
+| Autostart task, shell personalisation | `host_startup`, `host_shell` |
 | Real snapshot computes the capability surface; inbound MQTT parsed; reconnect; shutdown notice | `host_snapshot`, `host_item_support`, `host_mqtt_inbound`, `host_reconnect`, `host_real_transport` |
 | Dev fixture is opt-in; empty stays the fail-closed default | `host_fake_dev` |
 | UI: telemetry row, GPU labels, screen gating, switch checkboxes, lighting default-open, custom window, donate, update dialog | the section tests + the 420px measurement |
@@ -52,11 +52,19 @@ as CANNOT-VERIFY with its cheapest falsifier — never as done.
 | Live sensor telemetry (LHM) | inject a sensor seam; live numbers stay absent |
 | Live CCD advanced-colour matches the panel HDR/ACM switch | turn HDR on, calibration refused; HDR off, calibration proceeds; ACM-on also refused (`IsAdvancedColorEnabled`). Unit tests cover the three branches via an injected probe and never open live display config. |
 
+## Removed by user decision
+
+| Surface | Prerequisite | Consequence if the official console is still installed |
+|---|---|---|
+| Official-console isolation (`set_official_isolation`, settings 系统 row, `host_isolation`) | The official console must be uninstalled | Dual publishers on the fan and lighting topics, a vendor System_OFF stopping telemetry for every client, and two tray icons |
+
+That consequence text is the honest replacement for the deleted guard. Isolation in the port never killed a process (HKCU Run/RunOnce delete + Startup-folder rename only); removing it does not remove a kill-safety behaviour.
+
 ## Known deviations, deliberate
 
 - No EC lighting. Charge limit is the only EC write, restricted to 0x7B9/0x7D0.
 - The vendor's process-termination paths (its own kill + 2s re-kill guard and the elevated GPU-app killer) are
-  not ported; isolation never kills a process.
+  not ported.
 - The 24-character manual-model override is replaced by the served-machine rule.
 - The GPU overclock elevation row is not shown: an MQTT-only host has no elevation to request.
 - `hw_display.rs` still reports unavailable on eleven arms (non-Windows fallbacks and the sub-commands whose

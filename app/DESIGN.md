@@ -162,9 +162,9 @@ Host snapshot event `hw_snapshot` is the live DTO. UI-read hub fields: `batteryH
 
 ### SettingsDialog
 
-- Width 470px. Zones: 外观 / 显示 / 系统. Overlay toggle lives only on footer 悬浮窗.
+- Width 470px. Zones: 外观 / 悬浮窗. Overlay toggle lives only on footer 悬浮窗.
 - 外观 maps C# 界面: theme **日间 / 夜间 only** (no 跟随系统). Language combo **中文 / English**; persist `lmechrevo.language` (`zh-CN` / `en`); `window.confirm` restart prompt.
-- 系统: 官方控制台 status + **隔离官方界面与托盘** / **恢复官方控制台**. Host `set_official_isolation` (Win32 record, never MQTT, never kill L-Mechrevo).
+- Official-console isolation is not on this surface. The official console must be uninstalled; the port does not isolate it.
 
 ### DonateDialog
 

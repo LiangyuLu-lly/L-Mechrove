@@ -180,10 +180,6 @@ export function appQuit(): Promise<void> {
   return invoke("app_quit")
 }
 
-export function setOfficialIsolation(on: boolean): Promise<void> {
-  return invoke("set_official_isolation", { isolate: on })
-}
-
 export function updatesInstall(): Promise<void> {
   return invoke("updates_install")
 }
