@@ -236,7 +236,10 @@ async fn persists_pl1_under_office_key_when_current_mode_is_office() {
     let store = read_profiles(&dir);
     assert_eq!(store["office"]["pl1"], "45");
     assert!(
-        store.get("custom").and_then(|slot| slot.get("pl1")).is_none(),
+        store
+            .get("custom")
+            .and_then(|slot| slot.get("pl1"))
+            .is_none(),
         "Office change must not be filed under custom: {store}"
     );
 }
@@ -284,7 +287,10 @@ async fn persists_pl1_under_custom_key_when_current_mode_is_custom() {
     let store = read_profiles(&dir);
     assert_eq!(store["custom"]["pl1"], "45");
     assert!(
-        store.get("office").and_then(|slot| slot.get("pl1")).is_none(),
+        store
+            .get("office")
+            .and_then(|slot| slot.get("pl1"))
+            .is_none(),
         "Custom change must not be filed under office: {store}"
     );
 }
@@ -307,7 +313,11 @@ async fn publishes_operating_mode_detail_when_current_mode_is_custom() {
 
     // Then: SET_OPERATING_MODE_DETAIL payload shape stays the vendor-matched string
     let published = mode_detail_after(&backend, start);
-    assert_eq!(published.len(), 1, "Custom must publish once: {published:?}");
+    assert_eq!(
+        published.len(),
+        1,
+        "Custom must publish once: {published:?}"
+    );
     assert!(
         published[0]["PL1"].is_string(),
         "PL1 must be a JSON string: {:?}",

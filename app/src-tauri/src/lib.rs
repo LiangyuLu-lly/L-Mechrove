@@ -9,6 +9,7 @@ mod hw_error;
 pub mod hw_exec_state;
 mod hw_fake;
 pub mod hw_fan;
+pub mod hw_gcu_coexistence;
 mod hw_gpu;
 pub mod hw_gpu_gen;
 pub mod hw_item_support_win;
@@ -39,19 +40,20 @@ pub mod updates;
 
 pub use hw_backend::Backend;
 pub use hw_error::HostError;
-pub use hw_lighting_inputs::LightingInputGuard;
 pub use hw_gpu::apply_gpu_route;
+pub use hw_lighting_inputs::LightingInputGuard;
 pub use hw_snapshot::{HwSnapshot, MqttStatus};
 pub use secrets::slot4_params;
 
 use commands::{
-    app_quit, close_custom_mode_window, diagnostics_export, hw_snapshot, open_custom_mode_window,
+    app_quit, close_custom_mode_window, diagnostics_export, gcu_coexistence_status, hw_snapshot,
+    open_custom_mode_window,
     overlay_set, overlay_update, set_auto_refresh_rate, set_brightness, set_calibration,
     set_charge_full, set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost,
     set_fan_curve, set_gpu_route, set_lc_connect, set_lc_disconnect, set_lc_fan, set_lc_pump,
     set_light_effect, set_light_power, set_lighting_policy, set_local_dimming, set_monitor_off,
-    set_overdrive, set_performance_mode, set_project_id, set_quick_switch,
-    set_theme_mode, set_ui_language, updates_check, updates_install, updates_open_page,
+    set_overdrive, set_performance_mode, set_project_id, set_quick_switch, set_theme_mode,
+    set_ui_language, updates_check, updates_install, updates_open_page,
 };
 use hw_backend::{AppState, Backend as HwBackend};
 use tauri::Manager;
@@ -136,6 +138,7 @@ pub fn run() {
             overlay_set,
             diagnostics_export,
             app_quit,
+            gcu_coexistence_status,
             updates_install,
             updates_open_page,
             overlay_update,

@@ -561,6 +561,13 @@ input:focus-visible {
   color: var(--muted);
 }
 
+.first-run__step-btn {
+  margin-top: var(--space-sm);
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0 var(--space-md);
+}
+
 .first-run__actions {
   display: flex;
   gap: var(--space-sm);

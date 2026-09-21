@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Manager, State};
 
 use crate::hw_backend::AppState;
+use crate::hw_gcu_coexistence::{self, GcuCoexistenceStatus};
 use crate::hw_prefs;
 
 #[tauri::command]
@@ -44,4 +45,9 @@ pub async fn set_lighting_policy(
         .set_lighting_policy(off_on_battery, idle_seconds)
         .await
         .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn gcu_coexistence_status() -> Result<GcuCoexistenceStatus, String> {
+    Ok(hw_gcu_coexistence::probe_status())
 }

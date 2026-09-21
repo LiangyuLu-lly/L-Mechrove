@@ -3,10 +3,15 @@
 #[path = "updates_install.rs"]
 pub mod updates_install;
 
+#[path = "updates_fetch.rs"]
+mod fetch;
+
 use serde::{Deserialize, Serialize};
 
 use crate::hw_backend::Backend;
 use crate::hw_error::HostError;
+
+pub use fetch::http_get_bytes;
 
 const CHECK_PREFIX: &str = "https://stats.l-mechrevo.cn/api/update_check.php?version=";
 const CHANNEL_QUERY: &str = "&channel=";
@@ -117,14 +122,10 @@ fn is_allowed_host(host: &str) -> bool {
             .any(|allowed| host.eq_ignore_ascii_case(allowed))
 }
 
-impl Backend {
+    impl Backend {
     pub fn updates_check(&self) -> Result<UpdateDto, HostError> {
         match self {
-            Self::Fake { .. } => Ok(UpdateDto {
-                update_available: false,
-                latest_version: String::new(),
-            }),
-            Self::Real { .. } => Err(HostError::RealUnavailable),
+            Self::Fake { .. } | Self::Real { .. } => fetch::check_from_env(),
         }
     }
 

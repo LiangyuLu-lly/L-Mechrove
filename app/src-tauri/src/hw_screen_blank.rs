@@ -217,6 +217,8 @@ mod live_idle {
         // SAFETY: [Category 8 — FFI boundary]
         // GetTickCount takes no pointers and returns a DWORD tick count.
         let now = unsafe { GetTickCount() };
-        Some(Duration::from_millis(u64::from(now.wrapping_sub(info.dw_time))))
+        Some(Duration::from_millis(u64::from(
+            now.wrapping_sub(info.dw_time),
+        )))
     }
 }

@@ -1,30 +1,96 @@
+import { useEffect, useState } from "react"
+import { invoke } from "@tauri-apps/api/core"
+import { openUrl } from "@tauri-apps/plugin-opener"
+
 export type FirstRunProps = {
   readonly onLater: () => void
   readonly onGoSystem: () => void
 }
 
-const STEPS = [
-  {
-    marker: "1",
-    title: "无需安装任何其他控制台",
-    body: "安装器已经装好 GCU 服务与驱动，本程序自带全部必要组件。厂商「官方控制台」已由安装器清理并替换为 L-Mechrevo，不需要再下载或安装它。",
-    warning: false,
-  },
+const APPS_FEATURES_URI = "ms-settings:appsfeatures" as const
+
+type CoexistenceStatus = {
+  readonly requiresPrompt: boolean
+}
+
+type Step = {
+  readonly marker: string
+  readonly title: string
+  readonly body: string
+  readonly warning: boolean
+  readonly appsSettings: boolean
+}
+
+const REPLACED_STEP: Step = {
+  marker: "1",
+  title: "无需安装任何其他控制台",
+  body: "安装器已经装好 GCU 服务与驱动，本程序自带全部必要组件。厂商「官方控制台」已由安装器清理并替换为 L-Mechrevo，不需要再下载或安装它。",
+  warning: false,
+  appsSettings: false,
+}
+
+const UNINSTALL_STEP: Step = {
+  marker: "!",
+  title: "请卸载官方控制台",
+  body: "检测到机器上仍有厂商的 GCU 环境。L-Mechrevo 不会替你静默删除厂商的软件。请手动卸载「官方控制台」应用（设置 → 应用 → 已安装的应用），然后重新启动 L-Mechrevo。",
+  warning: true,
+  appsSettings: true,
+}
+
+const LATER_STEPS: readonly Step[] = [
   {
     marker: "2",
     title: "直接开始使用",
     body: "打开本程序的“系统”页即可设置开机启动、性能模式、显卡模式与灯效；GCU 服务在后台运行，无需额外操作。",
     warning: false,
+    appsSettings: false,
   },
   {
     marker: "!",
     title: "退出其他灯效控制软件",
     body: "不要同时运行 BetterRGB、OpenRGB 或其他厂商灯效程序，否则多个程序抢占 HID 设备可能导致灯效失效或设备访问冲突。",
     warning: true,
+    appsSettings: false,
   },
-] as const
+]
+
+function consoleStep(requiresPrompt: boolean): Step {
+  return requiresPrompt ? UNINSTALL_STEP : REPLACED_STEP
+}
+
+function openAppsSettings(): void {
+  void openUrl(APPS_FEATURES_URI).catch((error: unknown) => {
+    if (error instanceof Error) {
+      return
+    }
+    throw error
+  })
+}
 
 export function FirstRun({ onLater, onGoSystem }: FirstRunProps) {
+  const [requiresPrompt, setRequiresPrompt] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void invoke<CoexistenceStatus>("gcu_coexistence_status")
+      .then((status) => {
+        if (!cancelled) {
+          setRequiresPrompt(status.requiresPrompt)
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error) {
+          return
+        }
+        throw error
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const steps = [consoleStep(requiresPrompt), ...LATER_STEPS]
+
   return (
     <div className="first-run" role="dialog" aria-labelledby="first-run-title">
       <header className="first-run__header">
@@ -36,7 +102,7 @@ export function FirstRun({ onLater, onGoSystem }: FirstRunProps) {
         </p>
       </header>
       <div className="first-run__body">
-        {STEPS.map((step) => (
+        {steps.map((step) => (
           <section
             key={step.title}
             className={
@@ -49,6 +115,15 @@ export function FirstRun({ onLater, onGoSystem }: FirstRunProps) {
             <div>
               <h2 className="first-run__step-title">{step.title}</h2>
               <p className="first-run__step-body">{step.body}</p>
+              {step.appsSettings ? (
+                <button
+                  type="button"
+                  className="first-run__btn first-run__step-btn"
+                  onClick={openAppsSettings}
+                >
+                  打开应用设置
+                </button>
+              ) : null}
             </div>
           </section>
         ))}

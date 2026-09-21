@@ -2,10 +2,14 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{DownloadReq, InstallError, InstallIo, Progress};
+use super::InstallError;
+#[cfg(not(test))]
+use super::{DownloadReq, InstallIo, Progress};
 
+#[cfg(not(test))]
 pub(super) struct RealIo;
 
+#[cfg(not(test))]
 impl InstallIo for RealIo {
     fn download(
         &self,
@@ -44,7 +48,7 @@ impl InstallIo for RealIo {
     }
 }
 
-fn replace_with_rollback(current: &Path, downloaded: &Path) -> Result<(), InstallError> {
+pub fn replace_with_rollback(current: &Path, downloaded: &Path) -> Result<(), InstallError> {
     let new_path = sibling(current, ".new");
     let old_path = sibling(current, ".old");
     std::fs::copy(downloaded, &new_path)?;

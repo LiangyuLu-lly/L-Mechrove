@@ -11,9 +11,10 @@ use sha2::{Digest, Sha256};
 
 use crate::updates::{accept_download_url, DownloadUrlError};
 
-#[cfg(not(test))]
 #[path = "updates_install_real.rs"]
 mod real;
+
+pub use real::replace_with_rollback;
 
 const SHA256_HEX_LEN: usize = 64;
 const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -268,6 +269,19 @@ pub fn open_page_real() -> Result<(), InstallError> {
     Ok(())
 }
 
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    hex_encode(&Sha256::digest(bytes))
+}
+
+fn hex_encode(digest: &[u8]) -> String {
+    let mut actual = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        actual.push(char::from(HEX[(byte >> 4) as usize]));
+        actual.push(char::from(HEX[(byte & 0x0F) as usize]));
+    }
+    actual
+}
+
 fn verify_sha256_and_size(path: &Path, expected: &str, size: u64) -> Result<(), InstallError> {
     let meta = std::fs::metadata(path)?;
     if meta.len() != size {
@@ -283,13 +297,7 @@ fn verify_sha256_and_size(path: &Path, expected: &str, size: u64) -> Result<(), 
         }
         hasher.update(&buf[..n]);
     }
-    let digest = hasher.finalize();
-    let mut actual = String::with_capacity(SHA256_HEX_LEN);
-    for byte in digest {
-        actual.push(char::from(HEX[(byte >> 4) as usize]));
-        actual.push(char::from(HEX[(byte & 0x0F) as usize]));
-    }
-    if actual.eq_ignore_ascii_case(expected) {
+    if hex_encode(&hasher.finalize()).eq_ignore_ascii_case(expected) {
         Ok(())
     } else {
         Err(InstallError::Verify)
