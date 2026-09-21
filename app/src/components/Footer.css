@@ -14,7 +14,7 @@
 .footer__version {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 56px;
+  max-width: var(--footer-version-max);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

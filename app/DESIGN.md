@@ -98,7 +98,7 @@ Base 4px. `UiVisualStyle.Space` unchanged.
 - Slider: 4px `--track`, `--accent` fill, 14px thumb (white + 3px accent ring).
 - Fan curve plot: height `--fan-curve-height` (`10rem` / 160px).
 - Switch: 38×20 track (`--input` + `--border`); on = `--accent` + white thumb.
-- Footer: `--surface` + top 1px `--border`; height 51px; ghost keys 46×36; hover `--surface-raised`.
+- Footer: `--surface` + top 1px `--border`; height 51px; ghost keys 46×36; hover `--surface-raised`. Version label caps at `--footer-version-max` (96px) so the full release label (`0.289.0-beta18`) fits without ellipsis.
 - Density 7/10. Values right-aligned, Consolas, `--muted`.
 
 ---

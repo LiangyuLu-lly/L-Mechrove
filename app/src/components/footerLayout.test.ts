@@ -43,4 +43,16 @@ describe("footerLayout", () => {
       .map((declaration) => declaration.trim())
     expect(slider.some((declaration) => declaration.startsWith("min-width:"))).toBe(true)
   })
+
+  it("caps the footer version wide enough to show the release label", async () => {
+    const footerCss = await Bun.file(new URL("./Footer.css", import.meta.url)).text()
+    const version = declarationBlock(footerCss, ".footer__version")
+    expect(version).toContain("max-width: var(--footer-version-max)")
+
+    const appCss = await Bun.file(new URL("../App.css", import.meta.url)).text()
+    const tokenLine = appCss.match(/--footer-version-max:\s*(\d+)px/)
+    expect(tokenLine).toBeTruthy()
+    const capPx = Number(tokenLine?.[1] ?? 0)
+    expect(capPx).toBeGreaterThanOrEqual(88)
+  })
 })
