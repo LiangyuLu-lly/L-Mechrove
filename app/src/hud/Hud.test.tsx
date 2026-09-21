@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
+import { overlayUpdate } from "../lib/api"
 import type { HwSnapshot } from "../lib/types"
-import { HudPanel } from "./Hud"
+import { Hud, HudPanel } from "./Hud"
+import { persistPrefsForBlock } from "./hudOverlay"
 
 const invoke = mock(() => Promise.resolve())
 const startDragging = mock(() => Promise.resolve())
@@ -12,6 +14,10 @@ mock.module("@tauri-apps/api/core", () => ({
 
 mock.module("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging }),
+}))
+
+mock.module("@tauri-apps/api/event", () => ({
+  listen: () => Promise.resolve(() => {}),
 }))
 
 const FAKE_TELEMETRY: HwSnapshot = {
@@ -81,10 +87,20 @@ describe("HudPanel", () => {
   beforeEach(() => {
     invoke.mockClear()
     startDragging.mockClear()
+    window.localStorage.clear()
   })
 
   afterEach(() => {
     cleanup()
+    window.localStorage.clear()
+  })
+
+  it("renders a hidden overlay block enabled through overlayUpdate prefs", async () => {
+    await overlayUpdate(persistPrefsForBlock("showBattery", true))
+
+    render(<Hud />)
+
+    expect(screen.getByText("0%")).toBeTruthy()
   })
 
     it("renders Default overlay temp rpm watt and not mqtt charge HDR", () => {

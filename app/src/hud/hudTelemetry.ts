@@ -122,10 +122,7 @@ export function nextScalePercent(current: number, deltaY: number): number {
   return clampScalePercent(stepped)
 }
 
-export function overlayBlocks(
-  mode: OverlayModeName,
-  view: OverlayView,
-): OverlayBlocks {
+function overlayModePreset(mode: OverlayModeName): OverlayBlocks {
   switch (mode) {
     case "light":
       return {
@@ -159,16 +156,32 @@ export function overlayBlocks(
       }
     case "complete":
       return {
-        temp: view.showTemp !== false,
-        fans: view.showFans !== false,
-        power: view.showPower !== false,
-        usage: view.showUsage !== false,
-        ram: view.showRam !== false,
-        battery: view.showBattery !== false,
-        names: view.names === true,
+        temp: true,
+        fans: true,
+        power: true,
+        usage: true,
+        ram: true,
+        battery: true,
+        names: false,
       }
     default:
       return assertNever(mode)
+  }
+}
+
+export function overlayBlocks(
+  mode: OverlayModeName,
+  view: OverlayView,
+): OverlayBlocks {
+  const preset = overlayModePreset(mode)
+  return {
+    temp: view.showTemp ?? preset.temp,
+    fans: view.showFans ?? preset.fans,
+    power: view.showPower ?? preset.power,
+    usage: view.showUsage ?? preset.usage,
+    ram: view.showRam ?? preset.ram,
+    battery: view.showBattery ?? preset.battery,
+    names: view.names ?? preset.names,
   }
 }
 

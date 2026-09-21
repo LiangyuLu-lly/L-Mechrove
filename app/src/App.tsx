@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event"
 import { Footer } from "./components/Footer"
 import { StatusPill } from "./components/StatusPill"
 import { Toast } from "./components/Toast"
-import { hwSnapshot, VITE_FALLBACK_SNAPSHOT } from "./lib/api"
+import { hwSnapshot, overlayPrefs, VITE_FALLBACK_SNAPSHOT } from "./lib/api"
 import type { HwSnapshot } from "./lib/types"
 import { Battery } from "./sections/Battery"
 import { Gpu } from "./sections/Gpu"
@@ -163,6 +163,7 @@ export default function App() {
       {settingsOpen ? (
         <SettingsDialog
           hdrOn={snapshot.hdrOn}
+          overlay={overlayPrefs()}
           onClose={() => {
             setSettingsOpen(false)
           }}

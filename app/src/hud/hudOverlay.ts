@@ -73,6 +73,99 @@ export type OverlayPersistPrefs = {
   readonly names?: boolean
 }
 
+const OVERLAY_PREFS_KEY = "lmechrevo.overlay.prefs"
+const OVERLAY_BOOL_KEYS = [
+  "gameOnly",
+  "displayOff",
+  "showTemp",
+  "showFans",
+  "showPower",
+  "showUsage",
+  "showRam",
+  "showBattery",
+  "names",
+] as const
+
+function overlayModeFromUnknown(value: unknown): OverlayModeName | undefined {
+  if (
+    value === "light" ||
+    value === "default" ||
+    value === "full" ||
+    value === "complete"
+  ) {
+    return value
+  }
+  return undefined
+}
+
+function overlayPrefsFromUnknown(value: unknown): OverlayPersistPrefs {
+  if (typeof value !== "object" || value === null) {
+    return {}
+  }
+  const rec = Object.fromEntries(Object.entries(value))
+  const mode = overlayModeFromUnknown(rec["mode"])
+  const scale = rec["scalePercent"]
+  const prefs: OverlayPersistPrefs = {
+    ...(mode !== undefined ? { mode } : {}),
+    ...(typeof scale === "number" && Number.isFinite(scale)
+      ? { scalePercent: scale }
+      : {}),
+  }
+  for (const key of OVERLAY_BOOL_KEYS) {
+    const flag = rec[key]
+    if (typeof flag === "boolean") {
+      Object.assign(prefs, { [key]: flag })
+    }
+  }
+  return prefs
+}
+
+function withOverlayStorage(run: () => void): void {
+  try {
+    run()
+  } catch (error) {
+    if (error instanceof Error) {
+      return
+    }
+    throw error
+  }
+}
+
+export function overlayPrefs(): OverlayPersistPrefs {
+  try {
+    const raw = window.localStorage.getItem(OVERLAY_PREFS_KEY)
+    if (raw === null) {
+      return {}
+    }
+    const parsed: unknown = JSON.parse(raw)
+    return overlayPrefsFromUnknown(parsed)
+  } catch (error) {
+    if (error instanceof Error) {
+      return {}
+    }
+    throw error
+  }
+}
+
+export function subscribeOverlayPrefs(listener: () => void): () => void {
+  const onStorage = (event: StorageEvent): void => {
+    if (event.key === OVERLAY_PREFS_KEY) {
+      listener()
+    }
+  }
+  window.addEventListener("storage", onStorage)
+  return () => window.removeEventListener("storage", onStorage)
+}
+
+export function mergeOverlayPrefs(prefs: OverlayPersistPrefs): void {
+  withOverlayStorage(() => {
+    window.localStorage.setItem(
+      OVERLAY_PREFS_KEY,
+      JSON.stringify({ ...overlayPrefs(), ...prefs }),
+    )
+  })
+}
+
 export function overlayShouldShow(gate: OverlayHostGate): boolean {
   if (gate.displayOff && gate.display_off === true) {
     return false

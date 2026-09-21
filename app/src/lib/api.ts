@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core"
+import {
+  mergeOverlayPrefs,
+  type OverlayPersistPrefs,
+} from "../hud/hudOverlay"
 import type {
   FanCurveType,
   HwSnapshot,
@@ -188,12 +192,11 @@ export function updatesOpenPage(): Promise<void> {
   return invoke("updates_open_page")
 }
 
-export type OverlayPrefs = {
-  readonly scalePercent?: number
-  readonly mode?: string
-}
+export type OverlayPrefs = OverlayPersistPrefs
+export { overlayPrefs, subscribeOverlayPrefs } from "../hud/hudOverlay"
 
 export function overlayUpdate(prefs: OverlayPrefs): Promise<void> {
+  mergeOverlayPrefs(prefs)
   return invoke("overlay_update", { prefs })
 }
 

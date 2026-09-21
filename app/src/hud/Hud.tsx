@@ -5,7 +5,9 @@ import { overlayUpdate } from "../lib/api"
 import type { HwSnapshot } from "../lib/types"
 import {
   EMPTY_HUD_SNAPSHOT,
+  overlayPrefs,
   overlayShouldShow,
+  subscribeOverlayPrefs,
   type OverlayPersistPrefs,
 } from "./hudOverlay"
 import {
@@ -65,19 +67,39 @@ function startHudDrag(onHostError?: (message: string) => void): void {
     })
 }
 
+function panelFromPrefs(prefs: OverlayPersistPrefs): Omit<HudPanelProps, "snapshot"> {
+  return {
+    ...(prefs.mode !== undefined ? { mode: prefs.mode } : {}),
+    ...(prefs.scalePercent !== undefined
+      ? { scalePercent: prefs.scalePercent }
+      : {}),
+    ...(prefs.gameOnly !== undefined ? { gameOnly: prefs.gameOnly } : {}),
+    ...(prefs.displayOff !== undefined ? { displayOff: prefs.displayOff } : {}),
+    ...(prefs.showTemp !== undefined ? { showTemp: prefs.showTemp } : {}),
+    ...(prefs.showFans !== undefined ? { showFans: prefs.showFans } : {}),
+    ...(prefs.showPower !== undefined ? { showPower: prefs.showPower } : {}),
+    ...(prefs.showUsage !== undefined ? { showUsage: prefs.showUsage } : {}),
+    ...(prefs.showRam !== undefined ? { showRam: prefs.showRam } : {}),
+    ...(prefs.showBattery !== undefined
+      ? { showBattery: prefs.showBattery }
+      : {}),
+    ...(prefs.names !== undefined ? { names: prefs.names } : {}),
+  }
+}
+
 function viewFromProps(
   props: HudPanelProps,
   mode: OverlayModeName,
 ): OverlayView {
   return {
     mode,
-    showTemp: props.showTemp ?? true,
-    showFans: props.showFans ?? true,
-    showPower: props.showPower ?? true,
-    showUsage: props.showUsage ?? true,
-    showRam: props.showRam ?? true,
-    showBattery: props.showBattery ?? true,
-    names: props.names ?? false,
+    showTemp: props.showTemp,
+    showFans: props.showFans,
+    showPower: props.showPower,
+    showUsage: props.showUsage,
+    showRam: props.showRam,
+    showBattery: props.showBattery,
+    names: props.names,
   }
 }
 
@@ -179,6 +201,13 @@ export function HudPanel(props: HudPanelProps) {
 
 export function Hud() {
   const [snapshot, setSnapshot] = useState<HwSnapshot | undefined>(undefined)
+  const [prefs, setPrefs] = useState(overlayPrefs)
+
+  useEffect(() => {
+    return subscribeOverlayPrefs(() => {
+      setPrefs(overlayPrefs())
+    })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -205,5 +234,10 @@ export function Hud() {
     }
   }, [])
 
-  return <HudPanel snapshot={snapshot ?? EMPTY_HUD_SNAPSHOT} />
+  return (
+    <HudPanel
+      snapshot={snapshot ?? EMPTY_HUD_SNAPSHOT}
+      {...panelFromPrefs(prefs)}
+    />
+  )
 }
