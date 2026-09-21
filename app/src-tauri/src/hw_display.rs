@@ -158,7 +158,9 @@ impl Backend {
                 let seen = state.dc_hz_seen;
                 apply_auto_refresh_rate(&mut state.broker, seen, on).await
             }
-            Self::Real { client } => apply_auto_refresh_rate(client, false, on).await,
+            Self::Real { state } => {
+                apply_auto_refresh_rate(&mut state.client, state.dc_hz_seen, on).await
+            }
         }
     }
 
@@ -171,11 +173,11 @@ impl Backend {
                     .map_err(|_| HostError::DisplayDenied(hz.to_owned()))?;
                 apply_display_hz(&mut state.broker, parsed).await
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 let parsed = hz
                     .parse::<u32>()
                     .map_err(|_| HostError::DisplayDenied(hz.to_owned()))?;
-                apply_display_hz(client, parsed).await
+                apply_display_hz(&mut state.client, parsed).await
             }
         }
     }
@@ -202,7 +204,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_calibration(&mut state.broker, mode, state.hdr_on).await
             }
-            Self::Real { client } => apply_calibration(client, mode, false).await,
+            Self::Real { state } => apply_calibration(&mut state.client, mode, state.hdr_on).await,
         }
     }
 
@@ -212,7 +214,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_overdrive(&mut state.broker, on).await
             }
-            Self::Real { client } => apply_overdrive(client, on).await,
+            Self::Real { state } => apply_overdrive(&mut state.client, on).await,
         }
     }
 
@@ -222,7 +224,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_local_dimming(&mut state.broker, on).await
             }
-            Self::Real { client } => apply_local_dimming(client, on).await,
+            Self::Real { state } => apply_local_dimming(&mut state.client, on).await,
         }
     }
 }

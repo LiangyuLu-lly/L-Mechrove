@@ -1,16 +1,18 @@
-//! In-process Fake GCU, or Real slot-4 `GcuClient` (handshake does not poll the event loop).
+//! In-process Fake GCU, or Real slot-4 `GcuClient` with live ItemSupport + inbound MQTT.
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 use capabilities::{DgpuGeneration, ItemSupport};
-use gcu_mqtt::client::GcuClient;
+use gcu_mqtt::client::{GcuClient, MqttTransport};
 use gcu_mqtt::fake::Recorded;
 use gcu_mqtt::handshake::run_handshake;
+use gcu_mqtt::topics;
 
 use crate::hw_fake::FakeState;
-
-#[path = "hw_model.rs"]
-mod hw_model;
+use crate::hw_model;
+use crate::hw_mqtt_inbound::apply_inbound;
+use crate::hw_real::{MqttLoopParts, RealState};
 
 pub use crate::hw_error::HostError;
 pub use crate::hw_snapshot::{HwSnapshot, MqttStatus};
@@ -22,7 +24,7 @@ pub struct AppState {
 /// `Fake` never constructs rumqttc / NativeHid / Windows IOCTL.
 pub enum Backend {
     Fake { state: FakeState },
-    Real { client: GcuClient },
+    Real { state: RealState },
 }
 
 impl Backend {
@@ -61,8 +63,9 @@ impl Backend {
     }
 
     pub fn set_profile_dir(&mut self, dir: PathBuf) {
-        if let Self::Fake { state } = self {
-            state.profile_dir = Some(dir);
+        match self {
+            Self::Fake { state } => state.profile_dir = Some(dir),
+            Self::Real { state } => state.profile_dir = Some(dir),
         }
     }
 
@@ -85,7 +88,7 @@ impl Backend {
     pub fn real() -> Self {
         match crate::secrets::slot4_params() {
             Ok(params) => Self::Real {
-                client: GcuClient::new(&params),
+                state: RealState::new(GcuClient::new(&params)),
             },
             Err(err) => unreachable!("slot4_params uses UWPClient_4: {err}"),
         }
@@ -100,10 +103,11 @@ impl Backend {
                 sync_fake_model_gate(state);
                 Ok(())
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 let params = crate::secrets::slot4_params()?;
-                *client = GcuClient::new(&params);
-                run_handshake(client).await?;
+                state.client = GcuClient::new(&params);
+                state.mqtt_status = MqttStatus::Connecting;
+                run_handshake(&mut state.client).await?;
                 Ok(())
             }
         }
@@ -113,7 +117,10 @@ impl Backend {
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
-                let slot = crate::hw_mode::selected_custom_slot(state)?;
+                let slot = crate::hw_mode::selected_custom_slot(
+                    state.profile_dir.as_deref(),
+                    &mut state.custom_profile_index,
+                )?;
                 crate::hw_mode::apply_performance_mode(&mut state.broker, mode, slot).await?;
                 if let Some(dir) = state.profile_dir.clone() {
                     crate::hw_mode_profile::ModeProfiles::new(&dir)
@@ -123,9 +130,12 @@ impl Backend {
                 state.current_mode = Some(mode.to_owned());
                 Ok(())
             }
-            Self::Real { client } => {
-                let slot = gcu_mqtt::payloads::ProfileIndex::new(0)?;
-                crate::hw_mode::apply_performance_mode(client, mode, slot).await
+            Self::Real { state } => {
+                let slot = crate::hw_mode::selected_custom_slot(
+                    state.profile_dir.as_deref(),
+                    &mut state.custom_profile_index,
+                )?;
+                crate::hw_mode::apply_performance_mode(&mut state.client, mode, slot).await
             }
         }
     }
@@ -143,12 +153,12 @@ impl Backend {
                 )
                 .await
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 crate::hw_gpu::apply_gpu_route(
-                    client,
-                    &ItemSupport::default(),
-                    DgpuGeneration::Unknown,
-                    false,
+                    &mut state.client,
+                    &state.item_support,
+                    state.gpu_generation,
+                    state.gpu_three_mode,
                     action,
                 )
                 .await
@@ -198,10 +208,10 @@ impl Backend {
                 )
                 .await
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 crate::hw_lighting::apply_light_effect(
-                    client,
-                    &ItemSupport::default(),
+                    &mut state.client,
+                    &state.item_support,
                     None,
                     channel,
                     effect,
@@ -229,10 +239,10 @@ impl Backend {
                 )
                 .await
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 crate::hw_lighting::apply_light_power(
-                    client,
-                    &ItemSupport::default(),
+                    &mut state.client,
+                    &state.item_support,
                     None,
                     channel,
                     on,
@@ -251,7 +261,117 @@ impl Backend {
                 sync_fake_model_gate(state);
                 Ok(())
             }
-            Self::Real { .. } => Err(HostError::RealUnavailable),
+            Self::Real { state } => {
+                let mut store = hw_model::ProjectIdStore::new();
+                store.set(id);
+                state.project_id = store.as_str().to_owned();
+                Ok(())
+            }
+        }
+    }
+
+    pub fn apply_item_support(&mut self, item: ItemSupport) {
+        match self {
+            Self::Fake { state } => {
+                state.item_support = item;
+                sync_fake_model_gate(state);
+            }
+            Self::Real { state } => state.item_support = item,
+        }
+    }
+
+    pub fn apply_inbound(&mut self, topic: &str, payload: &[u8]) {
+        match self {
+            Self::Fake { state } => {
+                let mut live = crate::hw_mqtt_inbound::InboundLive {
+                    seen: state.seen,
+                    charge_percent: state.charge_percent,
+                    hz_list: state.hz_list.clone(),
+                    dc_hz_seen: state.dc_hz_seen,
+                    cpu_temp_c: state.cpu_temp_c,
+                    gpu_temp_c: state.gpu_temp_c,
+                    cpu_rpm: state.cpu_rpm,
+                    gpu_rpm: state.gpu_rpm,
+                    custom_profile_index: Some(state.custom_profile_index),
+                };
+                if apply_inbound(&mut live, topic, payload) {
+                    state.seen = live.seen;
+                    state.charge_percent = live.charge_percent;
+                    state.hz_list = live.hz_list;
+                    state.dc_hz_seen = live.dc_hz_seen;
+                    state.cpu_temp_c = live.cpu_temp_c;
+                    state.gpu_temp_c = live.gpu_temp_c;
+                    state.cpu_rpm = live.cpu_rpm;
+                    state.gpu_rpm = live.gpu_rpm;
+                    if let Some(index) = live.custom_profile_index {
+                        state.custom_profile_index = index;
+                    }
+                }
+            }
+            Self::Real { state } => {
+                let mut live = state.inbound_live();
+                if apply_inbound(&mut live, topic, payload) {
+                    state.apply_inbound_live(&live);
+                }
+            }
+        }
+    }
+
+    pub fn take_mqtt_loop(&mut self) -> Option<MqttLoopParts> {
+        match self {
+            Self::Fake { .. } => None,
+            Self::Real { state } => state.take_mqtt_loop(),
+        }
+    }
+
+    pub fn set_mqtt_status(&mut self, status: MqttStatus) {
+        match self {
+            Self::Fake { state } => state.mqtt_status = status,
+            Self::Real { state } => state.mqtt_status = status,
+        }
+    }
+
+    pub fn set_theme_mode_cached(&mut self, mode: &str) {
+        if let Self::Real { state } = self {
+            state.theme_mode = mode.to_owned();
+        }
+    }
+
+    pub fn real_custom_profile_index(&mut self) -> u8 {
+        match self {
+            Self::Fake { state } => {
+                let _ = crate::hw_mode::selected_custom_slot(
+                    state.profile_dir.as_deref(),
+                    &mut state.custom_profile_index,
+                );
+                state.custom_profile_index
+            }
+            Self::Real { state } => {
+                let _ = crate::hw_mode::selected_custom_slot(
+                    state.profile_dir.as_deref(),
+                    &mut state.custom_profile_index,
+                );
+                state.custom_profile_index
+            }
+        }
+    }
+
+    pub async fn shutdown(&mut self) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state
+                    .broker
+                    .publish(topics::SYSTEM_CONTROL, gcu_mqtt::client::SYSTEM_OFF_JSON)
+                    .await?;
+                Ok(())
+            }
+            Self::Real { state } => {
+                state.stop.store(true, Ordering::Release);
+                let publisher = state.client.publisher();
+                publisher.publish_system_off().await?;
+                publisher.disconnect().await?;
+                Ok(())
+            }
         }
     }
 

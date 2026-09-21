@@ -181,9 +181,10 @@ impl Backend {
                 .await?;
                 Ok(())
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 let mut ble = crate::hw_ble::FakeBle::new();
-                apply_lc_pump(client, &mut ble, &ItemSupport::default(), true, index).await?;
+                apply_lc_pump(&mut state.client, &mut ble, &state.item_support, true, index)
+                    .await?;
                 Ok(())
             }
         }
@@ -203,9 +204,10 @@ impl Backend {
                 .await?;
                 Ok(())
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 let mut ble = crate::hw_ble::FakeBle::new();
-                apply_lc_fan(client, &mut ble, &ItemSupport::default(), true, index).await?;
+                apply_lc_fan(&mut state.client, &mut ble, &state.item_support, true, index)
+                    .await?;
                 Ok(())
             }
         }

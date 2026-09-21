@@ -8,8 +8,9 @@ use gcu_mqtt::payloads::{
 use gcu_mqtt::topics;
 use serde::Serialize;
 
+use std::path::Path;
+
 use crate::hw_backend::HostError;
-use crate::hw_fake::FakeState;
 use crate::hw_mode_profile::ModeProfiles;
 
 pub async fn apply_performance_mode<T: MqttTransport>(
@@ -27,13 +28,16 @@ pub async fn apply_performance_mode<T: MqttTransport>(
     }
 }
 
-pub(crate) fn selected_custom_slot(state: &mut FakeState) -> Result<ProfileIndex, HostError> {
-    if let Some(dir) = state.profile_dir.clone() {
-        if let Some(stored) = ModeProfiles::new(&dir).read_custom_profile_index()? {
-            state.custom_profile_index = stored;
+pub(crate) fn selected_custom_slot(
+    profile_dir: Option<&Path>,
+    stored: &mut u8,
+) -> Result<ProfileIndex, HostError> {
+    if let Some(dir) = profile_dir {
+        if let Some(index) = ModeProfiles::new(dir).read_custom_profile_index()? {
+            *stored = index;
         }
     }
-    ProfileIndex::new(state.custom_profile_index).map_err(Into::into)
+    ProfileIndex::new(*stored).map_err(Into::into)
 }
 
 async fn publish_fan<T: MqttTransport>(

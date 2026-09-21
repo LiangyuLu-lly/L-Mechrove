@@ -97,6 +97,51 @@ fn snapshot_real_omits_overlay_telemetry() {
 }
 
 #[test]
+fn snapshot_from_matches_for_fake_and_real_when_item_support_equal() {
+    // Given: the same ItemSupport blob on Fake and Real
+    let json = r#"{"LightbarSupport":1,"IsTurboSubModeSupport":1,"LiquidCoolingSupport":1}"#;
+    let fake = Backend::fake_from_json(json).expect("fake");
+    let mut real = Backend::real();
+    real.apply_item_support(capabilities::ItemSupport::parse_json(json).expect("item"));
+
+    // When: both snapshots are taken
+    let fake_snap = fake.snapshot();
+    let real_snap = real.snapshot();
+
+    // Then: lighting / silent_turbo / liquid_cooling cannot diverge
+    assert_eq!(fake_snap.lighting, real_snap.lighting);
+    assert_eq!(fake_snap.silent_turbo, real_snap.silent_turbo);
+    assert_eq!(fake_snap.liquid_cooling, real_snap.liquid_cooling);
+    assert!(real_snap.write_allowed, "N8: non-empty ItemSupport is served");
+    assert!(real_snap.lighting.lightbar);
+    assert!(real_snap.silent_turbo);
+    assert!(real_snap.liquid_cooling);
+}
+
+#[test]
+fn snapshot_real_hides_g16_lightbar_even_when_mqtt_seen() {
+    // Given: G16 ItemSupport (lightbar/logo off) plus an inbound lightbar report
+    let mut real = Backend::real();
+    real.apply_item_support(
+        capabilities::ItemSupport::parse_json(&g16_json()).expect("g16"),
+    );
+    real.apply_inbound(
+        "HidLightbar/Status",
+        br#"{"type":"rainbow","powerStatus":"1"}"#,
+    );
+
+    // When: a snapshot is taken
+    let snapshot = real.snapshot();
+
+    // Then: lighting stays ItemSupport-only (never Seen-OR)
+    assert!(
+        !snapshot.lighting.lightbar,
+        "G16 must hide lightbar even if MQTT Seen would have been true"
+    );
+    assert!(!snapshot.lighting.logo);
+}
+
+#[test]
 fn snapshot_includes_parity_dto_fields() {
     // Given: Fake backend snapshot serialized to JSON
     let backend = Backend::fake_from_json("{}").expect("empty ItemSupport");

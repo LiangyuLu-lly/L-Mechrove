@@ -1,10 +1,11 @@
 //! Gated DTO for the webview. Lighting is ItemSupport, never MQTT Seen.
 
-use capabilities::{FeatureBit, FeatureMatrix, ItemSupport, LightingVisibility};
+use capabilities::{DgpuGeneration, FeatureBit, FeatureMatrix, ItemSupport, LightingVisibility};
 use serde::{Deserialize, Serialize};
 
 use crate::hw_backend::Backend;
-use crate::hw_switches::offered_quick_switches;
+use crate::hw_model;
+use crate::hw_switches::{offered_quick_switches, SeenFlags};
 
 fn tcc_adjustable(item_support: &ItemSupport) -> bool {
     item_support.any_truthy(&[
@@ -86,33 +87,89 @@ pub struct HwSnapshot {
     pub release_label: String,
 }
 
+/// Inputs shared by Fake and Real so the catalog cannot diverge.
+pub struct SnapshotParts<'a> {
+    pub mqtt: MqttStatus,
+    pub item_support: &'a ItemSupport,
+    pub seen: &'a SeenFlags,
+    pub charge_percent: u8,
+    pub gpu_generation: DgpuGeneration,
+    pub gpu_three_mode: bool,
+    pub write_allowed: bool,
+    pub hz_list: &'a [String],
+    pub hdr_on: bool,
+    pub dc_hz_seen: bool,
+    pub cpu_temp_c: Option<f64>,
+    pub gpu_temp_c: Option<f64>,
+    pub cpu_rpm: Option<i64>,
+    pub gpu_rpm: Option<i64>,
+    pub cpu_watt: Option<f64>,
+    pub gpu_watt: Option<f64>,
+    pub keyboard_hid_unavailable: bool,
+    pub lighting_off_on_battery: bool,
+    pub lighting_idle_seconds: i32,
+    pub model_reason: String,
+    pub project_id: String,
+    pub oc_requires_elevation: bool,
+    pub theme_mode: String,
+}
+
+pub fn snapshot_from(parts: SnapshotParts<'_>) -> HwSnapshot {
+    HwSnapshot {
+        mqtt: parts.mqtt,
+        lighting: LightingVisibility::from_item_support(parts.item_support),
+        charge_percent: parts.charge_percent,
+        gpu_actions: crate::hw_gpu::offered_actions(
+            parts.item_support,
+            parts.gpu_generation,
+            parts.gpu_three_mode,
+        ),
+        write_allowed: parts.write_allowed,
+        hz_list: parts.hz_list.to_vec(),
+        offered_switches: offered_quick_switches(parts.item_support, parts.seen)
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        liquid_cooling: FeatureMatrix::from_values(parts.item_support)
+            .is_supported(FeatureBit::LiquidCooling),
+        hdr_on: parts.hdr_on,
+        tcc_adjustable: tcc_adjustable(parts.item_support),
+        oc_settings: parts.item_support.is_truthy("OcSettingsSupport"),
+        silent_turbo: silent_turbo(parts.item_support),
+        dc_hz_seen: parts.dc_hz_seen,
+        color_calibration: FeatureMatrix::from_values(parts.item_support)
+            .is_supported(FeatureBit::ColorCalibration),
+        cpu_temp_c: parts.cpu_temp_c,
+        gpu_temp_c: parts.gpu_temp_c,
+        cpu_rpm: parts.cpu_rpm,
+        gpu_rpm: parts.gpu_rpm,
+        cpu_watt: parts.cpu_watt,
+        gpu_watt: parts.gpu_watt,
+        keyboard_hid_unavailable: parts.keyboard_hid_unavailable,
+        lighting_off_on_battery: parts.lighting_off_on_battery,
+        lighting_idle_seconds: parts.lighting_idle_seconds,
+        model_reason: parts.model_reason,
+        project_id: parts.project_id,
+        oc_requires_elevation: parts.oc_requires_elevation,
+        theme_mode: parts.theme_mode,
+        release_label: env!("CARGO_PKG_VERSION").to_owned(),
+    }
+}
+
 impl Backend {
     pub fn snapshot(&self) -> HwSnapshot {
         match self {
-            Self::Fake { state } => HwSnapshot {
+            Self::Fake { state } => snapshot_from(SnapshotParts {
                 mqtt: state.mqtt_status,
-                lighting: LightingVisibility::from_item_support(&state.item_support),
+                item_support: &state.item_support,
+                seen: &state.seen,
                 charge_percent: state.charge_percent,
-                gpu_actions: crate::hw_gpu::offered_actions(
-                    &state.item_support,
-                    state.gpu_generation,
-                    state.gpu_three_mode,
-                ),
+                gpu_generation: state.gpu_generation,
+                gpu_three_mode: state.gpu_three_mode,
                 write_allowed: state.write_allowed,
-                hz_list: state.hz_list.clone(),
-                offered_switches: offered_quick_switches(&state.item_support, &state.seen)
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect(),
-                liquid_cooling: FeatureMatrix::from_values(&state.item_support)
-                    .is_supported(FeatureBit::LiquidCooling),
+                hz_list: &state.hz_list,
                 hdr_on: state.hdr_on,
-                tcc_adjustable: tcc_adjustable(&state.item_support),
-                oc_settings: state.item_support.is_truthy("OcSettingsSupport"),
-                silent_turbo: silent_turbo(&state.item_support),
                 dc_hz_seen: state.dc_hz_seen,
-                color_calibration: FeatureMatrix::from_values(&state.item_support)
-                    .is_supported(FeatureBit::ColorCalibration),
                 cpu_temp_c: state.cpu_temp_c,
                 gpu_temp_c: state.gpu_temp_c,
                 cpu_rpm: state.cpu_rpm,
@@ -126,38 +183,36 @@ impl Backend {
                 project_id: state.project_id.clone(),
                 oc_requires_elevation: false,
                 theme_mode: "night".to_owned(),
-                release_label: env!("CARGO_PKG_VERSION").to_owned(),
-            },
-            Self::Real { .. } => HwSnapshot {
-                mqtt: MqttStatus::Error,
-                lighting: LightingVisibility::from_item_support(&ItemSupport::default()),
-                charge_percent: 100,
-                gpu_actions: Vec::new(),
-                write_allowed: false,
-                hz_list: Vec::new(),
-                offered_switches: Vec::new(),
-                liquid_cooling: false,
-                hdr_on: false,
-                tcc_adjustable: false,
-                oc_settings: false,
-                silent_turbo: false,
-                dc_hz_seen: false,
-                color_calibration: false,
-                cpu_temp_c: None,
-                gpu_temp_c: None,
-                cpu_rpm: None,
-                gpu_rpm: None,
-                cpu_watt: None,
-                gpu_watt: None,
-                keyboard_hid_unavailable: false,
-                lighting_off_on_battery: false,
-                lighting_idle_seconds: 0,
-                model_reason: String::new(),
-                project_id: String::new(),
-                oc_requires_elevation: false,
-                theme_mode: "night".to_owned(),
-                release_label: env!("CARGO_PKG_VERSION").to_owned(),
-            },
+            }),
+            Self::Real { state } => {
+                let mqtt_connected = state.mqtt_status == MqttStatus::Connected;
+                snapshot_from(SnapshotParts {
+                    mqtt: state.mqtt_status,
+                    item_support: &state.item_support,
+                    seen: &state.seen,
+                    charge_percent: state.charge_percent,
+                    gpu_generation: state.gpu_generation,
+                    gpu_three_mode: state.gpu_three_mode,
+                    write_allowed: hw_model::is_served(mqtt_connected, &state.item_support),
+                    hz_list: &state.hz_list,
+                    hdr_on: state.hdr_on,
+                    dc_hz_seen: state.dc_hz_seen,
+                    cpu_temp_c: state.cpu_temp_c,
+                    gpu_temp_c: state.gpu_temp_c,
+                    cpu_rpm: state.cpu_rpm,
+                    gpu_rpm: state.gpu_rpm,
+                    cpu_watt: state.cpu_watt,
+                    gpu_watt: state.gpu_watt,
+                    keyboard_hid_unavailable: state.keyboard_hid_unavailable,
+                    lighting_off_on_battery: state.lighting_off_on_battery,
+                    lighting_idle_seconds: state.lighting_idle_seconds,
+                    model_reason: hw_model::model_reason(mqtt_connected, &state.item_support)
+                        .to_owned(),
+                    project_id: state.project_id.clone(),
+                    oc_requires_elevation: false,
+                    theme_mode: state.theme_mode.clone(),
+                })
+            }
         }
     }
 }

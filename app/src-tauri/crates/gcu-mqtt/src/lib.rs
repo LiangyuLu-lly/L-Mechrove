@@ -1,6 +1,7 @@
 //! Product GCU MQTT client. Slot 4 only (never `UWPClient_5`).
 
 pub mod client;
+pub mod eventloop;
 pub mod fake;
 pub mod handshake;
 pub mod payloads;

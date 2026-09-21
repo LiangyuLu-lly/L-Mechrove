@@ -40,7 +40,7 @@ mod windows_impl {
     use windows_sys::Win32::System::IO::DeviceIoControl;
 
     const fn w(b: u8) -> u16 {
-        u16::from(b)
+        u16::from_le_bytes([b, 0])
     }
 
     /// `\\.\ACPIDriver` as a NUL-terminated UTF-16 path.

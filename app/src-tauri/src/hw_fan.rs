@@ -112,10 +112,10 @@ impl Backend {
                 }
                 Ok(())
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 let ty = FanCurveType::from_wire(ty)
                     .ok_or_else(|| HostError::UnknownMode(ty.to_owned()))?;
-                apply_fan_curve(client, name, ty, duties_16(&duties)).await
+                apply_fan_curve(&mut state.client, name, ty, duties_16(&duties)).await
             }
         }
     }
@@ -126,7 +126,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_fan_boost(&mut state.broker, on).await
             }
-            Self::Real { client } => apply_fan_boost(client, on).await,
+            Self::Real { state } => apply_fan_boost(&mut state.client, on).await,
         }
     }
 
@@ -148,14 +148,25 @@ impl Backend {
                 }
                 Ok(())
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 crate::hw_mode_detail::apply_custom_detail(
-                    client,
-                    &capabilities::ItemSupport::default(),
+                    &mut state.client,
+                    &state.item_support,
                     field,
                     value,
                 )
-                .await
+                .await?;
+                if let Some(dir) = state.profile_dir.clone() {
+                    ModeProfiles::new(&dir).put_detail("custom", field, value)?;
+                }
+                if field == "ProfileIndex" {
+                    if let Ok(index) = value.parse::<u8>() {
+                        if index <= 3 {
+                            state.custom_profile_index = index;
+                        }
+                    }
+                }
+                Ok(())
             }
         }
     }

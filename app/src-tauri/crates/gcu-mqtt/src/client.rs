@@ -169,24 +169,35 @@ pub fn mqtt_options(params: &ConnectParams) -> MqttOptions {
     opts
 }
 
-/// rumqttc AsyncClient. Event loop is not polled here (no live broker in unit tests).
+/// rumqttc AsyncClient. Event loop is taken by the host poll task.
 pub struct GcuClient {
     client: AsyncClient,
-    eventloop: EventLoop,
+    eventloop: Option<EventLoop>,
 }
+
+/// `{"Action":"System_OFF"}` — static so shutdown never unwraps serde.
+pub const SYSTEM_OFF_JSON: &[u8] = br#"{"Action":"System_OFF"}"#;
 
 impl GcuClient {
     pub fn new(params: &ConnectParams) -> Self {
         let (client, eventloop) = AsyncClient::new(mqtt_options(params), 32);
-        Self { client, eventloop }
+        Self {
+            client,
+            eventloop: Some(eventloop),
+        }
     }
 
-    pub fn eventloop(&mut self) -> &mut EventLoop {
-        &mut self.eventloop
+    pub fn take_eventloop(&mut self) -> Option<crate::eventloop::GcuEventLoop> {
+        self.eventloop
+            .take()
+            .map(crate::eventloop::GcuEventLoop::new)
+    }
+
+    pub fn publisher(&self) -> crate::eventloop::GcuPublisher {
+        crate::eventloop::GcuPublisher::new(self.client.clone())
     }
 
     /// C# `MechrevoHw.Publish` defaults to QoS2 (`ExactlyOnce`).
-    // System_OFF on exit may need AtMostOnce later: C# uses QoS0 because a QoS2 four-step handshake dies on a clean-session disconnect.
     pub const fn publish_qos() -> QoS {
         QoS::ExactlyOnce
     }
@@ -194,6 +205,31 @@ impl GcuClient {
     /// Requested subscribe QoS for the product client.
     pub const fn subscribe_qos() -> QoS {
         QoS::ExactlyOnce
+    }
+
+    /// C# exit path uses AtMostOnce: a QoS2 four-step handshake dies on a clean-session disconnect.
+    pub const fn system_off_qos() -> QoS {
+        QoS::AtMostOnce
+    }
+
+    pub async fn publish_system_off(&self) -> Result<(), MqttError> {
+        // QoS0: a QoS2 four-step handshake dies on a clean-session disconnect.
+        self.client
+            .publish(
+                crate::topics::SYSTEM_CONTROL,
+                Self::system_off_qos(),
+                false,
+                SYSTEM_OFF_JSON,
+            )
+            .await
+            .map_err(|err| MqttError::Transport(err.to_string()))
+    }
+
+    pub async fn disconnect(&self) -> Result<(), MqttError> {
+        self.client
+            .disconnect()
+            .await
+            .map_err(|err| MqttError::Transport(err.to_string()))
     }
 }
 

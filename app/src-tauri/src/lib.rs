@@ -9,6 +9,7 @@ mod hw_fake;
 pub mod hw_fan;
 mod hw_gpu;
 pub mod hw_isolation;
+pub mod hw_item_support_win;
 pub mod hw_lc;
 mod hw_lighting;
 mod hw_lighting_cfg;
@@ -16,6 +17,12 @@ mod hw_lighting_payload;
 mod hw_mode;
 mod hw_mode_detail;
 mod hw_mode_profile;
+mod hw_model;
+pub mod hw_mqtt_inbound;
+mod hw_mqtt_loop;
+pub mod hw_mqtt_reconnect;
+mod hw_prefs;
+mod hw_real;
 pub mod hw_shell;
 mod hw_snapshot;
 pub mod hw_startup;
@@ -58,12 +65,34 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
-                let snap = {
+                let loop_parts = {
                     let mut backend = state.backend.lock().await;
                     if let Ok(dir) = handle.path().app_config_dir() {
-                        backend.set_profile_dir(dir);
+                        backend.set_profile_dir(dir.clone());
+                        if let Ok(prefs) = hw_prefs::load(&dir, "") {
+                            backend.set_theme_mode_cached(prefs.theme_mode.as_str());
+                        }
                     }
                     let _started = backend.start().await;
+                    backend.take_mqtt_loop()
+                };
+                if loop_parts.is_some() {
+                    let item = tokio::task::spawn_blocking(
+                        hw_item_support_win::read_live_item_support,
+                    )
+                    .await
+                    .unwrap_or_else(|_| capabilities::ItemSupport::default());
+                    let mut backend = state.backend.lock().await;
+                    backend.apply_item_support(item);
+                }
+                if let Some(parts) = loop_parts {
+                    let poll_handle = handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        hw_mqtt_loop::run_mqtt_loop(parts, poll_handle).await;
+                    });
+                }
+                let snap = {
+                    let backend = state.backend.lock().await;
                     backend.snapshot()
                 };
                 let _mqtt = events::emit_mqtt_status(&handle, snap.mqtt);

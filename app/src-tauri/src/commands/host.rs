@@ -1,13 +1,17 @@
 use tauri::{AppHandle, Manager, State};
 
 use crate::hw_backend::AppState;
-
-#[path = "../hw_prefs.rs"]
-mod hw_prefs;
+use crate::hw_prefs;
 
 #[tauri::command]
-pub fn app_quit(app: AppHandle) {
+pub async fn app_quit(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    {
+        let mut backend = state.backend.lock().await;
+        let _ = backend.shutdown().await;
+    }
     app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]

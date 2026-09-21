@@ -325,7 +325,7 @@ impl Backend {
                     SwitchError::Json(inner) => HostError::Json(inner),
                 })
             }
-            Self::Real { client } => {
+            Self::Real { state } => {
                 if key == "startup" {
                     return crate::hw_startup::system_apply(on)
                         .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
@@ -334,11 +334,12 @@ impl Backend {
                     return crate::hw_shell::system_apply(key, on)
                         .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
                 }
+                let seen = state.seen;
                 apply_quick_switch(
-                    client,
+                    &mut state.client,
                     &QuickSwitchGate {
-                        item_support: &ItemSupport::default(),
-                        seen: SeenFlags::default(),
+                        item_support: &state.item_support,
+                        seen,
                     },
                     key,
                     on,

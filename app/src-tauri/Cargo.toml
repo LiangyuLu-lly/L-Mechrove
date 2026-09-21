@@ -34,6 +34,11 @@ gcu-mqtt = { path = "crates/gcu-mqtt" }
 hid-kb = { path = "crates/hid-kb" }
 ec-acpi = { path = "crates/ec-acpi" }
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+hid-kb = { path = "crates/hid-kb", features = ["native-open"] }
+ec-acpi = { path = "crates/ec-acpi", features = ["real-ioctl"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
 serde_json = "1"

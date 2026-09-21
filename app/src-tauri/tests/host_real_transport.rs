@@ -2,7 +2,7 @@
 
 use std::future::Future;
 
-use app_lib::{apply_gpu_route, slot4_params};
+use app_lib::{apply_gpu_route, slot4_params, Backend};
 use capabilities::{DgpuGeneration, ItemSupport, IGPU_ONLY_ON};
 use gcu_mqtt::client::{MqttError, MqttTransport};
 use gcu_mqtt::fake::Recorded;
@@ -117,6 +117,52 @@ fn app_never_constructs_uwpclient_5_client_id() {
         "slot4_params client id: {}",
         params.client_id()
     );
+}
+
+#[tokio::test]
+async fn shutdown_publishes_system_off_when_fake() {
+    // Given: a started Fake backend
+    let mut backend = Backend::fake_from_json("{}").expect("empty");
+    backend.start().await.expect("handshake");
+
+    // When: shutdown runs
+    backend.shutdown().await.expect("shutdown");
+
+    // Then: System/Control Action=System_OFF was published
+    let publishes = backend.recorded_publishes();
+    assert!(
+        publishes.iter().any(|(topic, payload)| {
+            topic == "System/Control" && payload["Action"] == "System_OFF"
+        }),
+        "System_OFF missing: {publishes:?}"
+    );
+}
+
+#[tokio::test]
+async fn real_custom_mode_uses_stored_profile_index_not_zero() {
+    // Given: Real with a stored custom slot 2
+    let dir = std::env::temp_dir().join(format!(
+        "lmechrevo-real-slot-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("dir");
+    std::fs::write(
+        dir.join("mode-profiles.json"),
+        r#"{"customProfileIndex":"2"}"#,
+    )
+    .expect("write");
+    let mut backend = Backend::real();
+    backend.set_profile_dir(dir);
+
+    // When: custom mode is selected
+    let slot = backend.real_custom_profile_index();
+
+    // Then: the stored index is 2, not hardcoded 0
+    assert_eq!(slot, 2);
 }
 
 fn scan_rs(dir: &std::path::Path, hits: &mut Vec<String>) {
