@@ -59,6 +59,32 @@ impl Default for TrayMenuGates<'static> {
     }
 }
 
+/// Snapshot fields the tray menu reads.
+#[derive(Clone, Copy, Debug)]
+pub struct TraySnapshotView<'a> {
+    pub silent_turbo: bool,
+    pub offered_switches: &'a [String],
+    pub gpu_actions: &'a [String],
+    pub keyboard: bool,
+    pub tcc_adjustable: bool,
+    pub oc_settings: bool,
+}
+
+/// C# `Settings.cs:3784` `CpuPerformanceTuning || FanSettings || HasAnyCustomRange`
+/// → snapshot `tcc_adjustable || oc_settings`. C# rebuilds on every right-click; we build once.
+pub fn gates_from_snapshot<'a>(snapshot: &'a TraySnapshotView<'a>) -> TrayMenuGates<'a> {
+    TrayMenuGates {
+        silent_turbo: snapshot.silent_turbo,
+        fanboost: snapshot
+            .offered_switches
+            .iter()
+            .any(|key| key == "fanboost"),
+        custom: snapshot.tcc_adjustable || snapshot.oc_settings,
+        gpu_actions: snapshot.gpu_actions,
+        keyboard: snapshot.keyboard,
+    }
+}
+
 /// C# `自定义 1`..`自定义 4` → firmware slots 0..3. Slot 5 does not exist.
 pub fn tray_custom_slot(id: &str) -> Option<u8> {
     CUSTOM_SLOT_IDS
@@ -124,11 +150,11 @@ struct TrayChecks<R: Runtime> {
 }
 
 pub fn build_tray(app: &App) -> tauri::Result<()> {
-    let (silent_turbo, fanboost, gpu_actions, keyboard) = live_gates(app);
+    let (silent_turbo, fanboost, custom, gpu_actions, keyboard) = live_gates(app);
     let gates = TrayMenuGates {
         silent_turbo,
         fanboost,
-        custom: true,
+        custom,
         gpu_actions: &gpu_actions,
         keyboard,
     };
@@ -283,20 +309,31 @@ fn maybe_item<R: Runtime>(
     }
 }
 
-fn live_gates(app: &App) -> (bool, bool, Vec<String>, bool) {
+fn live_gates(app: &App) -> (bool, bool, bool, Vec<String>, bool) {
     let state = app.state::<AppState>();
     let Ok(backend) = state.backend.try_lock() else {
-        return (false, false, Vec::new(), false);
+        return (false, false, false, Vec::new(), false);
     };
     let snapshot = backend.snapshot();
+    let view = TraySnapshotView {
+        silent_turbo: snapshot.silent_turbo,
+        offered_switches: &snapshot.offered_switches,
+        gpu_actions: &snapshot.gpu_actions,
+        keyboard: snapshot.lighting.keyboard,
+        tcc_adjustable: snapshot.tcc_adjustable,
+        oc_settings: snapshot.oc_settings,
+    };
+    let gates = gates_from_snapshot(&view);
+    let silent_turbo = gates.silent_turbo;
+    let fanboost = gates.fanboost;
+    let custom = gates.custom;
+    let keyboard = gates.keyboard;
     (
-        snapshot.silent_turbo,
-        snapshot
-            .offered_switches
-            .iter()
-            .any(|key| key == "fanboost"),
+        silent_turbo,
+        fanboost,
+        custom,
         snapshot.gpu_actions,
-        snapshot.lighting.keyboard,
+        keyboard,
     )
 }
 

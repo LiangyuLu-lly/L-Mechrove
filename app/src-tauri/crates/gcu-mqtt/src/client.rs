@@ -3,7 +3,8 @@
 use std::future::Future;
 use std::time::Duration;
 
-use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
+pub use rumqttc::QoS;
+use rumqttc::{AsyncClient, EventLoop, MqttOptions};
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 13688;
@@ -176,12 +177,23 @@ pub struct GcuClient {
 
 impl GcuClient {
     pub fn new(params: &ConnectParams) -> Self {
-        let (client, eventloop) = AsyncClient::new(mqtt_options(params), 10);
+        let (client, eventloop) = AsyncClient::new(mqtt_options(params), 32);
         Self { client, eventloop }
     }
 
     pub fn eventloop(&mut self) -> &mut EventLoop {
         &mut self.eventloop
+    }
+
+    /// C# `MechrevoHw.Publish` defaults to QoS2 (`ExactlyOnce`).
+    // System_OFF on exit may need AtMostOnce later: C# uses QoS0 because a QoS2 four-step handshake dies on a clean-session disconnect.
+    pub const fn publish_qos() -> QoS {
+        QoS::ExactlyOnce
+    }
+
+    /// Requested subscribe QoS for the product client.
+    pub const fn subscribe_qos() -> QoS {
+        QoS::ExactlyOnce
     }
 }
 
@@ -191,7 +203,7 @@ impl MqttTransport for GcuClient {
         let filter = filter.to_owned();
         async move {
             client
-                .subscribe(filter, QoS::AtMostOnce)
+                .subscribe(filter, Self::subscribe_qos())
                 .await
                 .map_err(|err| MqttError::Transport(err.to_string()))
         }
@@ -207,7 +219,7 @@ impl MqttTransport for GcuClient {
         let payload = payload.to_vec();
         async move {
             client
-                .publish(topic, QoS::AtMostOnce, false, payload)
+                .publish(topic, Self::publish_qos(), false, payload)
                 .await
                 .map_err(|err| MqttError::Transport(err.to_string()))
         }

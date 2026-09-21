@@ -1,8 +1,8 @@
 //! Given tray gates. When tray_menu_spec. Then C# ids in C# order; no touchpad; custom 1..4 → slots 0..3.
 
 use app_lib::tray::{
-    hide_main_on_close, should_hide_on_close, tray_custom_label, tray_custom_slot, tray_menu_spec,
-    TrayMenuGates,
+    gates_from_snapshot, hide_main_on_close, should_hide_on_close, tray_custom_label,
+    tray_custom_slot, tray_menu_spec, TrayMenuGates, TraySnapshotView,
 };
 
 fn spec(gates: TrayMenuGates<'_>) -> Vec<String> {
@@ -354,4 +354,61 @@ fn hide_main_on_close_skips_hud_window() {
 
     // Then: overlay_set / HUD close is unchanged
     assert!(!hide);
+}
+
+fn empty_snapshot_view() -> TraySnapshotView<'static> {
+    TraySnapshotView {
+        silent_turbo: false,
+        offered_switches: &[],
+        gpu_actions: &[],
+        keyboard: false,
+        tcc_adjustable: false,
+        oc_settings: false,
+    }
+}
+
+#[test]
+fn gates_from_snapshot_offers_custom_only_when_csharp_gate_holds() {
+    // Given: snapshot with neither tcc_adjustable nor oc_settings
+    // (C# Settings.cs:3784 CpuPerformanceTuning || FanSettings || HasAnyCustomRange is false)
+    let unsatisfied = empty_snapshot_view();
+
+    // When: gates are derived from the snapshot
+    let hidden = gates_from_snapshot(&unsatisfied);
+
+    // Then: custom 1–4 is not offered (the live `custom: true` literal must fail here)
+    assert!(
+        !hidden.custom,
+        "custom must be hidden when the C# tray gate is not satisfied"
+    );
+
+    // Given: tcc_adjustable (CPUPerformanceAndOverClockMenuSupport / HasAnyCustomRange stand-in)
+    let tuning = TraySnapshotView {
+        tcc_adjustable: true,
+        ..empty_snapshot_view()
+    };
+
+    // When: gates are derived from the snapshot
+    let offered_tuning = gates_from_snapshot(&tuning);
+
+    // Then: custom is offered
+    assert!(
+        offered_tuning.custom,
+        "custom must be offered when tcc_adjustable satisfies the C# gate"
+    );
+
+    // Given: oc_settings (OcSettingsSupport)
+    let oc = TraySnapshotView {
+        oc_settings: true,
+        ..empty_snapshot_view()
+    };
+
+    // When: gates are derived from the snapshot
+    let offered_oc = gates_from_snapshot(&oc);
+
+    // Then: custom is offered
+    assert!(
+        offered_oc.custom,
+        "custom must be offered when oc_settings satisfies the C# gate"
+    );
 }

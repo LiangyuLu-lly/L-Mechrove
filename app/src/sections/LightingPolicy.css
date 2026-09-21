@@ -1,0 +1,25 @@
+.lighting-policy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--row-control-height);
+  width: 100%;
+  white-space: nowrap;
+}
+
+.lighting-policy .checkbox {
+  flex: 1;
+  min-width: 0;
+}
+
+.lighting-policy .checkbox__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lighting-policy__idle {
+  flex: 0 0 calc(var(--space-xl) * 5);
+  width: calc(var(--space-xl) * 5);
+  min-width: 0;
+}
