@@ -1,3 +1,10 @@
+.fan-curve-pair {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
 .fan-curve {
   display: block;
   width: 100%;

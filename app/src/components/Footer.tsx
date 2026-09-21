@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { assertNever } from "../lib/assertNever"
-import { appQuit, diagnosticsExport, overlaySet } from "../lib/api"
+import { appQuit, diagnosticsExport, overlaySet, updatesCheck } from "../lib/api"
+import { DonateDialog } from "../sections/DonateDialog"
 import "./Footer.css"
 
 type FooterKeyId =
@@ -103,6 +104,16 @@ const FOOTER_KEYS: readonly FooterKey[] = [
   },
 ]
 
+function offerIsAvailable(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false
+  }
+  if (!("updateAvailable" in value)) {
+    return false
+  }
+  return value.updateAvailable === true
+}
+
 async function runHost(
   run: () => Promise<unknown>,
   onHostError: ((message: string) => void) | undefined,
@@ -136,6 +147,26 @@ export function Footer({
 }: FooterProps) {
   const [overlayOn, setOverlayOn] = useState(false)
   const [donateOpen, setDonateOpen] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void updatesCheck()
+      .then((dto) => {
+        if (!cancelled && offerIsAvailable(dto)) {
+          setUpdateAvailable(true)
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error || typeof error === "string") {
+          return
+        }
+        throw error
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function onFooterKey(id: FooterKeyId): void {
     switch (id) {
@@ -186,30 +217,18 @@ export function Footer({
           >
             {key.icon}
             <span>{key.label}</span>
+            {key.id === "updates" && updateAvailable ? (
+              <span className="footer__badge">有新版本</span>
+            ) : null}
           </button>
         ))}
       </div>
       {donateOpen ? (
-        <div
-          className="settings-dialog"
-          role="presentation"
-          onClick={() => {
+        <DonateDialog
+          onClose={() => {
             setDonateOpen(false)
           }}
-        >
-          <div
-            className="settings-dialog__panel"
-            role="dialog"
-            aria-labelledby="donate-title"
-            onClick={(event) => {
-              event.stopPropagation()
-            }}
-          >
-            <h2 id="donate-title" className="settings-dialog__title">
-              赞助支持
-            </h2>
-          </div>
-        </div>
+        />
       ) : null}
     </footer>
   )

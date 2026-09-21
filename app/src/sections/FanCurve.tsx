@@ -18,10 +18,17 @@ const PLOT_H = VIEW_H - PAD_T - PAD_B
 const Y_TICKS = [0, 25, 50, 75, 100] as const
 const X_TICKS = [0, 5, 10, 15] as const
 
-export type FanCurveProps = {
+type FanCurvePlotProps = {
   readonly type: FanCurveType
   readonly duties: readonly number[]
   readonly onChange?: (duties: readonly number[]) => void
+}
+
+export type FanCurveProps = {
+  readonly cpuDuties: readonly number[]
+  readonly gpuDuties: readonly number[]
+  readonly onCpuChange?: (duties: readonly number[]) => void
+  readonly onGpuChange?: (duties: readonly number[]) => void
 }
 
 function clampDuty(value: number): number {
@@ -64,7 +71,21 @@ async function swallow(run: () => Promise<unknown>): Promise<void> {
   }
 }
 
-export function FanCurve({ type, duties, onChange }: FanCurveProps) {
+export function FanCurve({
+  cpuDuties,
+  gpuDuties,
+  onCpuChange,
+  onGpuChange,
+}: FanCurveProps) {
+  return (
+    <div className="fan-curve-pair">
+      <FanCurvePlot type="CPU" duties={cpuDuties} onChange={onCpuChange} />
+      <FanCurvePlot type="GPU" duties={gpuDuties} onChange={onGpuChange} />
+    </div>
+  )
+}
+
+function FanCurvePlot({ type, duties, onChange }: FanCurvePlotProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
 

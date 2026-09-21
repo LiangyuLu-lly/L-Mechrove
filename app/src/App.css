@@ -28,6 +28,7 @@
   --font-body: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Consolas", "Cascadia Mono", ui-monospace, monospace;
   --fan-curve-height: 10rem;
+  --donate-height: 420px;
   --slider-fill: var(--accent);
   --row-value-min: 4ch;
 }

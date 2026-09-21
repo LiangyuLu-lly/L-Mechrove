@@ -5,8 +5,8 @@ mod overlay_state;
 
 use app_lib::Backend;
 use overlay_state::{
-    anchor_from_center, clamp_scale, is_game_foreground, overlay_update, restore_position,
-    OverlayMode, OverlayStore, Point, ScreenRect, Size,
+    anchor_from_center, clamp_scale, is_game_foreground, overlay_should_show, overlay_update,
+    restore_position, OverlayMode, OverlayStore, Point, ScreenRect, Size,
 };
 
 #[test]
@@ -145,6 +145,7 @@ async fn overlay_update_on_fake_publishes_no_mqtt_and_persists() {
         "offsetY": 10,
         "screen": "",
         "gameOnly": true,
+        "displayOff": true,
         "showTemp": true,
         "showFans": false,
         "showPower": true,
@@ -187,6 +188,7 @@ async fn overlay_update_on_fake_publishes_no_mqtt_and_persists() {
     assert_eq!(loaded.get_i32("overlay_offset_y"), Some(10));
     assert_eq!(loaded.get_str("overlay_screen"), Some(""));
     assert_eq!(loaded.get_i32("overlay_game_only"), Some(1));
+    assert_eq!(loaded.get_i32("overlay_display_off"), Some(1));
     assert_eq!(loaded.get_i32("overlay_show_temp"), Some(1));
     assert_eq!(loaded.get_i32("overlay_show_fans"), Some(0));
     assert_eq!(loaded.get_i32("overlay_show_power"), Some(1));
@@ -199,4 +201,20 @@ async fn overlay_update_on_fake_publishes_no_mqtt_and_persists() {
     assert_eq!(loaded.get_str("overlay_color_gpu"), Some("#00FF50"));
     assert_eq!(loaded.get_str("overlay_color_temp"), Some("#FF8800"));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn overlay_should_show_hides_when_game_only_and_not_game() {
+    // Given: 仅游戏显示 on. When: injected is_game=false. Then: hide.
+    // Hardware ceiling: this is a boolean predicate, not z-order.
+    assert!(!overlay_should_show(true, false, false, false));
+    assert!(overlay_should_show(true, true, false, false));
+}
+
+#[test]
+fn overlay_should_show_hides_when_display_off_pref_and_display_off() {
+    // Given: 熄屏挂起 on. When: injected display_off=true. Then: hide.
+    // Hardware ceiling: this is a boolean predicate, not real screen blanking.
+    assert!(!overlay_should_show(false, true, true, true));
+    assert!(overlay_should_show(false, true, true, false));
 }

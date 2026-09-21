@@ -1,0 +1,31 @@
+.battery__charge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  color: var(--muted);
+}
+
+.battery__full {
+  flex-shrink: 0;
+  min-height: var(--row-control-height);
+  padding: 0 var(--space-sm);
+  font-size: var(--type-body);
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+
+.battery__full:hover {
+  background: var(--input);
+}
+
+.battery__full:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battery__full {
+    transition: none;
+  }
+}

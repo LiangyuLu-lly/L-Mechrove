@@ -62,6 +62,20 @@
   background: var(--text);
 }
 
+.hud__prefs,
+.hud__blocks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-sm);
+  max-width: 100%;
+}
+
+.hud__prefs .checkbox,
+.hud__blocks .checkbox {
+  min-width: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hud,
   .hud__bar-fill {

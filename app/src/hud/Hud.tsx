@@ -3,6 +3,14 @@ import { listen } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { overlayUpdate } from "../lib/api"
 import type { HwSnapshot } from "../lib/types"
+import { HudControls } from "./HudControls"
+import {
+  EMPTY_HUD_SNAPSHOT,
+  overlayShouldShow,
+  persistPrefsForBlock,
+  type HudBlockKey,
+  type OverlayPersistPrefs,
+} from "./hudOverlay"
 import {
   clampScalePercent,
   hudLinesFromSnapshot,
@@ -27,56 +35,37 @@ export type HudPanelProps = {
   readonly showRam?: boolean
   readonly showBattery?: boolean
   readonly names?: boolean
+  readonly gameOnly?: boolean
+  readonly displayOff?: boolean
+  readonly is_game?: boolean
+  readonly display_off?: boolean
+  readonly onHostError?: (message: string) => void
 }
 
 const SNAPSHOT_EVENT = "hw_snapshot"
 
-const EMPTY_SNAPSHOT: HudTelemetry = {
-  mqtt: "Disconnected",
-  lighting: {
-    keyboard: false,
-    lightbar: false,
-    logo: false,
-    keyboardType: 0,
-  },
-  chargePercent: 0,
-  gpuActions: [],
-  writeAllowed: false,
-  hzList: [],
-  offeredSwitches: [],
-  liquidCooling: false,
-  hdrOn: false,
-  tccAdjustable: false,
-  ocSettings: false,
-  silentTurbo: false,
-  dcHzSeen: false,
-  colorCalibration: false,
-  keyboardHidUnavailable: false,
-  lightingOffOnBattery: false,
-  lightingIdleSeconds: 0,
-  modelReason: "",
-  projectId: "",
-  ocRequiresElevation: false,
-  themeMode: "night",
-  releaseLabel: "",
+function reportHostError(
+  onHostError: ((message: string) => void) | undefined,
+  error: unknown,
+): void {
+  onHostError?.(error instanceof Error ? error.message : String(error))
 }
 
-function ignoreHostError(error: unknown): void {
-  if (error instanceof Error) {
-    return
-  }
-  throw error
+function persistOverlay(
+  prefs: OverlayPersistPrefs,
+  onHostError?: (message: string) => void,
+): void {
+  void overlayUpdate(prefs).catch((error: unknown) => {
+    reportHostError(onHostError, error)
+  })
 }
 
-function persistOverlay(prefs: {
-  readonly mode?: OverlayModeName
-  readonly scalePercent?: number
-}): void {
-  void overlayUpdate(prefs).catch(ignoreHostError)
-}
-
-function startHudDrag(): void {
-  void getCurrentWindow().startDragging().catch(ignoreHostError)
+function startHudDrag(onHostError?: (message: string) => void): void {
+  void getCurrentWindow()
+    .startDragging()
+    .catch((error: unknown) => {
+      reportHostError(onHostError, error)
+    })
 }
 
 function viewFromProps(
@@ -127,17 +116,45 @@ function HudUsageBar({ line }: { readonly line: HudLine }) {
 
 export function HudPanel(props: HudPanelProps) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const { onHostError } = props
   const [mode, setMode] = useState<OverlayModeName>(props.mode ?? "default")
   const [scalePercent, setScalePercent] = useState(props.scalePercent ?? 100)
+  const [gameOnly, setGameOnly] = useState(props.gameOnly ?? false)
+  const [displayOff, setDisplayOff] = useState(props.displayOff ?? false)
+  const [flags, setFlags] = useState(() => ({
+    showTemp: props.showTemp ?? true,
+    showFans: props.showFans ?? true,
+    showPower: props.showPower ?? true,
+    showUsage: props.showUsage ?? true,
+    showRam: props.showRam ?? true,
+    showBattery: props.showBattery ?? true,
+    names: props.names ?? false,
+  }))
   const scale = clampScalePercent(scalePercent)
-  const lines = hudLinesFromSnapshot(
-    props.snapshot,
-    viewFromProps(props, mode),
-  )
+  const visible = overlayShouldShow({
+    gameOnly,
+    is_game: props.is_game,
+    displayOff,
+    display_off: props.display_off,
+  })
+  const lines = hudLinesFromSnapshot(props.snapshot, {
+    ...viewFromProps(props, mode),
+    ...flags,
+    mode,
+  })
 
   useLayoutEffect(() => {
     rootRef.current?.style.setProperty("--hud-scale", String(scale / 100))
   }, [scale])
+
+  if (!visible) {
+    return null
+  }
+
+  function applyBlock(key: HudBlockKey, on: boolean): void {
+    setFlags((prev) => ({ ...prev, [key]: on }))
+    persistOverlay(persistPrefsForBlock(key, on), onHostError)
+  }
 
   return (
     <div
@@ -148,10 +165,10 @@ export function HudPanel(props: HudPanelProps) {
       onClick={() => {
         const next = nextOverlayMode(mode)
         setMode(next)
-        persistOverlay({ mode: next })
+        persistOverlay({ mode: next }, onHostError)
       }}
       onPointerDown={() => {
-        startHudDrag()
+        startHudDrag(onHostError)
       }}
       onWheel={(event) => {
         if (!event.ctrlKey) {
@@ -159,7 +176,7 @@ export function HudPanel(props: HudPanelProps) {
         }
         const next = nextScalePercent(scale, event.deltaY)
         setScalePercent(next)
-        persistOverlay({ scalePercent: next })
+        persistOverlay({ scalePercent: next }, onHostError)
       }}
     >
       {lines.map((line) => (
@@ -174,6 +191,20 @@ export function HudPanel(props: HudPanelProps) {
           <HudMetric className="hud__battery" value={line.battery} />
         </div>
       ))}
+      <HudControls
+        gameOnly={gameOnly}
+        displayOff={displayOff}
+        flags={flags}
+        onGameOnly={(checked) => {
+          setGameOnly(checked)
+          persistOverlay({ gameOnly: checked }, onHostError)
+        }}
+        onDisplayOff={(checked) => {
+          setDisplayOff(checked)
+          persistOverlay({ displayOff: checked }, onHostError)
+        }}
+        onBlock={applyBlock}
+      />
     </div>
   )
 }
@@ -194,12 +225,17 @@ export function Hud() {
         }
         unlisten = fn
       })
-      .catch(ignoreHostError)
+      .catch((error: unknown) => {
+        if (error instanceof Error) {
+          return
+        }
+        throw error
+      })
     return () => {
       cancelled = true
       unlisten?.()
     }
   }, [])
 
-  return <HudPanel snapshot={snapshot ?? EMPTY_SNAPSHOT} />
+  return <HudPanel snapshot={snapshot ?? EMPTY_HUD_SNAPSHOT} />
 }

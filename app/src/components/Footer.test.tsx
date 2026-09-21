@@ -54,6 +54,7 @@ describe("Footer", () => {
   it("emits onUpdates when 更新 is clicked and does not invoke updates_check", () => {
     const onUpdates = mock(() => undefined)
     render(<Footer onUpdates={onUpdates} />)
+    invoke.mockClear()
     fireEvent.click(screen.getByRole("button", { name: "更新" }))
     expect(onUpdates).toHaveBeenCalledTimes(1)
     expect(invoke).not.toHaveBeenCalledWith("updates_check")
@@ -67,14 +68,35 @@ describe("Footer", () => {
 
   it("does not invoke host commands when 赞助 is clicked", () => {
     render(<Footer />)
+    invoke.mockClear()
     fireEvent.click(screen.getByRole("button", { name: "赞助" }))
     expect(invoke).not.toHaveBeenCalled()
   })
 
-  it("shows 赞助支持 when 赞助 is clicked", () => {
+  it("opens DonateDialog with C# copy when 赞助 is clicked", () => {
     render(<Footer />)
     fireEvent.click(screen.getByRole("button", { name: "赞助" }))
-    expect(screen.getByText("赞助支持")).toBeTruthy()
+    expect(screen.getByRole("dialog", { name: "赞助支持" })).toBeTruthy()
+    expect(screen.getByText("感谢支持 L-Mechrevo")).toBeTruthy()
+    expect(screen.getByText("扫码赞助，支持持续开发")).toBeTruthy()
+  })
+
+  it("closes DonateDialog from the close control", () => {
+    render(<Footer />)
+    fireEvent.click(screen.getByRole("button", { name: "赞助" }))
+    fireEvent.click(screen.getByRole("button", { name: "关闭赞助" }))
+    expect(screen.queryByRole("dialog", { name: "赞助支持" })).toBeNull()
+  })
+
+  it("shows 有新版本 on 更新 when updates_check reports an update", async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === "updates_check") {
+        return Promise.resolve({ updateAvailable: true, latestVersion: "5.56.61.0" })
+      }
+      return Promise.resolve()
+    })
+    render(<Footer />)
+    expect(await screen.findByText("有新版本")).toBeTruthy()
   })
 
   it("invokes app_quit when 退出 is clicked", () => {

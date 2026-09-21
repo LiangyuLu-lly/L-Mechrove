@@ -1,0 +1,26 @@
+.update-dialog__notes {
+  margin: 0 0 var(--space-sm);
+  padding: var(--space-sm);
+  max-height: 8rem;
+  overflow: auto;
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  color: var(--text);
+  background: var(--input);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+}
+
+.update-dialog__progress {
+  height: var(--slider-track-height);
+  margin: 0 0 var(--space-sm);
+  overflow: hidden;
+  background: var(--track);
+}
+
+.update-dialog__progress-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: var(--accent);
+}

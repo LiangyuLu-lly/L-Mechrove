@@ -184,6 +184,7 @@ impl Backend {
     }
 
     pub fn set_charge_limit(&mut self, percent: u8) -> Result<u8, HostError> {
+        let percent = percent.clamp(ec_acpi::MIN_PERCENT, ec_acpi::MAX_PERCENT);
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;

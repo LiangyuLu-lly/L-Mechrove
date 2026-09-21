@@ -196,4 +196,109 @@ describe("HudPanel", () => {
 
     expect(startDragging).toHaveBeenCalled()
   })
+
+  it("renders 仅游戏显示 and persists gameOnly through overlayUpdate", () => {
+    render(<HudPanel snapshot={FAKE_TELEMETRY} />)
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅游戏显示" }))
+
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { gameOnly: true },
+    })
+    expect(invoke).not.toHaveBeenCalledWith("overlay_update", {
+      prefs: { mode: "full" },
+    })
+  })
+
+  it("renders 熄屏挂起 and persists displayOff through overlayUpdate", () => {
+    render(<HudPanel snapshot={FAKE_TELEMETRY} />)
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "熄屏挂起" }))
+
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { displayOff: true },
+    })
+    expect(invoke).not.toHaveBeenCalledWith("overlay_update", {
+      prefs: { mode: "full" },
+    })
+  })
+
+  it("hides telemetry when gameOnly is on and is_game is false", () => {
+    render(<HudPanel snapshot={FAKE_TELEMETRY} gameOnly is_game={false} />)
+
+    expect(screen.queryByText("CPU")).toBeNull()
+    expect(screen.queryByText("78C")).toBeNull()
+  })
+
+  it("shows telemetry when gameOnly is on and is_game is true", () => {
+    render(<HudPanel snapshot={FAKE_TELEMETRY} gameOnly is_game={true} />)
+
+    expect(screen.getByText("CPU")).toBeTruthy()
+    expect(screen.getByText("78C")).toBeTruthy()
+  })
+
+  it("hides telemetry when displayOff is on and display_off is true", () => {
+    render(
+      <HudPanel snapshot={FAKE_TELEMETRY} displayOff display_off={true} />,
+    )
+
+    expect(screen.queryByText("CPU")).toBeNull()
+    expect(screen.queryByText("78C")).toBeNull()
+  })
+
+  it("shows telemetry when displayOff is on and display_off is false", () => {
+    render(
+      <HudPanel snapshot={FAKE_TELEMETRY} displayOff display_off={false} />,
+    )
+
+    expect(screen.getByText("CPU")).toBeTruthy()
+  })
+
+  it("renders per-block toggles for temp fans power usage ram battery names", () => {
+    render(<HudPanel snapshot={FAKE_TELEMETRY} />)
+
+    expect(screen.getByRole("checkbox", { name: "温度" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "风扇" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "功耗" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "占用" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "内存" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "电池" })).toBeTruthy()
+    expect(screen.getByRole("checkbox", { name: "名称" })).toBeTruthy()
+  })
+
+  it("hides Complete fans when the 风扇 toggle is turned off", () => {
+    render(<HudPanel snapshot={FAKE_TELEMETRY} mode="complete" />)
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "风扇" }))
+
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { showFans: false },
+    })
+    expect(screen.queryAllByText("2100rpm")).toHaveLength(0)
+    expect(screen.getByText("78C")).toBeTruthy()
+  })
+
+  it("shows Complete names when the 名称 toggle is turned on", () => {
+    render(<HudPanel snapshot={NAMED_TELEMETRY} mode="complete" />)
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "名称" }))
+
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { names: true },
+    })
+    expect(screen.getByText("Ultra 185H")).toBeTruthy()
+    expect(screen.getByText("RTX 4070")).toBeTruthy()
+  })
+
+  it("reports overlayUpdate failure through onHostError instead of swallowing it", async () => {
+    const onHostError = mock(() => {})
+    invoke.mockRejectedValueOnce(new Error("overlay host down"))
+    render(<HudPanel snapshot={FAKE_TELEMETRY} onHostError={onHostError} />)
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "仅游戏显示" }))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(onHostError).toHaveBeenCalledWith("overlay host down")
+  })
 })

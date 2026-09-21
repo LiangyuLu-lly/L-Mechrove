@@ -147,6 +147,66 @@ fn real_set_charge_limit_writes_7b9_7d0_when_item_support_is_default() {
         .expect("missing lower 0x7D0");
     assert_eq!(upper.1[4], 80);
     assert_eq!(lower.1[4], 75);
+    assert!(
+        backend.recorded_publishes().iter().all(|(_, payload)| {
+            payload.get("Action").and_then(|value| value.as_str()) != Some("SETSCREENBRIGHTNESS")
+        }),
+        "charge path must not publish SETSCREENBRIGHTNESS"
+    );
+}
+
+#[test]
+fn real_set_charge_limit_clips_below_min_and_reports_accepted() {
+    // Given: Real arm + injected FakeIoctl. Slider min is 40.
+    let _guard = Backend::inject_ec_transport(FakeIoctl::default());
+    let mut backend = Backend::real();
+
+    // When: request below the supported range
+    let applied = backend
+        .set_charge_limit(20)
+        .expect("Real EC path clips instead of RealUnavailable");
+
+    // Then: device accepted 40; only 0x7B9/0x7D0
+    assert_eq!(applied, 40);
+    let writes = backend.recorded_ec_writes();
+    assert_only_charge_pair(&writes);
+    let upper = writes
+        .iter()
+        .find(|(_, bytes)| write_addr(bytes) == 0x7B9)
+        .expect("missing upper 0x7B9");
+    let lower = writes
+        .iter()
+        .find(|(_, bytes)| write_addr(bytes) == 0x7D0)
+        .expect("missing lower 0x7D0");
+    assert_eq!(upper.1[4], 40);
+    assert_eq!(lower.1[4], 35);
+}
+
+#[test]
+fn real_set_charge_limit_clips_above_max_to_unlimited_pair() {
+    // Given: Real arm + injected FakeIoctl. 100% encodes as 0/0.
+    let _guard = Backend::inject_ec_transport(FakeIoctl::default());
+    let mut backend = Backend::real();
+
+    // When: request above the supported range (u8 max)
+    let applied = backend
+        .set_charge_limit(255)
+        .expect("Real EC path clips instead of RealUnavailable");
+
+    // Then: device accepted 100 as the 0/0 unlimited pair
+    assert_eq!(applied, MAX_PERCENT);
+    let writes = backend.recorded_ec_writes();
+    assert_only_charge_pair(&writes);
+    let upper = writes
+        .iter()
+        .find(|(_, bytes)| write_addr(bytes) == 0x7B9)
+        .expect("missing upper 0x7B9");
+    let lower = writes
+        .iter()
+        .find(|(_, bytes)| write_addr(bytes) == 0x7D0)
+        .expect("missing lower 0x7D0");
+    assert_eq!(upper.1[4], 0);
+    assert_eq!(lower.1[4], 0);
 }
 
 #[test]

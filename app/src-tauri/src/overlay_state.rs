@@ -153,6 +153,22 @@ pub fn is_game_foreground(exe: &str, allowlist: &[&str]) -> bool {
         .any(|item| exe_stem(item).eq_ignore_ascii_case(needle))
 }
 
+/// Host predicate for 仅游戏显示 / 熄屏挂起. Does not inspect z-order or the panel.
+pub const fn overlay_should_show(
+    game_only: bool,
+    is_game: bool,
+    display_off_pref: bool,
+    display_off: bool,
+) -> bool {
+    if display_off_pref && display_off {
+        return false;
+    }
+    if game_only && !is_game {
+        return false;
+    }
+    true
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum OverlayError {
     #[error(transparent)]
@@ -290,6 +306,7 @@ pub fn overlay_update(store: &mut OverlayStore, prefs: &Value) -> Result<(), Ove
     }
     for (json_key, persist_key) in [
         ("gameOnly", "overlay_game_only"),
+        ("displayOff", "overlay_display_off"),
         ("showTemp", "overlay_show_temp"),
         ("showFans", "overlay_show_fans"),
         ("showPower", "overlay_show_power"),

@@ -90,6 +90,7 @@ Base 4px. `UiVisualStyle.Space` unchanged.
 | `--space-lg` | 16 | `1rem` | page inset-x |
 | `--space-xl` | 24 | `1.5rem` | collapse body indent |
 | `--fan-curve-height` | 160 | `10rem` | fan curve plot height |
+| `--donate-height` | 420 | `26.25rem` | DonateDialog panel height |
 
 - Shell: `width: 420px` (fixed). Height follows content; inner scroll. Max height = work area − 40px.
 - No product breakpoints. This is a desktop instrument, not a responsive site.
@@ -150,7 +151,7 @@ Left: version `--type-caption` `--muted`. Right, equal columns, locked order:
 |---|---|---|---|
 | 1 | 悬浮窗 | Overlay (circle-dot) | `overlay_set` — active = `--accent` icon+text |
 | 2 | 设置 | Gear | settings dialog (470px, root §0.5) |
-| 3 | 更新 | Refresh | `updates_check` |
+| 3 | 更新 | Refresh | `updates_check` — when host reports an update, a 有新版本 badge (accent pip, text in DOM, does not grow the 46×36 key) |
 | 4 | **诊断** | Package | `diagnostics_export` — accessible name 导出诊断包 |
 | 5 | 赞助 | Heart (stroke, not emoji) | donate — opens DonateDialog (title 赞助支持). No network. |
 | 6 | 退出 | Close | quit / tray |
@@ -166,8 +167,17 @@ WinForms `BuildFooterV2` TLP currently places 赞助 before 诊断. **Tauri foll
 ### DonateDialog
 
 - Overlay chrome = SettingsDialog (`--surface` + 1px `--border`, width `--settings-width`).
-- Title **赞助支持**. Body: 感谢支持 L-Mechrevo / 扫码赞助，支持持续开发. No QR fetch, no network.
-- States: open, close (scrim click / 关闭). Motion: none.
+- Panel height `--donate-height` (420px). Title **赞助支持**. Body: 感谢支持 L-Mechrevo / 扫码赞助，支持持续开发.
+- Two local QR images (`src/assets/qrcode1.jpg`, `qrcode2.jpg`). No QR fetch, no network.
+- Missing file / `onError`: plain text **二维码资源缺失** on `--surface-raised`. Never a broken image.
+- States: open, close (scrim click / 关闭赞助). Motion: none.
+
+### UpdateDialog
+
+- Overlay chrome = SettingsDialog. Title **检查更新**.
+- Release notes block when the host supplies `releaseNotes` (`--input` face, 1px `--border`, `--type-body`).
+- Determinate progress (`role="progressbar"`) while installing; value from host `updates_progress` event (0–100). Track `--track`, fill `--accent`, height `--slider-track-height`.
+- Actions: 下载并安装 / 打开下载页 / 稍后 / 反馈. Install **disabled** unless a valid sha256 is cached (`hasValidSha256`). Never claim Authenticode.
 
 ### FirstRun
 

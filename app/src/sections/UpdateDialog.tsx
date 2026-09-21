@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react"
+import { listen } from "@tauri-apps/api/event"
 import { assertNever } from "../lib/assertNever"
 import { updatesCheck, updatesInstall, updatesOpenPage } from "../lib/api"
+import "./UpdateDialog.css"
 
 export type UpdateDialogProps = {
   readonly onClose: () => void
+  readonly releaseNotes?: string
+  readonly hasValidSha256?: boolean
+  readonly onFeedback?: () => void
 }
 
 type CheckState =
@@ -11,6 +16,8 @@ type CheckState =
   | { readonly kind: "latest"; readonly latestVersion: string }
   | { readonly kind: "available"; readonly latestVersion: string }
   | { readonly kind: "failed"; readonly message: string }
+
+const PROGRESS_EVENT = "updates_progress"
 
 async function swallowHostError(run: () => Promise<unknown>): Promise<void> {
   try {
@@ -38,8 +45,23 @@ function headline(state: CheckState): string {
   }
 }
 
-export function UpdateDialog({ onClose }: UpdateDialogProps) {
+function progressPercent(payload: unknown): number | undefined {
+  if (typeof payload !== "number" || !Number.isFinite(payload)) {
+    return undefined
+  }
+  return Math.min(100, Math.max(0, payload))
+}
+
+export function UpdateDialog({
+  onClose,
+  releaseNotes,
+  hasValidSha256 = false,
+  onFeedback,
+}: UpdateDialogProps) {
   const [state, setState] = useState<CheckState>({ kind: "checking" })
+  const [installing, setInstalling] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const notes = releaseNotes?.trim() ?? ""
 
   useEffect(() => {
     let cancelled = false
@@ -73,6 +95,37 @@ export function UpdateDialog({ onClose }: UpdateDialogProps) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    void listen(PROGRESS_EVENT, (event) => {
+      const percent = progressPercent(event.payload)
+      if (percent === undefined) {
+        return
+      }
+      setProgress(percent)
+    })
+      .then((stop) => {
+        if (cancelled) {
+          stop()
+          return
+        }
+        unlisten = stop
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error || typeof error === "string") {
+          return
+        }
+        throw error
+      })
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [])
+
+  const canInstall = state.kind === "available" && hasValidSha256 && !installing
 
   return (
     <div className="settings-dialog" role="presentation" onClick={onClose}>
@@ -111,13 +164,33 @@ export function UpdateDialog({ onClose }: UpdateDialogProps) {
         {state.kind === "failed" ? (
           <p className="settings-dialog__zone-title">{state.message}</p>
         ) : null}
+        {notes.length > 0 ? (
+          <pre className="update-dialog__notes">{releaseNotes}</pre>
+        ) : null}
+        {installing ? (
+          <div
+            className="update-dialog__progress"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <div
+              className="update-dialog__progress-fill"
+              style={{ transform: `scaleX(${progress / 100})` }}
+            />
+          </div>
+        ) : null}
         <div className="settings-dialog__actions">
           {state.kind === "available" ? (
             <>
               <button
                 type="button"
                 className="settings-dialog__action"
+                disabled={!canInstall}
                 onClick={() => {
+                  setInstalling(true)
+                  setProgress(0)
                   void swallowHostError(() => updatesInstall())
                 }}
               >
@@ -126,6 +199,7 @@ export function UpdateDialog({ onClose }: UpdateDialogProps) {
               <button
                 type="button"
                 className="settings-dialog__action"
+                disabled={installing}
                 onClick={() => {
                   void swallowHostError(() => updatesOpenPage())
                 }}
@@ -137,9 +211,20 @@ export function UpdateDialog({ onClose }: UpdateDialogProps) {
           <button
             type="button"
             className="settings-dialog__action"
+            disabled={installing}
             onClick={onClose}
           >
             稍后
+          </button>
+          <button
+            type="button"
+            className="settings-dialog__action"
+            disabled={installing}
+            onClick={() => {
+              onFeedback?.()
+            }}
+          >
+            反馈
           </button>
         </div>
       </div>

@@ -1,10 +1,12 @@
 //! Display CORE. Wave 2: `Backend::set_display_hz` wraps `apply_display_hz` after `start()`.
 
+use std::sync::{Arc, Mutex};
+use std::thread::ThreadId;
 use std::time::Duration;
 
 use app_lib::hw_display::{
     apply_auto_refresh_rate, apply_brightness, apply_calibration, apply_direct_connect_restart,
-    apply_display_hz, color_calibration_file_name, BrightnessQueue,
+    apply_display_hz, color_calibration_file_name, BrightnessQueue, BrightnessSink,
 };
 use app_lib::hw_wmi::FakeWmi;
 use app_lib::Backend;
@@ -320,4 +322,64 @@ async fn direct_connect_restart_frame_recorded_with_delay_skipped_in_tests() {
         "Action": "DGPU_DIRECT_CONNECT_RESTART",
     });
     assert_eq!(payload, &expected);
+}
+
+struct RecordingWmi {
+    writes: Mutex<Vec<(u32, u8)>>,
+    thread_id: Mutex<Option<ThreadId>>,
+    on_tokio_worker: Mutex<Option<bool>>,
+}
+
+impl RecordingWmi {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            writes: Mutex::new(Vec::new()),
+            thread_id: Mutex::new(None),
+            on_tokio_worker: Mutex::new(None),
+        })
+    }
+}
+
+impl BrightnessSink for RecordingWmi {
+    fn set_brightness(&self, timeout: u32, brightness: u8) {
+        *self.thread_id.lock().expect("thread_id") = Some(std::thread::current().id());
+        *self.on_tokio_worker.lock().expect("tokio flag") =
+            Some(tokio::runtime::Handle::try_current().is_ok());
+        self.writes.lock().expect("writes").push((timeout, brightness));
+    }
+}
+
+#[tokio::test]
+async fn real_set_brightness_runs_wmi_on_sta_thread_not_tokio_worker() {
+    // Given: Real arm + injected WMI double that records the calling thread
+    let sink = RecordingWmi::new();
+    let _guard = Backend::inject_brightness_sink(Arc::clone(&sink) as Arc<dyn BrightnessSink>);
+    let mut backend = Backend::real();
+
+    // When: brightness write on the Real arm
+    backend
+        .set_brightness(70)
+        .await
+        .expect("Real WMI path must not return RealUnavailable");
+
+    // Then: WmiSetBrightness(1, 70) ran off the Tokio worker; no MQTT
+    let writes = sink.writes.lock().expect("writes").clone();
+    assert_eq!(writes, vec![(1, 70)]);
+    assert_eq!(
+        *sink.on_tokio_worker.lock().expect("tokio flag"),
+        Some(false),
+        "WMI must not run on a Tokio worker"
+    );
+    assert_ne!(
+        *sink.thread_id.lock().expect("thread_id"),
+        Some(std::thread::current().id()),
+        "WMI must run on the dedicated STA thread"
+    );
+    let publishes = backend.recorded_publishes();
+    assert!(
+        publishes.iter().all(|(_, payload)| {
+            payload.get("Action").and_then(|value| value.as_str()) != Some("SETSCREENBRIGHTNESS")
+        }),
+        "brightness must not publish SETSCREENBRIGHTNESS, got {publishes:?}"
+    );
 }

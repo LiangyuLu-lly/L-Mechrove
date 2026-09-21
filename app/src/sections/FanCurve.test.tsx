@@ -8,8 +8,12 @@ mock.module("../lib/api", () => ({
   setFanCurve,
 }))
 
-const INITIAL = [
+const CPU_INITIAL = [
   0, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100, 100, 100,
+]
+
+const GPU_INITIAL = [
+  5, 5, 15, 25, 35, 45, 55, 65, 75, 85, 95, 100, 100, 100, 100, 100,
 ]
 
 describe("FanCurve", () => {
@@ -21,20 +25,23 @@ describe("FanCurve", () => {
     cleanup()
   })
 
-  it("renders 16 points given initial duties", () => {
-    render(<FanCurve type="CPU" duties={INITIAL} />)
-    expect(screen.getAllByRole("slider")).toHaveLength(16)
+  it("renders CPU and GPU charts given initial duties", () => {
+    render(<FanCurve cpuDuties={CPU_INITIAL} gpuDuties={GPU_INITIAL} />)
+    expect(screen.getAllByRole("slider")).toHaveLength(32)
     expect(screen.getByRole("slider", { name: "CPU T3 转速" })).toBeTruthy()
+    expect(screen.getByRole("slider", { name: "GPU T3 转速" })).toBeTruthy()
+    expect(
+      screen.getByRole("slider", { name: "GPU T3 转速" }).getAttribute("aria-valuenow"),
+    ).toBe("25")
   })
 
   it("does not call setFanCurve on mount", () => {
-    render(<FanCurve type="CPU" duties={INITIAL} />)
+    render(<FanCurve cpuDuties={CPU_INITIAL} gpuDuties={GPU_INITIAL} />)
     expect(setFanCurve).not.toHaveBeenCalled()
   })
 
-
   it("calls setFanCurve with the new duty as STRING when ArrowUp", () => {
-    render(<FanCurve type="CPU" duties={INITIAL} />)
+    render(<FanCurve cpuDuties={CPU_INITIAL} gpuDuties={GPU_INITIAL} />)
     fireEvent.keyDown(screen.getByRole("slider", { name: "CPU T3 转速" }), {
       key: "ArrowUp",
     })
@@ -46,13 +53,34 @@ describe("FanCurve", () => {
     expect(Array.isArray(duties)).toBe(true)
     const wire = Array.isArray(duties) ? duties.map(String) : []
     expect(wire).toEqual(
-      INITIAL.map((duty, index) => String(index === 3 ? duty + 1 : duty)),
+      CPU_INITIAL.map((duty, index) => String(index === 3 ? duty + 1 : duty)),
     )
     expect(wire[3]).toBe("21")
   })
 
+  it("saving CPU does not overwrite GPU", () => {
+    render(<FanCurve cpuDuties={CPU_INITIAL} gpuDuties={GPU_INITIAL} />)
+    fireEvent.keyDown(screen.getByRole("slider", { name: "CPU T3 转速" }), {
+      key: "ArrowUp",
+    })
+    expect(
+      screen.getByRole("slider", { name: "GPU T3 转速" }).getAttribute("aria-valuenow"),
+    ).toBe("25")
+    expect(setFanCurve.mock.calls.some((call) => call[1] === "GPU")).toBe(false)
+    const cpuDuties = setFanCurve.mock.calls[0]?.[2]
+    expect(Array.isArray(cpuDuties)).toBe(true)
+    if (Array.isArray(cpuDuties)) {
+      expect(cpuDuties.map(String)).not.toEqual(GPU_INITIAL.map(String))
+    }
+  })
+
   it("clamps duties to 0-100", () => {
-    render(<FanCurve type="CPU" duties={Array.from({ length: 16 }, () => 100)} />)
+    render(
+      <FanCurve
+        cpuDuties={Array.from({ length: 16 }, () => 100)}
+        gpuDuties={Array.from({ length: 16 }, () => 100)}
+      />,
+    )
     fireEvent.keyDown(screen.getByRole("slider", { name: "CPU T0 转速" }), {
       key: "ArrowUp",
     })
@@ -61,7 +89,12 @@ describe("FanCurve", () => {
     ).toBe("100")
 
     cleanup()
-    render(<FanCurve type="CPU" duties={Array.from({ length: 16 }, () => 0)} />)
+    render(
+      <FanCurve
+        cpuDuties={Array.from({ length: 16 }, () => 0)}
+        gpuDuties={Array.from({ length: 16 }, () => 0)}
+      />,
+    )
     fireEvent.keyDown(screen.getByRole("slider", { name: "CPU T15 转速" }), {
       key: "ArrowDown",
     })

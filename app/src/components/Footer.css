@@ -33,6 +33,7 @@
 }
 
 .footer__key {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -48,6 +49,19 @@
   font-size: var(--type-caption);
   color: var(--muted);
   transition: background-color var(--motion-micro) ease-out;
+}
+
+.footer__badge {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  width: var(--space-xs);
+  height: var(--space-xs);
+  overflow: hidden;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  background: var(--accent);
 }
 
 .footer__key:hover {

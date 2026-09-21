@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { HwSnapshot } from "../lib/types"
+import { overlayShouldShow } from "./hudOverlay"
 import { hudLinesFromSnapshot } from "./hudTelemetry"
 
 const BASE_SNAPSHOT: HwSnapshot = {
@@ -168,5 +169,51 @@ describe("hudLinesFromSnapshot", () => {
 
     expect(lines[0]?.name).toBeUndefined()
     expect(lines[1]?.name).toBeUndefined()
+  })
+})
+
+describe("overlayShouldShow", () => {
+  it("hides when gameOnly is on and is_game is false", () => {
+    expect(
+      overlayShouldShow({
+        gameOnly: true,
+        is_game: false,
+        displayOff: false,
+        display_off: false,
+      }),
+    ).toBe(false)
+  })
+
+  it("shows when gameOnly is on and is_game is true", () => {
+    expect(
+      overlayShouldShow({
+        gameOnly: true,
+        is_game: true,
+        displayOff: false,
+        display_off: false,
+      }),
+    ).toBe(true)
+  })
+
+  it("hides when displayOff is on and display_off is true", () => {
+    expect(
+      overlayShouldShow({
+        gameOnly: false,
+        is_game: true,
+        displayOff: true,
+        display_off: true,
+      }),
+    ).toBe(false)
+  })
+
+  it("shows when displayOff is on and display_off is false", () => {
+    expect(
+      overlayShouldShow({
+        gameOnly: false,
+        is_game: true,
+        displayOff: true,
+        display_off: false,
+      }),
+    ).toBe(true)
   })
 })
