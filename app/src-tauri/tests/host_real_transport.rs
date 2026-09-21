@@ -69,7 +69,9 @@ async fn apply_gpu_route_publishes_n16_igpu_payload_when_transport_is_not_fake()
         .expect("Setting/Control publish");
     assert_eq!(payload["Action"], IGPU_ONLY_ON);
     assert_eq!(
-        payload.get("SetToWMIEC").and_then(serde_json::Value::as_str),
+        payload
+            .get("SetToWMIEC")
+            .and_then(serde_json::Value::as_str),
         Some("OK"),
         "N16 IGPU_ONLY_ON must carry SetToWMIEC=OK: {payload}"
     );
@@ -166,8 +168,8 @@ async fn real_custom_mode_uses_stored_profile_index_not_zero() {
 }
 
 fn scan_rs(dir: &std::path::Path, hits: &mut Vec<String>) {
-    let entries = std::fs::read_dir(dir)
-        .unwrap_or_else(|err| panic!("read {}: {err}", dir.display()));
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|err| panic!("read {}: {err}", dir.display()));
     for entry in entries {
         let entry = entry.expect("dirent");
         let path = entry.path();

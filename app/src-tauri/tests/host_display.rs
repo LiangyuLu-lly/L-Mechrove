@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use app_lib::hw_display::{
-    apply_auto_refresh_rate, apply_brightness, apply_calibration, apply_display_hz, BrightnessQueue,
+    apply_auto_refresh_rate, apply_brightness, apply_calibration, apply_direct_connect_restart,
+    apply_display_hz, color_calibration_file_name, BrightnessQueue,
 };
 use app_lib::hw_wmi::FakeWmi;
 use app_lib::Backend;
@@ -125,9 +126,14 @@ async fn brightness_never_publishes_setscreenbrightness() {
 async fn hdr_on_blocks_color_calibration_without_publish() {
     let mut broker = FakeBroker::new();
     run_handshake(&mut broker).await.expect("start handshake");
-    apply_calibration(&mut broker, "COLOR_CALIBRATION_ON_SRGB", true)
-        .await
-        .expect_err("HDR on must deny calibration");
+    apply_calibration(
+        &mut broker,
+        "COLOR_CALIBRATION_ON_SRGB",
+        true,
+        color_calibration_file_name(2),
+    )
+    .await
+    .expect_err("HDR on must deny calibration");
     let actions = write_actions(&broker);
     assert!(
         actions
@@ -224,4 +230,94 @@ async fn backend_set_auto_refresh_rate_requires_dc_hz_seen() {
         }),
         "GPU_DC_HZ Enable true missing: {publishes:?}"
     );
+}
+
+#[test]
+fn color_calibration_file_name_matches_csharp() {
+    assert_eq!(color_calibration_file_name(2), "sRGB");
+    assert_eq!(color_calibration_file_name(3), "P3");
+    assert_eq!(color_calibration_file_name(4), "AdobeRGB");
+    assert_eq!(color_calibration_file_name(1), "Default");
+    assert_eq!(color_calibration_file_name(0), "Default");
+}
+
+#[tokio::test]
+async fn color_calibration_off_golden_includes_filename_string() {
+    let mut broker = FakeBroker::new();
+    apply_calibration(
+        &mut broker,
+        "COLOR_CALIBRATION_OFF",
+        false,
+        color_calibration_file_name(2),
+    )
+    .await
+    .expect("COLOR_CALIBRATION_OFF");
+    let publishes = recorded_publishes(&broker);
+    let found = publishes.iter().find(|(topic, payload)| {
+        topic == "Setting/Control" && payload["Action"] == "COLOR_CALIBRATION_OFF"
+    });
+    let (_, payload) = found.expect("Setting/Control COLOR_CALIBRATION_OFF missing");
+    assert!(
+        payload["FileName"].is_string(),
+        "FileName must be a JSON string, got {payload}"
+    );
+    let expected = serde_json::json!({
+        "Action": "COLOR_CALIBRATION_OFF",
+        "FileName": "sRGB",
+    });
+    assert_eq!(payload, &expected);
+}
+
+#[tokio::test]
+async fn auto_refresh_rate_publishes_only_when_live_dc_hz_seen() {
+    let mut backend = Backend::fake_from_json("{}").expect("parse");
+    backend.start().await.expect("start");
+    backend.apply_inbound("GPUDevice/Status", br#"{"currentHZList":["60"]}"#);
+    backend
+        .set_auto_refresh_rate(true)
+        .await
+        .expect_err("refuse when live dc_hz_seen is absent");
+    let denied = backend.recorded_publishes();
+    assert!(
+        denied.iter().all(|(topic, payload)| {
+            topic != "Setting/Control" || payload["Action"] != "GPU_DC_HZ"
+        }),
+        "must not publish GPU_DC_HZ when live dc_hz_seen is absent: {denied:?}"
+    );
+
+    backend.apply_inbound(
+        "GPUDevice/Status",
+        br#"{"currentHZList":["60"],"DC_HZ":true}"#,
+    );
+    backend
+        .set_auto_refresh_rate(true)
+        .await
+        .expect("live dc_hz_seen");
+    let publishes = backend.recorded_publishes();
+    let found = publishes
+        .iter()
+        .find(|(topic, payload)| topic == "Setting/Control" && payload["Action"] == "GPU_DC_HZ");
+    let (_, payload) = found.expect("Setting/Control GPU_DC_HZ missing");
+    let expected = serde_json::json!({
+        "Action": "GPU_DC_HZ",
+        "Enable": true,
+    });
+    assert_eq!(payload, &expected);
+}
+
+#[tokio::test]
+async fn direct_connect_restart_frame_recorded_with_delay_skipped_in_tests() {
+    let mut broker = FakeBroker::new();
+    apply_direct_connect_restart(&mut broker, Duration::ZERO)
+        .await
+        .expect("DGPU_DIRECT_CONNECT_RESTART");
+    let publishes = recorded_publishes(&broker);
+    let found = publishes.iter().find(|(topic, payload)| {
+        topic == "Setting/Control" && payload["Action"] == "DGPU_DIRECT_CONNECT_RESTART"
+    });
+    let (_, payload) = found.expect("Setting/Control DGPU_DIRECT_CONNECT_RESTART missing");
+    let expected = serde_json::json!({
+        "Action": "DGPU_DIRECT_CONNECT_RESTART",
+    });
+    assert_eq!(payload, &expected);
 }

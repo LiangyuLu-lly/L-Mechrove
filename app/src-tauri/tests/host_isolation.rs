@@ -52,7 +52,10 @@ fn isolation_never_targets_l_mechrevo_process() {
 fn isolation_never_targets_own_exe() {
     assert!(!is_isolation_process_target("app", "app"));
     assert!(!is_isolation_process_target("app.exe", "app"));
-    assert!(!is_isolation_process_target("control-center-x", "control-center-x"));
+    assert!(!is_isolation_process_target(
+        "control-center-x",
+        "control-center-x"
+    ));
 }
 
 #[test]

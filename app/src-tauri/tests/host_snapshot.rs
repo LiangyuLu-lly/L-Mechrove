@@ -112,7 +112,10 @@ fn snapshot_from_matches_for_fake_and_real_when_item_support_equal() {
     assert_eq!(fake_snap.lighting, real_snap.lighting);
     assert_eq!(fake_snap.silent_turbo, real_snap.silent_turbo);
     assert_eq!(fake_snap.liquid_cooling, real_snap.liquid_cooling);
-    assert!(real_snap.write_allowed, "N8: non-empty ItemSupport is served");
+    assert!(
+        real_snap.write_allowed,
+        "N8: non-empty ItemSupport is served"
+    );
     assert!(real_snap.lighting.lightbar);
     assert!(real_snap.silent_turbo);
     assert!(real_snap.liquid_cooling);
@@ -122,9 +125,7 @@ fn snapshot_from_matches_for_fake_and_real_when_item_support_equal() {
 fn snapshot_real_hides_g16_lightbar_even_when_mqtt_seen() {
     // Given: G16 ItemSupport (lightbar/logo off) plus an inbound lightbar report
     let mut real = Backend::real();
-    real.apply_item_support(
-        capabilities::ItemSupport::parse_json(&g16_json()).expect("g16"),
-    );
+    real.apply_item_support(capabilities::ItemSupport::parse_json(&g16_json()).expect("g16"));
     real.apply_inbound(
         "HidLightbar/Status",
         br#"{"type":"rainbow","powerStatus":"1"}"#,

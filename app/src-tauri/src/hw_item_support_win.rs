@@ -70,7 +70,12 @@ fn read_windows_pairs() -> Vec<(String, Value)> {
 fn read_key(path: &str, wow64_64: bool) -> Vec<(String, Value)> {
     use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY};
     use winreg::RegKey;
-    let flags = KEY_READ | if wow64_64 { KEY_WOW64_64KEY } else { KEY_WOW64_32KEY };
+    let flags = KEY_READ
+        | if wow64_64 {
+            KEY_WOW64_64KEY
+        } else {
+            KEY_WOW64_32KEY
+        };
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     let Ok(key) = hklm.open_subkey_with_flags(path, flags) else {
         return Vec::new();

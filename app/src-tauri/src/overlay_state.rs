@@ -51,17 +51,32 @@ impl OverlayMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Point { pub x: i32, pub y: i32 }
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ScreenRect { pub x: i32, pub y: i32, pub width: i32, pub height: i32 }
+pub struct ScreenRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Size { pub width: i32, pub height: i32 }
+pub struct Size {
+    pub width: i32,
+    pub height: i32,
+}
 
 pub const fn clamp_scale(raw: i32) -> i32 {
-    if raw <= MIN_SCALE_PERCENT { return MIN_SCALE_PERCENT; }
-    if raw >= MAX_SCALE_PERCENT { return MAX_SCALE_PERCENT; }
+    if raw <= MIN_SCALE_PERCENT {
+        return MIN_SCALE_PERCENT;
+    }
+    if raw >= MAX_SCALE_PERCENT {
+        return MAX_SCALE_PERCENT;
+    }
     let rounded = ((raw + SCALE_STEP_PERCENT / 2) / SCALE_STEP_PERCENT) * SCALE_STEP_PERCENT;
     clamp_i32(rounded, MIN_SCALE_PERCENT, MAX_SCALE_PERCENT)
 }
@@ -73,7 +88,13 @@ pub const fn anchor_from_center(center: Point, screen: ScreenRect) -> i32 {
 }
 
 const fn clamp_i32(value: i32, lo: i32, hi: i32) -> i32 {
-    if value < lo { lo } else if value > hi { hi } else { value }
+    if value < lo {
+        lo
+    } else if value > hi {
+        hi
+    } else {
+        value
+    }
 }
 
 pub const fn restore_position(
@@ -91,11 +112,27 @@ pub const fn restore_position(
     }
     let is_right = (anchor & 1) != 0;
     let is_bottom = (anchor & 2) != 0;
-    let x = if is_right { screen.x + screen.width - size.width - offset_x } else { screen.x + offset_x };
-    let y = if is_bottom { screen.y + screen.height - size.height - offset_y } else { screen.y + offset_y };
+    let x = if is_right {
+        screen.x + screen.width - size.width - offset_x
+    } else {
+        screen.x + offset_x
+    };
+    let y = if is_bottom {
+        screen.y + screen.height - size.height - offset_y
+    } else {
+        screen.y + offset_y
+    };
     Point {
-        x: clamp_i32(x, screen.x + RESTORE_CLAMP, screen.x + screen.width - size.width - RESTORE_CLAMP),
-        y: clamp_i32(y, screen.y + RESTORE_CLAMP, screen.y + screen.height - size.height - RESTORE_CLAMP),
+        x: clamp_i32(
+            x,
+            screen.x + RESTORE_CLAMP,
+            screen.x + screen.width - size.width - RESTORE_CLAMP,
+        ),
+        y: clamp_i32(
+            y,
+            screen.y + RESTORE_CLAMP,
+            screen.y + screen.height - size.height - RESTORE_CLAMP,
+        ),
     }
 }
 
@@ -111,7 +148,9 @@ fn exe_stem(name: &str) -> &str {
 
 pub fn is_game_foreground(exe: &str, allowlist: &[&str]) -> bool {
     let needle = exe_stem(exe);
-    allowlist.iter().any(|item| exe_stem(item).eq_ignore_ascii_case(needle))
+    allowlist
+        .iter()
+        .any(|item| exe_stem(item).eq_ignore_ascii_case(needle))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -130,13 +169,17 @@ pub struct OverlayStore {
 
 impl OverlayStore {
     pub fn memory() -> Self {
-        Self { values: BTreeMap::new() }
+        Self {
+            values: BTreeMap::new(),
+        }
     }
 
     pub fn load(dir: &Path) -> Result<Self, OverlayError> {
         match std::fs::read_to_string(dir.join(FILE_NAME)) {
             Ok(text) => {
-                let mut store = Self { values: serde_json::from_str(&text)? };
+                let mut store = Self {
+                    values: serde_json::from_str(&text)?,
+                };
                 store.migrate_light_mode();
                 Ok(store)
             }
@@ -147,12 +190,16 @@ impl OverlayStore {
 
     pub fn save(&self, dir: &Path) -> Result<(), OverlayError> {
         std::fs::create_dir_all(dir)?;
-        std::fs::write(dir.join(FILE_NAME), serde_json::to_string_pretty(&self.values)?)?;
+        std::fs::write(
+            dir.join(FILE_NAME),
+            serde_json::to_string_pretty(&self.values)?,
+        )?;
         Ok(())
     }
 
     pub fn seed_legacy_light_mode(&mut self, value: i32) {
-        self.values.insert("overlay_light_mode".to_owned(), Value::from(value));
+        self.values
+            .insert("overlay_light_mode".to_owned(), Value::from(value));
         self.migrate_light_mode();
     }
 
@@ -165,12 +212,24 @@ impl OverlayStore {
         }
     }
 
-    pub fn get_i32(&self, key: &str) -> Option<i32> { self.values.get(key).and_then(json_i32) }
-    pub fn get_str(&self, key: &str) -> Option<&str> { self.values.get(key).and_then(Value::as_str) }
-    fn set_i32(&mut self, key: &str, value: i32) { self.values.insert(key.to_owned(), Value::from(value)); }
-    fn set_str(&mut self, key: &str, value: &str) { self.values.insert(key.to_owned(), Value::from(value)); }
-    fn set_flag(&mut self, key: &str, on: bool) { self.set_i32(key, i32::from(on)); }
-    pub fn mode(&self) -> OverlayMode { OverlayMode::from_stored(self.get_i32("overlay_mode").unwrap_or(0)) }
+    pub fn get_i32(&self, key: &str) -> Option<i32> {
+        self.values.get(key).and_then(json_i32)
+    }
+    pub fn get_str(&self, key: &str) -> Option<&str> {
+        self.values.get(key).and_then(Value::as_str)
+    }
+    fn set_i32(&mut self, key: &str, value: i32) {
+        self.values.insert(key.to_owned(), Value::from(value));
+    }
+    fn set_str(&mut self, key: &str, value: &str) {
+        self.values.insert(key.to_owned(), Value::from(value));
+    }
+    fn set_flag(&mut self, key: &str, on: bool) {
+        self.set_i32(key, i32::from(on));
+    }
+    pub fn mode(&self) -> OverlayMode {
+        OverlayMode::from_stored(self.get_i32("overlay_mode").unwrap_or(0))
+    }
 
     pub fn click_cycle(&mut self) -> OverlayMode {
         self.migrate_light_mode();
@@ -211,12 +270,24 @@ pub fn overlay_update(store: &mut OverlayStore, prefs: &Value) -> Result<(), Ove
     if obj.get("cycleMode").and_then(json_bool) == Some(true) {
         store.click_cycle();
     }
-    if let Some(mode) = obj.get("mode").and_then(parse_mode) { store.set_i32("overlay_mode", mode.to_i32()); }
-    if let Some(scale) = obj.get("scalePercent").and_then(json_i32) { store.set_i32("overlay_scale_percent", clamp_scale(scale)); }
-    if let Some(anchor) = obj.get("anchor").and_then(json_i32) { store.set_i32("overlay_anchor", anchor); }
-    if let Some(offset_x) = obj.get("offsetX").and_then(json_i32) { store.set_i32("overlay_offset_x", offset_x); }
-    if let Some(offset_y) = obj.get("offsetY").and_then(json_i32) { store.set_i32("overlay_offset_y", offset_y); }
-    if let Some(screen) = obj.get("screen").and_then(Value::as_str) { store.set_str("overlay_screen", screen); }
+    if let Some(mode) = obj.get("mode").and_then(parse_mode) {
+        store.set_i32("overlay_mode", mode.to_i32());
+    }
+    if let Some(scale) = obj.get("scalePercent").and_then(json_i32) {
+        store.set_i32("overlay_scale_percent", clamp_scale(scale));
+    }
+    if let Some(anchor) = obj.get("anchor").and_then(json_i32) {
+        store.set_i32("overlay_anchor", anchor);
+    }
+    if let Some(offset_x) = obj.get("offsetX").and_then(json_i32) {
+        store.set_i32("overlay_offset_x", offset_x);
+    }
+    if let Some(offset_y) = obj.get("offsetY").and_then(json_i32) {
+        store.set_i32("overlay_offset_y", offset_y);
+    }
+    if let Some(screen) = obj.get("screen").and_then(Value::as_str) {
+        store.set_str("overlay_screen", screen);
+    }
     for (json_key, persist_key) in [
         ("gameOnly", "overlay_game_only"),
         ("showTemp", "overlay_show_temp"),

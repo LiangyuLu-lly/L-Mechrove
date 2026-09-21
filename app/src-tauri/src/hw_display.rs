@@ -53,6 +53,24 @@ struct DcHzPayload {
     enable: bool,
 }
 
+#[derive(Serialize)]
+struct CalibrationOffPayload<'a> {
+    #[serde(rename = "Action")]
+    action: &'static str,
+    #[serde(rename = "FileName")]
+    file_name: &'a str,
+}
+
+/// C# `MechrevoService.ColorCalibrationFileName` (MechrevoService.cs:986-992).
+pub const fn color_calibration_file_name(mode: i32) -> &'static str {
+    match mode {
+        2 => "sRGB",
+        3 => "P3",
+        4 => "AdobeRGB",
+        _ => "Default",
+    }
+}
+
 pub async fn apply_display_hz<T: MqttTransport>(
     transport: &mut T,
     hz: u32,
@@ -102,14 +120,40 @@ pub async fn apply_calibration<T: MqttTransport>(
     transport: &mut T,
     action: &str,
     hdr_on: bool,
+    file_name: &str,
 ) -> Result<(), HostError> {
     if hdr_on {
         return Err(HostError::DisplayDenied(action.to_owned()));
     }
+    if action == "COLOR_CALIBRATION_OFF" {
+        let payload = CalibrationOffPayload {
+            action: "COLOR_CALIBRATION_OFF",
+            file_name,
+        };
+        let bytes = serde_json::to_vec(&payload)?;
+        transport.publish(topics::SETTING_CONTROL, &bytes).await?;
+        return Ok(());
+    }
     publish_action(transport, action).await
 }
 
-pub async fn apply_overdrive<T: MqttTransport>(transport: &mut T, on: bool) -> Result<(), HostError> {
+pub async fn apply_direct_connect_restart<T: MqttTransport>(
+    transport: &mut T,
+    delay: Duration,
+) -> Result<(), HostError> {
+    // Vendor waits 800 ms before DGPU_DIRECT_CONNECT_RESTART (MechrevoService.cs:1113, CCUWinUI:86511-86515).
+    // Timing is not a unit-test claim; the delay is a no-op under cfg!(test).
+    let delay = if cfg!(test) { Duration::ZERO } else { delay };
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
+    publish_action(transport, "DGPU_DIRECT_CONNECT_RESTART").await
+}
+
+pub async fn apply_overdrive<T: MqttTransport>(
+    transport: &mut T,
+    on: bool,
+) -> Result<(), HostError> {
     let action = if on {
         "LCDOverdrive_ON"
     } else {
@@ -130,7 +174,10 @@ pub async fn apply_local_dimming<T: MqttTransport>(
     publish_action(transport, action).await
 }
 
-async fn publish_action<T: MqttTransport>(transport: &mut T, action: &str) -> Result<(), HostError> {
+async fn publish_action<T: MqttTransport>(
+    transport: &mut T,
+    action: &str,
+) -> Result<(), HostError> {
     let bytes = serde_json::to_vec(&ActionPayload { action })?;
     transport.publish(topics::SETTING_CONTROL, &bytes).await?;
     Ok(())
@@ -199,12 +246,15 @@ impl Backend {
     }
 
     pub async fn set_calibration(&mut self, mode: &str) -> Result<(), HostError> {
+        let file_name = color_calibration_file_name(0);
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
-                apply_calibration(&mut state.broker, mode, state.hdr_on).await
+                apply_calibration(&mut state.broker, mode, state.hdr_on, file_name).await
             }
-            Self::Real { state } => apply_calibration(&mut state.client, mode, state.hdr_on).await,
+            Self::Real { state } => {
+                apply_calibration(&mut state.client, mode, state.hdr_on, file_name).await
+            }
         }
     }
 

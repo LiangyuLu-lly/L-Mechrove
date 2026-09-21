@@ -1,11 +1,15 @@
 //! Lighting write path. ItemSupport fail-closed. Keyboard/lightbar/logo MQTT SetEffectALL.
 
 use std::fs;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use app_lib::Backend;
-use hid_kb::STEP1;
+use app_lib::{Backend, HostError};
+use capabilities::ItemSupport;
+use gcu_mqtt::client::{MqttError, MqttTransport};
+use gcu_mqtt::fake::Recorded;
+use hid_kb::{Error as HidError, FakeHid, STEP1};
 
 static CFG_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -368,11 +372,7 @@ const IDLE_NONE: u8 = 0;
 const IDLE_SUSPEND: u8 = 1;
 const IDLE_RESTORE: u8 = 2;
 
-const OFFERED_CTRL: [&str; 3] = [
-    "Keyboard/Ctrl",
-    "HidLightbar/Ctrl",
-    "HidLightbar_Logo/Ctrl",
-];
+const OFFERED_CTRL: [&str; 3] = ["Keyboard/Ctrl", "HidLightbar/Ctrl", "HidLightbar_Logo/Ctrl"];
 
 fn g16_item_support() -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -414,10 +414,7 @@ fn lighting_idle_decision_mirrors_csharp_lighting_state() {
         IDLE_SUSPEND
     );
     assert_eq!(Backend::lighting_idle_action(10_000, 10, true), IDLE_NONE);
-    assert_eq!(
-        Backend::lighting_idle_action(1_999, 10, true),
-        IDLE_RESTORE
-    );
+    assert_eq!(Backend::lighting_idle_action(1_999, 10, true), IDLE_RESTORE);
     assert_eq!(Backend::lighting_idle_action(2_000, 10, true), IDLE_NONE);
 }
 
@@ -548,4 +545,246 @@ async fn lighting_idle_disabled_does_not_suspend() {
         "timeout<=0 must not suspend: {publishes:?}"
     );
     assert_no_close_timer(&publishes);
+}
+
+/// Hardware-free Real MQTT double. Same shape as `host_real_transport` — no TCP.
+struct RecordingTransport {
+    recorded: Vec<Recorded>,
+}
+
+impl RecordingTransport {
+    fn new() -> Self {
+        Self {
+            recorded: Vec::new(),
+        }
+    }
+
+    fn publishes(&self) -> Vec<(String, serde_json::Value)> {
+        self.recorded
+            .iter()
+            .filter_map(|item| match item {
+                Recorded::Publish { topic, payload } => {
+                    let body = serde_json::from_slice(payload).unwrap_or(serde_json::Value::Null);
+                    Some((topic.clone(), body))
+                }
+                Recorded::Subscribe(_) => None,
+            })
+            .collect()
+    }
+}
+
+impl MqttTransport for RecordingTransport {
+    fn subscribe(&mut self, filter: &str) -> impl Future<Output = Result<(), MqttError>> + Send {
+        self.recorded.push(Recorded::Subscribe(filter.to_owned()));
+        async { Ok(()) }
+    }
+
+    fn publish(
+        &mut self,
+        topic: &str,
+        payload: &[u8],
+    ) -> impl Future<Output = Result<(), MqttError>> + Send {
+        self.recorded.push(Recorded::Publish {
+            topic: topic.to_owned(),
+            payload: payload.to_vec(),
+        });
+        async { Ok(()) }
+    }
+}
+
+fn live_lightbar_item() -> ItemSupport {
+    ItemSupport::parse_json(r#"{"LightbarSupport":1,"LogoLightSupport":1}"#).expect("live")
+}
+
+fn set_power_payload(on: bool) -> serde_json::Value {
+    // MechrevoService.cs:2269 PublishLightPower — powerstatus is a JSON number 0|1.
+    serde_json::json!({
+        "function": "SetPower",
+        "powerstatus": i32::from(on),
+    })
+}
+
+fn set_effect_all_single_white() -> serde_json::Value {
+    // MechrevoService.cs:2236-2246 SetLightEffect — light/speed are strings.
+    serde_json::json!({
+        "function": "SetEffectALL",
+        "mode": "Lighting",
+        "speed": "1",
+        "light": "4",
+        "effect": "Single",
+        "direction": "None",
+        "nv_save": "SAVE",
+        "color": {
+            "isCircular": true,
+            "ColorBlocks": 1,
+            "ColorBuffer": [{ "R": 255, "G": 255, "B": 255 }],
+        },
+    })
+}
+
+#[tokio::test]
+async fn real_transport_set_power_uses_live_item_support_not_default() {
+    // Given: a non-Fake transport and ItemSupport::default() (hides lightbar)
+    let mut transport = RecordingTransport::new();
+    let default_item = ItemSupport::default();
+
+    // When: SetPower runs against default ItemSupport
+    let err = Backend::apply_light_power_on(&mut transport, &default_item, "lightbar", true)
+        .await
+        .expect_err("default ItemSupport must deny lightbar");
+
+    // Then: denied, no HidLightbar/Ctrl publish
+    assert!(
+        err.to_string().contains("lighting"),
+        "denied error, got {err}"
+    );
+    assert!(
+        transport.publishes().is_empty(),
+        "default ItemSupport must not publish: {:?}",
+        transport.publishes()
+    );
+
+    // Given: LIVE ItemSupport with LightbarSupport=1 (not default)
+    let live = live_lightbar_item();
+
+    // When: the same write runs with live ItemSupport
+    Backend::apply_light_power_on(&mut transport, &live, "lightbar", true)
+        .await
+        .expect("live LightbarSupport must allow write");
+
+    // Then: HidLightbar/Ctrl SetPower golden (LightForm.cs:228 → PublishLightPower)
+    let publishes = transport.publishes();
+    assert_eq!(publishes.len(), 1, "one SetPower: {publishes:?}");
+    assert_eq!(publishes[0].0, "HidLightbar/Ctrl");
+    assert_eq!(publishes[0].1, set_power_payload(true));
+    assert!(
+        publishes[0].1["powerstatus"].is_number(),
+        "powerstatus must be a JSON number: {}",
+        publishes[0].1
+    );
+    assert_no_close_timer(&publishes);
+}
+
+#[tokio::test]
+async fn real_transport_set_effect_all_golden_light_speed_strings() {
+    // Given: Real-shaped transport + live LightbarSupport
+    let mut transport = RecordingTransport::new();
+    let live = live_lightbar_item();
+
+    // When: SetEffectALL Single (LightForm.cs:117 SetLightEffect)
+    Backend::apply_light_effect_on(
+        &mut transport,
+        &live,
+        "lightbar",
+        "Single",
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("live LightbarSupport must allow effect");
+
+    // Then: named light/speed are JSON strings; payload equals C# SetLightEffect
+    let publishes = transport.publishes();
+    assert_eq!(publishes.len(), 1, "one SetEffectALL: {publishes:?}");
+    assert_eq!(publishes[0].0, "HidLightbar/Ctrl");
+    assert!(
+        publishes[0].1["light"].is_string(),
+        "light must be a JSON string: {}",
+        publishes[0].1
+    );
+    assert!(
+        publishes[0].1["speed"].is_string(),
+        "speed must be a JSON string: {}",
+        publishes[0].1
+    );
+    assert_eq!(publishes[0].1, set_effect_all_single_white());
+    assert_no_close_timer(&publishes);
+}
+
+#[tokio::test]
+async fn real_transport_set_power_off_golden_powerstatus_zero() {
+    // Given: live lightbar ItemSupport
+    let mut transport = RecordingTransport::new();
+    let live = live_lightbar_item();
+
+    // When: SetPower off (LightForm.cs:228)
+    Backend::apply_light_power_on(&mut transport, &live, "lightbar", false)
+        .await
+        .expect("live LightbarSupport must allow power off");
+
+    // Then: powerstatus is JSON number 0
+    let publishes = transport.publishes();
+    assert_eq!(publishes[0].1, set_power_payload(false));
+    assert_eq!(publishes[0].1["powerstatus"], 0);
+    assert!(publishes[0].1["powerstatus"].is_number());
+    assert_no_close_timer(&publishes);
+}
+
+#[tokio::test]
+async fn real_transport_reconcile_uses_live_item_support_and_never_sends_close_timer() {
+    // Given: live G16 ItemSupport (hides lightbar/logo) on a Real-shaped transport
+    let mut transport = RecordingTransport::new();
+    let g16 = ItemSupport::parse_json(&g16_item_support()).expect("g16");
+
+    // When: battery policy reconciles (on_battery=true)
+    let _suspended = Backend::reconcile_lighting_on(&mut transport, &g16, true, 0, true, 0, false)
+        .await
+        .expect("live G16 reconcile");
+
+    // Then: keyboard SetPower 0, hidden channels unpublished, never CloseTimer
+    let publishes = transport.publishes();
+    assert!(
+        set_power_on_topic(&publishes, "Keyboard/Ctrl", 0),
+        "G16 keyboard still offered: {publishes:?}"
+    );
+    assert!(
+        !publishes.iter().any(|(topic, payload)| {
+            topic == "HidLightbar/Ctrl" && payload["function"] == "SetPower"
+        }),
+        "G16 must not SetPower lightbar: {publishes:?}"
+    );
+    assert!(
+        !publishes.iter().any(|(topic, payload)| {
+            topic == "HidLightbar_Logo/Ctrl" && payload["function"] == "SetPower"
+        }),
+        "G16 must not SetPower logo: {publishes:?}"
+    );
+    assert_no_close_timer(&publishes);
+    for (_, payload) in &publishes {
+        let Some(obj) = payload.as_object() else {
+            continue;
+        };
+        if let Some(action) = obj.get("Action").and_then(serde_json::Value::as_str) {
+            assert!(
+                !action.contains("TIMER"),
+                "firmware sleep timer must never be sent: {payload}"
+            );
+        }
+    }
+}
+
+#[test]
+fn keyboard_hid_absent_fails_closed_and_sets_unavailable() {
+    // Given: Real backend parts and no ITE8291 device
+    let mut backend = Backend::real();
+    assert!(
+        !backend.snapshot().keyboard_hid_unavailable,
+        "unprobed Real starts available"
+    );
+
+    // When: the HID keyboard path is applied with an absent device
+    let err = backend
+        .apply_keyboard_hid(Err::<FakeHid, _>(HidError::NoDevice))
+        .expect_err("absent HID must fail closed");
+
+    // Then: error is HID NoDevice, snapshot flag is set, not silent Ok
+    assert!(
+        matches!(err, HostError::Hid(HidError::NoDevice)),
+        "fail closed, got {err}"
+    );
+    assert!(
+        backend.snapshot().keyboard_hid_unavailable,
+        "absent HID must set keyboardHidUnavailable"
+    );
 }

@@ -4,8 +4,8 @@ use std::fs;
 use std::path::Path;
 
 use app_lib::hw_switches::{
-    apply_monitor_off, apply_quick_switch, offered_quick_switches, parse_device_switch_item_status,
-    QuickSwitchGate, SeenFlags,
+    apply_monitor_off, apply_power_light_brightness, apply_quick_switch, offered_quick_switches,
+    parse_device_switch_item_status, QuickSwitchGate, SeenFlags,
 };
 use app_lib::hw_wmi::FakeWmi;
 use app_lib::Backend;
@@ -256,5 +256,170 @@ fn g16_golden_offers_neither_lightbar_nor_logolight_even_if_seen() {
     assert!(
         !offered.iter().any(|key| *key == "logolight"),
         "G16 must not offer logolight: {offered:?}"
+    );
+}
+
+#[test]
+fn monitoroff_offered_on_empty_itemsupport() {
+    let item = empty_item();
+    let seen = SeenFlags::default();
+    let offered = offered_quick_switches(&item, &seen);
+    assert!(
+        offered.iter().any(|key| *key == "monitoroff"),
+        "monitoroff must be offered with empty ItemSupport like the Windows switches: {offered:?}"
+    );
+}
+
+#[tokio::test]
+async fn backend_set_quick_switch_monitoroff_is_non_mqtt() {
+    let mut backend = Backend::fake_from_json("{}").expect("parse");
+    backend.start().await.expect("start");
+    let before = backend.recorded_publishes().len();
+    backend
+        .set_quick_switch("monitoroff", true)
+        .await
+        .expect("monitoroff is a non-MQTT Windows action");
+    let after = backend.recorded_publishes();
+    assert_eq!(
+        after.len(),
+        before,
+        "monitoroff must not publish MQTT: {after:?}"
+    );
+}
+
+#[tokio::test]
+async fn powerlight_on_carries_brightness_as_number() {
+    let item = empty_item();
+    let gate = QuickSwitchGate {
+        item_support: &item,
+        seen: SeenFlags {
+            power_light: true,
+            ..SeenFlags::default()
+        },
+    };
+    let mut broker = FakeBroker::new();
+    apply_quick_switch(&mut broker, &gate, "powerlight", true)
+        .await
+        .expect("powerlight offered");
+    let pubs = publishes(&broker);
+    let payload = pubs
+        .iter()
+        .find(|(topic, value)| topic == "Setting/Control" && value["Action"] == "PowerLight_ON")
+        .map(|(_, value)| value)
+        .expect("PowerLight_ON");
+    assert!(
+        payload["Brightness"].is_number(),
+        "Brightness must be a JSON number: {payload:?}"
+    );
+    assert!(
+        pubs.iter().any(|(topic, value)| {
+            topic == "Setting/Control" && value["Action"] == "PowerLight_Brightness"
+        }),
+        "powerlight must emit PowerLight_Brightness: {pubs:?}"
+    );
+}
+
+#[tokio::test]
+async fn power_light_brightness_action_carries_number() {
+    let mut broker = FakeBroker::new();
+    apply_power_light_brightness(&mut broker, 80)
+        .await
+        .expect("PowerLight_Brightness");
+    let pubs = publishes(&broker);
+    let payload = pubs
+        .iter()
+        .find(|(topic, value)| {
+            topic == "Setting/Control" && value["Action"] == "PowerLight_Brightness"
+        })
+        .map(|(_, value)| value)
+        .expect("PowerLight_Brightness");
+    assert!(
+        payload["Brightness"].is_number(),
+        "Brightness must be a JSON number: {payload:?}"
+    );
+    assert_eq!(
+        payload["Brightness"], 80,
+        "PowerLight_Brightness must carry the requested number: {payload:?}"
+    );
+}
+
+#[tokio::test]
+async fn deepsleep_on_secs_matches_csharp_900() {
+    let mut broker = FakeBroker::new();
+    let item = empty_item();
+    let gate = QuickSwitchGate {
+        item_support: &item,
+        seen: SeenFlags {
+            deep_sleep: true,
+            ..SeenFlags::default()
+        },
+    };
+    apply_quick_switch(&mut broker, &gate, "deepsleep", true)
+        .await
+        .expect("deepsleep");
+    let pubs = publishes(&broker);
+    let payload = pubs
+        .iter()
+        .find(|(topic, value)| topic == "Setting/Control" && value["Action"] == "DEEPSLEEP_ON")
+        .map(|(_, value)| value)
+        .expect("DEEPSLEEP_ON");
+    assert!(
+        payload["Secs"].is_string(),
+        "Secs must be a JSON string: {payload:?}"
+    );
+    assert_eq!(
+        payload["Secs"], "900",
+        "Secs must match C# SwitchDeepSleep string 900: {payload:?}"
+    );
+}
+
+#[tokio::test]
+async fn touchpad_records_setting_getstatus_confirmation() {
+    let item = empty_item();
+    let gate = QuickSwitchGate {
+        item_support: &item,
+        seen: SeenFlags::default(),
+    };
+    let mut broker = FakeBroker::new();
+    apply_quick_switch(&mut broker, &gate, "touchpad", true)
+        .await
+        .expect("touchpad offered");
+    let pubs = publishes(&broker);
+    let touchpad = pubs.iter().position(|(topic, payload)| {
+        topic == "Setting/Control" && payload["Action"] == "TOUCHPAD_ON"
+    });
+    let getstatus = pubs.iter().position(|(topic, payload)| {
+        topic == "Setting/Control" && payload["Action"] == "GETSTATUS"
+    });
+    assert!(
+        matches!((touchpad, getstatus), (Some(command), Some(confirm)) if confirm > command),
+        "Setting/Control GETSTATUS must follow TOUCHPAD_ON: {pubs:?}"
+    );
+}
+
+#[tokio::test]
+async fn fanboost_records_fan_getstatus_confirmation() {
+    let mut broker = FakeBroker::new();
+    let item = empty_item();
+    let gate = QuickSwitchGate {
+        item_support: &item,
+        seen: SeenFlags {
+            fan_boost: true,
+            ..SeenFlags::default()
+        },
+    };
+    apply_quick_switch(&mut broker, &gate, "fanboost", true)
+        .await
+        .expect("fanboost");
+    let pubs = publishes(&broker);
+    let command = pubs
+        .iter()
+        .position(|(topic, payload)| topic == "Fan/Control" && payload["Action"] == "FAN_BOOST_ON");
+    let getstatus = pubs
+        .iter()
+        .position(|(topic, payload)| topic == "Fan/Control" && payload["Action"] == "GETSTATUS");
+    assert!(
+        matches!((command, getstatus), (Some(cmd), Some(confirm)) if confirm > cmd),
+        "Fan/Control GETSTATUS must follow FAN_BOOST_ON: {pubs:?}"
     );
 }

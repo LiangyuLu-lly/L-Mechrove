@@ -1,6 +1,6 @@
 //! Fan curve write. SET_FAN_SPEED_CURVE_SETTING T0–T15 are JSON strings.
 
-use app_lib::hw_fan::{apply_fan_curve, FanCurveType};
+use app_lib::hw_fan::{apply_fan_curve, normalize_fan_curve, FanCurveType};
 use app_lib::Backend;
 use gcu_mqtt::fake::{FakeBroker, Recorded};
 use gcu_mqtt::topics::FAN_CONTROL;
@@ -10,6 +10,48 @@ const NAME: &str = "curve";
 const DUTIES: [u8; 16] = [
     0, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100, 100, 100,
 ];
+/// C# `NormalizeFanCurve` with Gaming default UpT sentinel at index 11
+/// (`MechrevoHw.cs:2712`, `DefaultCurve_Gaming.json` CPU/GPU UpT[11]=255).
+/// T11..T15 are filled with T10, not the user-drawn 100s.
+const CSHARP_GAMING_TRAILING: [&str; 16] = [
+    "0", "0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "90", "90", "90", "90", "90",
+];
+/// C# `MechrevoHardwareTests.NormalizeFanCurve_ClampsAndEnforcesMonotonicCurve`
+/// recast onto the Gaming 11-point table: dip at T3 stays 55, 200 clamps to 100.
+const CSHARP_MONOTONIC_CLAMP: [u8; 16] =
+    [0, 10, 55, 40, 200, 20, 60, 70, 80, 90, 95, 1, 2, 3, 4, 5];
+const CSHARP_MONOTONIC_CLAMP_T: [&str; 16] = [
+    "0", "10", "55", "55", "100", "100", "100", "100", "100", "100", "100", "100", "100", "100",
+    "100", "100",
+];
+/// C# `NormalizeFanCurve_AllowsLastEffectiveTemperatureBelowFullDuty` on 11-point table.
+const CSHARP_LAST_EFFECTIVE: [u8; 16] = [
+    20, 30, 40, 50, 60, 65, 70, 80, 85, 90, 92, 100, 100, 100, 100, 100,
+];
+const CSHARP_LAST_EFFECTIVE_T: [&str; 16] = [
+    "20", "30", "40", "50", "60", "65", "70", "80", "85", "90", "92", "92", "92", "92", "92", "92",
+];
+
+fn t0_t15_strings(payload: &Value) -> [String; 16] {
+    core::array::from_fn(|i| {
+        let key = format!("T{i}");
+        payload[&key]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key} must be a JSON string: {payload:?}"))
+            .to_owned()
+    })
+}
+
+fn assert_published_t0_t15(payload: &Value, expected: [&str; 16]) {
+    let actual = t0_t15_strings(payload);
+    for i in 0..16 {
+        assert_eq!(
+            actual[i], expected[i],
+            "T{i}: published {} != C# {}",
+            actual[i], expected[i]
+        );
+    }
+}
 
 fn set_curve_payload(broker: &FakeBroker) -> Value {
     broker
@@ -24,6 +66,126 @@ fn set_curve_payload(broker: &FakeBroker) -> Value {
             Recorded::Subscribe(_) => None,
         })
         .expect("Fan/Control SET_FAN_SPEED_CURVE_SETTING publish")
+}
+
+#[tokio::test]
+async fn published_cpu_t0_t15_match_csharp_gaming_table_trailing_fill() {
+    let mut broker = FakeBroker::new();
+    apply_fan_curve(&mut broker, NAME, FanCurveType::Cpu, DUTIES)
+        .await
+        .expect("CPU curve publish");
+    let payload = set_curve_payload(&broker);
+    assert_eq!(payload["Type"], "CPU");
+    assert_published_t0_t15(&payload, CSHARP_GAMING_TRAILING);
+}
+
+#[tokio::test]
+async fn published_gpu_t0_t15_match_csharp_gaming_table_trailing_fill() {
+    let mut broker = FakeBroker::new();
+    apply_fan_curve(&mut broker, NAME, FanCurveType::Gpu, DUTIES)
+        .await
+        .expect("GPU curve publish");
+    let payload = set_curve_payload(&broker);
+    assert_eq!(payload["Type"], "GPU");
+    assert_published_t0_t15(&payload, CSHARP_GAMING_TRAILING);
+}
+
+#[tokio::test]
+async fn published_t0_t15_match_csharp_monotonic_step_and_clamp() {
+    let mut broker = FakeBroker::new();
+    apply_fan_curve(&mut broker, NAME, FanCurveType::Cpu, CSHARP_MONOTONIC_CLAMP)
+        .await
+        .expect("CPU curve publish");
+    assert_published_t0_t15(&set_curve_payload(&broker), CSHARP_MONOTONIC_CLAMP_T);
+}
+
+#[tokio::test]
+async fn published_t0_t15_match_csharp_last_effective_below_full_duty() {
+    let mut broker = FakeBroker::new();
+    apply_fan_curve(&mut broker, NAME, FanCurveType::Cpu, CSHARP_LAST_EFFECTIVE)
+        .await
+        .expect("CPU curve publish");
+    assert_published_t0_t15(&set_curve_payload(&broker), CSHARP_LAST_EFFECTIVE_T);
+}
+
+#[test]
+fn normalize_matches_csharp_sentinel_8_monotonic_clamp() {
+    let temperatures = [
+        30, 40, 50, 60, 70, 80, 90, 100, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+    let duties = [0, 10, 55, 40, 200, 20, 60, 70, 80, 90, 95, 1, 2, 3, 4, 5];
+    let actual = normalize_fan_curve(duties, temperatures);
+    let expected: [u8; 16] = [
+        0, 10, 55, 55, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100,
+    ];
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn normalize_matches_csharp_sentinel_8_last_effective_below_100() {
+    let temperatures = [
+        30, 40, 50, 60, 65, 70, 75, 81, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+    let mut duties = [0_u8; 16];
+    duties[..8].copy_from_slice(&[20, 30, 40, 50, 60, 65, 70, 80]);
+    let actual = normalize_fan_curve(duties, temperatures);
+    assert_eq!(actual[7], 80);
+    assert!(actual[8..].iter().all(|&d| d == 80));
+}
+
+#[test]
+fn gpu_table_earlier_sentinel_fills_sooner_than_cpu() {
+    let duties = [
+        10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100, 100, 100, 100, 100,
+    ];
+    let cpu_up_t = [
+        0, 46, 51, 54, 57, 60, 63, 66, 68, 70, 72, 255, 255, 255, 255, 255,
+    ];
+    let gpu_up_t = [
+        0, 45, 48, 51, 53, 55, 57, 59, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+    let cpu = normalize_fan_curve(duties, cpu_up_t);
+    let gpu = normalize_fan_curve(duties, gpu_up_t);
+    assert_eq!(
+        cpu,
+        [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100, 100, 100, 100, 100]
+    );
+    assert_eq!(
+        gpu,
+        [10, 20, 30, 40, 50, 60, 70, 80, 80, 80, 80, 80, 80, 80, 80, 80]
+    );
+}
+
+#[test]
+fn gpu_earlier_sentinel_t0_t15_strings_match_csharp() {
+    let duties = [
+        10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100, 100, 100, 100, 100,
+    ];
+    let gpu_up_t = [
+        0, 45, 48, 51, 53, 55, 57, 59, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+    let actual = normalize_fan_curve(duties, gpu_up_t);
+    let expected = [
+        "10", "20", "30", "40", "50", "60", "70", "80", "80", "80", "80", "80", "80", "80", "80",
+        "80",
+    ];
+    for i in 0..16 {
+        assert_eq!(actual[i].to_string(), expected[i]);
+    }
+}
+
+#[test]
+fn normalize_matches_csharp_zero_duty_at_48c() {
+    let temperatures = [
+        0, 48, 52, 56, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+    let mut duties = [0_u8; 16];
+    duties[..4].copy_from_slice(&[0, 0, 35, 40]);
+    let actual = normalize_fan_curve(duties, temperatures);
+    assert_eq!(actual[1], 0);
+    assert_eq!(actual[2], 35);
+    assert_eq!(actual[3], 40);
+    assert!(actual[4..].iter().all(|&d| d == 40));
 }
 
 #[tokio::test]

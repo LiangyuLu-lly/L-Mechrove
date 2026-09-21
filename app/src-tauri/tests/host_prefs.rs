@@ -42,10 +42,7 @@ fn set_theme_mode_rejects_invalid_including_follow_system() {
     // When: a mode other than night/day is written
     // Then: rejected (C# ApplyThemeMode is night/day only)
     for mode in ["follow-system", "system", "auto", "DAY", ""] {
-        assert!(
-            set_theme_mode(&dir, mode).is_err(),
-            "must reject {mode:?}"
-        );
+        assert!(set_theme_mode(&dir, mode).is_err(), "must reject {mode:?}");
     }
 }
 
@@ -83,10 +80,7 @@ fn set_ui_language_rejects_anything_else() {
     // When: a code other than en / zh-CN is written
     // Then: rejected
     for code in ["zh", "en-US", "zh-TW", "de", ""] {
-        assert!(
-            set_ui_language(&dir, code).is_err(),
-            "must reject {code:?}"
-        );
+        assert!(set_ui_language(&dir, code).is_err(), "must reject {code:?}");
     }
 }
 
@@ -100,7 +94,10 @@ fn persist_io_failure_returns_err() {
     let result = set_theme_mode(&dir, "day");
 
     // Then: Err, never a silent Ok
-    assert!(result.is_err(), "IO failure must not be silent Ok: {result:?}");
+    assert!(
+        result.is_err(),
+        "IO failure must not be silent Ok: {result:?}"
+    );
 }
 
 #[test]

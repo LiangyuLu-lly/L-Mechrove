@@ -48,19 +48,48 @@ pub async fn apply_custom_detail<T: MqttTransport>(
     field: &str,
     value: &str,
 ) -> Result<(), HostError> {
-    if field == "ProfileIndex" {
-        return match value {
+    match field {
+        "ProfileIndex" => match value {
             "0" | "1" | "2" | "3" => Ok(()),
             _ => Err(HostError::UnknownMode(field.to_owned())),
-        };
+        },
+        "ProfileName" => {
+            publish_fan(
+                transport,
+                json!({
+                    "Action": "SET_CUSTOM_PROFILE_OSD_STRING",
+                    "ProfileName": value,
+                }),
+            )
+            .await
+        }
+        "RESTORE_OPERATING_MODE_DETAIL" => {
+            publish_fan(
+                transport,
+                json!({ "Action": "RESTORE_OPERATING_MODE_DETAIL" }),
+            )
+            .await?;
+            publish_fan(
+                transport,
+                json!({
+                    "Action": "RESTORE_FAN_SPEED_CURVE_SETTING",
+                    "Name": value,
+                }),
+            )
+            .await
+        }
+        other if CUSTOM_DETAIL_FIELDS.contains(&other) => {
+            let wire = remap_detail_field(item_support, other);
+            let mut payload = Map::new();
+            payload.insert("Action".to_owned(), json!("SET_OPERATING_MODE_DETAIL"));
+            payload.insert(wire.to_owned(), Value::String(value.to_owned()));
+            publish_fan(transport, Value::Object(payload)).await
+        }
+        other => Err(HostError::UnknownMode(other.to_owned())),
     }
-    if !CUSTOM_DETAIL_FIELDS.contains(&field) {
-        return Err(HostError::UnknownMode(field.to_owned()));
-    }
-    let wire = remap_detail_field(item_support, field);
-    let mut payload = Map::new();
-    payload.insert("Action".to_owned(), json!("SET_OPERATING_MODE_DETAIL"));
-    payload.insert(wire.to_owned(), Value::String(value.to_owned()));
+}
+
+async fn publish_fan<T: MqttTransport>(transport: &mut T, payload: Value) -> Result<(), HostError> {
     let bytes = serde_json::to_vec(&payload)?;
     transport.publish(FAN_CONTROL, &bytes).await?;
     Ok(())

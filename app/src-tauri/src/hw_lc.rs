@@ -1,4 +1,6 @@
-//! BT_LC MQTT pump/fan writes. `PumpCtrl`/`FanCtrl` are JSON strings. BLE only when MQTT LC is down.
+//! BT_LC MQTT pump/fan/connect writes. `PumpCtrl`/`FanCtrl` are JSON strings. BLE only when MQTT LC is down.
+//!
+//! allow: SIZE_OK — one BT_LC protocol surface (route policy + connect family + pump/fan MQTT/BLE).
 
 use capabilities::{FeatureBit, FeatureMatrix, ItemSupport};
 use gcu_mqtt::client::MqttTransport;
@@ -15,6 +17,79 @@ const BLE_PUMP_V7: u8 = 0x02;
 const BLE_PUMP_V8: u8 = 0x03;
 const BLE_PUMP_V11: u8 = 0x00;
 
+/// C# `LiquidCoolingControlRoute`. Direct BLE wins, then GCU, then Windows-observed BT.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LcControlRoute {
+    None,
+    BluetoothObserved,
+    Gcu,
+    DirectBle,
+}
+
+/// C# `LiquidCoolingConnectionPolicy.ResolveRoute`.
+pub const fn resolve_route(
+    direct_ble_connected: bool,
+    gcu_controllable: bool,
+    bluetooth_observed: bool,
+) -> LcControlRoute {
+    if direct_ble_connected {
+        LcControlRoute::DirectBle
+    } else if gcu_controllable {
+        LcControlRoute::Gcu
+    } else if bluetooth_observed {
+        LcControlRoute::BluetoothObserved
+    } else {
+        LcControlRoute::None
+    }
+}
+
+/// C# `ShouldUseAutomaticDirectFallback`.
+pub const fn should_use_automatic_direct_fallback(direct_ble_connected: bool) -> bool {
+    !direct_ble_connected
+}
+
+/// C# `ShouldSkipDirectFallbackBecauseGcuHoldsRadio`.
+pub fn should_skip_direct_fallback_because_gcu_holds_radio(gcu_connect: &str) -> bool {
+    matches!(gcu_connect, "Scanning" | "Connecting" | "IsConnectable")
+}
+
+/// C# `ShouldRetryGcuConnection`.
+pub const fn should_retry_gcu_connection(
+    hardware_connected: bool,
+    service_available: bool,
+    route: LcControlRoute,
+    action_support_reported: bool,
+    action_supported: bool,
+    attempts: i32,
+    since_last_attempt_ms: i64,
+) -> bool {
+    hardware_connected
+        && service_available
+        && matches!(
+            route,
+            LcControlRoute::None | LcControlRoute::BluetoothObserved
+        )
+        && !(action_support_reported && !action_supported)
+        && attempts < 5
+        && since_last_attempt_ms >= 8000
+}
+
+/// C# `ShouldRestoreSavedGcuLighting`.
+pub fn should_restore_saved_gcu_lighting(
+    direct_ble_connected: bool,
+    gcu_controllable: bool,
+    gcu_status_fresh: bool,
+    saved_profile: Option<&str>,
+) -> bool {
+    !direct_ble_connected
+        && gcu_controllable
+        && gcu_status_fresh
+        && match saved_profile {
+            Some(profile) => !profile.is_empty(),
+            None => false,
+        }
+}
+
 /// Liquid-cooling write failures. Capability miss is fail-closed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -25,6 +100,8 @@ pub enum LcError {
     PumpIndex(u8),
     #[error("fan index out of range: {0}")]
     FanIndex(u8),
+    #[error("device mac empty")]
+    DeviceMacEmpty,
     #[error(transparent)]
     Mqtt(#[from] gcu_mqtt::client::MqttError),
     #[error(transparent)]
@@ -45,6 +122,20 @@ struct LcFanPayload {
     action: &'static str,
     #[serde(rename = "FanCtrl")]
     fan_ctrl: &'static str,
+}
+
+#[derive(Serialize)]
+struct LcActionPayload {
+    #[serde(rename = "Action")]
+    action: &'static str,
+}
+
+#[derive(Serialize)]
+struct LcDeviceMacPayload<'a> {
+    #[serde(rename = "Action")]
+    action: &'static str,
+    #[serde(rename = "DeviceMac")]
+    device_mac: &'a str,
 }
 
 /// Publish `LC_PumpCtrl` with `PumpCtrl` as a JSON string, or BLE-fallback when MQTT LC is down.
@@ -95,6 +186,79 @@ pub async fn apply_lc_fan<T: MqttTransport>(
         ble.write(&fan_frame(index)?);
         Ok(())
     }
+}
+
+/// C# `LcConnect`: `BT_LC/Control` `{ Action: "Connect" }`. Discovery, no support gate.
+pub async fn apply_lc_connect<T: MqttTransport>(
+    transport: &mut T,
+    _item_support: &ItemSupport,
+) -> Result<(), LcError> {
+    publish(transport, &LcActionPayload { action: "Connect" }).await
+}
+
+/// C# `LcDisconnect`: `{ Action: "Disconnect" }`.
+pub async fn apply_lc_disconnect<T: MqttTransport>(
+    transport: &mut T,
+    item_support: &ItemSupport,
+) -> Result<(), LcError> {
+    require_support(item_support)?;
+    publish(
+        transport,
+        &LcActionPayload {
+            action: "Disconnect",
+        },
+    )
+    .await
+}
+
+/// C# `DeviceMacSetting`: `{ Action: "DeviceMacSetting", DeviceMac: <string> }`.
+pub async fn apply_lc_device_mac<T: MqttTransport>(
+    transport: &mut T,
+    item_support: &ItemSupport,
+    mac: &str,
+) -> Result<(), LcError> {
+    require_support(item_support)?;
+    if mac.trim().is_empty() {
+        return Err(LcError::DeviceMacEmpty);
+    }
+    publish(
+        transport,
+        &LcDeviceMacPayload {
+            action: "DeviceMacSetting",
+            device_mac: mac,
+        },
+    )
+    .await
+}
+
+/// C# `LcClearMac`: `{ Action: "ClearDevMAC" }`.
+pub async fn apply_lc_clear_mac<T: MqttTransport>(
+    transport: &mut T,
+    item_support: &ItemSupport,
+) -> Result<(), LcError> {
+    require_support(item_support)?;
+    publish(
+        transport,
+        &LcActionPayload {
+            action: "ClearDevMAC",
+        },
+    )
+    .await
+}
+
+/// C# `LcInputWater`: `{ Action: "InputWater" }`.
+pub async fn apply_lc_input_water<T: MqttTransport>(
+    transport: &mut T,
+    item_support: &ItemSupport,
+) -> Result<(), LcError> {
+    require_support(item_support)?;
+    publish(
+        transport,
+        &LcActionPayload {
+            action: "InputWater",
+        },
+    )
+    .await
 }
 
 fn require_support(item_support: &ItemSupport) -> Result<(), LcError> {
@@ -183,8 +347,14 @@ impl Backend {
             }
             Self::Real { state } => {
                 let mut ble = crate::hw_ble::FakeBle::new();
-                apply_lc_pump(&mut state.client, &mut ble, &state.item_support, true, index)
-                    .await?;
+                apply_lc_pump(
+                    &mut state.client,
+                    &mut ble,
+                    &state.item_support,
+                    true,
+                    index,
+                )
+                .await?;
                 Ok(())
             }
         }
@@ -206,8 +376,14 @@ impl Backend {
             }
             Self::Real { state } => {
                 let mut ble = crate::hw_ble::FakeBle::new();
-                apply_lc_fan(&mut state.client, &mut ble, &state.item_support, true, index)
-                    .await?;
+                apply_lc_fan(
+                    &mut state.client,
+                    &mut ble,
+                    &state.item_support,
+                    true,
+                    index,
+                )
+                .await?;
                 Ok(())
             }
         }

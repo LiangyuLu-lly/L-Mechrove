@@ -9,9 +9,7 @@ use gcu_mqtt::handshake::run_handshake;
 use tauri::{AppHandle, Manager};
 
 use crate::hw_backend::AppState;
-use crate::hw_mqtt_reconnect::{
-    next_retry_delay_ms, ReconnectCoordinator, INITIAL_RETRY_DELAY_MS,
-};
+use crate::hw_mqtt_reconnect::{next_retry_delay_ms, ReconnectCoordinator, INITIAL_RETRY_DELAY_MS};
 use crate::hw_real::MqttLoopParts;
 use crate::hw_snapshot::MqttStatus;
 use crate::{events, HwSnapshot};

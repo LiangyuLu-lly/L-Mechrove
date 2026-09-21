@@ -76,11 +76,7 @@ fn apply_inbound_empty_dc_hz_does_not_set_seen() {
     let mut live = live();
 
     // When: DC_HZ is omitted
-    apply_inbound(
-        &mut live,
-        "GPUDevice/Status",
-        br#"{"currentHZList":[60]}"#,
-    );
+    apply_inbound(&mut live, "GPUDevice/Status", br#"{"currentHZList":[60]}"#);
 
     // Then: DcHzSeen stays false
     assert!(!live.dc_hz_seen);

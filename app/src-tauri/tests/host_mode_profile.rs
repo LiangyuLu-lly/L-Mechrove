@@ -119,13 +119,67 @@ async fn saved_office_cpu_curve_republishes_t0_t15_strings_after_mode_roundtrip(
         })
         .map(|(_, value)| value)
         .expect("CPU curve after returning to office");
-    for i in 0..16 {
+    // C# asserts only the first `valid` points (FanCurveForm.cs:347-350). With the
+    // all-sentinel temperatures this path synthesizes, `valid` is min(11, 16) per
+    // MechrevoHw.cs:2712, and the tail follows the C# zero-fill rather than the
+    // requested values, so it stays outside the asserted window.
+    const VALID: usize = 11;
+    for i in 0..VALID {
         let key = format!("T{i}");
         assert!(
             payload[&key].is_string(),
             "{key} must be a JSON string: {payload:?}"
         );
         assert_eq!(payload[&key], DUTIES[i].to_string());
+    }
+    for i in VALID..16 {
+        let key = format!("T{i}");
+        assert!(
+            payload[&key].is_string(),
+            "{key} must be a JSON string: {payload:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn stored_custom_profile_index_publishes_json_number_when_custom_mode() {
+    for slot in 0..=3_i64 {
+        // Given: customProfileIndex already persisted in mode-profiles.json
+        let dir = unique_profile_dir();
+        fs::write(
+            dir.join("mode-profiles.json"),
+            format!(r#"{{"customProfileIndex":"{slot}"}}"#),
+        )
+        .expect("write stored custom slot");
+        let mut backend = Backend::fake_from_json("{}")
+            .expect("empty ItemSupport")
+            .with_profile_dir(dir);
+        backend.start().await.expect("fake handshake");
+
+        // When: custom mode is selected
+        backend
+            .set_performance_mode("custom")
+            .await
+            .expect("custom mode from stored slot");
+
+        // Then: Fan OPERATING_CUSTOM_MODE ProfileIndex is that stored JSON number
+        let publishes = backend.recorded_publishes();
+        let payload = publishes
+            .iter()
+            .rev()
+            .find(|(topic, value)| {
+                topic == "Fan/Control" && value["Action"] == "OPERATING_CUSTOM_MODE"
+            })
+            .map(|(_, value)| value)
+            .expect("OPERATING_CUSTOM_MODE");
+        assert!(
+            payload["ProfileIndex"].is_number(),
+            "ProfileIndex must be a JSON number for stored slot {slot}: {payload:?}"
+        );
+        assert_eq!(
+            payload["ProfileIndex"], slot,
+            "stored slot {slot} must be published as ProfileIndex: {payload:?}"
+        );
     }
 }
 

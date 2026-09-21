@@ -1,14 +1,19 @@
-//! GPU route MQTT. Setting/Control only. AUTO is never published.
+//! GPU route MQTT. Setting/Control only.
+
+use std::time::Duration;
 
 use capabilities::{
     DgpuGeneration, FeatureMatrix, GpuRouteGate, ItemSupport, IGPU_ONLY_AUTO, IGPU_ONLY_OFF,
-    IGPU_ONLY_ON,
+    IGPU_ONLY_ON, RESTART, TOGGLE_IGPU, TOGGLE_OFF, TOGGLE_ON,
 };
 use gcu_mqtt::client::MqttTransport;
 use gcu_mqtt::topics;
 use serde::Serialize;
 
 use crate::hw_backend::HostError;
+
+/// C# `GpuRouteCommandLayer.RestartDelayMilliseconds` (CCUWinUI:86511-86515).
+const RESTART_DELAY: Duration = Duration::from_millis(800);
 
 #[derive(Serialize)]
 struct GpuActionPayload<'a> {
@@ -34,12 +39,17 @@ fn payload_for(action: &str) -> GpuActionPayload<'_> {
     }
 }
 
+/// C# `DisplayRouteMatrix` Gen50 ConsoleActions include AUTO; 30/40 hide it.
+const fn offers_auto(generation: DgpuGeneration) -> bool {
+    matches!(generation, DgpuGeneration::Gen50)
+}
+
 pub fn offered_actions(
     item_support: &ItemSupport,
     generation: DgpuGeneration,
     three_mode: bool,
 ) -> Vec<String> {
-    GpuRouteGate::from_matrix(
+    let mut actions: Vec<String> = GpuRouteGate::from_matrix(
         generation,
         three_mode,
         &FeatureMatrix::from_values(item_support),
@@ -47,9 +57,46 @@ pub fn offered_actions(
     .offered_actions()
     .iter()
     .copied()
-    .filter(|action| *action != IGPU_ONLY_AUTO)
     .map(str::to_string)
-    .collect()
+    .collect();
+    if offers_auto(generation) {
+        // C# DisplayRouteMatrix.cs:201 — AUTO sits after IGPU_ONLY_OFF, before RESTART.
+        match actions.iter().position(|action| action == IGPU_ONLY_OFF) {
+            Some(index) => actions.insert(index + 1, IGPU_ONLY_AUTO.to_owned()),
+            None => actions.push(IGPU_ONLY_AUTO.to_owned()),
+        }
+    }
+    actions
+}
+
+fn action_allowed(gate: GpuRouteGate, generation: DgpuGeneration, action: &str) -> bool {
+    if action == IGPU_ONLY_AUTO {
+        return offers_auto(generation);
+    }
+    gate.allows(action)
+}
+
+/// C# `CreateGpuRestartTargetPayloads` + `BuildRestartCommands` when RESTART is in vocab.
+fn route_frames<'a>(action: &'a str, restart_ok: bool) -> Vec<&'a str> {
+    if !restart_ok {
+        return vec![action];
+    }
+    match action {
+        TOGGLE_ON => vec![TOGGLE_ON, IGPU_ONLY_OFF, TOGGLE_ON, RESTART],
+        TOGGLE_OFF => vec![TOGGLE_OFF, RESTART],
+        TOGGLE_IGPU => vec![TOGGLE_IGPU, RESTART],
+        IGPU_ONLY_AUTO => vec![TOGGLE_OFF, IGPU_ONLY_AUTO, RESTART],
+        _ => vec![action],
+    }
+}
+
+async fn delay_before_restart() {
+    // C# waits 800ms before RESTART (CCUWinUI:86511-86515). Timing is not a unit-test
+    // claim: cfg!(test) is a no-op so host_gpu does not sleep.
+    if cfg!(test) {
+        return;
+    }
+    tokio::time::sleep(RESTART_DELAY).await;
 }
 
 pub async fn apply_gpu_route<T: MqttTransport>(
@@ -59,18 +106,24 @@ pub async fn apply_gpu_route<T: MqttTransport>(
     three_mode: bool,
     action: &str,
 ) -> Result<(), HostError> {
-    if action == IGPU_ONLY_AUTO {
-        return Err(HostError::GpuActionDenied(action.to_owned()));
-    }
     let gate = GpuRouteGate::from_matrix(
         generation,
         three_mode,
         &FeatureMatrix::from_values(item_support),
     );
-    if !gate.allows(action) {
+    if !action_allowed(gate, generation, action) {
         return Err(HostError::GpuActionDenied(action.to_owned()));
     }
-    let bytes = serde_json::to_vec(&payload_for(action))?;
-    transport.publish(topics::SETTING_CONTROL, &bytes).await?;
+    let restart_ok = gate.allows(RESTART);
+    for frame in route_frames(action, restart_ok) {
+        if !action_allowed(gate, generation, frame) {
+            continue;
+        }
+        if frame == RESTART {
+            delay_before_restart().await;
+        }
+        let bytes = serde_json::to_vec(&payload_for(frame))?;
+        transport.publish(topics::SETTING_CONTROL, &bytes).await?;
+    }
     Ok(())
 }

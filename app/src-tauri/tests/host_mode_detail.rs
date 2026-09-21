@@ -96,3 +96,70 @@ async fn millivolt_cpu_voltage_offset_is_unknown_mode() {
         "CpuVoltageOffset must be UnknownMode, got {err}"
     );
 }
+
+#[tokio::test]
+async fn profile_name_publishes_osd_string_when_fake_broker() {
+    // Given: Fake broker after handshake
+    let mut backend = started("{}").await;
+
+    // When: the custom profile OSD name is set (C# SetCustomProfileName)
+    backend
+        .set_custom_detail("ProfileName", "自定义 1")
+        .await
+        .expect("OSD profile name");
+
+    // Then: Fan/Control SET_CUSTOM_PROFILE_OSD_STRING ProfileName is that string
+    let payload = backend
+        .recorded_publishes()
+        .into_iter()
+        .rev()
+        .find(|(topic, value)| {
+            topic == "Fan/Control" && value["Action"] == "SET_CUSTOM_PROFILE_OSD_STRING"
+        })
+        .map(|(_, value)| value)
+        .expect("SET_CUSTOM_PROFILE_OSD_STRING");
+    assert!(
+        payload["ProfileName"].is_string(),
+        "ProfileName must be a JSON string: {payload:?}"
+    );
+    assert_eq!(payload["ProfileName"], "自定义 1");
+}
+
+#[tokio::test]
+async fn restore_publishes_both_restore_actions_with_table_name_when_fake_broker() {
+    // Given: Fake broker after handshake; C# Name = Program.hw.TableName
+    let mut backend = started("{}").await;
+    const TABLE_NAME: &str = "M4T1";
+
+    // When: restore-current-profile-defaults is requested
+    backend
+        .set_custom_detail("RESTORE_OPERATING_MODE_DETAIL", TABLE_NAME)
+        .await
+        .expect("restore current profile defaults");
+
+    // Then: both C# restore Fan/Control actions, curve Name = TableName
+    let publishes = backend.recorded_publishes();
+    let fan: Vec<&serde_json::Value> = publishes
+        .iter()
+        .filter(|(topic, _)| topic == "Fan/Control")
+        .map(|(_, payload)| payload)
+        .collect();
+    let detail_idx = fan
+        .iter()
+        .position(|payload| payload["Action"] == "RESTORE_OPERATING_MODE_DETAIL")
+        .unwrap_or_else(|| panic!("RESTORE_OPERATING_MODE_DETAIL missing: {publishes:?}"));
+    let curve_idx = fan
+        .iter()
+        .position(|payload| payload["Action"] == "RESTORE_FAN_SPEED_CURVE_SETTING")
+        .unwrap_or_else(|| panic!("RESTORE_FAN_SPEED_CURVE_SETTING missing: {publishes:?}"));
+    assert!(
+        detail_idx < curve_idx,
+        "C# publishes RESTORE_OPERATING_MODE_DETAIL before RESTORE_FAN_SPEED_CURVE_SETTING: {publishes:?}"
+    );
+    let curve = fan[curve_idx];
+    assert!(
+        curve["Name"].is_string(),
+        "Name must be a JSON string: {curve:?}"
+    );
+    assert_eq!(curve["Name"], TABLE_NAME);
+}

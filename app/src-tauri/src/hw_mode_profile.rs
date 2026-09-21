@@ -163,8 +163,14 @@ impl<'a> ModeProfiles<'a> {
         )
         .await?;
         for (field, value) in extra_fields(profile) {
-            published_detail =
-                publish_named(transport, item_support, field, Some(value), published_detail).await?;
+            published_detail = publish_named(
+                transport,
+                item_support,
+                field,
+                Some(value),
+                published_detail,
+            )
+            .await?;
         }
         if let Some(cpu) = profile.cpu.as_deref() {
             apply_fan_curve(transport, "curve", FanCurveType::Cpu, duties_16(cpu)).await?;

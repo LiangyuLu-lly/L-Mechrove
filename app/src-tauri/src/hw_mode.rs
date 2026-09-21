@@ -13,6 +13,22 @@ use std::path::Path;
 use crate::hw_backend::HostError;
 use crate::hw_mode_profile::ModeProfiles;
 
+/// Fan/Control extreme-turbo sub-mode (`SET_CPU_CORE_OFFSET_EXTREME`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+struct ExtremeTurbo {
+    #[serde(rename = "Action")]
+    action: &'static str,
+    #[serde(rename = "EXTREME")]
+    extreme: i32,
+}
+
+const fn extreme_turbo_fan() -> ExtremeTurbo {
+    ExtremeTurbo {
+        action: "SET_CPU_CORE_OFFSET_EXTREME",
+        extreme: 1,
+    }
+}
+
 pub async fn apply_performance_mode<T: MqttTransport>(
     transport: &mut T,
     mode: &str,
@@ -24,6 +40,7 @@ pub async fn apply_performance_mode<T: MqttTransport>(
         "turbo" => publish_pair(transport, turbo_fan(), turbo_lchwoc()).await,
         "custom" => publish_pair(transport, custom_fan(custom_slot), custom_lchwoc()).await,
         "silentTurbo" => publish_fan(transport, silent_turbo_fan()).await,
+        "extreme" => publish_fan(transport, extreme_turbo_fan()).await,
         other => Err(HostError::UnknownMode(other.to_owned())),
     }
 }

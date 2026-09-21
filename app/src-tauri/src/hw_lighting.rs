@@ -150,7 +150,11 @@ pub async fn apply_lighting_policy(
     idle_seconds: i32,
 ) -> Result<(), HostError> {
     reconcile(
-        state,
+        &mut state.broker,
+        &state.item_support,
+        state.on_battery,
+        state.idle_ms,
+        &mut state.lighting_suspended,
         LightingPolicy {
             off_on_battery,
             idle_seconds,
@@ -199,7 +203,23 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_lighting_policy(state, off_on_battery, idle_seconds).await
             }
-            Self::Real { .. } => Err(HostError::RealUnavailable),
+            Self::Real { state } => {
+                let mut suspended = hw_lighting_idle::take_real_suspended();
+                let result = reconcile(
+                    &mut state.client,
+                    &state.item_support,
+                    false,
+                    0,
+                    &mut suspended,
+                    LightingPolicy {
+                        off_on_battery,
+                        idle_seconds,
+                    },
+                )
+                .await;
+                hw_lighting_idle::store_real_suspended(suspended);
+                result
+            }
         }
     }
 }

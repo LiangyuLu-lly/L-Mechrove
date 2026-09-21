@@ -151,3 +151,83 @@ async fn set_performance_mode_silent_turbo_publishes_silent_offset_when_fake_bro
         "Fan SET_CPU_CORE_OFFSET_SILENT SILENT=1 missing: {publishes:?}"
     );
 }
+
+#[tokio::test]
+async fn set_performance_mode_extreme_publishes_extreme_offset_when_fake_broker() {
+    // Given: Fake broker after handshake
+    let mut backend = started().await;
+
+    // When: extreme turbo sub-mode is selected (C# SwitchTurboSubMode(silent: false))
+    backend
+        .set_performance_mode("extreme")
+        .await
+        .expect("extreme turbo");
+
+    // Then: Fan/Control SET_CPU_CORE_OFFSET_EXTREME EXTREME=1 (JSON number)
+    let publishes = backend.recorded_publishes();
+    assert!(
+        publishes.iter().any(|(topic, payload)| {
+            topic == "Fan/Control"
+                && payload["Action"] == "SET_CPU_CORE_OFFSET_EXTREME"
+                && payload["EXTREME"] == 1
+                && payload["EXTREME"].is_number()
+        }),
+        "Fan SET_CPU_CORE_OFFSET_EXTREME EXTREME=1 missing: {publishes:?}"
+    );
+}
+
+#[tokio::test]
+async fn set_performance_mode_custom_publishes_stored_slot_from_profile_file_when_fake_broker() {
+    for slot in 0..=3_i64 {
+        // Given: mode-profiles.json already holds customProfileIndex
+        let dir = unique_profile_dir();
+        fs::write(
+            dir.join("mode-profiles.json"),
+            format!(r#"{{"customProfileIndex":"{slot}"}}"#),
+        )
+        .expect("write stored custom slot");
+        let mut backend = Backend::fake_from_json("{}")
+            .expect("empty ItemSupport")
+            .with_profile_dir(dir);
+        backend.start().await.expect("fake handshake");
+
+        // When: custom mode is selected
+        backend
+            .set_performance_mode("custom")
+            .await
+            .expect("custom mode from stored slot");
+
+        // Then: OPERATING_CUSTOM_MODE ProfileIndex is that stored JSON number
+        let publishes = backend.recorded_publishes();
+        let payload = last_custom_fan(&publishes);
+        assert!(
+            payload["ProfileIndex"].is_number(),
+            "ProfileIndex must be a JSON number for stored slot {slot}: {payload:?}"
+        );
+        assert_eq!(
+            payload["ProfileIndex"], slot,
+            "stored slot {slot} must be published as ProfileIndex: {payload:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn stored_custom_profile_index_is_slot_0_to_3_when_real() {
+    for slot in 0..=3_u8 {
+        // Given: Real backend with a stored custom slot on disk
+        let dir = unique_profile_dir();
+        fs::write(
+            dir.join("mode-profiles.json"),
+            format!(r#"{{"customProfileIndex":"{slot}"}}"#),
+        )
+        .expect("write stored custom slot");
+        let mut backend = Backend::real();
+        backend.set_profile_dir(dir);
+
+        // When: the Real path reads the stored slot
+        let index = backend.real_custom_profile_index();
+
+        // Then: it is the stored 0..=3 value, not hardcoded 0
+        assert_eq!(index, slot, "Real stored custom slot must be {slot}");
+    }
+}

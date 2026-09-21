@@ -39,6 +39,7 @@ const CANDIDATES: &[&str] = &[
     "taskbarautohide",
     "transparency",
     "darktheme",
+    "monitoroff",
 ];
 
 /// MQTT *Seen flags that gate SupportsQuickSwitch. Touchpad/OSD/USB ignore these.
@@ -111,6 +112,17 @@ struct GameWhitelistPayload {
     game_whitelist_switch: i32,
 }
 
+#[derive(Serialize)]
+struct PowerLightPayload {
+    #[serde(rename = "Action")]
+    action: &'static str,
+    #[serde(rename = "Brightness")]
+    brightness: i32,
+}
+
+/// GCU treats a missing Brightness as 0 and turns the light off.
+const POWER_LIGHT_BRIGHTNESS: i32 = 100;
+
 /// Parse DeviceSwitchItemStatus. `TouchPadEnable` is not a key.
 pub fn parse_device_switch_item_status(
     json: &str,
@@ -157,7 +169,7 @@ fn supports_quick_switch(key: &str, item_support: &ItemSupport, seen: &SeenFlags
                     "HWOCSupport",
                 ])
         }
-        "startup" | "taskbarautohide" | "transparency" | "darktheme" => true,
+        "startup" | "taskbarautohide" | "transparency" | "darktheme" | "monitoroff" => true,
         "whisper" => false,
         _ => false,
     }
@@ -173,6 +185,13 @@ pub async fn apply_quick_switch<T: MqttTransport>(
     if !supports_quick_switch(key, gate.item_support, &gate.seen) {
         return Err(SwitchError::NotOffered(key.to_owned()));
     }
+    if key == "monitoroff" {
+        return Ok(());
+    }
+    let confirm_topic = match key {
+        "gamewhitelist" | "cpuadvperf" | "fanboost" => topics::FAN_CONTROL,
+        _ => topics::SETTING_CONTROL,
+    };
     match key {
         "gamewhitelist" => {
             publish_json(
@@ -183,22 +202,24 @@ pub async fn apply_quick_switch<T: MqttTransport>(
                     game_whitelist_switch: i32::from(on),
                 },
             )
-            .await
+            .await?;
         }
-        "cpuadvperf" => publish_cpu_adv_perf(transport, on).await,
+        "cpuadvperf" => publish_cpu_adv_perf(transport, on).await?,
         "fanboost" => {
             let action = if on { "FAN_BOOST_ON" } else { "FAN_BOOST_OFF" };
-            publish_json(transport, topics::FAN_CONTROL, &ActionPayload { action }).await
+            publish_json(transport, topics::FAN_CONTROL, &ActionPayload { action }).await?;
         }
-        "deepsleep" => publish_deepsleep(transport, on).await,
-        "uni" if on => publish_uni_omni_on(transport, "Omni_OFF", "Uni_ON").await,
-        "omni" if on => publish_uni_omni_on(transport, "Uni_OFF", "Omni_ON").await,
+        "deepsleep" => publish_deepsleep(transport, on).await?,
+        "powerlight" => publish_power_light(transport, on).await?,
+        "uni" if on => publish_uni_omni_on(transport, "Omni_OFF", "Uni_ON").await?,
+        "omni" if on => publish_uni_omni_on(transport, "Uni_OFF", "Omni_ON").await?,
         _ => {
             let action =
                 setting_action(key, on).ok_or_else(|| SwitchError::NotOffered(key.to_owned()))?;
-            publish_action(transport, action).await
+            publish_action(transport, action).await?;
         }
     }
+    confirm_getstatus(transport, confirm_topic).await
 }
 
 fn setting_action(key: &str, on: bool) -> Option<&'static str> {
@@ -225,7 +246,6 @@ fn setting_action(key: &str, on: bool) -> Option<&'static str> {
         ),
         "uni" => ("Uni_ON", "Uni_OFF"),
         "omni" => ("Omni_ON", "Omni_OFF"),
-        "powerlight" => ("PowerLight_ON", "PowerLight_OFF"),
         "usb" => ("USB_CHARGER_ON", "USB_CHARGER_OFF"),
         _ => return None,
     };
@@ -239,6 +259,67 @@ async fn publish_uni_omni_on<T: MqttTransport>(
 ) -> Result<(), SwitchError> {
     publish_action(transport, partner_off).await?;
     publish_action(transport, self_on).await
+}
+
+async fn publish_power_light<T: MqttTransport>(
+    transport: &mut T,
+    on: bool,
+) -> Result<(), SwitchError> {
+    let action = if on {
+        "PowerLight_ON"
+    } else {
+        "PowerLight_OFF"
+    };
+    publish_json(
+        transport,
+        topics::SETTING_CONTROL,
+        &PowerLightPayload {
+            action,
+            brightness: POWER_LIGHT_BRIGHTNESS,
+        },
+    )
+    .await?;
+    publish_json(
+        transport,
+        topics::SETTING_CONTROL,
+        &PowerLightPayload {
+            action: "PowerLight_Brightness",
+            brightness: POWER_LIGHT_BRIGHTNESS,
+        },
+    )
+    .await
+}
+
+/// Setting/Control PowerLight_Brightness. Brightness is a JSON number.
+pub async fn apply_power_light_brightness<T: MqttTransport>(
+    transport: &mut T,
+    brightness: i32,
+) -> Result<(), SwitchError> {
+    let brightness = brightness.clamp(0, 100);
+    publish_json(
+        transport,
+        topics::SETTING_CONTROL,
+        &PowerLightPayload {
+            action: "PowerLight_Brightness",
+            brightness,
+        },
+    )
+    .await?;
+    confirm_getstatus(transport, topics::SETTING_CONTROL).await
+}
+
+async fn confirm_getstatus<T: MqttTransport>(
+    transport: &mut T,
+    topic: &str,
+) -> Result<(), SwitchError> {
+    publish_json(
+        transport,
+        topic,
+        &ActionPayload {
+            action: "GETSTATUS",
+        },
+    )
+    .await
 }
 
 async fn publish_deepsleep<T: MqttTransport>(
@@ -278,7 +359,12 @@ async fn publish_action<T: MqttTransport>(
     transport: &mut T,
     action: &'static str,
 ) -> Result<(), SwitchError> {
-    publish_json(transport, topics::SETTING_CONTROL, &ActionPayload { action }).await
+    publish_json(
+        transport,
+        topics::SETTING_CONTROL,
+        &ActionPayload { action },
+    )
+    .await
 }
 
 async fn publish_json<T: MqttTransport>(
@@ -305,6 +391,10 @@ impl Backend {
                     crate::hw_startup::apply_fake(&mut state.startup, on);
                     return Ok(());
                 }
+                if key == "monitoroff" {
+                    apply_monitor_off(&mut state.wmi);
+                    return Ok(());
+                }
                 if crate::hw_shell::apply_fake(&mut state.shell, key, on) {
                     return Ok(());
                 }
@@ -329,6 +419,9 @@ impl Backend {
                 if key == "startup" {
                     return crate::hw_startup::system_apply(on)
                         .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
+                }
+                if key == "monitoroff" {
+                    return Err(HostError::RealUnavailable);
                 }
                 if crate::hw_shell::is_shell_key(key) {
                     return crate::hw_shell::system_apply(key, on)

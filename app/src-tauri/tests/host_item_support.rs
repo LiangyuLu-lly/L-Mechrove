@@ -64,5 +64,3 @@ fn item_support_paths_match_csharp_roots() {
         ]
     );
 }
-
-

@@ -173,11 +173,7 @@ fn download(url: &str, dest: &Path, size: u64) -> Result<(), InstallError> {
     }
 }
 
-fn verify_sha256_and_size(
-    path: &Path,
-    expected: &str,
-    size: u64,
-) -> Result<(), InstallError> {
+fn verify_sha256_and_size(path: &Path, expected: &str, size: u64) -> Result<(), InstallError> {
     let meta = std::fs::metadata(path)?;
     if meta.len() != size {
         return Err(InstallError::Verify);

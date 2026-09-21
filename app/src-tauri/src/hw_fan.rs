@@ -14,6 +14,16 @@ const T_KEYS: [&str; 16] = [
     "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T13", "T14",
     "T15",
 ];
+const TEMP_SENTINEL: u8 = 255;
+const FALLBACK_POINTS: usize = 11;
+/// Gaming default CPU UpT (`DefaultCurve_Gaming.json`). Sentinel 255 at index 11.
+const CPU_UP_T: [u8; 16] = [
+    0, 46, 51, 54, 57, 60, 63, 66, 68, 70, 72, 255, 255, 255, 255, 255,
+];
+/// Gaming default GPU UpT. Same sentinel index, cooler steps than CPU.
+const GPU_UP_T: [u8; 16] = [
+    0, 45, 48, 51, 53, 55, 57, 59, 61, 63, 65, 255, 255, 255, 255, 255,
+];
 
 /// Wire `Type` for SET_FAN_SPEED_CURVE_SETTING. CPU and GPU only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,18 +64,52 @@ const fn clamp_duty(duty: u8) -> u8 {
     }
 }
 
-/// Clamp 0–100 and keep the curve non-decreasing, matching C# `NormalizeFanCurve`.
-const fn normalize_fan_curve(duties: [u8; 16]) -> [u8; 16] {
+const fn default_up_t(ty: FanCurveType) -> [u8; 16] {
+    match ty {
+        FanCurveType::Cpu => CPU_UP_T,
+        FanCurveType::Gpu => GPU_UP_T,
+    }
+}
+
+/// C# `MechrevoHw.NormalizeFanCurve` (`MechrevoHw.cs:2712`): first UpT==255 is
+/// `validCount`; if that index is <2, fall back to min(11, max(2, duty_count)).
+const fn valid_count(temperatures: [u8; 16], duty_count: usize) -> usize {
+    let mut i = 0;
+    while i < 16 {
+        if temperatures[i] == TEMP_SENTINEL {
+            if i >= 2 {
+                return i;
+            }
+            break;
+        }
+        i += 1;
+    }
+    let n = if duty_count > 2 { duty_count } else { 2 };
+    if n < FALLBACK_POINTS {
+        n
+    } else {
+        FALLBACK_POINTS
+    }
+}
+
+/// Port of C# `MechrevoHw.NormalizeFanCurve` (`MechrevoHw.cs:2712-2733`).
+pub const fn normalize_fan_curve(duties: [u8; 16], temperatures: [u8; 16]) -> [u8; 16] {
+    let valid = valid_count(temperatures, 16);
     let mut result = [0_u8; 16];
     result[0] = clamp_duty(duties[0]);
     let mut i = 1;
-    while i < 16 {
+    while i < valid {
         let clamped = clamp_duty(duties[i]);
         result[i] = if clamped > result[i - 1] {
             clamped
         } else {
             result[i - 1]
         };
+        i += 1;
+    }
+    let trailing = result[valid - 1];
+    while i < 16 {
+        result[i] = trailing;
         i += 1;
     }
     result
@@ -78,7 +122,7 @@ pub async fn apply_fan_curve<T: MqttTransport>(
     ty: FanCurveType,
     duties: [u8; 16],
 ) -> Result<(), HostError> {
-    let duties = normalize_fan_curve(duties);
+    let duties = normalize_fan_curve(duties, default_up_t(ty));
     let mut payload = Map::new();
     payload.insert("Action".to_owned(), json!(ACTION));
     payload.insert("Name".to_owned(), json!(name));

@@ -1,9 +1,11 @@
 //! In-process Fake GCU, or Real slot-4 `GcuClient` with live ItemSupport + inbound MQTT.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
 use capabilities::{DgpuGeneration, ItemSupport};
+use ec_acpi::{ChargeLimit, FakeIoctl};
 use gcu_mqtt::client::{GcuClient, MqttTransport};
 use gcu_mqtt::fake::Recorded;
 use gcu_mqtt::handshake::run_handshake;
@@ -16,6 +18,21 @@ use crate::hw_real::{MqttLoopParts, RealState};
 
 pub use crate::hw_error::HostError;
 pub use crate::hw_snapshot::{HwSnapshot, MqttStatus};
+
+thread_local! {
+    static INJECTED_EC: RefCell<Option<ChargeLimit<FakeIoctl>>> = const { RefCell::new(None) };
+}
+
+/// Clears a test-only FakeIoctl so CI never opens `\\.\ACPIDriver`.
+pub struct InjectedEcGuard;
+
+impl Drop for InjectedEcGuard {
+    fn drop(&mut self) {
+        INJECTED_EC.with(|slot| {
+            slot.replace(None);
+        });
+    }
+}
 
 pub struct AppState {
     pub(crate) backend: tokio::sync::Mutex<Backend>,
@@ -174,7 +191,57 @@ impl Backend {
                 state.charge_percent = applied;
                 Ok(applied)
             }
-            Self::Real { .. } => Err(HostError::RealUnavailable),
+            Self::Real { state } => {
+                let applied = set_real_charge_limit(percent)?;
+                state.charge_percent = applied;
+                Ok(applied)
+            }
+        }
+    }
+
+    /// C# `BatteryControl.SetBatteryLimitFull` → `MaximumPercent` (100 encodes as 0/0).
+    pub fn set_charge_full(&mut self) -> Result<u8, HostError> {
+        self.set_charge_limit(ec_acpi::MAX_PERCENT)
+    }
+
+    /// Install a FakeIoctl for the Real charge path. Never opens the live device.
+    pub fn inject_ec_transport(transport: FakeIoctl) -> InjectedEcGuard {
+        INJECTED_EC.with(|slot| {
+            slot.replace(Some(ChargeLimit::new(transport)));
+        });
+        InjectedEcGuard
+    }
+
+    /// C# `MechrevoHw.SetBatteryProtection` Action goldens (modes 0/1/2).
+    pub async fn set_battery_protection(&mut self, mode: u8) -> Result<(), HostError> {
+        let action = battery_protection_action(mode)
+            .ok_or_else(|| HostError::UnknownMode(mode.to_string()))?;
+        let bytes = serde_json::to_vec(&serde_json::json!({ "Action": action }))?;
+        self.publish_battery_protection(&bytes).await
+    }
+
+    /// C# `MechrevoHw` `{Report:"GET"}` on `BatteryProtection/Control`.
+    pub async fn report_battery_protection(&mut self) -> Result<(), HostError> {
+        let bytes = serde_json::to_vec(&serde_json::json!({ "Report": "GET" }))?;
+        self.publish_battery_protection(&bytes).await
+    }
+
+    async fn publish_battery_protection(&mut self, bytes: &[u8]) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state
+                    .broker
+                    .publish(topics::BATTERY_PROTECTION_CONTROL, bytes)
+                    .await?;
+                Ok(())
+            }
+            Self::Real { state } => {
+                state
+                    .client
+                    .publish(topics::BATTERY_PROTECTION_CONTROL, bytes)
+                    .await?;
+                Ok(())
+            }
         }
     }
 
@@ -401,15 +468,13 @@ impl Backend {
 
     pub fn recorded_ec_writes(&self) -> Vec<(u32, Vec<u8>)> {
         match self {
-            Self::Fake { state } => state
-                .charge
-                .transport()
-                .calls()
-                .iter()
-                .filter(|call| call.code == ec_acpi::IOCTL_WRITE)
-                .map(|call| (call.code, call.in_bytes.clone()))
-                .collect(),
-            Self::Real { .. } => Vec::new(),
+            Self::Fake { state } => recorded_writes(&state.charge),
+            Self::Real { .. } => INJECTED_EC.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .map(recorded_writes)
+                    .unwrap_or_default()
+            }),
         }
     }
 
@@ -434,6 +499,50 @@ fn sync_fake_model_gate(state: &mut FakeState) {
     state.model_reason = hw_model::model_reason(mqtt_connected, &state.item_support).to_owned();
 }
 
+const fn battery_protection_action(mode: u8) -> Option<&'static str> {
+    match mode {
+        0 => Some("PERFORMANCEDMODE"),
+        1 => Some("BALANCEDMODE"),
+        2 => Some("HEALTHYMODE"),
+        _ => None,
+    }
+}
+
+fn recorded_writes(charge: &ChargeLimit<FakeIoctl>) -> Vec<(u32, Vec<u8>)> {
+    charge
+        .transport()
+        .calls()
+        .iter()
+        .filter(|call| call.code == ec_acpi::IOCTL_WRITE)
+        .map(|call| (call.code, call.in_bytes.clone()))
+        .collect()
+}
+
+fn set_real_charge_limit(percent: u8) -> Result<u8, HostError> {
+    let injected = INJECTED_EC.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .map(|charge| charge.try_set(percent))
+    });
+    match injected {
+        Some(result) => Ok(result?),
+        None => live_ec_try_set(percent),
+    }
+}
+
+fn live_ec_try_set(percent: u8) -> Result<u8, HostError> {
+    #[cfg(windows)]
+    {
+        let mut charge = ChargeLimit::new(ec_acpi::WindowsIoctl::open()?);
+        return Ok(charge.try_set(percent)?);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = percent;
+        Err(HostError::RealUnavailable)
+    }
+}
+
 fn publish_json(item: &Recorded) -> Option<(String, serde_json::Value)> {
     match item {
         Recorded::Publish { topic, payload } => {
@@ -448,8 +557,7 @@ fn prefer_fake() -> bool {
     cfg!(test) || fake_gcu_requested()
 }
 
-const FULL_DEV_ITEM_SUPPORT: &str =
-    include_str!("../crates/_golden/item_support_full_dev.json");
+const FULL_DEV_ITEM_SUPPORT: &str = include_str!("../crates/_golden/item_support_full_dev.json");
 
 fn fake_gcu_requested() -> bool {
     matches!(std::env::var("LMECHREVO_FAKE_GCU"), Ok(ref value) if value == "1")

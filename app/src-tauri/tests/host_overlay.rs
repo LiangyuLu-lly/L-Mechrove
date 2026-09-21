@@ -55,7 +55,13 @@ fn anchor_from_center_quadrant_bits_and_restore_round_trips_four_corners() {
     };
     const MARGIN: i32 = 10;
     let corners = [
-        (Point { x: MARGIN, y: MARGIN }, 0),
+        (
+            Point {
+                x: MARGIN,
+                y: MARGIN,
+            },
+            0,
+        ),
         (
             Point {
                 x: screen.width - size.width - MARGIN,
@@ -127,11 +133,8 @@ async fn overlay_update_on_fake_publishes_no_mqtt_and_persists() {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("time")
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "ccx_host_overlay_{}_{}",
-        std::process::id(),
-        nanos
-    ));
+    let dir =
+        std::env::temp_dir().join(format!("ccx_host_overlay_{}_{}", std::process::id(), nanos));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let mut store = OverlayStore::load(&dir).expect("load empty");
     let prefs = serde_json::json!({
@@ -174,7 +177,10 @@ async fn overlay_update_on_fake_publishes_no_mqtt_and_persists() {
         backend.recorded_publishes()
     );
     let loaded = OverlayStore::load(&dir).expect("reload");
-    assert_eq!(loaded.get_i32("overlay_mode"), Some(OverlayMode::Full as i32));
+    assert_eq!(
+        loaded.get_i32("overlay_mode"),
+        Some(OverlayMode::Full as i32)
+    );
     assert_eq!(loaded.get_i32("overlay_scale_percent"), Some(120));
     assert_eq!(loaded.get_i32("overlay_anchor"), Some(3));
     assert_eq!(loaded.get_i32("overlay_offset_x"), Some(10));

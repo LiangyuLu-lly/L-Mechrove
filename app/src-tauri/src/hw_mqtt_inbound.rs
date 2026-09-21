@@ -112,9 +112,10 @@ fn apply_setting_status(live: &mut InboundLive, value: &Value) -> bool {
     changed |= present(obj, "NumPad") && set_flag(&mut live.seen.numpad, true);
     changed |= present(obj, "DeepSleepSwitch") && set_flag(&mut live.seen.deep_sleep, true);
     changed |= present(obj, "CopilotKey") && set_flag(&mut live.seen.copilot, true);
-    changed |= present(obj, "AcRecoverySwitch_Status") && set_flag(&mut live.seen.ac_recovery, true);
-    changed |= present(obj, "HighPerformancePowerModeSwitch")
-        && set_flag(&mut live.seen.high_perf, true);
+    changed |=
+        present(obj, "AcRecoverySwitch_Status") && set_flag(&mut live.seen.ac_recovery, true);
+    changed |=
+        present(obj, "HighPerformancePowerModeSwitch") && set_flag(&mut live.seen.high_perf, true);
     changed |= present(obj, "TouchpadToggle") && set_flag(&mut live.seen.touchpad_toggle, true);
     changed |= present(obj, "SingleColorKBBL") && set_flag(&mut live.seen.single_color_kb, true);
     changed |= (present(obj, "UniSwitch") || present(obj, "OmniSwitch"))
@@ -200,7 +201,11 @@ fn parse_hz_list(value: &Value) -> Vec<String> {
     let Some(arr) = value.as_array() else {
         return Vec::new();
     };
-    let mut hz: Vec<i64> = arr.iter().filter_map(|item| json_i64(Some(item))).filter(|v| *v > 0).collect();
+    let mut hz: Vec<i64> = arr
+        .iter()
+        .filter_map(|item| json_i64(Some(item)))
+        .filter(|v| *v > 0)
+        .collect();
     hz.sort_unstable_by(|a, b| b.cmp(a));
     hz.dedup();
     hz.into_iter().map(|v| v.to_string()).collect()
