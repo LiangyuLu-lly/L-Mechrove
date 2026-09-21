@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use capabilities::{effect_allowed, ItemSupport, LightingVisibility};
-use gcu_mqtt::fake::FakeBroker;
+use gcu_mqtt::client::MqttTransport;
 use gcu_mqtt::topics;
 
 use crate::hw_backend::{Backend, HostError};
@@ -60,8 +60,8 @@ impl LightChannel {
     }
 }
 
-pub async fn apply_light_power(
-    broker: &mut FakeBroker,
+pub async fn apply_light_power<T: MqttTransport>(
+    transport: &mut T,
     item_support: &ItemSupport,
     cfg_dir: Option<&Path>,
     channel: &str,
@@ -69,7 +69,7 @@ pub async fn apply_light_power(
 ) -> Result<(), HostError> {
     let channel = LightChannel::parse(channel)?;
     ensure_channel_offered(item_support, channel)?;
-    publish_power(broker, channel.ctrl_topic(), on).await?;
+    publish_power(transport, channel.ctrl_topic(), on).await?;
     if let Some(dir) = cfg_dir {
         let mut cfg = load_cfg(dir, channel.cfg_name());
         cfg.power = on;
@@ -78,8 +78,8 @@ pub async fn apply_light_power(
     Ok(())
 }
 
-pub async fn apply_light_effect(
-    broker: &mut FakeBroker,
+pub async fn apply_light_effect<T: MqttTransport>(
+    transport: &mut T,
     item_support: &ItemSupport,
     cfg_dir: Option<&Path>,
     channel: &str,
@@ -97,7 +97,7 @@ pub async fn apply_light_effect(
     let saved = cfg_dir.map(|dir| load_cfg(dir, channel.cfg_name()));
     let cfg = merge_cfg(saved.as_ref(), effect, params);
     if cfg.power {
-        publish_effect(broker, channel.ctrl_topic(), &cfg).await?;
+        publish_effect(transport, channel.ctrl_topic(), &cfg).await?;
     }
     if let Some(dir) = cfg_dir {
         persist_cfg(dir, channel.cfg_name(), &cfg)?;
@@ -125,8 +125,8 @@ const fn channel_offered(visibility: LightingVisibility, channel: LightChannel) 
     }
 }
 
-pub(crate) async fn publish_offered_power(
-    broker: &mut FakeBroker,
+pub(crate) async fn publish_offered_power<T: MqttTransport>(
+    transport: &mut T,
     item_support: &ItemSupport,
     on: bool,
 ) -> Result<(), HostError> {
@@ -137,7 +137,7 @@ pub(crate) async fn publish_offered_power(
         LightChannel::Logo,
     ] {
         if channel_offered(visibility, channel) {
-            publish_power(broker, channel.ctrl_topic(), on).await?;
+            publish_power(transport, channel.ctrl_topic(), on).await?;
         }
     }
     Ok(())
@@ -199,7 +199,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_lighting_policy(state, off_on_battery, idle_seconds).await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { .. } => Err(HostError::RealUnavailable),
         }
     }
 }

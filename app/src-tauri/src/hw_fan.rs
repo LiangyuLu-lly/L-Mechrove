@@ -1,7 +1,6 @@
 //! Fan curve MQTT. SET_FAN_SPEED_CURVE_SETTING T0–T15 are JSON strings.
 
 use gcu_mqtt::client::MqttTransport;
-use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::payloads::{fan_boost_off, fan_boost_on};
 use gcu_mqtt::topics::FAN_CONTROL;
 use serde_json::{json, Map, Value};
@@ -73,8 +72,8 @@ const fn normalize_fan_curve(duties: [u8; 16]) -> [u8; 16] {
 }
 
 /// Gate CPU|GPU, normalize duties, publish Fan/Control SET_FAN_SPEED_CURVE_SETTING.
-pub async fn apply_fan_curve(
-    broker: &mut FakeBroker,
+pub async fn apply_fan_curve<T: MqttTransport>(
+    transport: &mut T,
     name: &str,
     ty: FanCurveType,
     duties: [u8; 16],
@@ -88,7 +87,7 @@ pub async fn apply_fan_curve(
         payload.insert((*key).to_owned(), Value::String(duty.to_string()));
     }
     let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(FAN_CONTROL, &bytes).await?;
+    transport.publish(FAN_CONTROL, &bytes).await?;
     Ok(())
 }
 
@@ -113,7 +112,11 @@ impl Backend {
                 }
                 Ok(())
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                let ty = FanCurveType::from_wire(ty)
+                    .ok_or_else(|| HostError::UnknownMode(ty.to_owned()))?;
+                apply_fan_curve(client, name, ty, duties_16(&duties)).await
+            }
         }
     }
 
@@ -123,7 +126,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_fan_boost(&mut state.broker, on).await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => apply_fan_boost(client, on).await,
         }
     }
 
@@ -145,14 +148,25 @@ impl Backend {
                 }
                 Ok(())
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                crate::hw_mode_detail::apply_custom_detail(
+                    client,
+                    &capabilities::ItemSupport::default(),
+                    field,
+                    value,
+                )
+                .await
+            }
         }
     }
 }
 
-pub async fn apply_fan_boost(broker: &mut FakeBroker, on: bool) -> Result<(), HostError> {
+pub async fn apply_fan_boost<T: MqttTransport>(
+    transport: &mut T,
+    on: bool,
+) -> Result<(), HostError> {
     let payload = if on { fan_boost_on() } else { fan_boost_off() };
     let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(FAN_CONTROL, &bytes).await?;
+    transport.publish(FAN_CONTROL, &bytes).await?;
     Ok(())
 }

@@ -67,7 +67,7 @@ fn collect(backend: &Backend) -> Result<Vec<ZipEntry>, HostError> {
 fn item_support_bytes(backend: &Backend) -> Result<Vec<u8>, HostError> {
     match backend {
         Backend::Fake { state } => Ok(serde_json::to_vec_pretty(&state.item_support.dump_json())?),
-        Backend::Real => Ok(b"{}".to_vec()),
+        Backend::Real { .. } => Ok(b"{}".to_vec()),
     }
 }
 

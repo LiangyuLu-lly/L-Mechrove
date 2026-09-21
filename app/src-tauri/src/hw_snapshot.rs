@@ -128,7 +128,7 @@ impl Backend {
                 theme_mode: "night".to_owned(),
                 release_label: env!("CARGO_PKG_VERSION").to_owned(),
             },
-            Self::Real => HwSnapshot {
+            Self::Real { .. } => HwSnapshot {
                 mqtt: MqttStatus::Error,
                 lighting: LightingVisibility::from_item_support(&ItemSupport::default()),
                 charge_percent: 100,

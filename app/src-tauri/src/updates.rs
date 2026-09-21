@@ -124,21 +124,21 @@ impl Backend {
                 update_available: false,
                 latest_version: String::new(),
             }),
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { .. } => Err(HostError::RealUnavailable),
         }
     }
 
     pub fn updates_install(&self, confirm: bool) -> Result<(), updates_install::InstallError> {
         match self {
             Self::Fake { .. } => updates_install::install_fake(confirm),
-            Self::Real => updates_install::install_real(confirm),
+            Self::Real { .. } => updates_install::install_real(confirm),
         }
     }
 
     pub fn updates_open_page(&self) -> Result<(), updates_install::InstallError> {
         match self {
             Self::Fake { .. } => updates_install::open_page_fake(),
-            Self::Real => updates_install::open_page_real(),
+            Self::Real { .. } => updates_install::open_page_real(),
         }
     }
 }

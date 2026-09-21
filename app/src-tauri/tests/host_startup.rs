@@ -2,7 +2,7 @@
 
 use app_lib::hw_startup::{
     is_transient_executable_path, normalize_executable_path, sanitize_task_name_fragment,
-    schtasks_create_args, user_task_name, StartupTaskPlan, STARTUP_ARGUMENT,
+    schtasks_create_args, schtasks_delete_args, user_task_name, StartupTaskPlan, STARTUP_ARGUMENT,
 };
 use app_lib::hw_switches::offered_quick_switches;
 use app_lib::Backend;
@@ -63,6 +63,40 @@ fn schtasks_create_args_carry_task_name_startup_and_highest() {
     assert!(
         args.iter().any(|arg| arg == "HIGHEST"),
         "RunLevel Highest missing: {args:?}"
+    );
+}
+
+#[test]
+fn schtasks_create_tr_quotes_exe_and_startup_argument() {
+    let plan = StartupTaskPlan::new("S-1-5-21-9", r"C:\Program Files\L-Mechrevo\L-Mechrevo.exe");
+    let args = schtasks_create_args(&plan);
+    let tr = args
+        .windows(2)
+        .find(|pair| pair[0] == "/TR")
+        .map(|pair| pair[1].as_str())
+        .expect("missing /TR");
+    assert!(
+        tr.starts_with('"') && tr.contains("\" startup"),
+        "Real /TR must quote the exe and pass startup: {tr}"
+    );
+    assert!(
+        tr.contains(r"C:\Program Files\L-Mechrevo\L-Mechrevo.exe"),
+        "exe path missing: {tr}"
+    );
+}
+
+#[test]
+fn schtasks_delete_args_target_lmechrevo_sid_task() {
+    let plan = StartupTaskPlan::new("S-1-5-21-1", r"C:\Program Files\L-Mechrevo\L-Mechrevo.exe");
+    let args = schtasks_delete_args(&plan);
+    assert_eq!(args.first().map(String::as_str), Some("/Delete"));
+    assert!(
+        args.iter().any(|arg| arg == "LMechrevo_S-1-5-21-1"),
+        "task name missing: {args:?}"
+    );
+    assert!(
+        args.iter().any(|arg| arg == "/F"),
+        "force flag missing: {args:?}"
     );
 }
 

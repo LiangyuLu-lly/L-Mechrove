@@ -1,14 +1,13 @@
 //! Official SetPower / SetEffectALL JSON copied from MechrevoService.cs.
 
 use gcu_mqtt::client::MqttTransport;
-use gcu_mqtt::fake::FakeBroker;
 use serde::Serialize;
 
 use crate::hw_backend::HostError;
 use crate::hw_lighting_cfg::ChannelCfg;
 
-pub(crate) async fn publish_power(
-    broker: &mut FakeBroker,
+pub(crate) async fn publish_power<T: MqttTransport>(
+    transport: &mut T,
     topic: &str,
     on: bool,
 ) -> Result<(), HostError> {
@@ -17,12 +16,12 @@ pub(crate) async fn publish_power(
         powerstatus: i32::from(on),
     };
     let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(topic, &bytes).await?;
+    transport.publish(topic, &bytes).await?;
     Ok(())
 }
 
-pub(crate) async fn publish_effect(
-    broker: &mut FakeBroker,
+pub(crate) async fn publish_effect<T: MqttTransport>(
+    transport: &mut T,
     topic: &str,
     cfg: &ChannelCfg,
 ) -> Result<(), HostError> {
@@ -37,7 +36,7 @@ pub(crate) async fn publish_effect(
         color: color_for_effect(&cfg.effect, cfg.color_argb),
     };
     let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(topic, &bytes).await?;
+    transport.publish(topic, &bytes).await?;
     Ok(())
 }
 

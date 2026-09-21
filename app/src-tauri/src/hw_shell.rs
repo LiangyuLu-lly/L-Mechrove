@@ -2,9 +2,70 @@
 
 use crate::hw_backend::Backend;
 
+mod native;
+
 pub const ABS_AUTOHIDE: i32 = 0x1;
 pub const ABS_ALWAYSONTOP: i32 = 0x2;
-const PERSONALIZE: &str = r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+pub const PERSONALIZE_KEY: &str =
+    r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+pub const IMMERSIVE_COLOR_SET: &str = "ImmersiveColorSet";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistryDwordWrite {
+    pub key: &'static str,
+    pub name: &'static str,
+    pub value: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShellApplyPlan {
+    pub writes: Vec<RegistryDwordWrite>,
+    pub broadcast: Option<&'static str>,
+}
+
+pub fn planned_transparency(on: bool) -> ShellApplyPlan {
+    ShellApplyPlan {
+        writes: vec![RegistryDwordWrite {
+            key: PERSONALIZE_KEY,
+            name: "EnableTransparency",
+            value: u32::from(on),
+        }],
+        broadcast: Some(IMMERSIVE_COLOR_SET),
+    }
+}
+
+pub fn planned_dark_theme(dark: bool) -> ShellApplyPlan {
+    let light = light_theme_dword(dark);
+    ShellApplyPlan {
+        writes: vec![
+            RegistryDwordWrite {
+                key: PERSONALIZE_KEY,
+                name: "AppsUseLightTheme",
+                value: light,
+            },
+            RegistryDwordWrite {
+                key: PERSONALIZE_KEY,
+                name: "SystemUsesLightTheme",
+                value: light,
+            },
+        ],
+        broadcast: Some(IMMERSIVE_COLOR_SET),
+    }
+}
+
+pub fn planned_reg_add_args(write: &RegistryDwordWrite) -> Vec<String> {
+    vec![
+        "add".to_owned(),
+        write.key.to_owned(),
+        "/v".to_owned(),
+        write.name.to_owned(),
+        "/t".to_owned(),
+        "REG_DWORD".to_owned(),
+        "/d".to_owned(),
+        write.value.to_string(),
+        "/f".to_owned(),
+    ]
+}
 
 pub const fn taskbar_target_state(current: i32, auto_hide: bool) -> i32 {
     if auto_hide {
@@ -60,162 +121,37 @@ pub fn apply_fake(shell: &mut RecordingShell, key: &str, on: bool) -> bool {
 pub fn system_apply(key: &str, on: bool) -> Result<(), ShellError> {
     match key {
         "taskbarautohide" => native::set_taskbar_auto_hide(on),
-        "transparency" => {
-            registry_set("EnableTransparency", u32::from(on))?;
-            native::broadcast_immersive_color_set();
-            Ok(())
-        }
-        "darktheme" => {
-            let light = light_theme_dword(on);
-            registry_set("AppsUseLightTheme", light)?;
-            registry_set("SystemUsesLightTheme", light)?;
-            native::broadcast_immersive_color_set();
-            Ok(())
-        }
+        "transparency" => apply_plan(&planned_transparency(on)),
+        "darktheme" => apply_plan(&planned_dark_theme(on)),
         _ => Err(ShellError::UnknownKey(key.to_owned())),
     }
 }
 
-fn registry_set(name: &str, value: u32) -> Result<(), ShellError> {
-    let status = std::process::Command::new("reg")
-        .args([
-            "add",
-            PERSONALIZE,
-            "/v",
-            name,
-            "/t",
-            "REG_DWORD",
-            "/d",
-            &value.to_string(),
-            "/f",
-        ])
-        .status()
-        .map_err(|err| ShellError::Native(err.to_string()))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(ShellError::Native(format!("reg exit {status}")))
+fn apply_plan(plan: &ShellApplyPlan) -> Result<(), ShellError> {
+    for write in &plan.writes {
+        registry_set(write)?;
     }
+    if plan.broadcast == Some(IMMERSIVE_COLOR_SET) {
+        native::broadcast_immersive_color_set();
+    }
+    Ok(())
 }
 
-mod native {
-    use super::{taskbar_target_state, ShellError, ABS_AUTOHIDE};
-
-    const ABM_GETSTATE: u32 = 0x0000_0004;
-    const ABM_SETSTATE: u32 = 0x0000_000A;
-    const HWND_BROADCAST: isize = 0xFFFF;
-    const WM_SETTINGCHANGE: u32 = 0x001A;
-    const SMTO_ABORTIFHUNG: u32 = 0x0002;
-
-    #[repr(C)]
-    struct Rect {
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-    }
-
-    #[repr(C)]
-    struct AppBarData {
-        cb_size: u32,
-        hwnd: isize,
-        callback_message: u32,
-        edge: u32,
-        rc: Rect,
-        l_param: isize,
-    }
-
-    #[cfg(all(windows, not(miri)))]
-    #[link(name = "shell32")]
-    extern "system" {
-        fn SHAppBarMessage(msg: u32, data: *mut AppBarData) -> usize;
-    }
-
-    #[cfg(all(windows, not(miri)))]
-    #[link(name = "user32")]
-    extern "system" {
-        fn SendMessageTimeoutW(
-            hwnd: isize,
-            msg: u32,
-            wparam: isize,
-            lparam: *const u16,
-            flags: u32,
-            timeout: u32,
-            result: *mut isize,
-        ) -> isize;
-    }
-
-    fn empty_app_bar() -> AppBarData {
-        AppBarData {
-            cb_size: std::mem::size_of::<AppBarData>() as u32,
-            hwnd: 0,
-            callback_message: 0,
-            edge: 0,
-            rc: Rect {
-                left: 0,
-                top: 0,
-                right: 0,
-                bottom: 0,
-            },
-            l_param: 0,
-        }
-    }
-
-    pub fn set_taskbar_auto_hide(auto_hide: bool) -> Result<(), ShellError> {
-        #[cfg(all(windows, not(miri)))]
-        {
-            let mut data = empty_app_bar();
-            // SAFETY: [Category 8 — FFI boundary]
-            // ABM_GETSTATE reads only cbSize; remaining fields may be zero.
-            // `AppBarData` is `repr(C)` matching shell32 APPBARDATA. The pointer
-            // is a stack local that lives for the call.
-            let state = unsafe { SHAppBarMessage(ABM_GETSTATE, &mut data) } as i32;
-            let target = taskbar_target_state(state, auto_hide);
-            if target == state {
-                return Ok(());
-            }
-            data.l_param = target as isize;
-            // SAFETY: [Category 8 — FFI boundary]
-            // ABM_SETSTATE takes the full state word in lParam. Same layout
-            // contract as GETSTATE; we only flip ABS_AUTOHIDE.
-            unsafe { SHAppBarMessage(ABM_SETSTATE, &mut data) };
-            let applied = unsafe { SHAppBarMessage(ABM_GETSTATE, &mut data) } as i32;
-            if (applied & ABS_AUTOHIDE != 0) == auto_hide {
-                Ok(())
-            } else {
-                Err(ShellError::Native(
-                    "taskbar auto-hide not confirmed".to_owned(),
-                ))
-            }
-        }
-        #[cfg(not(all(windows, not(miri))))]
-        {
-            let _ = auto_hide;
-            Err(ShellError::Native("SHAppBarMessage unavailable".to_owned()))
-        }
-    }
-
-    pub fn broadcast_immersive_color_set() {
-        #[cfg(all(windows, not(miri)))]
-        {
-            let mut wide: Vec<u16> = "ImmersiveColorSet".encode_utf16().collect();
-            wide.push(0);
-            let mut result = 0isize;
-            // SAFETY: [Category 8 — FFI boundary]
-            // HWND_BROADCAST is the documented WM_SETTINGCHANGE target.
-            // lParam is a NUL-terminated UTF-16 string that lives for the call.
-            // SMTO_ABORTIFHUNG + 100ms matches ShellPersonalization.cs.
-            unsafe {
-                SendMessageTimeoutW(
-                    HWND_BROADCAST,
-                    WM_SETTINGCHANGE,
-                    0,
-                    wide.as_ptr(),
-                    SMTO_ABORTIFHUNG,
-                    100,
-                    &mut result,
-                );
-            }
+fn registry_set(write: &RegistryDwordWrite) -> Result<(), ShellError> {
+    let args = planned_reg_add_args(write);
+    let output = std::process::Command::new("reg")
+        .args(&args)
+        .output()
+        .map_err(|err| ShellError::Native(err.to_string()))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr.trim();
+        if detail.is_empty() {
+            Err(ShellError::Native(format!("reg exit {}", output.status)))
+        } else {
+            Err(ShellError::Native(detail.to_owned()))
         }
     }
 }
@@ -224,7 +160,7 @@ impl Backend {
     pub fn recorded_shell_applies(&self) -> Vec<(String, bool)> {
         match self {
             Self::Fake { state } => state.shell.applies().to_vec(),
-            Self::Real => Vec::new(),
+            Self::Real { .. } => Vec::new(),
         }
     }
 }

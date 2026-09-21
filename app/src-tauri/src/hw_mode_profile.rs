@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use capabilities::ItemSupport;
-use gcu_mqtt::fake::FakeBroker;
+use gcu_mqtt::client::MqttTransport;
 use serde::{Deserialize, Serialize};
 
 use crate::hw_error::HostError;
@@ -143,9 +143,9 @@ impl<'a> ModeProfiles<'a> {
         self.save(&store)
     }
 
-    pub async fn apply(
+    pub async fn apply<T: MqttTransport>(
         &self,
-        broker: &mut FakeBroker,
+        transport: &mut T,
         item_support: &ItemSupport,
         mode: &str,
     ) -> Result<(), HostError> {
@@ -155,7 +155,7 @@ impl<'a> ModeProfiles<'a> {
         };
         let mut published_detail = false;
         published_detail = publish_named(
-            broker,
+            transport,
             item_support,
             "PL1",
             profile.pl1.as_deref(),
@@ -164,16 +164,16 @@ impl<'a> ModeProfiles<'a> {
         .await?;
         for (field, value) in extra_fields(profile) {
             published_detail =
-                publish_named(broker, item_support, field, Some(value), published_detail).await?;
+                publish_named(transport, item_support, field, Some(value), published_detail).await?;
         }
         if let Some(cpu) = profile.cpu.as_deref() {
-            apply_fan_curve(broker, "curve", FanCurveType::Cpu, duties_16(cpu)).await?;
+            apply_fan_curve(transport, "curve", FanCurveType::Cpu, duties_16(cpu)).await?;
         }
         if let Some(gpu) = profile.gpu.as_deref() {
-            apply_fan_curve(broker, "curve", FanCurveType::Gpu, duties_16(gpu)).await?;
+            apply_fan_curve(transport, "curve", FanCurveType::Gpu, duties_16(gpu)).await?;
         }
         publish_named(
-            broker,
+            transport,
             item_support,
             "CpuTccOffset",
             profile.cpu_tcc_offset.as_deref(),
@@ -253,8 +253,8 @@ fn is_gate_field(field: &str) -> bool {
     )
 }
 
-async fn publish_named(
-    broker: &mut FakeBroker,
+async fn publish_named<T: MqttTransport>(
+    transport: &mut T,
     item_support: &ItemSupport,
     field: &str,
     value: Option<&str>,
@@ -266,7 +266,7 @@ async fn publish_named(
     if published {
         tokio::time::sleep(DETAIL_GAP).await;
     }
-    apply_custom_detail(broker, item_support, field, value).await?;
+    apply_custom_detail(transport, item_support, field, value).await?;
     Ok(true)
 }
 

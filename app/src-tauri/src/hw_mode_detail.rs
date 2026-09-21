@@ -3,7 +3,6 @@
 
 use capabilities::ItemSupport;
 use gcu_mqtt::client::MqttTransport;
-use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::topics::FAN_CONTROL;
 use serde_json::{json, Map, Value};
 
@@ -43,8 +42,8 @@ fn remap_detail_field<'a>(item_support: &ItemSupport, field: &'a str) -> &'a str
     }
 }
 
-pub async fn apply_custom_detail(
-    broker: &mut FakeBroker,
+pub async fn apply_custom_detail<T: MqttTransport>(
+    transport: &mut T,
     item_support: &ItemSupport,
     field: &str,
     value: &str,
@@ -63,6 +62,6 @@ pub async fn apply_custom_detail(
     payload.insert("Action".to_owned(), json!("SET_OPERATING_MODE_DETAIL"));
     payload.insert(wire.to_owned(), Value::String(value.to_owned()));
     let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(FAN_CONTROL, &bytes).await?;
+    transport.publish(FAN_CONTROL, &bytes).await?;
     Ok(())
 }

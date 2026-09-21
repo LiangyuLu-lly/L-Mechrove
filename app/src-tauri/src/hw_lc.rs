@@ -2,7 +2,6 @@
 
 use capabilities::{FeatureBit, FeatureMatrix, ItemSupport};
 use gcu_mqtt::client::MqttTransport;
-use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::topics;
 use serde::Serialize;
 
@@ -49,8 +48,8 @@ struct LcFanPayload {
 }
 
 /// Publish `LC_PumpCtrl` with `PumpCtrl` as a JSON string, or BLE-fallback when MQTT LC is down.
-pub async fn apply_lc_pump(
-    broker: &mut FakeBroker,
+pub async fn apply_lc_pump<T: MqttTransport>(
+    transport: &mut T,
     ble: &mut FakeBle,
     item_support: &ItemSupport,
     mqtt_lc_connected: bool,
@@ -60,7 +59,7 @@ pub async fn apply_lc_pump(
     let digit = pump_digit(index)?;
     if mqtt_lc_connected {
         publish(
-            broker,
+            transport,
             &LcPumpPayload {
                 action: "LC_PumpCtrl",
                 pump_ctrl: digit,
@@ -74,8 +73,8 @@ pub async fn apply_lc_pump(
 }
 
 /// Publish `LC_FanCtrl` with `FanCtrl` as a JSON string (`"0"`..=`"3"`, `"4"` auto).
-pub async fn apply_lc_fan(
-    broker: &mut FakeBroker,
+pub async fn apply_lc_fan<T: MqttTransport>(
+    transport: &mut T,
     ble: &mut FakeBle,
     item_support: &ItemSupport,
     mqtt_lc_connected: bool,
@@ -85,7 +84,7 @@ pub async fn apply_lc_fan(
     let digit = fan_digit(index)?;
     if mqtt_lc_connected {
         publish(
-            broker,
+            transport,
             &LcFanPayload {
                 action: "LC_FanCtrl",
                 fan_ctrl: digit,
@@ -148,9 +147,12 @@ const fn fan_frame(index: u8) -> Result<[u8; 8], LcError> {
     Ok([0xFE, BLE_CMD_FAN, 1, duty, 0, 0, 0, 0xEF])
 }
 
-async fn publish(broker: &mut FakeBroker, payload: &impl Serialize) -> Result<(), LcError> {
+async fn publish<T: MqttTransport>(
+    transport: &mut T,
+    payload: &impl Serialize,
+) -> Result<(), LcError> {
     let bytes = serde_json::to_vec(payload)?;
-    broker.publish(topics::BT_LC_CONTROL, &bytes).await?;
+    transport.publish(topics::BT_LC_CONTROL, &bytes).await?;
     Ok(())
 }
 
@@ -179,7 +181,11 @@ impl Backend {
                 .await?;
                 Ok(())
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                let mut ble = crate::hw_ble::FakeBle::new();
+                apply_lc_pump(client, &mut ble, &ItemSupport::default(), true, index).await?;
+                Ok(())
+            }
         }
     }
 
@@ -197,7 +203,11 @@ impl Backend {
                 .await?;
                 Ok(())
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                let mut ble = crate::hw_ble::FakeBle::new();
+                apply_lc_fan(client, &mut ble, &ItemSupport::default(), true, index).await?;
+                Ok(())
+            }
         }
     }
 }

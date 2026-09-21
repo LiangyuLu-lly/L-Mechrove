@@ -3,7 +3,6 @@
 
 use capabilities::{ItemSupport, LightingVisibility};
 use gcu_mqtt::client::MqttTransport;
-use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::topics;
 use serde::{Deserialize, Serialize};
 
@@ -165,8 +164,8 @@ fn supports_quick_switch(key: &str, item_support: &ItemSupport, seen: &SeenFlags
 }
 
 /// Publish one quick switch. Uni on also publishes Omni_OFF (mutually exclusive).
-pub async fn apply_quick_switch(
-    broker: &mut FakeBroker,
+pub async fn apply_quick_switch<T: MqttTransport>(
+    transport: &mut T,
     gate: &QuickSwitchGate<'_>,
     key: &str,
     on: bool,
@@ -177,7 +176,7 @@ pub async fn apply_quick_switch(
     match key {
         "gamewhitelist" => {
             publish_json(
-                broker,
+                transport,
                 topics::FAN_CONTROL,
                 &GameWhitelistPayload {
                     action: "OPERATING_GAME_WHITE_LIST",
@@ -186,18 +185,18 @@ pub async fn apply_quick_switch(
             )
             .await
         }
-        "cpuadvperf" => publish_cpu_adv_perf(broker, on).await,
+        "cpuadvperf" => publish_cpu_adv_perf(transport, on).await,
         "fanboost" => {
             let action = if on { "FAN_BOOST_ON" } else { "FAN_BOOST_OFF" };
-            publish_json(broker, topics::FAN_CONTROL, &ActionPayload { action }).await
+            publish_json(transport, topics::FAN_CONTROL, &ActionPayload { action }).await
         }
-        "deepsleep" => publish_deepsleep(broker, on).await,
-        "uni" if on => publish_uni_omni_on(broker, "Omni_OFF", "Uni_ON").await,
-        "omni" if on => publish_uni_omni_on(broker, "Uni_OFF", "Omni_ON").await,
+        "deepsleep" => publish_deepsleep(transport, on).await,
+        "uni" if on => publish_uni_omni_on(transport, "Omni_OFF", "Uni_ON").await,
+        "omni" if on => publish_uni_omni_on(transport, "Uni_OFF", "Omni_ON").await,
         _ => {
             let action =
                 setting_action(key, on).ok_or_else(|| SwitchError::NotOffered(key.to_owned()))?;
-            publish_action(broker, action).await
+            publish_action(transport, action).await
         }
     }
 }
@@ -233,16 +232,19 @@ fn setting_action(key: &str, on: bool) -> Option<&'static str> {
     Some(if on { on_action } else { off_action })
 }
 
-async fn publish_uni_omni_on(
-    broker: &mut FakeBroker,
+async fn publish_uni_omni_on<T: MqttTransport>(
+    transport: &mut T,
     partner_off: &'static str,
     self_on: &'static str,
 ) -> Result<(), SwitchError> {
-    publish_action(broker, partner_off).await?;
-    publish_action(broker, self_on).await
+    publish_action(transport, partner_off).await?;
+    publish_action(transport, self_on).await
 }
 
-async fn publish_deepsleep(broker: &mut FakeBroker, on: bool) -> Result<(), SwitchError> {
+async fn publish_deepsleep<T: MqttTransport>(
+    transport: &mut T,
+    on: bool,
+) -> Result<(), SwitchError> {
     let payload = if on {
         serde_json::json!({
             "Action": "DEEPSLEEP_ON",
@@ -251,10 +253,13 @@ async fn publish_deepsleep(broker: &mut FakeBroker, on: bool) -> Result<(), Swit
     } else {
         serde_json::json!({ "Action": "DEEPSLEEP_OFF" })
     };
-    publish_json(broker, topics::SETTING_CONTROL, &payload).await
+    publish_json(transport, topics::SETTING_CONTROL, &payload).await
 }
 
-async fn publish_cpu_adv_perf(broker: &mut FakeBroker, on: bool) -> Result<(), SwitchError> {
+async fn publish_cpu_adv_perf<T: MqttTransport>(
+    transport: &mut T,
+    on: bool,
+) -> Result<(), SwitchError> {
     let payload = if on {
         serde_json::json!({
             "Action": "SET_OPERATING_MODE_DETAIL",
@@ -266,20 +271,23 @@ async fn publish_cpu_adv_perf(broker: &mut FakeBroker, on: bool) -> Result<(), S
             "CPUPerformanceAndOverClockMenuSwitch_OFF": "0",
         })
     };
-    publish_json(broker, topics::FAN_CONTROL, &payload).await
+    publish_json(transport, topics::FAN_CONTROL, &payload).await
 }
 
-async fn publish_action(broker: &mut FakeBroker, action: &'static str) -> Result<(), SwitchError> {
-    publish_json(broker, topics::SETTING_CONTROL, &ActionPayload { action }).await
+async fn publish_action<T: MqttTransport>(
+    transport: &mut T,
+    action: &'static str,
+) -> Result<(), SwitchError> {
+    publish_json(transport, topics::SETTING_CONTROL, &ActionPayload { action }).await
 }
 
-async fn publish_json(
-    broker: &mut FakeBroker,
+async fn publish_json<T: MqttTransport>(
+    transport: &mut T,
     topic: &str,
     payload: &impl Serialize,
 ) -> Result<(), SwitchError> {
     let bytes = serde_json::to_vec(payload)?;
-    broker.publish(topic, &bytes).await?;
+    transport.publish(topic, &bytes).await?;
     Ok(())
 }
 
@@ -317,7 +325,7 @@ impl Backend {
                     SwitchError::Json(inner) => HostError::Json(inner),
                 })
             }
-            Self::Real => {
+            Self::Real { client } => {
                 if key == "startup" {
                     return crate::hw_startup::system_apply(on)
                         .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
@@ -326,7 +334,21 @@ impl Backend {
                     return crate::hw_shell::system_apply(key, on)
                         .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
                 }
-                Err(HostError::RealUnavailable)
+                apply_quick_switch(
+                    client,
+                    &QuickSwitchGate {
+                        item_support: &ItemSupport::default(),
+                        seen: SeenFlags::default(),
+                    },
+                    key,
+                    on,
+                )
+                .await
+                .map_err(|err| match err {
+                    SwitchError::NotOffered(denied) => HostError::SwitchDenied(denied),
+                    SwitchError::Mqtt(inner) => HostError::Mqtt(inner),
+                    SwitchError::Json(inner) => HostError::Json(inner),
+                })
             }
         }
     }
@@ -338,7 +360,7 @@ impl Backend {
                 apply_monitor_off(&mut state.wmi);
                 Ok(())
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { .. } => Err(HostError::RealUnavailable),
         }
     }
 }

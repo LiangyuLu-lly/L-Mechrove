@@ -5,7 +5,6 @@ use capabilities::{
     IGPU_ONLY_ON,
 };
 use gcu_mqtt::client::MqttTransport;
-use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::topics;
 use serde::Serialize;
 
@@ -53,8 +52,8 @@ pub fn offered_actions(
     .collect()
 }
 
-pub async fn apply_gpu_route(
-    broker: &mut FakeBroker,
+pub async fn apply_gpu_route<T: MqttTransport>(
+    transport: &mut T,
     item_support: &ItemSupport,
     generation: DgpuGeneration,
     three_mode: bool,
@@ -72,6 +71,6 @@ pub async fn apply_gpu_route(
         return Err(HostError::GpuActionDenied(action.to_owned()));
     }
     let bytes = serde_json::to_vec(&payload_for(action))?;
-    broker.publish(topics::SETTING_CONTROL, &bytes).await?;
+    transport.publish(topics::SETTING_CONTROL, &bytes).await?;
     Ok(())
 }

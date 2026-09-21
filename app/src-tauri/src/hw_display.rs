@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use gcu_mqtt::client::MqttTransport;
-use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::topics;
 use serde::Serialize;
 
@@ -54,18 +53,21 @@ struct DcHzPayload {
     enable: bool,
 }
 
-pub async fn apply_display_hz(broker: &mut FakeBroker, hz: u32) -> Result<(), HostError> {
+pub async fn apply_display_hz<T: MqttTransport>(
+    transport: &mut T,
+    hz: u32,
+) -> Result<(), HostError> {
     let payload = HzPayload {
         action: "GPU_HZSETTING",
         hz: hz.to_string(),
     };
     let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(topics::SETTING_CONTROL, &bytes).await?;
+    transport.publish(topics::SETTING_CONTROL, &bytes).await?;
     Ok(())
 }
 
-pub async fn apply_auto_refresh_rate(
-    broker: &mut FakeBroker,
+pub async fn apply_auto_refresh_rate<T: MqttTransport>(
+    transport: &mut T,
     dc_hz_seen: bool,
     on: bool,
 ) -> Result<(), HostError> {
@@ -77,12 +79,12 @@ pub async fn apply_auto_refresh_rate(
         enable: on,
     };
     let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(topics::SETTING_CONTROL, &bytes).await?;
+    transport.publish(topics::SETTING_CONTROL, &bytes).await?;
     Ok(())
 }
 
-pub async fn apply_brightness(
-    _broker: &mut FakeBroker,
+pub async fn apply_brightness<T: MqttTransport>(
+    _transport: &mut T,
     wmi: &mut FakeWmi,
     queue: &mut BrightnessQueue,
 ) -> Result<(), HostError> {
@@ -96,38 +98,41 @@ pub async fn apply_brightness(
     Ok(())
 }
 
-pub async fn apply_calibration(
-    broker: &mut FakeBroker,
+pub async fn apply_calibration<T: MqttTransport>(
+    transport: &mut T,
     action: &str,
     hdr_on: bool,
 ) -> Result<(), HostError> {
     if hdr_on {
         return Err(HostError::DisplayDenied(action.to_owned()));
     }
-    publish_action(broker, action).await
+    publish_action(transport, action).await
 }
 
-pub async fn apply_overdrive(broker: &mut FakeBroker, on: bool) -> Result<(), HostError> {
+pub async fn apply_overdrive<T: MqttTransport>(transport: &mut T, on: bool) -> Result<(), HostError> {
     let action = if on {
         "LCDOverdrive_ON"
     } else {
         "LCDOverdrive_OFF"
     };
-    publish_action(broker, action).await
+    publish_action(transport, action).await
 }
 
-pub async fn apply_local_dimming(broker: &mut FakeBroker, on: bool) -> Result<(), HostError> {
+pub async fn apply_local_dimming<T: MqttTransport>(
+    transport: &mut T,
+    on: bool,
+) -> Result<(), HostError> {
     let action = if on {
         "LOCALDIMMING_ON"
     } else {
         "LOCALDIMMING_OFF"
     };
-    publish_action(broker, action).await
+    publish_action(transport, action).await
 }
 
-async fn publish_action(broker: &mut FakeBroker, action: &str) -> Result<(), HostError> {
+async fn publish_action<T: MqttTransport>(transport: &mut T, action: &str) -> Result<(), HostError> {
     let bytes = serde_json::to_vec(&ActionPayload { action })?;
-    broker.publish(topics::SETTING_CONTROL, &bytes).await?;
+    transport.publish(topics::SETTING_CONTROL, &bytes).await?;
     Ok(())
 }
 
@@ -153,7 +158,7 @@ impl Backend {
                 let seen = state.dc_hz_seen;
                 apply_auto_refresh_rate(&mut state.broker, seen, on).await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => apply_auto_refresh_rate(client, false, on).await,
         }
     }
 
@@ -166,7 +171,12 @@ impl Backend {
                     .map_err(|_| HostError::DisplayDenied(hz.to_owned()))?;
                 apply_display_hz(&mut state.broker, parsed).await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                let parsed = hz
+                    .parse::<u32>()
+                    .map_err(|_| HostError::DisplayDenied(hz.to_owned()))?;
+                apply_display_hz(client, parsed).await
+            }
         }
     }
 
@@ -182,7 +192,7 @@ impl Backend {
                 )
                 .await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { .. } => Err(HostError::RealUnavailable),
         }
     }
 
@@ -192,7 +202,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_calibration(&mut state.broker, mode, state.hdr_on).await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => apply_calibration(client, mode, false).await,
         }
     }
 
@@ -202,7 +212,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_overdrive(&mut state.broker, on).await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => apply_overdrive(client, on).await,
         }
     }
 
@@ -212,7 +222,7 @@ impl Backend {
                 state.ensure_writable()?;
                 apply_local_dimming(&mut state.broker, on).await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => apply_local_dimming(client, on).await,
         }
     }
 }

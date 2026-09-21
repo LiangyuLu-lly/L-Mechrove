@@ -8,7 +8,7 @@ mod hw_error;
 mod hw_fake;
 pub mod hw_fan;
 mod hw_gpu;
-mod hw_isolation;
+pub mod hw_isolation;
 pub mod hw_lc;
 mod hw_lighting;
 mod hw_lighting_cfg;
@@ -28,7 +28,9 @@ pub mod updates;
 
 pub use hw_backend::Backend;
 pub use hw_error::HostError;
+pub use hw_gpu::apply_gpu_route;
 pub use hw_snapshot::{HwSnapshot, MqttStatus};
+pub use secrets::slot4_params;
 
 use commands::{
     app_quit, close_custom_mode_window, diagnostics_export, hw_snapshot, open_custom_mode_window,

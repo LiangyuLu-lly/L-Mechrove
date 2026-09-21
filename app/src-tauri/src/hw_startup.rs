@@ -78,13 +78,22 @@ pub fn schtasks_create_args(plan: &StartupTaskPlan) -> Vec<String> {
         "/TN".to_owned(),
         plan.task_name.clone(),
         "/TR".to_owned(),
-        format!("{} {}", plan.exe_path, plan.arguments),
+        format!("\"{}\" {}", plan.exe_path, plan.arguments),
         "/SC".to_owned(),
         "ONLOGON".to_owned(),
         "/DELAY".to_owned(),
         "0000:10".to_owned(),
         "/RL".to_owned(),
         "HIGHEST".to_owned(),
+        "/F".to_owned(),
+    ]
+}
+
+pub fn schtasks_delete_args(plan: &StartupTaskPlan) -> Vec<String> {
+    vec![
+        "/Delete".to_owned(),
+        "/TN".to_owned(),
+        plan.task_name.clone(),
         "/F".to_owned(),
     ]
 }
@@ -137,12 +146,7 @@ pub fn system_apply(on: bool) -> Result<(), StartupError> {
     if on {
         run_schtasks(&schtasks_create_args(&plan))
     } else {
-        run_schtasks(&[
-            "/Delete".to_owned(),
-            "/TN".to_owned(),
-            plan.task_name,
-            "/F".to_owned(),
-        ])
+        run_schtasks(&schtasks_delete_args(&plan))
     }
 }
 
@@ -164,36 +168,58 @@ fn parse_whoami_sid(csv: &str) -> Option<String> {
 }
 
 fn run_schtasks(args: &[String]) -> Result<(), StartupError> {
-    let status = std::process::Command::new("schtasks")
+    let output = std::process::Command::new("schtasks")
         .args(args)
-        .status()
+        .output()
         .map_err(|err| StartupError::Task(err.to_string()))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(StartupError::Task(format!("schtasks exit {status}")))
+    if output.status.success() {
+        return Ok(());
     }
+    let detail = schtasks_failure_detail(&output);
+    if args.first().map(String::as_str) == Some("/Delete") && is_missing_task(&detail) {
+        return Ok(());
+    }
+    Err(StartupError::Task(detail))
+}
+
+fn schtasks_failure_detail(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let err = stderr.trim();
+    if !err.is_empty() {
+        return err.to_owned();
+    }
+    let out = stdout.trim();
+    if !out.is_empty() {
+        return out.to_owned();
+    }
+    format!("schtasks exit {}", output.status)
+}
+
+fn is_missing_task(detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    lower.contains("cannot find") || lower.contains("does not exist")
 }
 
 impl Backend {
     pub fn recorded_startup_enabled(&self) -> Option<bool> {
         match self {
             Self::Fake { state } => state.startup.enabled(),
-            Self::Real => None,
+            Self::Real { .. } => None,
         }
     }
 
     pub fn recorded_startup_task_name(&self) -> Option<String> {
         match self {
             Self::Fake { state } => state.startup.last_plan().map(|plan| plan.task_name.clone()),
-            Self::Real => None,
+            Self::Real { .. } => None,
         }
     }
 
     pub fn recorded_startup_arguments(&self) -> Option<&'static str> {
         match self {
             Self::Fake { state } => state.startup.last_plan().map(|plan| plan.arguments),
-            Self::Real => None,
+            Self::Real { .. } => None,
         }
     }
 }

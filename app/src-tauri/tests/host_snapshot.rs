@@ -82,7 +82,7 @@ async fn snapshot_fake_includes_default_overlay_telemetry() {
 #[test]
 fn snapshot_real_omits_overlay_telemetry() {
     // Given: Real backend without LHM
-    let backend = Backend::Real;
+    let backend = Backend::real();
 
     // When: a snapshot is taken
     let snapshot = backend.snapshot();
