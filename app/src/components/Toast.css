@@ -1,0 +1,36 @@
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--type-body);
+}
+
+.toast__message {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast__dismiss {
+  flex: 0 0 auto;
+  min-height: var(--row-title-height);
+  padding: 0 var(--space-xs);
+  font-size: var(--type-caption);
+  color: var(--muted);
+}
+
+.toast__dismiss:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.toast__dismiss:focus-visible {
+  outline: 1px solid var(--accent);
+}

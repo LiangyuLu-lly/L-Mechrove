@@ -20,8 +20,9 @@ describe("Screen", () => {
   it("renders Hz options from hzList and omits calibration OD LD", () => {
     render(<Screen hzList={["60", "165"]} />)
     expect(screen.getByText("屏幕")).toBeTruthy()
-    expect(screen.getByRole("radio", { name: "60 Hz" })).toBeTruthy()
-    expect(screen.getByRole("radio", { name: "165 Hz" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: /^60$/ })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: /^165$/ })).toBeTruthy()
+    expect(screen.queryByRole("radio", { name: "165 Hz" })).toBeNull()
     expect(screen.queryByRole("combobox", { name: "屏幕校色" })).toBeNull()
     expect(screen.queryByText("校色")).toBeNull()
     expect(screen.queryByText("过驱动")).toBeNull()
@@ -35,9 +36,9 @@ describe("Screen", () => {
     expect(screen.getByRole("option", { name: "sRGB" })).toBeTruthy()
   })
 
-  it("invokes set_display_hz with 165 when 165 Hz is clicked", () => {
+  it("invokes set_display_hz with 165 when 165 is clicked", () => {
     render(<Screen hzList={["60", "165"]} />)
-    fireEvent.click(screen.getByRole("radio", { name: "165 Hz" }))
+    fireEvent.click(screen.getByRole("radio", { name: /^165$/ }))
     expect(invoke).toHaveBeenCalledWith("set_display_hz", { hz: "165" })
   })
 

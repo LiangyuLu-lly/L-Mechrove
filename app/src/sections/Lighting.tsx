@@ -17,7 +17,7 @@ export function Lighting({ lighting, keyboardHidUnavailable = false }: LightingP
     return null
   }
   return (
-    <Collapse name="灯光">
+    <Collapse name="灯光" defaultOpen>
       {lighting.keyboard ? (
         <>
           <ChannelRow

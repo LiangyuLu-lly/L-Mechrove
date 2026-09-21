@@ -1,0 +1,70 @@
+.hud {
+  --hud-bar-width: 0.3125rem;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--window);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: calc(var(--type-caption) * var(--hud-scale, 1));
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.hud:active {
+  cursor: grabbing;
+}
+
+.hud__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 1em;
+}
+
+.hud__label,
+.hud__name,
+.hud__rpm {
+  color: var(--muted);
+}
+
+.hud__temp,
+.hud__watt,
+.hud__usage,
+.hud__mem,
+.hud__battery {
+  color: var(--text);
+}
+
+.hud__rpm {
+  font-size: 0.85em;
+}
+
+.hud__bar {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--hud-bar-width);
+  height: 1em;
+  background: var(--track);
+}
+
+.hud__bar-fill {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud,
+  .hud__bar-fill {
+    transition: none;
+  }
+}

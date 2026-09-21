@@ -4,10 +4,16 @@ export type CollapseProps = {
   readonly name: string
   readonly summary?: string
   readonly children?: ReactNode
+  readonly defaultOpen?: boolean
 }
 
-export function Collapse({ name, summary, children }: CollapseProps) {
-  const [open, setOpen] = useState(false)
+export function Collapse({
+  name,
+  summary,
+  children,
+  defaultOpen = false,
+}: CollapseProps) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="collapse">
       <button

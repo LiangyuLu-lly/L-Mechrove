@@ -60,7 +60,6 @@ describe("Lighting", () => {
         }}
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     fireEvent.change(screen.getByRole("combobox", { name: "灯条" }), {
       target: { value: "Breathing" },
     })
@@ -83,7 +82,6 @@ describe("Lighting", () => {
         }}
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     expect(screen.queryByText("波浪")).toBeNull()
   })
 
@@ -98,7 +96,6 @@ describe("Lighting", () => {
         }}
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     expect(screen.getByText("波浪")).toBeTruthy()
   })
 
@@ -113,7 +110,6 @@ describe("Lighting", () => {
         }}
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     expect(screen.getByRole("checkbox", { name: "键盘电源" })).toBeTruthy()
   })
 
@@ -128,9 +124,26 @@ describe("Lighting", () => {
         }}
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     fireEvent.click(screen.getByRole("button", { name: "编辑" }))
     expect(screen.getByText("亮度")).toBeTruthy()
+  })
+
+  it("灯光 group header is expanded at mount and still shows the keyboard caption", () => {
+    render(
+      <Lighting
+        lighting={{
+          keyboard: true,
+          lightbar: false,
+          logo: false,
+          keyboardType: 0,
+        }}
+        keyboardHidUnavailable
+      />,
+    )
+    expect(screen.getByRole("button", { name: "灯光" }).getAttribute("aria-expanded")).toBe(
+      "true",
+    )
+    expect(screen.getByText(/本机控制器不支持软件灯效控制/)).toBeTruthy()
   })
 
   it("shows 本机控制器不支持软件灯效控制 when keyboardHidUnavailable is true", () => {
@@ -145,7 +158,6 @@ describe("Lighting", () => {
         keyboardHidUnavailable
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     expect(screen.getByText(/本机控制器不支持软件灯效控制/)).toBeTruthy()
   })
 
@@ -161,7 +173,6 @@ describe("Lighting", () => {
         keyboardHidUnavailable={false}
       />,
     )
-    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     expect(screen.queryByText(/本机控制器不支持软件灯效控制/)).toBeNull()
   })
 })

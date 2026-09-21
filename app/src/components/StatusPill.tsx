@@ -22,16 +22,18 @@ function toneClass(tone: PillTone): string {
   }
 }
 
+const DISCONNECTED_COPY = "● GCU 未连接"
+
 function pillFor(mqtt: MqttStatus): { readonly label: string; readonly tone: PillTone } {
   switch (mqtt) {
     case "Connecting":
-      return { label: "GCU 连接中", tone: "warn" }
+      return { label: "● GCU 连接中", tone: "warn" }
     case "Connected":
-      return { label: "GCU 已连接", tone: "ok" }
+      return { label: "● GCU 已连接", tone: "ok" }
     case "Disconnected":
-      return { label: "GCU 未连接", tone: "muted" }
+      return { label: DISCONNECTED_COPY, tone: "muted" }
     case "Error":
-      return { label: "GCU 错误", tone: "danger" }
+      return { label: DISCONNECTED_COPY, tone: "danger" }
     default:
       return assertNever(mqtt)
   }

@@ -29,7 +29,7 @@ export function Screen({
   const [calib, setCalib] = useState(CALIB_DEFAULT)
   const options = hzList.map((value) => ({
     value,
-    label: `${value} Hz`,
+    label: value,
   }))
 
   async function onHz(next: string): Promise<void> {
