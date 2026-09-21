@@ -8,12 +8,17 @@ mod hw_error;
 mod hw_fake;
 pub mod hw_fan;
 mod hw_gpu;
+mod hw_isolation;
 pub mod hw_lc;
 mod hw_lighting;
+mod hw_lighting_cfg;
+mod hw_lighting_payload;
 mod hw_mode;
 mod hw_mode_detail;
 mod hw_mode_profile;
+pub mod hw_shell;
 mod hw_snapshot;
+pub mod hw_startup;
 pub mod hw_switches;
 pub mod hw_wmi;
 mod secrets;
@@ -26,10 +31,11 @@ pub use hw_error::HostError;
 pub use hw_snapshot::{HwSnapshot, MqttStatus};
 
 use commands::{
-    app_quit, diagnostics_export, hw_snapshot, overlay_set, set_brightness, set_calibration,
-    set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost, set_fan_curve,
-    set_gpu_route, set_lc_fan, set_lc_pump, set_light_effect, set_local_dimming, set_monitor_off,
-    set_overdrive, set_performance_mode, set_quick_switch, updates_check,
+    app_quit, diagnostics_export, hw_snapshot, overlay_set, set_auto_refresh_rate, set_brightness,
+    set_calibration, set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost,
+    set_fan_curve, set_gpu_route, set_lc_fan, set_lc_pump, set_light_effect, set_light_power,
+    set_local_dimming, set_monitor_off, set_official_isolation, set_overdrive, set_performance_mode,
+    set_quick_switch, updates_check,
 };
 use hw_backend::{AppState, Backend as HwBackend};
 use tauri::Manager;
@@ -68,7 +74,9 @@ pub fn run() {
             set_charge_limit,
             set_gpu_route,
             set_light_effect,
+            set_light_power,
             set_display_hz,
+            set_auto_refresh_rate,
             set_brightness,
             set_calibration,
             set_overdrive,
@@ -83,8 +91,17 @@ pub fn run() {
             updates_check,
             overlay_set,
             diagnostics_export,
-            app_quit
+            app_quit,
+            set_official_isolation
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if tray::hide_main_on_close(window.label()) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

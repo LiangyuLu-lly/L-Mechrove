@@ -12,8 +12,22 @@ pub const HOT_SWAP_OFF: &str = "GPU_HOTSWAP_OFF";
 
 const GEN30: &[&str] = &[TOGGLE_ON, TOGGLE_OFF];
 const GEN40: &[&str] = &[TOGGLE_ON, TOGGLE_OFF, TOGGLE_IGPU, RESTART];
-const GEN40_THREE: &[&str] = &[TOGGLE_ON, TOGGLE_OFF, TOGGLE_IGPU, IGPU_ONLY_ON, IGPU_ONLY_OFF, RESTART];
-const GEN50: &[&str] = &[TOGGLE_ON, TOGGLE_OFF, TOGGLE_IGPU, IGPU_ONLY_ON, IGPU_ONLY_OFF, RESTART];
+const GEN40_THREE: &[&str] = &[
+    TOGGLE_ON,
+    TOGGLE_OFF,
+    TOGGLE_IGPU,
+    IGPU_ONLY_ON,
+    IGPU_ONLY_OFF,
+    RESTART,
+];
+const GEN50: &[&str] = &[
+    TOGGLE_ON,
+    TOGGLE_OFF,
+    TOGGLE_IGPU,
+    IGPU_ONLY_ON,
+    IGPU_ONLY_OFF,
+    RESTART,
+];
 const GEN50_HOT: &[&str] = &[
     TOGGLE_ON,
     TOGGLE_OFF,
@@ -44,7 +58,11 @@ pub struct GpuRouteGate {
 }
 
 impl GpuRouteGate {
-    pub fn from_matrix(generation: DgpuGeneration, three_mode: bool, matrix: &FeatureMatrix) -> Self {
+    pub fn from_matrix(
+        generation: DgpuGeneration,
+        three_mode: bool,
+        matrix: &FeatureMatrix,
+    ) -> Self {
         Self {
             generation,
             three_mode,

@@ -4,17 +4,21 @@ import { Segmented } from "../components/Segmented"
 import { setGpuRoute } from "../lib/api"
 
 const GPU_LABELS: Record<string, string> = {
-  DGPU_DIRECT_CONNECT_TOGGLE_ON: "独显",
-  DGPU_DIRECT_CONNECT_TOGGLE_OFF: "混合",
-  DGPU_DIRECT_CONNECT_TOGGLE_IGPU: "核显",
-  IGPU_ONLY_CONNECT_RB_ON: "仅核显",
-  IGPU_ONLY_CONNECT_RB_OFF: "核显关",
+  igpu: "集显",
+  standard: "标准",
+  dgpu: "直连",
+  DGPU_DIRECT_CONNECT_TOGGLE_IGPU: "集显",
+  DGPU_DIRECT_CONNECT_TOGGLE_OFF: "标准",
+  DGPU_DIRECT_CONNECT_TOGGLE_ON: "直连",
+  IGPU_ONLY_CONNECT_RB_ON: "集显",
+  IGPU_ONLY_CONNECT_RB_OFF: "标准",
   GPU_HOTSWAP_ON: "热切开",
   GPU_HOTSWAP_OFF: "热切关",
   DGPU_DIRECT_CONNECT_RESTART: "重启",
 }
 
-const AUTO_ACTION = "IGPU_ONLY_CONNECT_RB_AUTO"
+const HIDDEN_ACTIONS = new Set(["auto", "IGPU_ONLY_CONNECT_RB_AUTO"])
+const DGPU_ACTIONS = new Set(["dgpu", "DGPU_DIRECT_CONNECT_TOGGLE_ON"])
 
 export type GpuProps = {
   readonly actions: readonly string[]
@@ -22,7 +26,7 @@ export type GpuProps = {
 
 export function Gpu({ actions }: GpuProps) {
   const options = actions
-    .filter((action) => action !== AUTO_ACTION)
+    .filter((action) => !HIDDEN_ACTIONS.has(action))
     .map((value) => ({
       value,
       label: GPU_LABELS[value] ?? value,
@@ -46,7 +50,7 @@ export function Gpu({ actions }: GpuProps) {
   }
 
   return (
-    <Row name="显卡模式">
+    <Row name="显卡模式" status={DGPU_ACTIONS.has(selected) ? "重启生效" : undefined}>
       <Segmented value={selected} options={options} onChange={onChange} />
     </Row>
   )

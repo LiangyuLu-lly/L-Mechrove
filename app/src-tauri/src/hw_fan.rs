@@ -156,5 +156,3 @@ pub async fn apply_fan_boost(broker: &mut FakeBroker, on: bool) -> Result<(), Ho
     broker.publish(FAN_CONTROL, &bytes).await?;
     Ok(())
 }
-
-

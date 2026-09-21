@@ -1,30 +1,70 @@
-//! Given offered switch keys. When tray_menu_spec. Then mode ids, quit, gated fanboost, no lightbar.
+//! Given offered switch keys. When tray_menu_spec. Then C# tray mode ids, gated silentTurbo, no touchpad.
 
-use app_lib::tray::tray_menu_spec;
-
-const MODE_IDS: [&str; 4] = [
-    "mode-silentTurbo",
-    "mode-office",
-    "mode-turbo",
-    "mode-custom",
-];
+use app_lib::tray::{hide_main_on_close, should_hide_on_close, tray_menu_spec};
 
 #[test]
-fn tray_menu_spec_contains_four_mode_ids_and_quit_when_offered_empty() {
-    // Given: no offered quick switches
+fn tray_menu_spec_contains_office_and_gaming_when_offered_empty() {
+    // Given: no offered keys
     let offered: [String; 0] = [];
 
     // When: the pure tray menu spec is built
     let ids = tray_menu_spec(&offered);
 
-    // Then: the four mode ids and quit are present
-    for mode in MODE_IDS {
-        assert!(
-            ids.iter().any(|id| id == mode),
-            "missing {mode}: {ids:?}"
-        );
-    }
+    // Then: office and gaming are always present
+    assert!(
+        ids.iter().any(|id| id == "mode-office"),
+        "missing mode-office: {ids:?}"
+    );
+    assert!(
+        ids.iter().any(|id| id == "mode-gaming"),
+        "missing mode-gaming: {ids:?}"
+    );
     assert!(ids.iter().any(|id| id == "quit"), "missing quit: {ids:?}");
+}
+
+#[test]
+fn tray_menu_spec_omits_silent_turbo_when_not_offered() {
+    // Given: offered list without silentTurbo
+    let offered = ["fanboost".to_owned()];
+
+    // When: the pure tray menu spec is built
+    let ids = tray_menu_spec(&offered);
+
+    // Then: mode-silentTurbo is absent
+    assert!(
+        !ids.iter().any(|id| id == "mode-silentTurbo"),
+        "mode-silentTurbo must be absent when not offered: {ids:?}"
+    );
+}
+
+#[test]
+fn tray_menu_spec_contains_silent_turbo_when_offered() {
+    // Given: offered list includes silentTurbo
+    let offered = ["silentTurbo".to_owned()];
+
+    // When: the pure tray menu spec is built
+    let ids = tray_menu_spec(&offered);
+
+    // Then: mode-silentTurbo is present
+    assert!(
+        ids.iter().any(|id| id == "mode-silentTurbo"),
+        "mode-silentTurbo must be present when offered: {ids:?}"
+    );
+}
+
+#[test]
+fn tray_menu_spec_never_contains_switch_touchpad() {
+    // Given: offered list includes touchpad
+    let offered = ["touchpad".to_owned(), "fanboost".to_owned()];
+
+    // When: the pure tray menu spec is built
+    let ids = tray_menu_spec(&offered);
+
+    // Then: C# tray has no touchpad item
+    assert!(
+        !ids.iter().any(|id| id == "switch-touchpad"),
+        "switch-touchpad must never appear: {ids:?}"
+    );
 }
 
 #[test]
@@ -74,4 +114,34 @@ fn tray_menu_spec_never_contains_switch_lightbar_when_lightbar_offered() {
         !ids.iter().any(|id| id == "switch-lightbar"),
         "lightbar must never appear: {ids:?}"
     );
+}
+
+#[test]
+fn should_hide_on_close_is_true() {
+    // Given: C# SettingsForm_FormClosing cancels close and HideAll
+    // When: the pure close policy is queried
+    let hide = should_hide_on_close();
+
+    // Then: main window close hides to tray instead of exiting
+    assert!(hide);
+}
+
+#[test]
+fn hide_main_on_close_when_label_is_main() {
+    // Given: the main window CloseRequested
+    // When: hide policy is applied to label "main"
+    let hide = hide_main_on_close("main");
+
+    // Then: close is converted to hide
+    assert!(hide);
+}
+
+#[test]
+fn hide_main_on_close_skips_hud_window() {
+    // Given: the overlay HUD window CloseRequested
+    // When: hide policy is applied to label "hud"
+    let hide = hide_main_on_close("hud");
+
+    // Then: overlay_set / HUD close is unchanged
+    assert!(!hide);
 }

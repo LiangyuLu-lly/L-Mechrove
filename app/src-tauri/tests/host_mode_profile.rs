@@ -31,13 +31,15 @@ async fn started_with_profiles() -> Backend {
     backend
 }
 
-fn last_office_idx(publishes: &[(String, Value)]) -> usize {
+fn last_action_idx(publishes: &[(String, Value)], action: &str) -> usize {
     publishes
         .iter()
-        .rposition(|(topic, payload)| {
-            topic == "Fan/Control" && payload["Action"] == "OPERATING_OFFICE_MODE"
-        })
-        .expect("OPERATING_OFFICE_MODE")
+        .rposition(|(topic, payload)| topic == "Fan/Control" && payload["Action"] == action)
+        .unwrap_or_else(|| panic!("{action}"))
+}
+
+fn last_office_idx(publishes: &[(String, Value)]) -> usize {
+    last_action_idx(publishes, "OPERATING_OFFICE_MODE")
 }
 
 #[tokio::test]
@@ -125,4 +127,36 @@ async fn saved_office_cpu_curve_republishes_t0_t15_strings_after_mode_roundtrip(
         );
         assert_eq!(payload[&key], DUTIES[i].to_string());
     }
+}
+
+#[tokio::test]
+async fn saved_custom_pl2_republishes_string_after_mode_roundtrip() {
+    let mut backend = started_with_profiles().await;
+    backend
+        .set_performance_mode("custom")
+        .await
+        .expect("current_mode custom");
+    backend
+        .set_custom_detail("PL2", "45")
+        .await
+        .expect("save PL2");
+    backend
+        .set_performance_mode("office")
+        .await
+        .expect("leave custom");
+    backend
+        .set_performance_mode("custom")
+        .await
+        .expect("return custom");
+    let publishes = backend.recorded_publishes();
+    let after = &publishes[last_action_idx(&publishes, "OPERATING_CUSTOM_MODE") + 1..];
+    assert!(
+        after.iter().any(|(topic, payload)| {
+            topic == "Fan/Control"
+                && payload["Action"] == "SET_OPERATING_MODE_DETAIL"
+                && payload["PL2"].is_string()
+                && payload["PL2"] == "45"
+        }),
+        "stored PL2 string 45 after mode packet: {after:?}"
+    );
 }

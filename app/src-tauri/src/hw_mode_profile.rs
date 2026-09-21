@@ -1,5 +1,6 @@
 //! Per-mode PL1 + CPU/GPU T0–T15 store. JSON under with_profile_dir.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::hw_error::HostError;
 use crate::hw_fan::{apply_fan_curve, FanCurveType};
-use crate::hw_mode_detail::apply_custom_detail;
+use crate::hw_mode_detail::{apply_custom_detail, is_custom_detail_field};
 
 const FILE_NAME: &str = "mode-profiles.json";
 const DETAIL_GAP: Duration = Duration::from_millis(120);
@@ -28,6 +29,8 @@ struct ModeProfile {
         skip_serializing_if = "Option::is_none"
     )]
     cpu_tcc_offset: Option<String>,
+    #[serde(flatten, default)]
+    extra: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -44,6 +47,18 @@ struct ModeProfileFile {
     turbo: Option<ModeProfile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     custom: Option<ModeProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    custom2: Option<ModeProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    custom3: Option<ModeProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    custom4: Option<ModeProfile>,
+    #[serde(
+        rename = "customProfileIndex",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    custom_profile_index: Option<String>,
 }
 
 pub struct ModeProfiles<'a> {
@@ -62,7 +77,9 @@ impl<'a> ModeProfiles<'a> {
     fn load(&self) -> Result<ModeProfileFile, HostError> {
         match std::fs::read_to_string(self.path()) {
             Ok(text) => Ok(serde_json::from_str(&text)?),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(ModeProfileFile::default()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                Ok(ModeProfileFile::default())
+            }
             Err(err) => Err(err.into()),
         }
     }
@@ -101,8 +118,21 @@ impl<'a> ModeProfiles<'a> {
         match field {
             "PL1" => self.put_pl1(mode, value),
             "CpuTccOffset" => self.put_tcc(mode, value),
+            "ProfileIndex" => self.put_profile_index(mode, value),
+            other if is_custom_detail_field(other) => self.patch(mode, |profile| {
+                profile.extra.insert(other.to_owned(), value.to_owned());
+            }),
             _ => Ok(()),
         }
+    }
+
+    fn put_profile_index(&self, mode: &str, value: &str) -> Result<(), HostError> {
+        if mode != "custom" || !matches!(value, "0" | "1" | "2" | "3") {
+            return Ok(());
+        }
+        let mut store = self.load()?;
+        store.custom_profile_index = Some(value.to_owned());
+        self.save(&store)
     }
 
     pub async fn apply(
@@ -116,9 +146,17 @@ impl<'a> ModeProfiles<'a> {
             return Ok(());
         };
         let mut published_detail = false;
-        if let Some(pl1) = profile.pl1.as_deref() {
-            apply_custom_detail(broker, item_support, "PL1", pl1).await?;
-            published_detail = true;
+        published_detail = publish_named(
+            broker,
+            item_support,
+            "PL1",
+            profile.pl1.as_deref(),
+            published_detail,
+        )
+        .await?;
+        for (field, value) in extra_fields(profile) {
+            published_detail =
+                publish_named(broker, item_support, field, Some(value), published_detail).await?;
         }
         if let Some(cpu) = profile.cpu.as_deref() {
             apply_fan_curve(broker, "curve", FanCurveType::Cpu, duties_16(cpu)).await?;
@@ -126,20 +164,18 @@ impl<'a> ModeProfiles<'a> {
         if let Some(gpu) = profile.gpu.as_deref() {
             apply_fan_curve(broker, "curve", FanCurveType::Gpu, duties_16(gpu)).await?;
         }
-        if let Some(tcc) = profile.cpu_tcc_offset.as_deref() {
-            if published_detail {
-                tokio::time::sleep(DETAIL_GAP).await;
-            }
-            apply_custom_detail(broker, item_support, "CpuTccOffset", tcc).await?;
-        }
+        publish_named(
+            broker,
+            item_support,
+            "CpuTccOffset",
+            profile.cpu_tcc_offset.as_deref(),
+            published_detail,
+        )
+        .await?;
         Ok(())
     }
 
-    fn patch(
-        &self,
-        mode: &str,
-        update: impl FnOnce(&mut ModeProfile),
-    ) -> Result<(), HostError> {
+    fn patch(&self, mode: &str, update: impl FnOnce(&mut ModeProfile)) -> Result<(), HostError> {
         let mut store = self.load()?;
         let Some(profile) = slot_mut(&mut store, mode) else {
             return Ok(());
@@ -154,7 +190,7 @@ fn slot_mut<'a>(store: &'a mut ModeProfileFile, mode: &str) -> Option<&'a mut Mo
         "silentTurbo" => &mut store.silent_turbo,
         "office" => &mut store.office,
         "turbo" => &mut store.turbo,
-        "custom" => &mut store.custom,
+        "custom" => custom_slot_mut(store),
         _ => return None,
     };
     Some(slot.get_or_insert_with(ModeProfile::default))
@@ -165,9 +201,72 @@ fn slot_ref<'a>(store: &'a ModeProfileFile, mode: &str) -> Option<&'a ModeProfil
         "silentTurbo" => store.silent_turbo.as_ref(),
         "office" => store.office.as_ref(),
         "turbo" => store.turbo.as_ref(),
-        "custom" => store.custom.as_ref(),
+        "custom" => custom_slot_ref(store),
         _ => None,
     }
+}
+
+fn custom_slot_mut(store: &mut ModeProfileFile) -> &mut Option<ModeProfile> {
+    let index = store.custom_profile_index.clone();
+    match index.as_deref() {
+        Some("1") => &mut store.custom2,
+        Some("2") => &mut store.custom3,
+        Some("3") => &mut store.custom4,
+        _ => &mut store.custom,
+    }
+}
+
+fn custom_slot_ref(store: &ModeProfileFile) -> Option<&ModeProfile> {
+    match store.custom_profile_index.as_deref() {
+        Some("1") => store.custom2.as_ref(),
+        Some("2") => store.custom3.as_ref(),
+        Some("3") => store.custom4.as_ref(),
+        _ => store.custom.as_ref(),
+    }
+}
+
+fn extra_fields(profile: &ModeProfile) -> Vec<(&str, &str)> {
+    let mut gates = Vec::new();
+    let mut rest = Vec::new();
+    for (field, value) in &profile.extra {
+        if !is_custom_detail_field(field) {
+            continue;
+        }
+        if is_gate_field(field) {
+            gates.push((field.as_str(), value.as_str()));
+        } else {
+            rest.push((field.as_str(), value.as_str()));
+        }
+    }
+    gates.extend(rest);
+    gates
+}
+
+fn is_gate_field(field: &str) -> bool {
+    matches!(
+        field,
+        "CpuTccOffsetSwitch"
+            | "GpuDynamicBoostSwitch"
+            | "FanSwitchSpeedEnabled"
+            | "OverClockingSwitch"
+    )
+}
+
+async fn publish_named(
+    broker: &mut FakeBroker,
+    item_support: &ItemSupport,
+    field: &str,
+    value: Option<&str>,
+    published: bool,
+) -> Result<bool, HostError> {
+    let Some(value) = value else {
+        return Ok(published);
+    };
+    if published {
+        tokio::time::sleep(DETAIL_GAP).await;
+    }
+    apply_custom_detail(broker, item_support, field, value).await?;
+    Ok(true)
 }
 
 fn duties_16(duties: &[u8]) -> [u8; 16] {

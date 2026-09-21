@@ -36,6 +36,10 @@ const CANDIDATES: &[&str] = &[
     "batterylogo",
     "gamewhitelist",
     "cpuadvperf",
+    "startup",
+    "taskbarautohide",
+    "transparency",
+    "darktheme",
 ];
 
 /// MQTT *Seen flags that gate SupportsQuickSwitch. Touchpad/OSD/USB ignore these.
@@ -154,6 +158,7 @@ fn supports_quick_switch(key: &str, item_support: &ItemSupport, seen: &SeenFlags
                     "HWOCSupport",
                 ])
         }
+        "startup" | "taskbarautohide" | "transparency" | "darktheme" => true,
         "whisper" => false,
         _ => false,
     }
@@ -288,6 +293,13 @@ impl Backend {
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
+                if key == "startup" {
+                    crate::hw_startup::apply_fake(&mut state.startup, on);
+                    return Ok(());
+                }
+                if crate::hw_shell::apply_fake(&mut state.shell, key, on) {
+                    return Ok(());
+                }
                 let seen = state.seen;
                 apply_quick_switch(
                     &mut state.broker,
@@ -305,7 +317,17 @@ impl Backend {
                     SwitchError::Json(inner) => HostError::Json(inner),
                 })
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real => {
+                if key == "startup" {
+                    return crate::hw_startup::system_apply(on)
+                        .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
+                }
+                if crate::hw_shell::is_shell_key(key) {
+                    return crate::hw_shell::system_apply(key, on)
+                        .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
+                }
+                Err(HostError::RealUnavailable)
+            }
         }
     }
 

@@ -25,6 +25,14 @@ export type HwSnapshot = {
   readonly hdrOn: boolean
   readonly tccAdjustable: boolean
   readonly ocSettings: boolean
+  readonly silentTurbo: boolean
+  readonly dcHzSeen: boolean
+  readonly cpuTempC?: number
+  readonly gpuTempC?: number
+  readonly cpuRpm?: number
+  readonly gpuRpm?: number
+  readonly cpuWatt?: number
+  readonly gpuWatt?: number
 }
 
 export type UpdateDto = {

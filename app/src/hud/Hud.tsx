@@ -1,7 +1,28 @@
 import { useEffect, useState } from "react"
 import { listen } from "@tauri-apps/api/event"
 import type { HwSnapshot } from "../lib/types"
+import { hudLinesFromSnapshot } from "./hudTelemetry"
 import "../App.css"
+
+export type HudPanelProps = {
+  readonly snapshot: HwSnapshot
+}
+
+export function HudPanel({ snapshot }: HudPanelProps) {
+  const lines = hudLinesFromSnapshot(snapshot)
+  return (
+    <div className="hud">
+      {lines.map((line) => (
+        <div key={line.id} className="hud__line">
+          <span>{line.label}</span>
+          <span>{line.tempC}</span>
+          <span>{line.rpm}</span>
+          <span>{line.watt}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const SNAPSHOT_EVENT = "hw_snapshot"
 

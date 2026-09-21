@@ -26,6 +26,7 @@
   --motion-select: 120ms;
   --font-body: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Consolas", "Cascadia Mono", ui-monospace, monospace;
+  --fan-curve-height: 10rem;
 }
 
 :root[data-theme="night"] {
@@ -189,6 +190,30 @@ input:focus-visible {
   align-items: center;
 }
 
+.auto-hz {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--type-body);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.auto-hz input {
+  accent-color: var(--accent);
+}
+
+.calib-combo {
+  min-height: var(--row-title-height);
+  padding: 0 var(--space-xs);
+  font-size: var(--type-caption);
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-segmented);
+}
+
 .row__value {
   margin-left: var(--space-sm);
   font-family: var(--font-mono);
@@ -301,6 +326,23 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
+}
+
+.more-switches__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.more-switches__group + .more-switches__group {
+  margin-top: var(--space-md);
+}
+
+.more-switches__group-label {
+  margin: 0;
+  font-size: var(--type-caption);
+  font-weight: 400;
+  color: var(--muted);
 }
 
 .settings-dialog {
@@ -520,8 +562,16 @@ input:focus-visible {
   border: 1px solid var(--border);
 }
 
+.settings-dialog__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  width: 100%;
+}
+
 .settings-dialog__action {
   min-height: var(--row-control-height);
+  width: 100%;
   padding: 0 var(--space-sm);
   font-size: var(--type-body);
   color: var(--text);

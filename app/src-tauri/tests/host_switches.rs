@@ -43,8 +43,8 @@ fn touchpad_always_offered_on_empty_itemsupport() {
 
 #[test]
 fn parses_tochpadenable_not_touchpadenable() {
-    let from_firmware = parse_device_switch_item_status(r#"{"TochpadEnable":true}"#)
-        .expect("firmware misspelling");
+    let from_firmware =
+        parse_device_switch_item_status(r#"{"TochpadEnable":true}"#).expect("firmware misspelling");
     assert_eq!(from_firmware.touchpad, Some(true));
 
     let correct_spelling = parse_device_switch_item_status(r#"{"TouchPadEnable":true}"#)

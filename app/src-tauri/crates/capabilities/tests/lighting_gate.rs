@@ -9,7 +9,9 @@ use capabilities::{
 use serde::Deserialize;
 
 fn golden_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("_golden")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("_golden")
 }
 
 fn read_golden(name: &str) -> String {
@@ -73,7 +75,10 @@ fn lighting_visibility_hides_logo_when_itemsupport_false() {
 #[test]
 fn lighting_visibility_shows_logo_when_logo_lightbar_alias_true() {
     let visibility = visibility_from_golden("item_support_logo_true.json");
-    assert!(visibility.logo, "LogoLightbarSupport=1 is a LogoLight alias");
+    assert!(
+        visibility.logo,
+        "LogoLightbarSupport=1 is a LogoLight alias"
+    );
 }
 
 #[test]
@@ -116,7 +121,13 @@ fn feature_matrix_fail_closed_golden_bits_are_unsupported_when_omitted() {
 
 #[test]
 fn goldens_live_beside_crate_not_inside_it() {
-    assert!(Path::new(&golden_dir()).join("item_support_g16_no_lightbar.json").is_file());
-    assert!(Path::new(&golden_dir()).join("item_support_logo_true.json").is_file());
-    assert!(Path::new(&golden_dir()).join("feature_matrix_fail_closed.json").is_file());
+    assert!(Path::new(&golden_dir())
+        .join("item_support_g16_no_lightbar.json")
+        .is_file());
+    assert!(Path::new(&golden_dir())
+        .join("item_support_logo_true.json")
+        .is_file());
+    assert!(Path::new(&golden_dir())
+        .join("feature_matrix_fail_closed.json")
+        .is_file());
 }

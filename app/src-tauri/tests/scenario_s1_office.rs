@@ -22,9 +22,8 @@ async fn s1_office_publishes_fan_and_lchwoc_after_handshake() {
         "missing office Fan packet: {pubs:?}"
     );
     assert!(
-        pubs.iter().any(|(topic, payload)| {
-            topic == "LCHWOC/Control" && payload["IsNormalRun"] == 0
-        }),
+        pubs.iter()
+            .any(|(topic, payload)| { topic == "LCHWOC/Control" && payload["IsNormalRun"] == 0 }),
         "missing office LCHWOC packet: {pubs:?}"
     );
     assert!(

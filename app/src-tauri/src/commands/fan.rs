@@ -19,7 +19,10 @@ pub async fn set_fan_curve(
 #[tauri::command]
 pub async fn set_fan_boost(on: bool, state: State<'_, AppState>) -> Result<(), String> {
     let mut backend = state.backend.lock().await;
-    backend.set_fan_boost(on).await.map_err(|err| err.to_string())
+    backend
+        .set_fan_boost(on)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

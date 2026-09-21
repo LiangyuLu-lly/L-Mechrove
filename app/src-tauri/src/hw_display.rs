@@ -46,10 +46,35 @@ impl BrightnessQueue {
     }
 }
 
+#[derive(Serialize)]
+struct DcHzPayload {
+    #[serde(rename = "Action")]
+    action: &'static str,
+    #[serde(rename = "Enable")]
+    enable: bool,
+}
+
 pub async fn apply_display_hz(broker: &mut FakeBroker, hz: u32) -> Result<(), HostError> {
     let payload = HzPayload {
         action: "GPU_HZSETTING",
         hz: hz.to_string(),
+    };
+    let bytes = serde_json::to_vec(&payload)?;
+    broker.publish(topics::SETTING_CONTROL, &bytes).await?;
+    Ok(())
+}
+
+pub async fn apply_auto_refresh_rate(
+    broker: &mut FakeBroker,
+    dc_hz_seen: bool,
+    on: bool,
+) -> Result<(), HostError> {
+    if !dc_hz_seen {
+        return Err(HostError::DisplayDenied("GPU_DC_HZ".to_owned()));
+    }
+    let payload = DcHzPayload {
+        action: "GPU_DC_HZ",
+        enable: on,
     };
     let bytes = serde_json::to_vec(&payload)?;
     broker.publish(topics::SETTING_CONTROL, &bytes).await?;
@@ -112,6 +137,24 @@ impl Backend {
             state.brightness_queue = BrightnessQueue::new(debounce);
         }
         self
+    }
+
+    pub fn with_dc_hz_seen(mut self, seen: bool) -> Self {
+        if let Self::Fake { state } = &mut self {
+            state.dc_hz_seen = seen;
+        }
+        self
+    }
+
+    pub async fn set_auto_refresh_rate(&mut self, on: bool) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state.ensure_writable()?;
+                let seen = state.dc_hz_seen;
+                apply_auto_refresh_rate(&mut state.broker, seen, on).await
+            }
+            Self::Real => Err(HostError::RealUnavailable),
+        }
     }
 
     pub async fn set_display_hz(&mut self, hz: &str) -> Result<(), HostError> {

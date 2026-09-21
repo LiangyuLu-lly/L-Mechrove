@@ -6,13 +6,13 @@ import {
   setCustomDetail,
   setLocalDimming,
   setMonitorOff,
+  setOfficialIsolation,
   setOverdrive,
 } from "../lib/api"
 
 const THEME_OPTIONS = [
   { value: "night", label: "夜间" },
   { value: "day", label: "日间" },
-  { value: "system", label: "跟随系统" },
 ] as const
 
 type ThemeMode = (typeof THEME_OPTIONS)[number]["value"]
@@ -50,11 +50,6 @@ async function swallowHostError(run: () => Promise<unknown>): Promise<void> {
 }
 
 function applyTheme(mode: ThemeMode): void {
-  if (mode === "system") {
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches
-    document.documentElement.dataset.theme = dark ? "night" : "day"
-    return
-  }
   document.documentElement.dataset.theme = mode
 }
 
@@ -65,6 +60,7 @@ export function SettingsDialog({ hdrOn, onClose }: SettingsDialogProps) {
   )
   const [overdrive, setOverdriveOn] = useState<OnOff>("off")
   const [localDimming, setLocalDimmingOn] = useState<OnOff>("off")
+  const [isolated, setIsolated] = useState(false)
 
   function onTheme(next: ThemeMode): void {
     setTheme(next)
@@ -84,6 +80,11 @@ export function SettingsDialog({ hdrOn, onClose }: SettingsDialogProps) {
   function onLocalDimming(next: OnOff): void {
     setLocalDimmingOn(next)
     void swallowHostError(() => setLocalDimming(next === "on"))
+  }
+
+  function onIsolation(on: boolean): void {
+    setIsolated(on)
+    void swallowHostError(() => setOfficialIsolation(on))
   }
 
   return (
@@ -187,7 +188,28 @@ export function SettingsDialog({ hdrOn, onClose }: SettingsDialogProps) {
               立即熄屏
             </button>
           </Row>
-          <Row name="官方控制台" status="未隔离" />
+          <Row name="官方控制台" status={isolated ? "已隔离" : "未隔离"}>
+            <div className="settings-dialog__actions">
+              <button
+                type="button"
+                className="settings-dialog__action"
+                onClick={() => {
+                  onIsolation(true)
+                }}
+              >
+                隔离官方界面与托盘
+              </button>
+              <button
+                type="button"
+                className="settings-dialog__action"
+                onClick={() => {
+                  onIsolation(false)
+                }}
+              >
+                恢复官方控制台
+              </button>
+            </div>
+          </Row>
         </section>
       </div>
     </div>

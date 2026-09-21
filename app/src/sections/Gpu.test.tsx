@@ -24,9 +24,20 @@ describe("Gpu", () => {
     expect(screen.queryByText("自动")).toBeNull()
   })
 
-  it("invokes set_gpu_route with TOGGLE_ON when 独显 is clicked", () => {
+  it("renders 集显/标准/直连 given igpu/standard/dgpu, not raw action names", () => {
+    render(<Gpu actions={["igpu", "standard", "dgpu"]} />)
+    expect(screen.getByRole("radio", { name: "集显" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "标准" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "直连" })).toBeTruthy()
+    expect(screen.queryByRole("radio", { name: "igpu" })).toBeNull()
+    expect(screen.queryByRole("radio", { name: "standard" })).toBeNull()
+    expect(screen.queryByRole("radio", { name: "dgpu" })).toBeNull()
+    expect(screen.queryByText("自动")).toBeNull()
+  })
+
+  it("invokes set_gpu_route with TOGGLE_ON when 直连 is clicked", () => {
     render(<Gpu actions={["DGPU_DIRECT_CONNECT_TOGGLE_ON"]} />)
-    fireEvent.click(screen.getByRole("radio", { name: "独显" }))
+    fireEvent.click(screen.getByRole("radio", { name: "直连" }))
     expect(invoke).toHaveBeenCalledWith("set_gpu_route", {
       action: "DGPU_DIRECT_CONNECT_TOGGLE_ON",
     })
@@ -42,6 +53,6 @@ describe("Gpu", () => {
       />,
     )
     expect(screen.queryByText("自动")).toBeNull()
-    expect(screen.getByRole("radio", { name: "独显" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "直连" })).toBeTruthy()
   })
 })

@@ -11,7 +11,9 @@ use hid_kb::FakeHid;
 use crate::hw_ble::FakeBle;
 use crate::hw_display::BrightnessQueue;
 use crate::hw_error::HostError;
+use crate::hw_shell::RecordingShell;
 use crate::hw_snapshot::MqttStatus;
+use crate::hw_startup::RecordingScheduler;
 use crate::hw_switches::SeenFlags;
 use crate::hw_wmi::FakeWmi;
 
@@ -35,6 +37,16 @@ pub struct FakeState {
     pub(crate) seen: SeenFlags,
     pub(crate) lc_mqtt_disconnected: bool,
     pub(crate) brightness_queue: BrightnessQueue,
+    pub(crate) startup: RecordingScheduler,
+    pub(crate) shell: RecordingShell,
+    pub(crate) dc_hz_seen: bool,
+    pub(crate) cpu_temp_c: Option<f64>,
+    pub(crate) gpu_temp_c: Option<f64>,
+    pub(crate) cpu_rpm: Option<i64>,
+    pub(crate) gpu_rpm: Option<i64>,
+    pub(crate) cpu_watt: Option<f64>,
+    pub(crate) gpu_watt: Option<f64>,
+    pub(crate) official_isolation: Option<bool>,
 }
 
 impl FakeState {
@@ -59,6 +71,16 @@ impl FakeState {
             seen: SeenFlags::default(),
             lc_mqtt_disconnected: false,
             brightness_queue: BrightnessQueue::new(Duration::from_millis(120)),
+            startup: RecordingScheduler::default(),
+            shell: RecordingShell::default(),
+            dc_hz_seen: false,
+            cpu_temp_c: Some(78.0),
+            gpu_temp_c: Some(82.0),
+            cpu_rpm: Some(2100),
+            gpu_rpm: Some(2100),
+            cpu_watt: Some(45.0),
+            gpu_watt: Some(80.0),
+            official_isolation: None,
         }
     }
 

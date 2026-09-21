@@ -253,3 +253,95 @@ async fn set_light_effect_persists_lightbar_cfg_under_override_dir() {
         "persisted effect, got {cfg:?}"
     );
 }
+
+#[tokio::test]
+async fn set_light_power_publishes_hidlightbar_ctrl_when_lightbar_supported() {
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1}"#).expect("parse");
+    backend.start().await.expect("handshake");
+    backend
+        .set_light_power("lightbar", true)
+        .await
+        .expect("LightbarSupport must allow power");
+    let publishes = backend.recorded_publishes();
+    assert!(
+        publishes.iter().any(|(topic, payload)| {
+            topic == "HidLightbar/Ctrl"
+                && payload["function"] == "SetPower"
+                && payload["powerstatus"] == 1
+        }),
+        "HidLightbar/Ctrl SetPower powerstatus=1 missing: {publishes:?}"
+    );
+}
+
+#[tokio::test]
+async fn set_light_power_rejects_lightbar_when_g16_itemsupport_hides_it() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/_golden/item_support_g16_no_lightbar.json");
+    let json = fs::read_to_string(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+    let mut backend = Backend::fake_from_json(&json).expect("g16 golden");
+    backend.start().await.expect("handshake");
+    let err = backend
+        .set_light_power("lightbar", true)
+        .await
+        .expect_err("G16 must deny lightbar power");
+    assert!(
+        err.to_string().contains("lighting"),
+        "denied error, got {err}"
+    );
+    let publishes = backend.recorded_publishes();
+    assert!(
+        !publishes.iter().any(|(topic, payload)| {
+            topic == "HidLightbar/Ctrl" && payload["function"] == "SetPower"
+        }),
+        "G16 must not publish HidLightbar/Ctrl SetPower: {publishes:?}"
+    );
+}
+
+#[tokio::test]
+async fn set_light_effect_publishes_official_light_speed_strings() {
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1}"#).expect("parse");
+    backend.start().await.expect("handshake");
+    backend
+        .set_light_effect("lightbar", "Single")
+        .await
+        .expect("LightbarSupport must allow write");
+    let publishes = backend.recorded_publishes();
+    let payload = publishes
+        .iter()
+        .find(|(topic, body)| topic == "HidLightbar/Ctrl" && body["function"] == "SetEffectALL")
+        .map(|(_, body)| body)
+        .expect("HidLightbar/Ctrl SetEffectALL missing");
+    assert_eq!(
+        payload["light"], "4",
+        "Official light is a string: {payload}"
+    );
+    assert_eq!(
+        payload["speed"], "1",
+        "Official speed is a string: {payload}"
+    );
+}
+
+#[tokio::test]
+async fn set_light_effect_uses_caller_light_speed_color_strings() {
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1}"#).expect("parse");
+    backend.start().await.expect("handshake");
+    backend
+        .set_light_params("lightbar", "Single", Some("2"), Some("3"), Some("#FF0000"))
+        .await
+        .expect("LightbarSupport must allow write");
+    let publishes = backend.recorded_publishes();
+    let payload = publishes
+        .iter()
+        .find(|(topic, body)| topic == "HidLightbar/Ctrl" && body["function"] == "SetEffectALL")
+        .map(|(_, body)| body)
+        .expect("HidLightbar/Ctrl SetEffectALL missing");
+    assert_eq!(payload["light"], "2", "caller light string: {payload}");
+    assert_eq!(payload["speed"], "3", "caller speed string: {payload}");
+    assert_eq!(
+        payload["color"]["ColorBlocks"], 1,
+        "Single uses one block: {payload}"
+    );
+    assert_eq!(payload["color"]["ColorBuffer"][0]["R"], 255);
+    assert_eq!(payload["color"]["ColorBuffer"][0]["G"], 0);
+    assert_eq!(payload["color"]["ColorBuffer"][0]["B"], 0);
+}

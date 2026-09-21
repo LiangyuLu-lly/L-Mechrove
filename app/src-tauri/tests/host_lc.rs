@@ -85,7 +85,11 @@ async fn fanctrl_is_string() {
             .await
             .unwrap_or_else(|err| panic!("FanCtrl {index} must publish, got {err}"));
         let writes = lc_action_writes(&broker, "LC_FanCtrl");
-        assert_eq!(writes.len(), 1, "one LC_FanCtrl for {index}, got {writes:?}");
+        assert_eq!(
+            writes.len(),
+            1,
+            "one LC_FanCtrl for {index}, got {writes:?}"
+        );
         assert!(
             writes[0]["FanCtrl"].is_string(),
             "FanCtrl must be a JSON string: {}",
@@ -118,10 +122,7 @@ async fn ble_records_when_capability_true_and_mqtt_lc_disconnected() {
 async fn backend_set_lc_pump_after_start() {
     let mut backend = Backend::fake_from_json(r#"{"LiquidCoolingSupport":1}"#).expect("parse");
     backend.start().await.expect("start");
-    backend
-        .set_lc_pump(1)
-        .await
-        .expect("Backend::set_lc_pump");
+    backend.set_lc_pump(1).await.expect("Backend::set_lc_pump");
     let publishes = backend.recorded_publishes();
     let pump = publishes.iter().find(|(topic, payload)| {
         topic == BT_LC_CONTROL

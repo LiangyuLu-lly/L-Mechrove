@@ -1,0 +1,41 @@
+.fan-curve {
+  display: block;
+  width: 100%;
+  height: var(--fan-curve-height);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  touch-action: none;
+}
+
+.fan-curve__grid {
+  fill: none;
+  stroke: var(--track);
+  stroke-dasharray: 2 2;
+}
+
+.fan-curve__axis {
+  fill: none;
+  stroke: var(--border);
+}
+
+.fan-curve__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.fan-curve__point {
+  fill: var(--accent);
+  cursor: ns-resize;
+}
+
+.fan-curve__point:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.fan-curve__tick {
+  fill: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+}

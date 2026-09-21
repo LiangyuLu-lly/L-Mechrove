@@ -10,7 +10,10 @@ use capabilities::{
 use serde::Deserialize;
 
 fn golden_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("_golden").join("gpu")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("_golden")
+        .join("gpu")
 }
 
 fn read_golden(name: &str) -> String {
@@ -50,7 +53,9 @@ fn gate(generation: DgpuGeneration, three_mode: bool, hot_swap: bool) -> GpuRout
 }
 
 fn offered(generation: DgpuGeneration, three_mode: bool, hot_swap: bool) -> Vec<&'static str> {
-    gate(generation, three_mode, hot_swap).offered_actions().to_vec()
+    gate(generation, three_mode, hot_swap)
+        .offered_actions()
+        .to_vec()
 }
 
 fn parse_item_support(json: &str) -> ItemSupport {
@@ -155,32 +160,42 @@ fn gen50_keeps_igpu_only_when_three_mode_false() {
 
 #[test]
 fn hot_swap_offered_only_when_gen50_and_both_itemsupport_flags() {
-    let both = parse_item_support(
-        r#"{"GpuHotSwapSwitchSupport":1,"lgpuHotSwapSwitchStatus":1}"#,
-    );
+    let both = parse_item_support(r#"{"GpuHotSwapSwitchSupport":1,"lgpuHotSwapSwitchStatus":1}"#);
     let switch_only = parse_item_support(r#"{"GpuHotSwapSwitchSupport":1}"#);
     let status_only = parse_item_support(r#"{"lgpuHotSwapSwitchStatus":1}"#);
-    let both_false = parse_item_support(
-        r#"{"GpuHotSwapSwitchSupport":0,"lgpuHotSwapSwitchStatus":0}"#,
-    );
+    let both_false =
+        parse_item_support(r#"{"GpuHotSwapSwitchSupport":0,"lgpuHotSwapSwitchStatus":0}"#);
 
-    let offered_both = GpuRouteGate::from_matrix(DgpuGeneration::Gen50, true, &FeatureMatrix::from_values(&both));
+    let offered_both = GpuRouteGate::from_matrix(
+        DgpuGeneration::Gen50,
+        true,
+        &FeatureMatrix::from_values(&both),
+    );
     assert!(offered_both.allows(HOT_SWAP_ON));
     assert!(offered_both.allows(HOT_SWAP_OFF));
 
     for map in [&switch_only, &status_only, &both_false] {
-        let route = GpuRouteGate::from_matrix(DgpuGeneration::Gen50, true, &FeatureMatrix::from_values(map));
-        assert!(!route.allows(HOT_SWAP_ON), "partial/false flags must not offer hot-swap");
+        let route = GpuRouteGate::from_matrix(
+            DgpuGeneration::Gen50,
+            true,
+            &FeatureMatrix::from_values(map),
+        );
+        assert!(
+            !route.allows(HOT_SWAP_ON),
+            "partial/false flags must not offer hot-swap"
+        );
         assert!(!route.allows(HOT_SWAP_OFF));
     }
 }
 
 #[test]
 fn gen40_never_offers_hot_swap_when_itemsupport_flags_true() {
-    let both = parse_item_support(
-        r#"{"GpuHotSwapSwitchSupport":1,"lgpuHotSwapSwitchStatus":1}"#,
+    let both = parse_item_support(r#"{"GpuHotSwapSwitchSupport":1,"lgpuHotSwapSwitchStatus":1}"#);
+    let route = GpuRouteGate::from_matrix(
+        DgpuGeneration::Gen40,
+        true,
+        &FeatureMatrix::from_values(&both),
     );
-    let route = GpuRouteGate::from_matrix(DgpuGeneration::Gen40, true, &FeatureMatrix::from_values(&both));
     assert!(!route.allows(HOT_SWAP_ON));
     assert!(!route.allows(HOT_SWAP_OFF));
     assert!(route.allows(IGPU_ONLY_ON));

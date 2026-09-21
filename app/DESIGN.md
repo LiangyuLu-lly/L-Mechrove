@@ -88,6 +88,7 @@ Base 4px. `UiVisualStyle.Space` unchanged.
 | `--space-md` | 12 | `0.75rem` | collapse group gap + footer pad-x |
 | `--space-lg` | 16 | `1rem` | page inset-x |
 | `--space-xl` | 24 | `1.5rem` | collapse body indent |
+| `--fan-curve-height` | 160 | `10rem` | fan curve plot height |
 
 - Shell: `width: 420px` (fixed). Height follows content; inner scroll. Max height = work area − 40px.
 - No product breakpoints. This is a desktop instrument, not a responsive site.
@@ -95,6 +96,7 @@ Base 4px. `UiVisualStyle.Space` unchanged.
 - Collapse groups: 1px `--border` full-width; default **collapsed** (液冷 / 灯光 / 更多开关); remember last.
 - Segmented radius 8px; 3px inset; selected = `--accent` + `--accent-text` + 600.
 - Slider: 4px `--track`, `--accent` fill, 14px thumb (white + 3px accent ring).
+- Fan curve plot: height `--fan-curve-height` (`10rem` / 160px).
 - Switch: 38×20 track (`--input` + `--border`); on = `--accent` + white thumb.
 - Footer: `--surface` + top 1px `--border`; height 51px; ghost keys 46×36; hover `--surface-raised`.
 - Density 7/10. Values right-aligned, Consolas, `--muted`.
@@ -123,6 +125,14 @@ Base 4px. `UiVisualStyle.Space` unchanged.
 - States: default, hover, dragging (follow pointer, no spring), disabled, focus-visible
 - Motion: 100ms hover; drag is 0ms
 
+### FanCurve
+
+- Structure: SVG polyline of 16 T0–T15 duty points; plot face `--surface-raised` + 1px `--border`; stroke `--accent`; numeric T0–T15 inputs stay the type-in path (same duties state)
+- States: default, dragging (vertical only, follow pointer, 0ms), focus-visible 1px `--accent`
+- A11y: each point `role="slider"` `aria-label="{CPU|GPU} T{n} 转速"` `aria-valuemin="0"` `aria-valuemax="100"` `aria-valuenow`; ArrowUp/Right +1, ArrowDown/Left −1, clamped 0–100
+- Motion: none other than drag follow (0ms). No gradient, glow, or fill under the polyline
+- Layout: full row width, height `--fan-curve-height`; axis ticks Consolas `--muted` `--type-caption`
+
 ### CollapseGroup
 
 - Structure: ▸/▾ + name + muted summary; body indent `--space-xl`
@@ -139,7 +149,7 @@ Left: version `--type-caption` `--muted`. Right, equal columns, locked order:
 | 2 | 设置 | Gear | settings dialog (470px, root §0.5) |
 | 3 | 更新 | Refresh | `updates_check` |
 | 4 | **诊断** | Package | `diagnostics_export` — accessible name 导出诊断包 |
-| 5 | 赞助 | Heart (stroke, not emoji) | donate |
+| 5 | 赞助 | Heart (stroke, not emoji) | donate — opens DonateDialog (title 赞助支持). No network. |
 | 6 | 退出 | Close | quit / tray |
 
 WinForms `BuildFooterV2` TLP currently places 赞助 before 诊断. **Tauri follows this table** (诊断 is 4th key). Ghost buttons: no border, ImageAboveText, `--type-caption`, hover `--surface-raised`.
@@ -147,6 +157,19 @@ WinForms `BuildFooterV2` TLP currently places 赞助 before 诊断. **Tauri foll
 ### SettingsDialog
 
 - Width 470px. Zones: 外观 / 显示 / 系统. Overlay toggle lives only on footer 悬浮窗.
+- 外观 maps C# 界面: theme **日间 / 夜间 only** (no 跟随系统). Language combo **中文 / English**; persist `lmechrevo.language` (`zh-CN` / `en`); `window.confirm` restart prompt.
+- 系统: 官方控制台 status + **隔离官方界面与托盘** / **恢复官方控制台**. Host `set_official_isolation` (Win32 record, never MQTT, never kill L-Mechrevo).
+
+### DonateDialog
+
+- Overlay chrome = SettingsDialog (`--surface` + 1px `--border`, width `--settings-width`).
+- Title **赞助支持**. Body: 感谢支持 L-Mechrevo / 扫码赞助，支持持续开发. No QR fetch, no network.
+- States: open, close (scrim click / 关闭). Motion: none.
+
+### FirstRun
+
+- **稍后**: dismiss only.
+- **前往系统页**: dismiss + open SettingsDialog (not the same as 稍后).
 
 ---
 

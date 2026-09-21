@@ -1,3 +1,10 @@
+.lighting-caption {
+  margin: 0;
+  font-size: var(--type-caption);
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .lighting-select {
   width: 100%;
   min-height: var(--row-control-height);
@@ -14,7 +21,76 @@
   background: var(--surface-raised);
 }
 
-.lighting-select:focus-visible {
+.lighting-select:focus-visible,
+.lighting-power:focus-visible,
+.lighting-edit:focus-visible,
+.lighting-color:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 0;
+}
+
+.lighting-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.lighting-controls .lighting-select,
+.lighting-controls .segmented {
+  flex: 1;
+  min-width: 0;
+}
+
+.lighting-power {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.lighting-edit {
+  flex-shrink: 0;
+  min-height: var(--row-control-height);
+  padding: 0 var(--space-sm);
+  font-family: var(--font-body);
+  font-size: var(--type-body);
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+
+.lighting-edit:hover {
+  background: var(--input);
+}
+
+.lighting-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: 100%;
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.lighting-editor__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.lighting-editor__label {
+  flex-shrink: 0;
+  font-size: var(--type-body);
+  color: var(--muted);
+}
+
+.lighting-color {
+  width: var(--row-control-height);
+  height: var(--row-control-height);
+  padding: 0;
+  background: var(--input);
+  border: 1px solid var(--border);
 }

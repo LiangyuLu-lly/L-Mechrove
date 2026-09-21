@@ -42,4 +42,22 @@ describe("SettingsDialog", () => {
       mode: "COLOR_CALIBRATION_ON_SRGB",
     })
   })
+
+  it("shows 隔离官方界面与托盘 and omits 跟随系统", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    expect(
+      screen.getByRole("button", { name: "隔离官方界面与托盘" }),
+    ).toBeTruthy()
+    expect(screen.getByRole("button", { name: "恢复官方控制台" })).toBeTruthy()
+    expect(screen.queryByRole("radio", { name: "跟随系统" })).toBeNull()
+    expect(screen.queryByText("跟随系统")).toBeNull()
+  })
+
+  it("invokes set_official_isolation true when 隔离官方界面与托盘 is clicked", () => {
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole("button", { name: "隔离官方界面与托盘" }))
+    expect(invoke).toHaveBeenCalledWith("set_official_isolation", {
+      isolate: true,
+    })
+  })
 })

@@ -15,6 +15,10 @@ fn tcc_adjustable(item_support: &ItemSupport) -> bool {
     ])
 }
 
+fn silent_turbo(item_support: &ItemSupport) -> bool {
+    item_support.is_truthy("IsTurboSubModeSupport")
+}
+
 /// GCU connection pill. Serialized as a PascalCase string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MqttStatus {
@@ -46,6 +50,22 @@ pub struct HwSnapshot {
     pub tcc_adjustable: bool,
     #[serde(rename = "ocSettings")]
     pub oc_settings: bool,
+    #[serde(rename = "silentTurbo")]
+    pub silent_turbo: bool,
+    #[serde(rename = "dcHzSeen", default)]
+    pub dc_hz_seen: bool,
+    #[serde(rename = "cpuTempC", skip_serializing_if = "Option::is_none")]
+    pub cpu_temp_c: Option<f64>,
+    #[serde(rename = "gpuTempC", skip_serializing_if = "Option::is_none")]
+    pub gpu_temp_c: Option<f64>,
+    #[serde(rename = "cpuRpm", skip_serializing_if = "Option::is_none")]
+    pub cpu_rpm: Option<i64>,
+    #[serde(rename = "gpuRpm", skip_serializing_if = "Option::is_none")]
+    pub gpu_rpm: Option<i64>,
+    #[serde(rename = "cpuWatt", skip_serializing_if = "Option::is_none")]
+    pub cpu_watt: Option<f64>,
+    #[serde(rename = "gpuWatt", skip_serializing_if = "Option::is_none")]
+    pub gpu_watt: Option<f64>,
 }
 
 impl Backend {
@@ -71,6 +91,14 @@ impl Backend {
                 hdr_on: state.hdr_on,
                 tcc_adjustable: tcc_adjustable(&state.item_support),
                 oc_settings: state.item_support.is_truthy("OcSettingsSupport"),
+                silent_turbo: silent_turbo(&state.item_support),
+                dc_hz_seen: state.dc_hz_seen,
+                cpu_temp_c: state.cpu_temp_c,
+                gpu_temp_c: state.gpu_temp_c,
+                cpu_rpm: state.cpu_rpm,
+                gpu_rpm: state.gpu_rpm,
+                cpu_watt: state.cpu_watt,
+                gpu_watt: state.gpu_watt,
             },
             Self::Real => HwSnapshot {
                 mqtt: MqttStatus::Error,
@@ -84,6 +112,14 @@ impl Backend {
                 hdr_on: false,
                 tcc_adjustable: false,
                 oc_settings: false,
+                silent_turbo: false,
+                dc_hz_seen: false,
+                cpu_temp_c: None,
+                gpu_temp_c: None,
+                cpu_rpm: None,
+                gpu_rpm: None,
+                cpu_watt: None,
+                gpu_watt: None,
             },
         }
     }

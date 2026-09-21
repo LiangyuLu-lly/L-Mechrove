@@ -23,6 +23,8 @@ export const VITE_FALLBACK_SNAPSHOT: HwSnapshot = {
   hdrOn: false,
   tccAdjustable: false,
   ocSettings: false,
+  silentTurbo: false,
+  dcHzSeen: false,
 }
 
 export async function hwSnapshot(): Promise<HwSnapshot> {
@@ -48,12 +50,36 @@ export function setGpuRoute(action: string): Promise<void> {
   return invoke("set_gpu_route", { action })
 }
 
-export function setLightEffect(channel: string, effect: string): Promise<void> {
-  return invoke("set_light_effect", { channel, effect })
+export type LightEffectParams = {
+  readonly light?: string
+  readonly speed?: string
+  readonly color?: string
+}
+
+export function setLightEffect(
+  channel: string,
+  effect: string,
+  params?: LightEffectParams,
+): Promise<void> {
+  return invoke("set_light_effect", {
+    channel,
+    effect,
+    ...(params?.light !== undefined ? { light: params.light } : {}),
+    ...(params?.speed !== undefined ? { speed: params.speed } : {}),
+    ...(params?.color !== undefined ? { color: params.color } : {}),
+  })
+}
+
+export function setLightPower(channel: string, on: boolean): Promise<void> {
+  return invoke("set_light_power", { channel, on })
 }
 
 export function setDisplayHz(hz: string): Promise<void> {
   return invoke("set_display_hz", { hz })
+}
+
+export function setAutoRefreshRate(on: boolean): Promise<void> {
+  return invoke("set_auto_refresh_rate", { on })
 }
 
 export function setBrightness(percent: number): Promise<void> {
@@ -118,4 +144,8 @@ export function diagnosticsExport(): Promise<void> {
 
 export function appQuit(): Promise<void> {
   return invoke("app_quit")
+}
+
+export function setOfficialIsolation(on: boolean): Promise<void> {
+  return invoke("set_official_isolation", { isolate: on })
 }

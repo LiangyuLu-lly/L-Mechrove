@@ -58,15 +58,21 @@ pub struct FeatureMatrix {
 impl FeatureMatrix {
     pub const fn definition(bit: FeatureBit) -> FeatureBitDefinition {
         match bit {
-            FeatureBit::AcRecoverySwitch => {
-                def(bit, "AcRecoverySwitchSupport", FeatureMissingPolicy::VendorConstantOn)
-            }
-            FeatureBit::Keyboard => {
-                def(bit, "KeyboardSupport", FeatureMissingPolicy::VendorConstantOn)
-            }
-            FeatureBit::SystemMonitor => {
-                def(bit, "SystemMonitorSupport", FeatureMissingPolicy::VendorConstantOn)
-            }
+            FeatureBit::AcRecoverySwitch => def(
+                bit,
+                "AcRecoverySwitchSupport",
+                FeatureMissingPolicy::VendorConstantOn,
+            ),
+            FeatureBit::Keyboard => def(
+                bit,
+                "KeyboardSupport",
+                FeatureMissingPolicy::VendorConstantOn,
+            ),
+            FeatureBit::SystemMonitor => def(
+                bit,
+                "SystemMonitorSupport",
+                FeatureMissingPolicy::VendorConstantOn,
+            ),
             FeatureBit::FanSettings => def(
                 bit,
                 "FanSettingsSupport",
@@ -77,16 +83,24 @@ impl FeatureMatrix {
                 "OcSettingsSupport",
                 FeatureMissingPolicy::VendorConstantNonCommercial,
             ),
-            FeatureBit::AcRecoveryBios => {
-                def(bit, "AcRecoverySwitchBiosSupport", FeatureMissingPolicy::FailClosed)
+            FeatureBit::AcRecoveryBios => def(
+                bit,
+                "AcRecoverySwitchBiosSupport",
+                FeatureMissingPolicy::FailClosed,
+            ),
+            FeatureBit::ColorCalibration => def(
+                bit,
+                "ColorCalibrationSupport",
+                FeatureMissingPolicy::FailClosed,
+            ),
+            FeatureBit::DgpuDirect => def(
+                bit,
+                "DGpuDirectConnectionSupport",
+                FeatureMissingPolicy::FailClosed,
+            ),
+            FeatureBit::FanBoost => {
+                def(bit, "FanBoostBtnSupport", FeatureMissingPolicy::FailClosed)
             }
-            FeatureBit::ColorCalibration => {
-                def(bit, "ColorCalibrationSupport", FeatureMissingPolicy::FailClosed)
-            }
-            FeatureBit::DgpuDirect => {
-                def(bit, "DGpuDirectConnectionSupport", FeatureMissingPolicy::FailClosed)
-            }
-            FeatureBit::FanBoost => def(bit, "FanBoostBtnSupport", FeatureMissingPolicy::FailClosed),
             FeatureBit::AmdPlatform => def(bit, "IsAMDPlatform", FeatureMissingPolicy::FailClosed),
             FeatureBit::NvidiaGpu => def(bit, "IsNvGpu", FeatureMissingPolicy::FailClosed),
             FeatureBit::Lightbar => def(bit, "LightbarSupport", FeatureMissingPolicy::FailClosed),
@@ -94,27 +108,39 @@ impl FeatureMatrix {
                 def(bit, "RGBLightbarSupport", FeatureMissingPolicy::FailClosed)
             }
             FeatureBit::Numpad => def(bit, "NumPadSupport", FeatureMissingPolicy::FailClosed),
-            FeatureBit::LiquidCooling => {
-                def(bit, "LiquidCoolingSupport", FeatureMissingPolicy::FailClosed)
-            }
-            FeatureBit::LiquidCoolingAutoMode => {
-                def(bit, "LiquidCoolingAutoModeSupport", FeatureMissingPolicy::FailClosed)
-            }
+            FeatureBit::LiquidCooling => def(
+                bit,
+                "LiquidCoolingSupport",
+                FeatureMissingPolicy::FailClosed,
+            ),
+            FeatureBit::LiquidCoolingAutoMode => def(
+                bit,
+                "LiquidCoolingAutoModeSupport",
+                FeatureMissingPolicy::FailClosed,
+            ),
             FeatureBit::RamFan15 => def(bit, "RamFan1p5Support", FeatureMissingPolicy::FailClosed),
             FeatureBit::TurboMode => def(bit, "TurboModeSupport", FeatureMissingPolicy::FailClosed),
             FeatureBit::TypeC => def(bit, "TypeCSupport", FeatureMissingPolicy::FailClosed),
-            FeatureBit::Commercial => {
-                def(bit, "IsProjectIdCommercial", FeatureMissingPolicy::FailClosed)
-            }
-            FeatureBit::CommercialHave20Db => {
-                def(bit, "IsProjectIdCommercialHAVE20DB", FeatureMissingPolicy::FailClosed)
-            }
-            FeatureBit::GpuHotSwapSwitch => {
-                def(bit, "GpuHotSwapSwitchSupport", FeatureMissingPolicy::FailClosed)
-            }
-            FeatureBit::HotSwapStatus => {
-                def(bit, "lgpuHotSwapSwitchStatus", FeatureMissingPolicy::FailClosed)
-            }
+            FeatureBit::Commercial => def(
+                bit,
+                "IsProjectIdCommercial",
+                FeatureMissingPolicy::FailClosed,
+            ),
+            FeatureBit::CommercialHave20Db => def(
+                bit,
+                "IsProjectIdCommercialHAVE20DB",
+                FeatureMissingPolicy::FailClosed,
+            ),
+            FeatureBit::GpuHotSwapSwitch => def(
+                bit,
+                "GpuHotSwapSwitchSupport",
+                FeatureMissingPolicy::FailClosed,
+            ),
+            FeatureBit::HotSwapStatus => def(
+                bit,
+                "lgpuHotSwapSwitchStatus",
+                FeatureMissingPolicy::FailClosed,
+            ),
         }
     }
 
@@ -158,6 +184,10 @@ impl FeatureMatrix {
     }
 }
 
-const fn def(bit: FeatureBit, key: &'static str, missing: FeatureMissingPolicy) -> FeatureBitDefinition {
+const fn def(
+    bit: FeatureBit,
+    key: &'static str,
+    missing: FeatureMissingPolicy,
+) -> FeatureBitDefinition {
     FeatureBitDefinition { bit, key, missing }
 }

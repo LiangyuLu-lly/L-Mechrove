@@ -127,6 +127,7 @@ export type FooterProps = {
 export function Footer({ hdrOn = false }: FooterProps) {
   const [overlayOn, setOverlayOn] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [donateOpen, setDonateOpen] = useState(false)
 
   function onFooterKey(id: FooterKeyId): void {
     switch (id) {
@@ -146,6 +147,7 @@ export function Footer({ hdrOn = false }: FooterProps) {
         void swallowHostError(() => diagnosticsExport())
         return
       case "donate":
+        setDonateOpen(true)
         return
       case "quit":
         void swallowHostError(() => appQuit())
@@ -186,6 +188,28 @@ export function Footer({ hdrOn = false }: FooterProps) {
             setSettingsOpen(false)
           }}
         />
+      ) : null}
+      {donateOpen ? (
+        <div
+          className="settings-dialog"
+          role="presentation"
+          onClick={() => {
+            setDonateOpen(false)
+          }}
+        >
+          <div
+            className="settings-dialog__panel"
+            role="dialog"
+            aria-labelledby="donate-title"
+            onClick={(event) => {
+              event.stopPropagation()
+            }}
+          >
+            <h2 id="donate-title" className="settings-dialog__title">
+              赞助支持
+            </h2>
+          </div>
+        </div>
       ) : null}
     </footer>
   )

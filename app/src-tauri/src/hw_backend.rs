@@ -135,6 +135,18 @@ impl Backend {
     }
 
     pub async fn set_light_effect(&mut self, channel: &str, effect: &str) -> Result<(), HostError> {
+        self.set_light_params(channel, effect, None, None, None)
+            .await
+    }
+
+    pub async fn set_light_params(
+        &mut self,
+        channel: &str,
+        effect: &str,
+        light: Option<&str>,
+        speed: Option<&str>,
+        color: Option<&str>,
+    ) -> Result<(), HostError> {
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
@@ -144,6 +156,11 @@ impl Backend {
                     state.light_cfg_dir.as_deref(),
                     channel,
                     effect,
+                    crate::hw_lighting::LightParams {
+                        light,
+                        speed,
+                        color,
+                    },
                 )
                 .await
             }
@@ -151,8 +168,41 @@ impl Backend {
         }
     }
 
-    pub fn recorded_hid_feature_reports(&self) -> Vec<Vec<u8>> {
+    pub async fn set_light_power(&mut self, channel: &str, on: bool) -> Result<(), HostError> {
         match self {
+            Self::Fake { state } => {
+                state.ensure_writable()?;
+                crate::hw_lighting::apply_light_power(
+                    &mut state.broker,
+                    &state.item_support,
+                    state.light_cfg_dir.as_deref(),
+                    channel,
+                    on,
+                )
+                .await
+            }
+            Self::Real => Err(HostError::RealUnavailable),
+        }
+    }
+
+    pub fn set_official_isolation(&mut self, on: bool) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state.official_isolation = Some(on);
+                Ok(())
+            }
+            Self::Real => crate::hw_isolation::apply_real(on),
+        }
+    }
+
+    pub fn recorded_official_isolation(&self) -> Option<bool> {
+        match self {
+            Self::Fake { state } => state.official_isolation,
+            Self::Real => None,
+        }
+    }
+
+    pub fn recorded_hid_feature_reports(&self) -> Vec<Vec<u8>> {        match self {
             Self::Fake { state } => state.hid.feature_reports().to_vec(),
             Self::Real => Vec::new(),
         }

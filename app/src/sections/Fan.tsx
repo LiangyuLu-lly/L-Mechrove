@@ -3,6 +3,7 @@ import { Row } from "../components/Row"
 import { Segmented } from "../components/Segmented"
 import { setFanBoost, setFanCurve } from "../lib/api"
 import type { FanCurveType } from "../lib/types"
+import { FanCurve } from "./FanCurve"
 
 const FAN_OPTIONS = [
   { value: "CPU", label: "CPU" },
@@ -62,6 +63,13 @@ export function Fan() {
     <Row name="风扇">
       <Segmented value={ty} options={FAN_OPTIONS} onChange={onType} />
       <Segmented value={boost} options={BOOST_OPTIONS} onChange={onBoost} />
+      <FanCurve
+        type={ty}
+        duties={duties}
+        onChange={(next) => {
+          setDuties([...next])
+        }}
+      />
       <div className="fan-duties">
         {duties.map((duty, index) => (
           <input

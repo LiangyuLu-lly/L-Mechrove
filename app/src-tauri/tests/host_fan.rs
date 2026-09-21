@@ -101,9 +101,9 @@ async fn set_fan_boost_on_publishes_fan_boost_on() {
         .expect("Backend::set_fan_boost");
     let publishes = backend.recorded_publishes();
     assert!(
-        publishes.iter().any(|(topic, value)| {
-            topic == FAN_CONTROL && value["Action"] == "FAN_BOOST_ON"
-        }),
+        publishes
+            .iter()
+            .any(|(topic, value)| { topic == FAN_CONTROL && value["Action"] == "FAN_BOOST_ON" }),
         "Fan/Control FAN_BOOST_ON missing: {publishes:?}"
     );
 }

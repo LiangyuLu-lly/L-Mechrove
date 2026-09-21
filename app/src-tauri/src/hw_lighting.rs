@@ -1,17 +1,16 @@
-//! Lighting write path. ItemSupport fail-closed. Keyboard/lightbar/logo MQTT SetEffectALL.
+//! Lighting write path. ItemSupport fail-closed. Official MQTT SetEffectALL / SetPower.
 
 use std::path::Path;
 
 use capabilities::{effect_allowed, ItemSupport, LightingVisibility};
-use gcu_mqtt::client::MqttTransport;
 use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::topics;
-use serde::Serialize;
 
 use crate::hw_backend::HostError;
+use crate::hw_lighting_cfg::{load_cfg, merge_cfg, persist_cfg};
+use crate::hw_lighting_payload::{publish_effect, publish_power};
 
-const DEFAULT_LIGHT: &str = "4";
-const DEFAULT_SPEED: &str = "1";
+pub use crate::hw_lighting_cfg::LightParams;
 
 #[derive(Clone, Copy)]
 enum LightChannel {
@@ -55,100 +54,67 @@ impl LightChannel {
     }
 }
 
+pub async fn apply_light_power(
+    broker: &mut FakeBroker,
+    item_support: &ItemSupport,
+    cfg_dir: Option<&Path>,
+    channel: &str,
+    on: bool,
+) -> Result<(), HostError> {
+    let channel = LightChannel::parse(channel)?;
+    ensure_channel_offered(item_support, channel)?;
+    publish_power(broker, channel.ctrl_topic(), on).await?;
+    if let Some(dir) = cfg_dir {
+        let mut cfg = load_cfg(dir, channel.cfg_name());
+        cfg.power = on;
+        persist_cfg(dir, channel.cfg_name(), &cfg)?;
+    }
+    Ok(())
+}
+
 pub async fn apply_light_effect(
     broker: &mut FakeBroker,
     item_support: &ItemSupport,
     cfg_dir: Option<&Path>,
     channel: &str,
     effect: &str,
+    params: LightParams<'_>,
 ) -> Result<(), HostError> {
     let channel = LightChannel::parse(channel)?;
     let visibility = LightingVisibility::from_item_support(item_support);
-    let offered = match channel {
-        LightChannel::Keyboard => visibility.keyboard,
-        LightChannel::Lightbar => visibility.lightbar,
-        LightChannel::Logo => visibility.logo,
-    };
-    if !offered {
+    if !channel_offered(visibility, channel) {
         return Err(HostError::LightingDenied(channel.id().to_owned()));
     }
     if !effect_allowed(channel.id(), visibility.keyboard_type, effect) {
         return Err(HostError::LightingEffectDenied(effect.to_owned()));
     }
-    publish_effect(broker, channel.ctrl_topic(), effect).await?;
+    let saved = cfg_dir.map(|dir| load_cfg(dir, channel.cfg_name()));
+    let cfg = merge_cfg(saved.as_ref(), effect, params);
+    if cfg.power {
+        publish_effect(broker, channel.ctrl_topic(), &cfg).await?;
+    }
     if let Some(dir) = cfg_dir {
-        persist_cfg(dir, channel, effect)?;
+        persist_cfg(dir, channel.cfg_name(), &cfg)?;
     }
     Ok(())
 }
 
-async fn publish_effect(
-    broker: &mut FakeBroker,
-    topic: &str,
-    effect: &str,
+fn ensure_channel_offered(
+    item_support: &ItemSupport,
+    channel: LightChannel,
 ) -> Result<(), HostError> {
-    let payload = LightEffectPayload {
-        function: "SetEffectALL",
-        mode: "Lighting",
-        speed: DEFAULT_SPEED,
-        light: DEFAULT_LIGHT,
-        effect,
-        direction: "None",
-        nv_save: "SAVE",
-        color: single_white(),
-    };
-    let bytes = serde_json::to_vec(&payload)?;
-    broker.publish(topic, &bytes).await?;
-    Ok(())
+    let visibility = LightingVisibility::from_item_support(item_support);
+    if channel_offered(visibility, channel) {
+        Ok(())
+    } else {
+        Err(HostError::LightingDenied(channel.id().to_owned()))
+    }
 }
 
-fn persist_cfg(dir: &Path, channel: LightChannel, effect: &str) -> Result<(), HostError> {
-    std::fs::create_dir_all(dir)?;
-    let body = format!("effect={effect}\nlight=4\nspeed=1\ncolor=-1\npower=1\n");
-    std::fs::write(dir.join(channel.cfg_name()), body)?;
-    Ok(())
-}
-
-#[derive(Serialize)]
-struct LightEffectPayload<'a> {
-    function: &'static str,
-    mode: &'static str,
-    speed: &'a str,
-    light: &'a str,
-    effect: &'a str,
-    direction: &'a str,
-    nv_save: &'a str,
-    color: LightColor,
-}
-
-#[derive(Serialize)]
-struct LightColor {
-    #[serde(rename = "isCircular")]
-    is_circular: bool,
-    #[serde(rename = "ColorBlocks")]
-    color_blocks: i32,
-    #[serde(rename = "ColorBuffer")]
-    color_buffer: [Rgb; 1],
-}
-
-#[derive(Serialize)]
-struct Rgb {
-    #[serde(rename = "R")]
-    r: i32,
-    #[serde(rename = "G")]
-    g: i32,
-    #[serde(rename = "B")]
-    b: i32,
-}
-
-const fn single_white() -> LightColor {
-    LightColor {
-        is_circular: true,
-        color_blocks: 1,
-        color_buffer: [Rgb {
-            r: 255,
-            g: 255,
-            b: 255,
-        }],
+const fn channel_offered(visibility: LightingVisibility, channel: LightChannel) -> bool {
+    match channel {
+        LightChannel::Keyboard => visibility.keyboard,
+        LightChannel::Lightbar => visibility.lightbar,
+        LightChannel::Logo => visibility.logo,
     }
 }

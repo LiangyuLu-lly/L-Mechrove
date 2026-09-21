@@ -47,7 +47,10 @@ async fn empty_item_support_pl1_stays_intel_pl1_string() {
         .await
         .expect("Intel PL1");
     let payload = last_detail(&backend);
-    assert!(payload["PL1"].is_string(), "PL1 must be a JSON string: {payload:?}");
+    assert!(
+        payload["PL1"].is_string(),
+        "PL1 must be a JSON string: {payload:?}"
+    );
     assert_eq!(payload["PL1"], "45");
 }
 
@@ -64,6 +67,21 @@ async fn amd_cpu_tcc_offset_publishes_cpu_amd_tcc_target_string() {
         "CpuAmdTccTarget must be a JSON string: {payload:?}"
     );
     assert_eq!(payload["CpuAmdTccTarget"], "10");
+}
+
+#[tokio::test]
+async fn empty_item_support_pl2_publishes_pl2_json_string() {
+    let mut backend = started("{}").await;
+    backend
+        .set_custom_detail("PL2", "45")
+        .await
+        .expect("Intel PL2");
+    let payload = last_detail(&backend);
+    assert!(
+        payload["PL2"].is_string(),
+        "PL2 must be a JSON string: {payload:?}"
+    );
+    assert_eq!(payload["PL2"], "45");
 }
 
 #[tokio::test]

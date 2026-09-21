@@ -17,18 +17,35 @@ describe("Performance", () => {
     cleanup()
   })
 
+  it("shows 静音模式 and 平衡模式 by default", () => {
+    render(<Performance />)
+    expect(screen.getByRole("radio", { name: "静音模式" })).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "平衡模式" })).toBeTruthy()
+  })
+
+  it("invokes set_performance_mode with office when 静音模式 is clicked", async () => {
+    render(<Performance />)
+    fireEvent.click(screen.getByRole("radio", { name: "静音模式" }))
+    expect(invoke).toHaveBeenCalledWith("set_performance_mode", { mode: "office" })
+    expect(invoke).not.toHaveBeenCalledWith("set_performance_mode", {
+      mode: "silentTurbo",
+    })
+  })
+
+  it("omits 静音狂暴 when silentTurbo is false", () => {
+    render(<Performance silentTurbo={false} />)
+    expect(screen.queryByRole("radio", { name: "静音狂暴" })).toBeNull()
+  })
+
+  it("shows 静音狂暴 when silentTurbo is true", () => {
+    render(<Performance silentTurbo={true} />)
+    expect(screen.getByRole("radio", { name: "静音狂暴" })).toBeTruthy()
+  })
+
   it("invokes set_performance_mode with turbo when 狂暴 is clicked", async () => {
     render(<Performance />)
     fireEvent.click(screen.getByRole("radio", { name: "狂暴" }))
     expect(invoke).toHaveBeenCalledWith("set_performance_mode", { mode: "turbo" })
-  })
-
-  it("invokes set_performance_mode with silentTurbo when 静音 is clicked", async () => {
-    render(<Performance />)
-    fireEvent.click(screen.getByRole("radio", { name: "静音" }))
-    expect(invoke).toHaveBeenCalledWith("set_performance_mode", {
-      mode: "silentTurbo",
-    })
   })
 
   it("invokes set_performance_mode with custom when 自定义 is clicked", async () => {

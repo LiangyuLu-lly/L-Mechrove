@@ -67,6 +67,8 @@ describe("Lighting", () => {
     expect(invoke).toHaveBeenCalledWith("set_light_effect", {
       channel: "lightbar",
       effect: "Breathing",
+      light: "4",
+      speed: "1",
     })
   })
 
@@ -98,5 +100,68 @@ describe("Lighting", () => {
     )
     fireEvent.click(screen.getByRole("button", { name: "灯光" }))
     expect(screen.getByText("波浪")).toBeTruthy()
+  })
+
+  it("keyboard row has 电源 control", () => {
+    render(
+      <Lighting
+        lighting={{
+          keyboard: true,
+          lightbar: false,
+          logo: false,
+          keyboardType: 0,
+        }}
+      />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
+    expect(screen.getByRole("checkbox", { name: "键盘电源" })).toBeTruthy()
+  })
+
+  it("编辑 reveals 亮度", () => {
+    render(
+      <Lighting
+        lighting={{
+          keyboard: true,
+          lightbar: false,
+          logo: false,
+          keyboardType: 0,
+        }}
+      />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }))
+    expect(screen.getByText("亮度")).toBeTruthy()
+  })
+
+  it("shows 本机控制器不支持软件灯效控制 when keyboardHidUnavailable is true", () => {
+    render(
+      <Lighting
+        lighting={{
+          keyboard: true,
+          lightbar: false,
+          logo: false,
+          keyboardType: 0,
+        }}
+        keyboardHidUnavailable
+      />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
+    expect(screen.getByText(/本机控制器不支持软件灯效控制/)).toBeTruthy()
+  })
+
+  it("omits 本机控制器不支持软件灯效控制 when keyboardHidUnavailable is false", () => {
+    render(
+      <Lighting
+        lighting={{
+          keyboard: true,
+          lightbar: false,
+          logo: false,
+          keyboardType: 0,
+        }}
+        keyboardHidUnavailable={false}
+      />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "灯光" }))
+    expect(screen.queryByText(/本机控制器不支持软件灯效控制/)).toBeNull()
   })
 })

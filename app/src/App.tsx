@@ -12,6 +12,7 @@ import { MoreSwitches } from "./sections/MoreSwitches"
 import { Performance } from "./sections/Performance"
 import { FirstRun } from "./sections/FirstRun"
 import { Screen } from "./sections/Screen"
+import { SettingsDialog } from "./sections/SettingsDialog"
 import "./App.css"
 
 function dismissFirstRun(): void {
@@ -27,6 +28,7 @@ function dismissFirstRun(): void {
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<HwSnapshot>(VITE_FALLBACK_SNAPSHOT)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [firstRunOpen, setFirstRunOpen] = useState(() => {
     try {
       return window.localStorage.getItem("lmechrevo.firstRun.done") !== "1"
@@ -66,10 +68,11 @@ export default function App() {
         <Performance
           tccAdjustable={snapshot.tccAdjustable}
           ocSettings={snapshot.ocSettings}
+          silentTurbo={snapshot.silentTurbo}
         />
         <Fan />
         <Gpu actions={snapshot.gpuActions} />
-        <Screen hzList={snapshot.hzList} />
+        <Screen hzList={snapshot.hzList} dcHzSeen={snapshot.dcHzSeen} />
         <Battery percent={snapshot.chargePercent} />
         <LiquidCooling liquidCooling={snapshot.liquidCooling} />
         <Lighting lighting={snapshot.lighting} />
@@ -85,6 +88,15 @@ export default function App() {
           onGoSystem={() => {
             dismissFirstRun()
             setFirstRunOpen(false)
+            setSettingsOpen(true)
+          }}
+        />
+      ) : null}
+      {settingsOpen ? (
+        <SettingsDialog
+          hdrOn={snapshot.hdrOn}
+          onClose={() => {
+            setSettingsOpen(false)
           }}
         />
       ) : null}

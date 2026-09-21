@@ -69,6 +69,12 @@ describe("Footer", () => {
     expect(invoke).not.toHaveBeenCalled()
   })
 
+  it("shows 赞助支持 when 赞助 is clicked", () => {
+    render(<Footer />)
+    fireEvent.click(screen.getByRole("button", { name: "赞助" }))
+    expect(screen.getByText("赞助支持")).toBeTruthy()
+  })
+
   it("invokes app_quit when 退出 is clicked", () => {
     render(<Footer />)
     fireEvent.click(screen.getByRole("button", { name: "退出" }))
