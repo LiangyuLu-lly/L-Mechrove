@@ -1,8 +1,9 @@
-//! In-process Fake GCU, or a Real stub that does not open 13688.
+//! In-process Fake GCU, or Real slot-4 `GcuClient` (handshake does not poll the event loop).
 
 use std::path::PathBuf;
 
 use capabilities::{DgpuGeneration, ItemSupport};
+use gcu_mqtt::client::GcuClient;
 use gcu_mqtt::fake::Recorded;
 use gcu_mqtt::handshake::run_handshake;
 
@@ -21,7 +22,7 @@ pub struct AppState {
 /// `Fake` never constructs rumqttc / NativeHid / Windows IOCTL.
 pub enum Backend {
     Fake { state: FakeState },
-    Real,
+    Real { client: GcuClient },
 }
 
 impl Backend {
@@ -75,9 +76,18 @@ impl Backend {
 
     pub fn from_env() -> Self {
         if prefer_fake() {
-            Self::fake(ItemSupport::default())
+            fake_from_env()
         } else {
-            Self::Real
+            Self::real()
+        }
+    }
+
+    pub fn real() -> Self {
+        match crate::secrets::slot4_params() {
+            Ok(params) => Self::Real {
+                client: GcuClient::new(&params),
+            },
+            Err(err) => unreachable!("slot4_params uses UWPClient_4: {err}"),
         }
     }
 
@@ -90,9 +100,11 @@ impl Backend {
                 sync_fake_model_gate(state);
                 Ok(())
             }
-            Self::Real => {
-                let _params = crate::secrets::slot4_params()?;
-                Err(HostError::RealUnavailable)
+            Self::Real { client } => {
+                let params = crate::secrets::slot4_params()?;
+                *client = GcuClient::new(&params);
+                run_handshake(client).await?;
+                Ok(())
             }
         }
     }
@@ -101,7 +113,8 @@ impl Backend {
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
-                crate::hw_mode::apply_performance_mode(state, mode).await?;
+                let slot = crate::hw_mode::selected_custom_slot(state)?;
+                crate::hw_mode::apply_performance_mode(&mut state.broker, mode, slot).await?;
                 if let Some(dir) = state.profile_dir.clone() {
                     crate::hw_mode_profile::ModeProfiles::new(&dir)
                         .apply(&mut state.broker, &state.item_support, mode)
@@ -110,7 +123,10 @@ impl Backend {
                 state.current_mode = Some(mode.to_owned());
                 Ok(())
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                let slot = gcu_mqtt::payloads::ProfileIndex::new(0)?;
+                crate::hw_mode::apply_performance_mode(client, mode, slot).await
+            }
         }
     }
 
@@ -127,7 +143,16 @@ impl Backend {
                 )
                 .await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                crate::hw_gpu::apply_gpu_route(
+                    client,
+                    &ItemSupport::default(),
+                    DgpuGeneration::Unknown,
+                    false,
+                    action,
+                )
+                .await
+            }
         }
     }
 
@@ -139,7 +164,7 @@ impl Backend {
                 state.charge_percent = applied;
                 Ok(applied)
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { .. } => Err(HostError::RealUnavailable),
         }
     }
 
@@ -173,7 +198,21 @@ impl Backend {
                 )
                 .await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                crate::hw_lighting::apply_light_effect(
+                    client,
+                    &ItemSupport::default(),
+                    None,
+                    channel,
+                    effect,
+                    crate::hw_lighting::LightParams {
+                        light,
+                        speed,
+                        color,
+                    },
+                )
+                .await
+            }
         }
     }
 
@@ -190,7 +229,16 @@ impl Backend {
                 )
                 .await
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { client } => {
+                crate::hw_lighting::apply_light_power(
+                    client,
+                    &ItemSupport::default(),
+                    None,
+                    channel,
+                    on,
+                )
+                .await
+            }
         }
     }
 
@@ -203,7 +251,7 @@ impl Backend {
                 sync_fake_model_gate(state);
                 Ok(())
             }
-            Self::Real => Err(HostError::RealUnavailable),
+            Self::Real { .. } => Err(HostError::RealUnavailable),
         }
     }
 
@@ -213,20 +261,21 @@ impl Backend {
                 state.official_isolation = Some(on);
                 Ok(())
             }
-            Self::Real => crate::hw_isolation::apply_real(on),
+            Self::Real { .. } => crate::hw_isolation::apply_real(on),
         }
     }
 
     pub fn recorded_official_isolation(&self) -> Option<bool> {
         match self {
             Self::Fake { state } => state.official_isolation,
-            Self::Real => None,
+            Self::Real { .. } => None,
         }
     }
 
-    pub fn recorded_hid_feature_reports(&self) -> Vec<Vec<u8>> {        match self {
+    pub fn recorded_hid_feature_reports(&self) -> Vec<Vec<u8>> {
+        match self {
             Self::Fake { state } => state.hid.feature_reports().to_vec(),
-            Self::Real => Vec::new(),
+            Self::Real { .. } => Vec::new(),
         }
     }
 
@@ -240,7 +289,7 @@ impl Backend {
                 .filter(|call| call.code == ec_acpi::IOCTL_WRITE)
                 .map(|call| (call.code, call.in_bytes.clone()))
                 .collect(),
-            Self::Real => Vec::new(),
+            Self::Real { .. } => Vec::new(),
         }
     }
 
@@ -252,7 +301,7 @@ impl Backend {
                 .iter()
                 .filter_map(publish_json)
                 .collect(),
-            Self::Real => Vec::new(),
+            Self::Real { .. } => Vec::new(),
         }
     }
 }
@@ -276,5 +325,42 @@ fn publish_json(item: &Recorded) -> Option<(String, serde_json::Value)> {
 }
 
 fn prefer_fake() -> bool {
-    cfg!(test) || matches!(std::env::var("LMECHREVO_FAKE_GCU"), Ok(ref value) if value == "1")
+    cfg!(test) || fake_gcu_requested()
+}
+
+const FULL_DEV_ITEM_SUPPORT: &str =
+    include_str!("../crates/_golden/item_support_full_dev.json");
+
+fn fake_gcu_requested() -> bool {
+    matches!(std::env::var("LMECHREVO_FAKE_GCU"), Ok(ref value) if value == "1")
+}
+
+fn fake_from_env() -> Backend {
+    if !fake_gcu_requested() {
+        return Backend::fake(ItemSupport::default());
+    }
+    match std::env::var("LMECHREVO_FAKE_PROFILE") {
+        Ok(name) if !name.is_empty() => {
+            let json = if name == "full" {
+                FULL_DEV_ITEM_SUPPORT.to_owned()
+            } else {
+                read_named_golden(&name).unwrap_or_else(|| "{}".to_owned())
+            };
+            let item = ItemSupport::parse_json(&json).unwrap_or_default();
+            Backend::fake(item).with_gpu(DgpuGeneration::Gen50, true)
+        }
+        // Empty stays the default: a seeded full-capability machine would flip the
+        // fail-closed gates and let the UI claim rows a real G16 hides.
+        _ => Backend::fake(ItemSupport::default()),
+    }
+}
+
+fn read_named_golden(name: &str) -> Option<String> {
+    if name.contains(['/', '\\', ':']) {
+        return None;
+    }
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/_golden")
+        .join(name);
+    std::fs::read_to_string(path).ok()
 }
