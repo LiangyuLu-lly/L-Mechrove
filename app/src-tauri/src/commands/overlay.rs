@@ -1,9 +1,11 @@
 //! Overlay HUD window. Snapshot events only — no MQTT client, no slot-5 client.
-//!
-//! Findings: tray skipped — `tauri` is built without `tray-icon`; enabling it
-//! would pull extra native deps. Footer 退出 uses `app_quit` instead.
 
 use tauri::{AppHandle, Manager};
+
+#[path = "../overlay_state.rs"]
+mod overlay_state;
+
+use overlay_state::{overlay_update as apply_overlay_update, OverlayStore};
 
 #[tauri::command]
 pub fn overlay_set(on: bool, app: AppHandle) -> Result<(), String> {
@@ -18,7 +20,9 @@ pub fn overlay_set(on: bool, app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn overlay_update(prefs: serde_json::Value) -> Result<(), String> {
-    let _ = prefs;
-    Err("not implemented".to_string())
+pub fn overlay_update(prefs: serde_json::Value, app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
+    let mut store = OverlayStore::load(&dir).map_err(|err| err.to_string())?;
+    apply_overlay_update(&mut store, &prefs).map_err(|err| err.to_string())?;
+    store.save(&dir).map_err(|err| err.to_string())
 }

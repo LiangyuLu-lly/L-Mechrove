@@ -6,11 +6,17 @@ use capabilities::{effect_allowed, ItemSupport, LightingVisibility};
 use gcu_mqtt::fake::FakeBroker;
 use gcu_mqtt::topics;
 
-use crate::hw_backend::HostError;
+use crate::hw_backend::{Backend, HostError};
+use crate::hw_fake::FakeState;
 use crate::hw_lighting_cfg::{load_cfg, merge_cfg, persist_cfg};
 use crate::hw_lighting_payload::{publish_effect, publish_power};
 
 pub use crate::hw_lighting_cfg::LightParams;
+
+#[path = "hw_lighting_idle.rs"]
+mod hw_lighting_idle;
+
+use hw_lighting_idle::{reconcile, suspend_decision, Decision, LightingPolicy};
 
 #[derive(Clone, Copy)]
 enum LightChannel {
@@ -116,5 +122,84 @@ const fn channel_offered(visibility: LightingVisibility, channel: LightChannel) 
         LightChannel::Keyboard => visibility.keyboard,
         LightChannel::Lightbar => visibility.lightbar,
         LightChannel::Logo => visibility.logo,
+    }
+}
+
+pub(crate) async fn publish_offered_power(
+    broker: &mut FakeBroker,
+    item_support: &ItemSupport,
+    on: bool,
+) -> Result<(), HostError> {
+    let visibility = LightingVisibility::from_item_support(item_support);
+    for channel in [
+        LightChannel::Keyboard,
+        LightChannel::Lightbar,
+        LightChannel::Logo,
+    ] {
+        if channel_offered(visibility, channel) {
+            publish_power(broker, channel.ctrl_topic(), on).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Driver entry: C# `ReconcileLightingPowerAsync` over FakeState.
+pub async fn apply_lighting_policy(
+    state: &mut FakeState,
+    off_on_battery: bool,
+    idle_seconds: i32,
+) -> Result<(), HostError> {
+    reconcile(
+        state,
+        LightingPolicy {
+            off_on_battery,
+            idle_seconds,
+        },
+    )
+    .await
+}
+
+impl Backend {
+    pub fn with_on_battery(mut self, on_battery: bool) -> Self {
+        if let Self::Fake { state } = &mut self {
+            state.on_battery = on_battery;
+        }
+        self
+    }
+
+    pub fn with_idle_ms(mut self, idle_ms: u64) -> Self {
+        if let Self::Fake { state } = &mut self {
+            state.idle_ms = idle_ms;
+        }
+        self
+    }
+
+    pub fn set_idle_ms(&mut self, idle_ms: u64) {
+        if let Self::Fake { state } = self {
+            state.idle_ms = idle_ms;
+        }
+    }
+
+    /// C# `LightingState.ResolveIdleAction`: 0=None, 1=Suspend, 2=Restore.
+    pub const fn lighting_idle_action(idle_ms: u64, timeout_secs: i32, suspended: bool) -> u8 {
+        match suspend_decision(idle_ms, timeout_secs, suspended) {
+            Decision::None => 0,
+            Decision::Suspend => 1,
+            Decision::Restore => 2,
+        }
+    }
+
+    pub async fn reconcile_lighting_power(
+        &mut self,
+        off_on_battery: bool,
+        idle_seconds: i32,
+    ) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state.ensure_writable()?;
+                apply_lighting_policy(state, off_on_battery, idle_seconds).await
+            }
+            Self::Real => Err(HostError::RealUnavailable),
+        }
     }
 }

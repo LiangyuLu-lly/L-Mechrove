@@ -311,6 +311,14 @@ async fn set_light_effect_publishes_official_light_speed_strings() {
         .find(|(topic, body)| topic == "HidLightbar/Ctrl" && body["function"] == "SetEffectALL")
         .map(|(_, body)| body)
         .expect("HidLightbar/Ctrl SetEffectALL missing");
+    assert!(
+        payload["light"].is_string(),
+        "Official light must be a JSON string: {payload}"
+    );
+    assert!(
+        payload["speed"].is_string(),
+        "Official speed must be a JSON string: {payload}"
+    );
     assert_eq!(
         payload["light"], "4",
         "Official light is a string: {payload}"
@@ -319,6 +327,7 @@ async fn set_light_effect_publishes_official_light_speed_strings() {
         payload["speed"], "1",
         "Official speed is a string: {payload}"
     );
+    assert_no_close_timer(&publishes);
 }
 
 #[tokio::test]
@@ -344,4 +353,199 @@ async fn set_light_effect_uses_caller_light_speed_color_strings() {
     assert_eq!(payload["color"]["ColorBuffer"][0]["R"], 255);
     assert_eq!(payload["color"]["ColorBuffer"][0]["G"], 0);
     assert_eq!(payload["color"]["ColorBuffer"][0]["B"], 0);
+    assert!(
+        payload["light"].is_string(),
+        "caller light must be a JSON string: {payload}"
+    );
+    assert!(
+        payload["speed"].is_string(),
+        "caller speed must be a JSON string: {payload}"
+    );
+    assert_no_close_timer(&publishes);
+}
+
+const IDLE_NONE: u8 = 0;
+const IDLE_SUSPEND: u8 = 1;
+const IDLE_RESTORE: u8 = 2;
+
+const OFFERED_CTRL: [&str; 3] = [
+    "Keyboard/Ctrl",
+    "HidLightbar/Ctrl",
+    "HidLightbar_Logo/Ctrl",
+];
+
+fn g16_item_support() -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/_golden/item_support_g16_no_lightbar.json");
+    fs::read_to_string(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()))
+}
+
+fn assert_no_close_timer(publishes: &[(String, serde_json::Value)]) {
+    for (topic, payload) in publishes {
+        let Some(obj) = payload.as_object() else {
+            continue;
+        };
+        assert!(
+            !obj.contains_key("CloseTimer"),
+            "firmware CloseTimer must never be sent: {topic} {payload}"
+        );
+    }
+}
+
+fn set_power_on_topic(
+    publishes: &[(String, serde_json::Value)],
+    topic: &str,
+    powerstatus: i64,
+) -> bool {
+    publishes.iter().any(|(published_topic, payload)| {
+        published_topic == topic
+            && payload["function"] == "SetPower"
+            && payload["powerstatus"] == powerstatus
+    })
+}
+
+#[test]
+fn lighting_idle_decision_mirrors_csharp_lighting_state() {
+    // LightingState.cs:12-19 / LightingStateTests IdleLightingPolicy
+    assert_eq!(Backend::lighting_idle_action(60_000, 0, false), IDLE_NONE);
+    assert_eq!(Backend::lighting_idle_action(9_999, 10, false), IDLE_NONE);
+    assert_eq!(
+        Backend::lighting_idle_action(10_000, 10, false),
+        IDLE_SUSPEND
+    );
+    assert_eq!(Backend::lighting_idle_action(10_000, 10, true), IDLE_NONE);
+    assert_eq!(
+        Backend::lighting_idle_action(1_999, 10, true),
+        IDLE_RESTORE
+    );
+    assert_eq!(Backend::lighting_idle_action(2_000, 10, true), IDLE_NONE);
+}
+
+#[tokio::test]
+async fn lighting_battery_policy_sets_power_off_on_all_offered_channels() {
+    // Given: lightingOffOnBattery=true and on_battery=true, all three channels offered
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1,"LogoLightSupport":1}"#)
+        .expect("parse")
+        .with_on_battery(true);
+    backend.start().await.expect("handshake");
+
+    // When: power policy is reconciled
+    backend
+        .reconcile_lighting_power(true, 0)
+        .await
+        .expect("battery policy");
+
+    // Then: SetPower powerstatus=0 on every offered channel, never CloseTimer
+    let publishes = backend.recorded_publishes();
+    for topic in OFFERED_CTRL {
+        assert!(
+            set_power_on_topic(&publishes, topic, 0),
+            "battery suspend must SetPower 0 on {topic}: {publishes:?}"
+        );
+    }
+    assert_no_close_timer(&publishes);
+}
+
+#[tokio::test]
+async fn lighting_battery_policy_skips_g16_hidden_lightbar_and_logo() {
+    // Given: G16 ItemSupport hides lightbar/logo; battery policy is on
+    let mut backend = Backend::fake_from_json(&g16_item_support())
+        .expect("g16 golden")
+        .with_on_battery(true);
+    backend.start().await.expect("handshake");
+
+    // When: power policy is reconciled
+    backend
+        .reconcile_lighting_power(true, 0)
+        .await
+        .expect("battery policy");
+
+    // Then: hidden channels stay unpublished (S6 fail-closed)
+    let publishes = backend.recorded_publishes();
+    assert!(
+        !publishes.iter().any(|(topic, payload)| {
+            topic == "HidLightbar/Ctrl" && payload["function"] == "SetPower"
+        }),
+        "G16 must not SetPower lightbar: {publishes:?}"
+    );
+    assert!(
+        !publishes.iter().any(|(topic, payload)| {
+            topic == "HidLightbar_Logo/Ctrl" && payload["function"] == "SetPower"
+        }),
+        "G16 must not SetPower logo: {publishes:?}"
+    );
+    assert!(
+        set_power_on_topic(&publishes, "Keyboard/Ctrl", 0),
+        "G16 keyboard is still offered: {publishes:?}"
+    );
+    assert_no_close_timer(&publishes);
+}
+
+#[tokio::test]
+async fn lighting_idle_policy_suspends_then_restores_on_fresh_input() {
+    // Given: lightingIdleSeconds=1 and idleMs>=1000
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1,"LogoLightSupport":1}"#)
+        .expect("parse")
+        .with_idle_ms(1000);
+    backend.start().await.expect("handshake");
+
+    // When: idle reaches timeout
+    backend
+        .reconcile_lighting_power(false, 1)
+        .await
+        .expect("idle suspend");
+
+    // Then: all offered channels suspend
+    let after_suspend = backend.recorded_publishes();
+    for topic in OFFERED_CTRL {
+        assert!(
+            set_power_on_topic(&after_suspend, topic, 0),
+            "idle suspend must SetPower 0 on {topic}: {after_suspend:?}"
+        );
+    }
+    assert_no_close_timer(&after_suspend);
+
+    // When: idleMs<2000 after suspend (LightingState.cs restore hysteresis)
+    backend.set_idle_ms(500);
+    backend
+        .reconcile_lighting_power(false, 1)
+        .await
+        .expect("idle restore");
+
+    // Then: all offered channels restore, still no CloseTimer
+    let after_restore = backend.recorded_publishes();
+    for topic in OFFERED_CTRL {
+        assert!(
+            set_power_on_topic(&after_restore, topic, 1),
+            "idle restore must SetPower 1 on {topic}: {after_restore:?}"
+        );
+    }
+    assert_no_close_timer(&after_restore);
+}
+
+#[tokio::test]
+async fn lighting_idle_disabled_does_not_suspend() {
+    // Given: timeout<=0 ⇒ None even if idle is long
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1}"#)
+        .expect("parse")
+        .with_idle_ms(60_000);
+    backend.start().await.expect("handshake");
+
+    // When: policy is reconciled with idle timer off
+    backend
+        .reconcile_lighting_power(false, 0)
+        .await
+        .expect("idle disabled");
+
+    // Then: no temporary SetPower 0
+    let publishes = backend.recorded_publishes();
+    assert!(
+        !publishes.iter().any(|(topic, payload)| {
+            topic == "HidLightbar/Ctrl"
+                && payload["function"] == "SetPower"
+                && payload["powerstatus"] == 0
+        }),
+        "timeout<=0 must not suspend: {publishes:?}"
+    );
+    assert_no_close_timer(&publishes);
 }

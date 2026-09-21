@@ -29,7 +29,8 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "shadow": false
+        "shadow": false,
+        "transparent": true
       },
       {
         "label": "custom-mode",

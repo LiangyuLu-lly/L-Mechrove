@@ -1,7 +1,6 @@
 //! S3: set_charge_limit(80) writes only 0x7B9/0x7D0 as 5-byte IOCTLs. Never 0x7A6/0x78F.
 
 use app_lib::Backend;
-use capabilities::ItemSupport;
 
 fn write_addr(in_bytes: &[u8]) -> u32 {
     assert_eq!(in_bytes.len(), 5, "EC write in-buffer must be 5 bytes");
@@ -10,7 +9,8 @@ fn write_addr(in_bytes: &[u8]) -> u32 {
 
 #[test]
 fn s3_charge_limit_80_writes_only_7b9_and_7d0() {
-    let mut backend = Backend::fake(ItemSupport::default());
+    // Non-empty ItemSupport = a served machine (N8), so the write path is reachable.
+    let mut backend = Backend::fake_from_json(r#"{"ChargeLimitSupport":1}"#).expect("fixture");
     let applied = backend.set_charge_limit(80).expect("set 80");
     assert_eq!(applied, 80);
 

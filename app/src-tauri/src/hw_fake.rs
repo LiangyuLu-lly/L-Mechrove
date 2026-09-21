@@ -55,6 +55,9 @@ pub struct FakeState {
     pub(crate) idle_ms: u64,
     #[allow(dead_code)]
     pub(crate) lighting_suspended: bool,
+    pub(crate) project_id: String,
+    pub(crate) model_reason: String,
+    pub(crate) write_override: Option<bool>,
 }
 
 impl FakeState {
@@ -93,6 +96,9 @@ impl FakeState {
             on_battery: false,
             idle_ms: 0,
             lighting_suspended: false,
+            project_id: String::new(),
+            model_reason: String::new(),
+            write_override: None,
         }
     }
 

@@ -27,6 +27,12 @@ describe("FanCurve", () => {
     expect(screen.getByRole("slider", { name: "CPU T3 转速" })).toBeTruthy()
   })
 
+  it("does not call setFanCurve on mount", () => {
+    render(<FanCurve type="CPU" duties={INITIAL} />)
+    expect(setFanCurve).not.toHaveBeenCalled()
+  })
+
+
   it("calls setFanCurve with the new duty as STRING when ArrowUp", () => {
     render(<FanCurve type="CPU" duties={INITIAL} />)
     fireEvent.keyDown(screen.getByRole("slider", { name: "CPU T3 转速" }), {

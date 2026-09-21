@@ -1,24 +1,20 @@
 import { useState } from "react"
 import { Row } from "../components/Row"
 import { Segmented } from "../components/Segmented"
-import {
-  setCustomDetail,
-  setFanCurve,
-  setPerformanceMode,
-} from "../lib/api"
+import { setCustomDetail, setPerformanceMode } from "../lib/api"
 import {
   CUSTOM_PROFILES,
   CUSTOM_RESTORE_DEFAULTS,
-  DEFAULT_FAN_DUTIES,
   ON_OFF,
   type OnOff,
 } from "./customModeFields"
+import { NumberField } from "./WattageField"
 
 type ProfileIndex = (typeof CUSTOM_PROFILES)[number]["value"]
-import { NumberField } from "./WattageField"
 
 export type PerformanceCustomProps = {
   readonly ocSettings: boolean
+  readonly onOpenFanCurve: () => void
 }
 
 async function swallow(run: () => Promise<unknown>): Promise<void> {
@@ -32,7 +28,10 @@ async function swallow(run: () => Promise<unknown>): Promise<void> {
   }
 }
 
-export function PerformanceCustom({ ocSettings }: PerformanceCustomProps) {
+export function PerformanceCustom({
+  ocSettings,
+  onOpenFanCurve,
+}: PerformanceCustomProps) {
   const [profile, setProfile] = useState<ProfileIndex>("0")
   const [tccSwitch, setTccSwitch] = useState<OnOff>("0")
   const [dbSwitch, setDbSwitch] = useState<OnOff>("0")
@@ -60,8 +59,21 @@ export function PerformanceCustom({ ocSettings }: PerformanceCustomProps) {
       <Row name="自定义档">
         <Segmented value={profile} options={CUSTOM_PROFILES} onChange={onProfile} />
       </Row>
-      <NumberField name="PL2" field="PL2" ariaLabel="PL2" />
-      <NumberField name="PL4" field="PL4" ariaLabel="PL4" />
+      <NumberField
+        name="CPU 功耗墙 PL1 (W)"
+        field="PL1"
+        ariaLabel="CPU 功耗墙 PL1 (W)"
+      />
+      <NumberField
+        name="CPU 功耗墙 PL2 (W)"
+        field="PL2"
+        ariaLabel="CPU 功耗墙 PL2 (W)"
+      />
+      <NumberField
+        name="CPU 瞬时功耗墙 PL4 (W)"
+        field="PL4"
+        ariaLabel="CPU 瞬时功耗墙 PL4 (W)"
+      />
       <Row name="CPU 温度墙">
         <Segmented
           value={tccSwitch}
@@ -127,16 +139,16 @@ export function PerformanceCustom({ ocSettings }: PerformanceCustomProps) {
           <NumberField
             name="核心频率偏移 (MHz)"
             field="GpuCoreClockOffsetOC"
-            ariaLabel="Core"
+            ariaLabel="核心频率偏移 (MHz)"
           />
           <NumberField
             name="显存频率偏移 (MHz)"
             field="GpuMemoryClockOffsetOC"
-            ariaLabel="Memory"
+            ariaLabel="显存频率偏移 (MHz)"
           />
         </>
       ) : null}
-      <Row name="当前档">
+      <div className="row__control">
         <button
           type="button"
           className="settings-dialog__action"
@@ -144,18 +156,16 @@ export function PerformanceCustom({ ocSettings }: PerformanceCustomProps) {
             void onRestore()
           }}
         >
-          恢复默认
+          恢复当前档默认
         </button>
         <button
           type="button"
           className="settings-dialog__action"
-          onClick={() => {
-            void swallow(() => setFanCurve("curve", "CPU", DEFAULT_FAN_DUTIES))
-          }}
+          onClick={onOpenFanCurve}
         >
           风扇曲线
         </button>
-      </Row>
+      </div>
     </>
   )
 }

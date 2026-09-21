@@ -8,6 +8,9 @@ use gcu_mqtt::handshake::run_handshake;
 
 use crate::hw_fake::FakeState;
 
+#[path = "hw_model.rs"]
+mod hw_model;
+
 pub use crate::hw_error::HostError;
 pub use crate::hw_snapshot::{HwSnapshot, MqttStatus};
 
@@ -23,9 +26,13 @@ pub enum Backend {
 
 impl Backend {
     pub fn fake(item_support: ItemSupport) -> Self {
-        Self::Fake {
+        let mut backend = Self::Fake {
             state: FakeState::new(item_support),
+        };
+        if let Self::Fake { state } = &mut backend {
+            sync_fake_model_gate(state);
         }
+        backend
     }
 
     pub fn fake_from_json(json: &str) -> Result<Self, HostError> {
@@ -60,6 +67,7 @@ impl Backend {
 
     pub fn with_write_allowed(mut self, allowed: bool) -> Self {
         if let Self::Fake { state } = &mut self {
+            state.write_override = Some(allowed);
             state.write_allowed = allowed;
         }
         self
@@ -79,6 +87,7 @@ impl Backend {
                 state.mqtt_status = MqttStatus::Connecting;
                 run_handshake(&mut state.broker).await?;
                 state.mqtt_status = MqttStatus::Connected;
+                sync_fake_model_gate(state);
                 Ok(())
             }
             Self::Real => {
@@ -92,7 +101,7 @@ impl Backend {
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
-                crate::hw_mode::apply_performance_mode(&mut state.broker, mode).await?;
+                crate::hw_mode::apply_performance_mode(state, mode).await?;
                 if let Some(dir) = state.profile_dir.clone() {
                     crate::hw_mode_profile::ModeProfiles::new(&dir)
                         .apply(&mut state.broker, &state.item_support, mode)
@@ -185,6 +194,19 @@ impl Backend {
         }
     }
 
+    pub fn set_project_id(&mut self, id: &str) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                let mut store = hw_model::ProjectIdStore::new();
+                store.set(id);
+                state.project_id = store.as_str().to_owned();
+                sync_fake_model_gate(state);
+                Ok(())
+            }
+            Self::Real => Err(HostError::RealUnavailable),
+        }
+    }
+
     pub fn set_official_isolation(&mut self, on: bool) -> Result<(), HostError> {
         match self {
             Self::Fake { state } => {
@@ -233,6 +255,14 @@ impl Backend {
             Self::Real => Vec::new(),
         }
     }
+}
+
+fn sync_fake_model_gate(state: &mut FakeState) {
+    let mqtt_connected = state.mqtt_status == MqttStatus::Connected;
+    if state.write_override.is_none() {
+        state.write_allowed = hw_model::is_served(mqtt_connected, &state.item_support);
+    }
+    state.model_reason = hw_model::model_reason(mqtt_connected, &state.item_support).to_owned();
 }
 
 fn publish_json(item: &Recorded) -> Option<(String, serde_json::Value)> {

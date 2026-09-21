@@ -1,7 +1,6 @@
 import { useState } from "react"
+import { Checkbox } from "../components/Checkbox"
 import { Collapse } from "../components/Collapse"
-import { Row } from "../components/Row"
-import { Segmented } from "../components/Segmented"
 import { setQuickSwitch } from "../lib/api"
 
 const SWITCH_LABELS: Record<string, string> = {
@@ -68,13 +67,6 @@ const GROUPED_KEYS: ReadonlySet<string> = new Set(
   SWITCH_GROUPS.flatMap((group) => [...group.keys]),
 )
 
-const ON_OFF = [
-  { value: "on", label: "开" },
-  { value: "off", label: "关" },
-] as const
-
-type OnOff = (typeof ON_OFF)[number]["value"]
-
 export type MoreSwitchesProps = {
   readonly offered: readonly string[]
 }
@@ -110,13 +102,13 @@ type SwitchRowProps = {
 }
 
 function SwitchRow({ switchKey }: SwitchRowProps) {
-  const [value, setValue] = useState<OnOff>("off")
+  const [checked, setChecked] = useState(false)
   const label = SWITCH_LABELS[switchKey] ?? switchKey
 
-  async function onChange(next: OnOff): Promise<void> {
-    setValue(next)
+  async function onChange(next: boolean): Promise<void> {
+    setChecked(next)
     try {
-      await setQuickSwitch(switchKey, next === "on")
+      await setQuickSwitch(switchKey, next)
     } catch (error) {
       if (error instanceof Error) {
         return
@@ -125,9 +117,5 @@ function SwitchRow({ switchKey }: SwitchRowProps) {
     }
   }
 
-  return (
-    <Row name={label}>
-      <Segmented value={value} options={ON_OFF} onChange={onChange} />
-    </Row>
-  )
+  return <Checkbox checked={checked} label={label} onChange={onChange} />
 }

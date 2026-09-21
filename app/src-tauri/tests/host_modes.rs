@@ -1,9 +1,33 @@
 //! Given FakeBroker. When set_performance_mode. Then official Fan + LCHWOC packets.
 
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use app_lib::Backend;
+
+static PROFILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 async fn started() -> Backend {
     let mut backend = Backend::fake_from_json("{}").expect("empty ItemSupport");
+    backend.start().await.expect("fake handshake");
+    backend
+}
+
+fn unique_profile_dir() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "lmechrevo-host-modes-{}-{}",
+        std::process::id(),
+        PROFILE_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&dir).expect("temp mode profile dir");
+    dir
+}
+
+async fn started_with_profiles() -> Backend {
+    let mut backend = Backend::fake_from_json("{}")
+        .expect("empty ItemSupport")
+        .with_profile_dir(unique_profile_dir());
     backend.start().await.expect("fake handshake");
     backend
 }
@@ -61,26 +85,52 @@ async fn set_performance_mode_turbo_publishes_fan_and_lchwoc_when_fake_broker() 
     );
 }
 
+fn last_custom_fan(publishes: &[(String, serde_json::Value)]) -> &serde_json::Value {
+    publishes
+        .iter()
+        .rev()
+        .find(|(topic, payload)| {
+            topic == "Fan/Control" && payload["Action"] == "OPERATING_CUSTOM_MODE"
+        })
+        .map(|(_, payload)| payload)
+        .expect("OPERATING_CUSTOM_MODE")
+}
+
 #[tokio::test]
-async fn set_performance_mode_custom_publishes_fan_and_is_custom_run_when_fake_broker() {
-    let mut backend = started().await;
-    backend
-        .set_performance_mode("custom")
-        .await
-        .expect("custom mode");
-    let publishes = backend.recorded_publishes();
-    assert!(
-        has_fan(&publishes, "OPERATING_CUSTOM_MODE", 0),
-        "Fan OPERATING_CUSTOM_MODE ProfileIndex=0 missing: {publishes:?}"
-    );
-    assert!(
-        publishes.iter().any(|(topic, payload)| {
-            topic == "LCHWOC/Control"
-                && payload["IsCustomRun"] == true
-                && payload["IsCustomRun"].is_boolean()
-        }),
-        "LCHWOC IsCustomRun=true missing: {publishes:?}"
-    );
+async fn set_performance_mode_custom_publishes_selected_profile_index_when_fake_broker() {
+    for slot in 0..=3_i64 {
+        let mut backend = started_with_profiles().await;
+        backend
+            .set_performance_mode("custom")
+            .await
+            .expect("current_mode custom");
+        backend
+            .set_custom_detail("ProfileIndex", &slot.to_string())
+            .await
+            .expect("store selected custom slot");
+        backend
+            .set_performance_mode("custom")
+            .await
+            .expect("custom mode");
+        let publishes = backend.recorded_publishes();
+        let payload = last_custom_fan(&publishes);
+        assert!(
+            payload["ProfileIndex"].is_number(),
+            "ProfileIndex must be a JSON number for slot {slot}: {payload:?}"
+        );
+        assert_eq!(
+            payload["ProfileIndex"], slot,
+            "Fan OPERATING_CUSTOM_MODE ProfileIndex must equal selected slot {slot}: {publishes:?}"
+        );
+        assert!(
+            publishes.iter().any(|(topic, payload)| {
+                topic == "LCHWOC/Control"
+                    && payload["IsCustomRun"] == true
+                    && payload["IsCustomRun"].is_boolean()
+            }),
+            "LCHWOC IsCustomRun=true missing: {publishes:?}"
+        );
+    }
 }
 
 #[tokio::test]

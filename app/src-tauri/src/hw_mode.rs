@@ -10,16 +10,30 @@ use gcu_mqtt::topics;
 use serde::Serialize;
 
 use crate::hw_backend::HostError;
+use crate::hw_fake::FakeState;
+use crate::hw_mode_profile::ModeProfiles;
 
-pub async fn apply_performance_mode(broker: &mut FakeBroker, mode: &str) -> Result<(), HostError> {
+pub async fn apply_performance_mode(state: &mut FakeState, mode: &str) -> Result<(), HostError> {
     match mode {
-        "office" => publish_pair(broker, office_fan(), office_lchwoc()).await,
-        "gaming" => publish_pair(broker, gaming_fan(), gaming_lchwoc()).await,
-        "turbo" => publish_pair(broker, turbo_fan(), turbo_lchwoc()).await,
-        "custom" => publish_pair(broker, custom_fan(ProfileIndex::new(0)?), custom_lchwoc()).await,
-        "silentTurbo" => publish_fan(broker, silent_turbo_fan()).await,
+        "office" => publish_pair(&mut state.broker, office_fan(), office_lchwoc()).await,
+        "gaming" => publish_pair(&mut state.broker, gaming_fan(), gaming_lchwoc()).await,
+        "turbo" => publish_pair(&mut state.broker, turbo_fan(), turbo_lchwoc()).await,
+        "custom" => {
+            let slot = selected_custom_slot(state)?;
+            publish_pair(&mut state.broker, custom_fan(slot), custom_lchwoc()).await
+        }
+        "silentTurbo" => publish_fan(&mut state.broker, silent_turbo_fan()).await,
         other => Err(HostError::UnknownMode(other.to_owned())),
     }
+}
+
+fn selected_custom_slot(state: &mut FakeState) -> Result<ProfileIndex, HostError> {
+    if let Some(dir) = state.profile_dir.clone() {
+        if let Some(stored) = ModeProfiles::new(&dir).read_custom_profile_index()? {
+            state.custom_profile_index = stored;
+        }
+    }
+    ProfileIndex::new(state.custom_profile_index).map_err(Into::into)
 }
 
 async fn publish_fan(broker: &mut FakeBroker, fan: impl Serialize) -> Result<(), HostError> {

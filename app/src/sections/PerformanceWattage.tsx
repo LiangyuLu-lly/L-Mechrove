@@ -1,5 +1,4 @@
 import { NumberField } from "./WattageField"
-import { PerformanceCustom } from "./PerformanceCustom"
 
 export type PerformanceWattageProps = {
   readonly tccAdjustable: boolean
@@ -9,7 +8,6 @@ export type PerformanceWattageProps = {
 
 export function PerformanceWattage({
   tccAdjustable,
-  ocSettings,
   customMode,
 }: PerformanceWattageProps) {
   return (
@@ -18,7 +16,6 @@ export function PerformanceWattage({
       {!customMode && tccAdjustable ? (
         <NumberField name="TCC" field="CpuTccOffset" ariaLabel="TCC" />
       ) : null}
-      {customMode ? <PerformanceCustom ocSettings={ocSettings} /> : null}
     </>
   )
 }

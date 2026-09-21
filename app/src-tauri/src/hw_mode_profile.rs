@@ -126,9 +126,17 @@ impl<'a> ModeProfiles<'a> {
         }
     }
 
-    fn put_profile_index(&self, mode: &str, value: &str) -> Result<(), HostError> {
-        if mode != "custom" || !matches!(value, "0" | "1" | "2" | "3") {
-            return Ok(());
+    pub fn read_custom_profile_index(&self) -> Result<Option<u8>, HostError> {
+        self.load()?.custom_profile_index.map_or(Ok(None), |raw| {
+            raw.parse()
+                .map(Some)
+                .map_err(|_| HostError::UnknownMode(raw))
+        })
+    }
+
+    fn put_profile_index(&self, _mode: &str, value: &str) -> Result<(), HostError> {
+        if !matches!(value, "0" | "1" | "2" | "3") {
+            return Err(HostError::UnknownMode(value.to_owned()));
         }
         let mut store = self.load()?;
         store.custom_profile_index = Some(value.to_owned());
@@ -226,20 +234,13 @@ fn custom_slot_ref(store: &ModeProfileFile) -> Option<&ModeProfile> {
 }
 
 fn extra_fields(profile: &ModeProfile) -> Vec<(&str, &str)> {
-    let mut gates = Vec::new();
-    let mut rest = Vec::new();
-    for (field, value) in &profile.extra {
-        if !is_custom_detail_field(field) {
-            continue;
-        }
-        if is_gate_field(field) {
-            gates.push((field.as_str(), value.as_str()));
-        } else {
-            rest.push((field.as_str(), value.as_str()));
-        }
-    }
-    gates.extend(rest);
-    gates
+    let pick = |gate| {
+        profile.extra.iter().filter_map(move |(field, value)| {
+            (is_custom_detail_field(field) && is_gate_field(field) == gate)
+                .then_some((field.as_str(), value.as_str()))
+        })
+    };
+    pick(true).chain(pick(false)).collect()
 }
 
 fn is_gate_field(field: &str) -> bool {

@@ -10,11 +10,18 @@ pub async fn updates_check(state: State<'_, AppState>) -> Result<UpdateDto, Stri
 }
 
 #[tauri::command]
-pub fn updates_install() -> Result<(), String> {
-    Err("not implemented".to_string())
+pub async fn updates_install(
+    state: State<'_, AppState>,
+    confirm: Option<bool>,
+) -> Result<(), String> {
+    let backend = state.backend.lock().await;
+    backend
+        .updates_install(confirm.unwrap_or(false))
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-pub fn updates_open_page() -> Result<(), String> {
-    Err("not implemented".to_string())
+pub async fn updates_open_page(state: State<'_, AppState>) -> Result<(), String> {
+    let backend = state.backend.lock().await;
+    backend.updates_open_page().map_err(|err| err.to_string())
 }

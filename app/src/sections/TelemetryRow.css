@@ -1,0 +1,37 @@
+.telemetry-row {
+  --telemetry-row-height: 1.125rem;
+  --telemetry-row-pad-left: 2.625rem;
+  --telemetry-rest-min: 5.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  height: var(--telemetry-row-height);
+  padding: 0 0 0 var(--telemetry-row-pad-left);
+  margin: 0;
+  background: var(--window);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  font-weight: 400;
+  line-height: var(--telemetry-row-height);
+}
+
+.telemetry-row__name,
+.telemetry-row__temp,
+.telemetry-row__rest,
+.telemetry-row__sep {
+  flex: 0 0 auto;
+}
+
+.telemetry-row__temp {
+  color: var(--text);
+}
+
+.telemetry-row__rest {
+  min-width: var(--telemetry-rest-min);
+  text-align: right;
+}
+
+.telemetry-row__sep {
+  margin: 0 1ch;
+}

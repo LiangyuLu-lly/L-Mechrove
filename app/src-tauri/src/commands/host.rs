@@ -1,6 +1,9 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::hw_backend::AppState;
+
+#[path = "../hw_prefs.rs"]
+mod hw_prefs;
 
 #[tauri::command]
 pub fn app_quit(app: AppHandle) {
@@ -19,15 +22,16 @@ pub async fn set_official_isolation(
 }
 
 #[tauri::command]
-pub fn set_theme_mode(mode: String) -> Result<(), String> {
-    let _ = mode;
-    Err("not implemented".to_string())
+pub fn set_theme_mode(mode: String, app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
+    hw_prefs::set_theme_mode(&dir, &mode).map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-pub fn set_ui_language(code: String) -> Result<(), String> {
-    let _ = code;
-    Err("not implemented".to_string())
+pub fn set_ui_language(code: String, app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
+    hw_prefs::set_ui_language(&dir, &code).map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
