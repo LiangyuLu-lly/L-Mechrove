@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
 use crate::hw_backend::AppState;
 use crate::hw_prefs;
@@ -34,7 +34,14 @@ pub fn set_project_id(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_lighting_policy(off_on_battery: bool, idle_seconds: i32) -> Result<(), String> {
-    let _ = (off_on_battery, idle_seconds);
-    Err("not implemented".to_string())
+pub async fn set_lighting_policy(
+    off_on_battery: bool,
+    idle_seconds: i32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut backend = state.backend.lock().await;
+    backend
+        .set_lighting_policy(off_on_battery, idle_seconds)
+        .await
+        .map_err(|err| err.to_string())
 }

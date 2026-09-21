@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
-import { VITE_FALLBACK_SNAPSHOT } from "./api"
+import { DISARMED_SNAPSHOT } from "./api"
 
 const HUB_KEYS = [
   "batteryHealth",
@@ -52,21 +52,23 @@ const UI_COMMANDS = [
   "close_custom_mode_window",
 ] as const
 
-describe("VITE_FALLBACK_SNAPSHOT parity DTO", () => {
+describe("DISARMED_SNAPSHOT parity DTO", () => {
   it("contains releaseLabel keyboardHidUnavailable themeMode", () => {
-    expect(VITE_FALLBACK_SNAPSHOT.releaseLabel).toBeDefined()
-    expect(VITE_FALLBACK_SNAPSHOT).toHaveProperty("keyboardHidUnavailable")
-    expect(VITE_FALLBACK_SNAPSHOT.themeMode).toBe("night")
+    expect(DISARMED_SNAPSHOT.releaseLabel).toBeDefined()
+    expect(DISARMED_SNAPSHOT).toHaveProperty("keyboardHidUnavailable")
+    expect(DISARMED_SNAPSHOT.themeMode).toBe("night")
   })
 
-  it("carries the C# release label, not a placeholder", () => {
-    expect(VITE_FALLBACK_SNAPSHOT.releaseLabel).toBe("0.289.0-beta18")
-    expect(VITE_FALLBACK_SNAPSHOT.releaseLabel).not.toBe("0.1.0")
+  it("is fail-closed: no write, no keyboard lighting, no custom profile", () => {
+    expect(DISARMED_SNAPSHOT.writeAllowed).toBe(false)
+    expect(DISARMED_SNAPSHOT.lighting.keyboard).toBe(false)
+    expect(DISARMED_SNAPSHOT.customProfileOffered).toBe(false)
+    expect(DISARMED_SNAPSHOT.gpuActions).toEqual([])
   })
 
   it("carries every hub field the UI reads", () => {
     for (const key of HUB_KEYS) {
-      expect(VITE_FALLBACK_SNAPSHOT).toHaveProperty(key)
+      expect(DISARMED_SNAPSHOT).toHaveProperty(key)
     }
   })
 })

@@ -71,11 +71,21 @@ impl Drop for InjectedBrightnessGuard {
     }
 }
 
-struct StaJob {
-    timeout: u32,
-    brightness: u8,
-    sink: Option<Arc<dyn BrightnessSink>>,
-    reply: tokio::sync::oneshot::Sender<Result<(), HostError>>,
+enum StaJob {
+    Set {
+        timeout: u32,
+        brightness: u8,
+        sink: Option<Arc<dyn BrightnessSink>>,
+        reply: tokio::sync::oneshot::Sender<Result<(), HostError>>,
+    },
+    Get {
+        reply: mpsc::Sender<Result<u8, HostError>>,
+    },
+    SetBlocking {
+        timeout: u32,
+        brightness: u8,
+        reply: mpsc::Sender<Result<(), HostError>>,
+    },
 }
 
 struct StaHandle {
@@ -123,14 +133,33 @@ fn sta_loop(rx: mpsc::Receiver<StaJob>) {
     #[cfg(all(windows, not(miri)))]
     init_com_sta();
     while let Ok(job) = rx.recv() {
-        let result = match job.sink {
-            Some(sink) => {
-                sink.set_brightness(job.timeout, job.brightness);
-                Ok(())
+        match job {
+            StaJob::Set {
+                timeout,
+                brightness,
+                sink,
+                reply,
+            } => {
+                let result = match sink {
+                    Some(sink) => {
+                        sink.set_brightness(timeout, brightness);
+                        Ok(())
+                    }
+                    None => live_wmi_set_brightness(timeout, brightness),
+                };
+                let _ = reply.send(result);
             }
-            None => live_wmi_set_brightness(job.timeout, job.brightness),
-        };
-        let _ = job.reply.send(result);
+            StaJob::Get { reply } => {
+                let _ = reply.send(live_wmi_get_brightness());
+            }
+            StaJob::SetBlocking {
+                timeout,
+                brightness,
+                reply,
+            } => {
+                let _ = reply.send(live_wmi_set_brightness(timeout, brightness));
+            }
+        }
     }
 }
 
@@ -151,12 +180,23 @@ fn live_wmi_set_brightness(timeout: u32, brightness: u8) -> Result<(), HostError
     }
 }
 
+fn live_wmi_get_brightness() -> Result<u8, HostError> {
+    #[cfg(all(windows, not(miri)))]
+    {
+        return live_wmi::get_brightness();
+    }
+    #[cfg(not(all(windows, not(miri))))]
+    {
+        unavailable()
+    }
+}
+
 async fn commit_brightness_on_sta(timeout: u32, brightness: u8) -> Result<(), HostError> {
     let handle = sta_handle()?;
     let (reply, rx) = tokio::sync::oneshot::channel();
     handle
         .tx
-        .send(StaJob {
+        .send(StaJob::Set {
             timeout,
             brightness,
             sink: snapshot_injected_wmi(),
@@ -166,12 +206,42 @@ async fn commit_brightness_on_sta(timeout: u32, brightness: u8) -> Result<(), Ho
     rx.await.or_else(|_| unavailable())?
 }
 
-fn running_as_rust_test_binary() -> bool {
+pub(crate) fn running_as_rust_test_binary() -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
     let path = exe.to_string_lossy();
     path.contains("deps") && path.contains('-')
+}
+
+pub(crate) fn read_brightness_blocking() -> Result<u8, HostError> {
+    if running_as_rust_test_binary() {
+        return unavailable();
+    }
+    let handle = sta_handle()?;
+    let (tx, rx) = mpsc::channel();
+    handle
+        .tx
+        .send(StaJob::Get { reply: tx })
+        .or_else(|_| unavailable())?;
+    rx.recv().or_else(|_| unavailable())?
+}
+
+pub(crate) fn write_brightness_blocking(brightness: u8) -> Result<(), HostError> {
+    if running_as_rust_test_binary() {
+        return unavailable();
+    }
+    let handle = sta_handle()?;
+    let (tx, rx) = mpsc::channel();
+    handle
+        .tx
+        .send(StaJob::SetBlocking {
+            timeout: WMI_BRIGHTNESS_TIMEOUT,
+            brightness,
+            reply: tx,
+        })
+        .or_else(|_| unavailable())?;
+    rx.recv().or_else(|_| unavailable())?
 }
 
 async fn apply_real_brightness(percent: u8) -> Result<(), HostError> {
@@ -602,6 +672,16 @@ mod live_wmi {
         }
     }
 
+    pub fn get_brightness() -> Result<u8, HostError> {
+        let locator = create_locator()?;
+        let services = connect_server(locator.0)?;
+        let enumerator = create_instance_enum(services.0, "WmiMonitorBrightness")?;
+        if let Some(instance) = next_object(enumerator.0)? {
+            return get_ui1(instance.0, "CurrentBrightness");
+        }
+        super::unavailable()
+    }
+
     fn bstr(text: &str) -> Result<BStr, HostError> {
         let units: Vec<u16> = text.encode_utf16().collect();
         let len = u32::try_from(units.len()).or_else(|_| super::unavailable())?;
@@ -835,6 +915,48 @@ mod live_wmi {
         variant.data = 0;
         unsafe { VariantClear(&mut variant) };
         Ok(BStr(ptr))
+    }
+
+    fn get_ui1(object: *mut c_void, name: &str) -> Result<u8, HostError> {
+        let name = wide(name);
+        let mut variant = Variant::empty();
+        // SAFETY: [Category 8 — FFI boundary]
+        // IWbemClassObject::Get is vtable slot 4. VariantClear releases any
+        // allocated VARIANT payload. CurrentBrightness is VT_UI1 or VT_UI4.
+        let hr = unsafe {
+            let get: unsafe extern "system" fn(
+                *mut c_void,
+                *const u16,
+                i32,
+                *mut Variant,
+                *mut i32,
+                *mut i32,
+            ) -> i32 = vcall(object, 4);
+            get(
+                object,
+                name.as_ptr(),
+                0,
+                &mut variant,
+                ptr::null_mut(),
+                ptr::null_mut(),
+            )
+        };
+        let brightness = if hr < 0 {
+            None
+        } else if variant.vt == VT_UI1 {
+            u8::try_from(variant.data & 0xFF).ok()
+        } else if variant.vt == VT_UI4 {
+            u8::try_from(variant.data).ok()
+        } else {
+            None
+        };
+        // SAFETY: [Category 8 — FFI boundary]
+        // VariantClear on a stack VARIANT filled by IWbemClassObject::Get.
+        unsafe { VariantClear(&mut variant) };
+        match brightness {
+            Some(value) => Ok(value),
+            None => super::unavailable(),
+        }
     }
 
     fn exec_method(

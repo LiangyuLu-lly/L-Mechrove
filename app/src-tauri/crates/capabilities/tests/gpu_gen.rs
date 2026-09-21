@@ -4,8 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use capabilities::{
-    DgpuGeneration, FeatureMatrix, GpuRouteGate, ItemSupport, HOT_SWAP_OFF, HOT_SWAP_ON,
-    IGPU_ONLY_AUTO, IGPU_ONLY_OFF, IGPU_ONLY_ON, RESTART, TOGGLE_IGPU, TOGGLE_OFF, TOGGLE_ON,
+    from_device_id, from_marketing_name, resolve_dgpu, DgpuGeneration, FeatureMatrix, GpuAdapter,
+    GpuRouteGate, ItemSupport, HOT_SWAP_OFF, HOT_SWAP_ON, IGPU_ONLY_AUTO, IGPU_ONLY_OFF,
+    IGPU_ONLY_ON, RESTART, TOGGLE_IGPU, TOGGLE_OFF, TOGGLE_ON,
 };
 use serde::Deserialize;
 
@@ -201,4 +202,166 @@ fn gen40_never_offers_hot_swap_when_itemsupport_flags_true() {
     assert!(route.allows(IGPU_ONLY_ON));
     assert!(route.allows(IGPU_ONLY_OFF));
     assert!(!route.allows(IGPU_ONLY_AUTO));
+}
+
+fn nvidia(name: &str, device_id: &str) -> GpuAdapter {
+    GpuAdapter::new(name, Some("10DE"), Some(device_id))
+}
+
+#[test]
+fn marketing_name_resolves_gen40_when_rtx_4060_laptop() {
+    // Given: C# DgpuGeneration.cs:114-129 `\bRTX\s*(\d{4})\b` on a 40-series marketing name
+    let name = "NVIDIA GeForce RTX 4060 Laptop GPU";
+
+    // When: parse the marketing name and resolve an NVIDIA adapter
+    let by_name = from_marketing_name(name);
+    let identity = resolve_dgpu(&[nvidia(name, "0000")], true);
+
+    // Then: Gen40, has_dgpu
+    assert_eq!(by_name, Some(DgpuGeneration::Gen40));
+    assert_eq!(identity.generation, DgpuGeneration::Gen40);
+    assert!(identity.has_dgpu);
+}
+
+#[test]
+fn marketing_name_resolves_gen30_when_rtx_3070() {
+    // Given: C# DgpuGeneration.cs:124 "30" prefix
+    let name = "GeForce RTX 3070";
+
+    // When
+    let by_name = from_marketing_name(name);
+    let identity = resolve_dgpu(&[nvidia(name, "0000")], true);
+
+    // Then
+    assert_eq!(by_name, Some(DgpuGeneration::Gen30));
+    assert_eq!(identity.generation, DgpuGeneration::Gen30);
+    assert!(identity.has_dgpu);
+}
+
+#[test]
+fn marketing_name_resolves_gen50_when_rtx_5080_laptop() {
+    // Given: C# DgpuGeneration.cs:126 "50" prefix
+    let name = "GeForce RTX 5080 Laptop GPU";
+
+    // When
+    let by_name = from_marketing_name(name);
+    let identity = resolve_dgpu(&[nvidia(name, "0000")], true);
+
+    // Then
+    assert_eq!(by_name, Some(DgpuGeneration::Gen50));
+    assert_eq!(identity.generation, DgpuGeneration::Gen50);
+    assert!(identity.has_dgpu);
+}
+
+#[test]
+fn pci_high_byte_resolves_gen30_when_band_20_to_25() {
+    // Given: C# DgpuGeneration.cs:141 Ampere GA10x 0x20..=0x25
+    for high in 0x20u8..=0x25 {
+        let device = format!("{high:02X}00");
+
+        // When: empty marketing name, NVIDIA device-id only
+        let by_id = from_device_id(&device);
+        let identity = resolve_dgpu(&[nvidia("", &device)], true);
+
+        // Then
+        assert_eq!(by_id, Some(DgpuGeneration::Gen30), "high=0x{high:02X}");
+        assert_eq!(
+            identity.generation,
+            DgpuGeneration::Gen30,
+            "high=0x{high:02X}"
+        );
+        assert!(identity.has_dgpu);
+    }
+}
+
+#[test]
+fn pci_high_byte_resolves_gen40_when_band_26_to_28() {
+    // Given: C# DgpuGeneration.cs:142 Ada AD10x 0x26..=0x28
+    for high in 0x26u8..=0x28 {
+        let device = format!("{high:02X}00");
+
+        // When
+        let by_id = from_device_id(&device);
+        let identity = resolve_dgpu(&[nvidia("", &device)], true);
+
+        // Then
+        assert_eq!(by_id, Some(DgpuGeneration::Gen40), "high=0x{high:02X}");
+        assert_eq!(
+            identity.generation,
+            DgpuGeneration::Gen40,
+            "high=0x{high:02X}"
+        );
+        assert!(identity.has_dgpu);
+    }
+}
+
+#[test]
+fn pci_high_byte_resolves_gen50_when_band_2b_to_30() {
+    // Given: C# DgpuGeneration.cs:143 Blackwell GB20x 0x2B..=0x30
+    for high in 0x2Bu8..=0x30 {
+        let device = format!("{high:02X}00");
+
+        // When
+        let by_id = from_device_id(&device);
+        let identity = resolve_dgpu(&[nvidia("", &device)], true);
+
+        // Then
+        assert_eq!(by_id, Some(DgpuGeneration::Gen50), "high=0x{high:02X}");
+        assert_eq!(
+            identity.generation,
+            DgpuGeneration::Gen50,
+            "high=0x{high:02X}"
+        );
+        assert!(identity.has_dgpu);
+    }
+}
+
+#[test]
+fn resolve_is_unknown_when_enumeration_unavailable() {
+    // Given: C# DgpuGeneration.cs:91 — enumeration itself failed
+    let adapters = [nvidia("NVIDIA GeForce RTX 4060 Laptop GPU", "2882")];
+
+    // When
+    let identity = resolve_dgpu(&adapters, false);
+
+    // Then: Unknown, never NoDgpu, has_dgpu false (C# DgpuIdentity.Unknown)
+    assert_eq!(identity.generation, DgpuGeneration::Unknown);
+    assert_ne!(identity.generation, DgpuGeneration::NoDgpu);
+    assert!(!identity.has_dgpu);
+}
+
+#[test]
+fn resolve_is_no_dgpu_when_nvidia_list_empty_and_enumeration_works() {
+    // Given: C# DgpuGeneration.cs:93-94 — enum available, no NVIDIA
+    let adapters = [
+        GpuAdapter::new("Intel(R) UHD Graphics", Some("8086"), Some("46A6")),
+        GpuAdapter::new("AMD Radeon 780M", Some("1002"), Some("15BF")),
+    ];
+
+    // When
+    let identity = resolve_dgpu(&adapters, true);
+    let empty = resolve_dgpu(&[], true);
+
+    // Then
+    assert_eq!(identity.generation, DgpuGeneration::NoDgpu);
+    assert!(!identity.has_dgpu);
+    assert_eq!(empty.generation, DgpuGeneration::NoDgpu);
+    assert!(!empty.has_dgpu);
+}
+
+#[test]
+fn resolve_is_unknown_with_has_dgpu_when_nvidia_unparseable() {
+    // Given: C# DgpuGeneration.cs:108-110 — NVIDIA present, name and device-id miss the domain
+    let adapters = [GpuAdapter::new(
+        "NVIDIA RTX A5000 Laptop GPU",
+        Some("10DE"),
+        Some("1FB8"),
+    )];
+
+    // When
+    let identity = resolve_dgpu(&adapters, true);
+
+    // Then
+    assert_eq!(identity.generation, DgpuGeneration::Unknown);
+    assert!(identity.has_dgpu);
 }

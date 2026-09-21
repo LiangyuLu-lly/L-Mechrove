@@ -10,6 +10,7 @@ pub mod hw_exec_state;
 mod hw_fake;
 pub mod hw_fan;
 mod hw_gpu;
+pub mod hw_gpu_gen;
 pub mod hw_item_support_win;
 pub mod hw_lc;
 mod hw_lighting;
@@ -24,6 +25,7 @@ mod hw_mqtt_loop;
 pub mod hw_mqtt_reconnect;
 mod hw_prefs;
 mod hw_real;
+pub mod hw_screen_blank;
 pub mod hw_shell;
 mod hw_snapshot;
 pub mod hw_startup;
@@ -84,6 +86,10 @@ pub fn run() {
                             .unwrap_or_else(|_| capabilities::ItemSupport::default());
                     let mut backend = state.backend.lock().await;
                     backend.apply_item_support(item);
+                    let generation = tokio::task::spawn_blocking(hw_gpu_gen::read_live_generation)
+                        .await
+                        .unwrap_or(capabilities::DgpuGeneration::Unknown);
+                    backend.apply_gpu_generation(generation);
                 }
                 if let Some(parts) = loop_parts {
                     let poll_handle = handle.clone();

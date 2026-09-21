@@ -193,6 +193,26 @@ impl Backend {
         }
     }
 
+    pub async fn set_lighting_policy(
+        &mut self,
+        off_on_battery: bool,
+        idle_seconds: i32,
+    ) -> Result<(), HostError> {
+        match self {
+            Self::Fake { state } => {
+                state.ensure_writable()?;
+                state.lighting_off_on_battery = off_on_battery;
+                state.lighting_idle_seconds = idle_seconds;
+            }
+            Self::Real { state } => {
+                state.lighting_off_on_battery = off_on_battery;
+                state.lighting_idle_seconds = idle_seconds;
+            }
+        }
+        self.reconcile_lighting_power(off_on_battery, idle_seconds)
+            .await
+    }
+
     pub async fn reconcile_lighting_power(
         &mut self,
         off_on_battery: bool,

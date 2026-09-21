@@ -126,17 +126,10 @@ pub async fn run_protocol_walk() -> Vec<(String, Value)> {
     backend.set_charge_limit(80).expect("charge limit");
 
     let mut overlay = OverlayStore::memory();
-    overlay_update(&mut overlay, &serde_json::json!({ "mode": "light" }))
-        .expect("overlay toggle");
+    overlay_update(&mut overlay, &serde_json::json!({ "mode": "light" })).expect("overlay toggle");
 
-    backend
-        .set_gpu_route(IGPU_ONLY_ON)
-        .await
-        .expect("n16 gpu");
-    backend
-        .set_auto_refresh_rate(true)
-        .await
-        .expect("auto-hz");
+    backend.set_gpu_route(IGPU_ONLY_ON).await.expect("n16 gpu");
+    backend.set_auto_refresh_rate(true).await.expect("auto-hz");
 
     backend.apply_inbound("Setting/Status", br#"{"DeepSleepSwitch":1}"#);
     backend

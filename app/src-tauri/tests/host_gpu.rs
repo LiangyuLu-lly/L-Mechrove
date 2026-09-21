@@ -56,6 +56,17 @@ async fn snapshot_gpu_actions_empty_when_generation_unknown() {
 }
 
 #[tokio::test]
+async fn apply_gpu_generation_offers_gen40_actions_on_fake() {
+    let mut backend = Backend::fake_from_json("{}").expect("empty ItemSupport");
+    assert!(backend.snapshot().gpu_actions.is_empty());
+    backend.apply_gpu_generation(DgpuGeneration::Gen40);
+    let actions = backend.snapshot().gpu_actions;
+    assert!(actions.contains(&TOGGLE_ON.to_owned()));
+    assert!(actions.contains(&TOGGLE_OFF.to_owned()));
+    assert!(!actions.is_empty());
+}
+
+#[tokio::test]
 async fn snapshot_gpu_actions_offer_hot_swap_when_gen50_and_both_flags() {
     let json = r#"{"GpuHotSwapSwitchSupport":1,"lgpuHotSwapSwitchStatus":1}"#;
     let backend = Backend::fake_from_json(json)

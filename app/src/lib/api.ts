@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import {
+  EMPTY_HUD_SNAPSHOT,
   mergeOverlayPrefs,
   type OverlayPersistPrefs,
 } from "../hud/hudOverlay"
@@ -10,54 +11,13 @@ import type {
   UpdateDto,
 } from "./types"
 
-export const VITE_FALLBACK_SNAPSHOT: HwSnapshot = {
-  mqtt: "Disconnected",
-  lighting: {
-    keyboard: true,
-    lightbar: false,
-    logo: false,
-    keyboardType: 0,
-  },
-  chargePercent: 100,
-  gpuActions: [],
-  writeAllowed: true,
-  hzList: ["60", "165"],
-  offeredSwitches: ["touchpad"],
-  liquidCooling: false,
-  hdrOn: false,
-  tccAdjustable: false,
-  ocSettings: false,
-  silentTurbo: false,
-  dcHzSeen: false,
-  colorCalibration: false,
-  keyboardHidUnavailable: false,
-  lightingOffOnBattery: false,
-  lightingIdleSeconds: 0,
-  modelReason: "",
-  projectId: "",
-  ocRequiresElevation: false,
-  themeMode: "night",
-  releaseLabel: "0.289.0-beta18",
-  batteryHealth: "",
-  chargeStatus: "",
-  chargeFullOffered: true,
-  overdrive: false,
-  localDimming: false,
-  customProfileOffered: true,
-  lcConnection: "none",
-  fanCurveTableName: "M4T1",
-  updateAvailable: false,
+export const DISARMED_SNAPSHOT: HwSnapshot = {
+  ...EMPTY_HUD_SNAPSHOT,
+  customProfileOffered: false,
 }
 
 export async function hwSnapshot(): Promise<HwSnapshot> {
-  try {
-    return await invoke<HwSnapshot>("hw_snapshot")
-  } catch (error) {
-    if (error instanceof Error) {
-      return VITE_FALLBACK_SNAPSHOT
-    }
-    throw error
-  }
+  return invoke<HwSnapshot>("hw_snapshot")
 }
 
 export function setPerformanceMode(mode: PerformanceMode): Promise<void> {

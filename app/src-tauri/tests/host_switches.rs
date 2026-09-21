@@ -2,13 +2,16 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
+use app_lib::hw_exec_state::{BLANK_EXECUTION_STATE, ES_CONTINUOUS};
+use app_lib::hw_screen_blank::{inject, ScreenBlankExec, ScreenBlankWmi};
 use app_lib::hw_switches::{
     apply_monitor_off, apply_power_light_brightness, apply_quick_switch, offered_quick_switches,
     parse_device_switch_item_status, QuickSwitchGate, SeenFlags,
 };
 use app_lib::hw_wmi::FakeWmi;
-use app_lib::Backend;
+use app_lib::{Backend, HostError};
 use capabilities::ItemSupport;
 use gcu_mqtt::fake::{FakeBroker, Recorded};
 
@@ -421,5 +424,144 @@ async fn fanboost_records_fan_getstatus_confirmation() {
     assert!(
         matches!((command, getstatus), (Some(cmd), Some(confirm)) if confirm > cmd),
         "Fan/Control GETSTATUS must follow FAN_BOOST_ON: {pubs:?}"
+    );
+}
+
+static SCREEN_BLANK_SEAM: Mutex<()> = Mutex::new(());
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BlankStep {
+    Write(u8),
+    Exec(u32),
+}
+
+struct ScreenBlankSpy {
+    current: Mutex<Option<u8>>,
+    steps: Mutex<Vec<BlankStep>>,
+}
+
+impl ScreenBlankSpy {
+    fn unreadable() -> Arc<Self> {
+        Arc::new(Self {
+            current: Mutex::new(None),
+            steps: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn readable(brightness: u8) -> Arc<Self> {
+        Arc::new(Self {
+            current: Mutex::new(Some(brightness)),
+            steps: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn steps(&self) -> Vec<BlankStep> {
+        self.steps.lock().expect("steps").clone()
+    }
+}
+
+impl ScreenBlankWmi for ScreenBlankSpy {
+    fn get_brightness(&self) -> Option<u8> {
+        *self.current.lock().expect("current")
+    }
+
+    fn set_brightness(&self, brightness: u8) -> Result<(), HostError> {
+        self.steps
+            .lock()
+            .expect("steps")
+            .push(BlankStep::Write(brightness));
+        *self.current.lock().expect("current") = Some(brightness);
+        Ok(())
+    }
+}
+
+impl ScreenBlankExec for ScreenBlankSpy {
+    fn apply(&self, flags: u32) {
+        self.steps
+            .lock()
+            .expect("steps")
+            .push(BlankStep::Exec(flags));
+    }
+}
+
+#[test]
+fn real_screen_blank_read_failure_is_error_and_writes_nothing() {
+    // Given: Real arm + WMI spy that cannot read CurrentBrightness
+    let _seam = SCREEN_BLANK_SEAM.lock().expect("screen blank seam");
+    let spy = ScreenBlankSpy::unreadable();
+    let _guard = inject(
+        Arc::clone(&spy) as Arc<dyn ScreenBlankWmi>,
+        Arc::clone(&spy) as Arc<dyn ScreenBlankExec>,
+    );
+    let mut backend = Backend::real();
+
+    // When: 息屏 is requested
+    let err = backend
+        .set_monitor_off()
+        .expect_err("WMI read failure must not claim success");
+
+    // Then: error to the UI, no brightness write, no execution-state hold
+    assert!(
+        matches!(
+            err,
+            HostError::DisplayDenied(ref msg) if msg.contains("brightness read failed")
+        ),
+        "expected DisplayDenied brightness read failed, got {err}"
+    );
+    assert!(
+        spy.steps().is_empty(),
+        "read failure must not write brightness or execution state: {:?}",
+        spy.steps()
+    );
+}
+
+#[test]
+fn real_screen_blank_writes_brightness_0_then_execution_state() {
+    // Given: Real arm + readable WMI at 40% and an execution-state spy
+    let _seam = SCREEN_BLANK_SEAM.lock().expect("screen blank seam");
+    let spy = ScreenBlankSpy::readable(40);
+    let _guard = inject(
+        Arc::clone(&spy) as Arc<dyn ScreenBlankWmi>,
+        Arc::clone(&spy) as Arc<dyn ScreenBlankExec>,
+    );
+    let mut backend = Backend::real();
+
+    // When: 息屏 is requested
+    backend.set_monitor_off().expect("readable WMI must dim");
+
+    // Then: brightness 0 first, then the C# blank execution-state flags
+    assert_eq!(
+        spy.steps(),
+        [BlankStep::Write(0), BlankStep::Exec(BLANK_EXECUTION_STATE),]
+    );
+}
+
+#[tokio::test]
+async fn real_screen_blank_restore_restores_previous_brightness() {
+    // Given: Real arm that has already dimmed from 40%
+    let _seam = SCREEN_BLANK_SEAM.lock().expect("screen blank seam");
+    let spy = ScreenBlankSpy::readable(40);
+    let _guard = inject(
+        Arc::clone(&spy) as Arc<dyn ScreenBlankWmi>,
+        Arc::clone(&spy) as Arc<dyn ScreenBlankExec>,
+    );
+    let mut backend = Backend::real();
+    backend.set_monitor_off().expect("readable WMI must dim");
+
+    // When: monitoroff is turned off (restore)
+    backend
+        .set_quick_switch("monitoroff", false)
+        .await
+        .expect("restore");
+
+    // Then: previous brightness is written back and execution state is cleared
+    assert_eq!(
+        spy.steps(),
+        [
+            BlankStep::Write(0),
+            BlankStep::Exec(BLANK_EXECUTION_STATE),
+            BlankStep::Write(40),
+            BlankStep::Exec(ES_CONTINUOUS),
+        ]
     );
 }

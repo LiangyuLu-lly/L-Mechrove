@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event"
 import { Footer } from "./components/Footer"
 import { StatusPill } from "./components/StatusPill"
 import { Toast } from "./components/Toast"
-import { hwSnapshot, overlayPrefs, VITE_FALLBACK_SNAPSHOT } from "./lib/api"
+import { DISARMED_SNAPSHOT, hwSnapshot, overlayPrefs } from "./lib/api"
 import type { HwSnapshot } from "./lib/types"
 import { Battery } from "./sections/Battery"
 import { Gpu } from "./sections/Gpu"
@@ -33,7 +33,7 @@ function dismissFirstRun(): void {
 }
 
 export default function App() {
-  const [snapshot, setSnapshot] = useState<HwSnapshot>(VITE_FALLBACK_SNAPSHOT)
+  const [snapshot, setSnapshot] = useState<HwSnapshot>(DISARMED_SNAPSHOT)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [updateOpen, setUpdateOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)

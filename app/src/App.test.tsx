@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import App from "./App"
-import { VITE_FALLBACK_SNAPSHOT } from "./lib/api"
 import type { HwSnapshot } from "./lib/types"
 
 const invoke = mock(() => Promise.reject(new Error("no host")))
@@ -10,8 +9,47 @@ mock.module("@tauri-apps/api/core", () => ({
   invoke,
 }))
 
+const HOST_SNAPSHOT: HwSnapshot = {
+  mqtt: "Disconnected",
+  lighting: {
+    keyboard: true,
+    lightbar: false,
+    logo: false,
+    keyboardType: 0,
+  },
+  chargePercent: 100,
+  gpuActions: [],
+  writeAllowed: true,
+  hzList: ["60", "165"],
+  offeredSwitches: ["touchpad"],
+  liquidCooling: false,
+  hdrOn: false,
+  tccAdjustable: false,
+  ocSettings: false,
+  silentTurbo: false,
+  dcHzSeen: false,
+  colorCalibration: false,
+  keyboardHidUnavailable: false,
+  lightingOffOnBattery: false,
+  lightingIdleSeconds: 0,
+  modelReason: "",
+  projectId: "",
+  ocRequiresElevation: false,
+  themeMode: "night",
+  releaseLabel: "0.289.0-beta18",
+  batteryHealth: "",
+  chargeStatus: "",
+  chargeFullOffered: true,
+  overdrive: false,
+  localDimming: false,
+  customProfileOffered: true,
+  lcConnection: "none",
+  fanCurveTableName: "M4T1",
+  updateAvailable: false,
+}
+
 function snapshot(overrides: Partial<HwSnapshot> = {}): HwSnapshot {
-  return { ...VITE_FALLBACK_SNAPSHOT, ...overrides }
+  return { ...HOST_SNAPSHOT, ...overrides }
 }
 
 describe("App FirstRun", () => {
@@ -70,10 +108,12 @@ describe("App main column", () => {
     expect(document.querySelector(".fan-curve")).toBeNull()
   })
 
-  it("expands the Lighting group", () => {
+  it("expands the Lighting group", async () => {
     render(<App />)
     expect(
-      screen.getByRole("button", { name: "灯光" }).getAttribute("aria-expanded"),
+      (await screen.findByRole("button", { name: "灯光" })).getAttribute(
+        "aria-expanded",
+      ),
     ).toBe("true")
   })
 
@@ -92,7 +132,7 @@ describe("App main column", () => {
 
   it("invokes open_custom_mode_window when 自定义 is clicked", async () => {
     render(<App />)
-    fireEvent.click(screen.getByRole("radio", { name: "自定义" }))
+    fireEvent.click(await screen.findByRole("radio", { name: "自定义" }))
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("open_custom_mode_window")
     })

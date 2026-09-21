@@ -547,6 +547,62 @@ async fn lighting_idle_disabled_does_not_suspend() {
     assert_no_close_timer(&publishes);
 }
 
+#[tokio::test]
+async fn set_lighting_policy_persists_on_fake_snapshot() {
+    // Given: Fake backend with default policy (off / idle 0)
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1}"#).expect("parse");
+    backend.start().await.expect("handshake");
+    let before = backend.snapshot();
+    assert!(
+        !before.lighting_off_on_battery,
+        "default off-on-battery must be false"
+    );
+    assert_eq!(before.lighting_idle_seconds, 0, "default idle must be 0");
+
+    // When: the UI policy is set
+    backend
+        .set_lighting_policy(true, 600)
+        .await
+        .expect("set lighting policy");
+
+    // Then: snapshot reports the new values (not the hardcoded defaults)
+    let after = backend.snapshot();
+    assert!(
+        after.lighting_off_on_battery,
+        "snapshot must persist off-on-battery"
+    );
+    assert_eq!(
+        after.lighting_idle_seconds, 600,
+        "snapshot must persist idle seconds"
+    );
+}
+
+#[tokio::test]
+async fn set_lighting_policy_fake_off_on_battery_publishes_off() {
+    // Given: Fake backend on battery with a 10s idle window already elapsed
+    let mut backend = Backend::fake_from_json(r#"{"LightbarSupport":1,"LogoLightSupport":1}"#)
+        .expect("parse")
+        .with_on_battery(true)
+        .with_idle_ms(10_000);
+    backend.start().await.expect("handshake");
+
+    // When: off-on-battery is enabled with that idle window
+    backend
+        .set_lighting_policy(true, 10)
+        .await
+        .expect("set lighting policy");
+
+    // Then: lighting-off SetPower is recorded on every offered channel
+    let publishes = backend.recorded_publishes();
+    for topic in OFFERED_CTRL {
+        assert!(
+            set_power_on_topic(&publishes, topic, 0),
+            "off-on-battery must SetPower 0 on {topic}: {publishes:?}"
+        );
+    }
+    assert_no_close_timer(&publishes);
+}
+
 /// Hardware-free Real MQTT double. Same shape as `host_real_transport` — no TCP.
 struct RecordingTransport {
     recorded: Vec<Recorded>,

@@ -84,10 +84,7 @@ fn payload_matches_golden(actual: &Value, golden: &Value) -> Result<(), String> 
     }
 }
 
-fn transcript_contains_golden(
-    publishes: &[(String, Value)],
-    golden: &Value,
-) -> Result<(), String> {
+fn transcript_contains_golden(publishes: &[(String, Value)], golden: &Value) -> Result<(), String> {
     let mut errors = Vec::new();
     for (topic, payload) in publishes {
         match payload_matches_golden(payload, golden) {
@@ -106,8 +103,8 @@ fn load_golden(name: &str) -> Value {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("crates/_golden/mqtt")
         .join(name);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|err| panic!("{}: {err}", path.display()))
 }
 
@@ -117,11 +114,7 @@ fn has_action(pubs: &[(String, Value)], topic: &str, action: &str) -> bool {
     })
 }
 
-fn payload_with_action<'a>(
-    pubs: &'a [(String, Value)],
-    topic: &str,
-    action: &str,
-) -> &'a Value {
+fn payload_with_action<'a>(pubs: &'a [(String, Value)], topic: &str, action: &str) -> &'a Value {
     pubs.iter()
         .find(|(got_topic, payload)| {
             got_topic == topic && payload.get("Action").and_then(Value::as_str) == Some(action)
@@ -157,8 +150,8 @@ async fn transcript_contains_handshake_entries_when_walked() {
         let topic = step["topic"].as_str().expect("topic");
         let payload = &step["payload"];
         assert!(
-            pubs.iter()
-                .any(|(got, body)| got == topic && transcript_contains_golden(&[(got.clone(), body.clone())], payload).is_ok()),
+            pubs.iter().any(|(got, body)| got == topic
+                && transcript_contains_golden(&[(got.clone(), body.clone())], payload).is_ok()),
             "handshake {topic} {} missing: {pubs:?}",
             payload
         );
@@ -234,6 +227,5 @@ fn machine_state_fields_are_presence_only_when_compared() {
         "ProfileIndex": 0,
         "CpuTemperature": 999
     });
-    payload_matches_golden(&actual, &golden)
-        .expect("CpuTemperature value must not be compared");
+    payload_matches_golden(&actual, &golden).expect("CpuTemperature value must not be compared");
 }

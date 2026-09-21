@@ -11,6 +11,18 @@ fn table_body<'a>(manifest: &'a str, header: &str) -> Option<&'a str> {
 }
 
 #[test]
+fn custom_mode_window_declares_custom_url_when_packaging_conf_is_read() {
+    assert!(
+        TAURI_CONF.contains(r#""label": "custom-mode""#),
+        "app.windows must declare label custom-mode"
+    );
+    assert!(
+        TAURI_CONF.contains(r#""url": "index.html?window=custom""#),
+        "custom-mode window url must be index.html?window=custom"
+    );
+}
+
+#[test]
 fn nsis_install_mode_is_per_machine_when_packaging_conf_is_read() {
     assert!(
         TAURI_CONF.contains(r#""installMode": "perMachine""#),

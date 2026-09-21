@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import { MoreSwitches } from "./MoreSwitches"
 
@@ -123,6 +123,22 @@ describe("MoreSwitches", () => {
     for (const mqttCommand of MQTT_COMMANDS) {
       expect(commands).not.toContain(mqttCommand)
     }
+  })
+
+  it("reverts the 息屏 checkbox and calls onHostError when invoke rejects", async () => {
+    const onHostError = mock(() => {})
+    invoke.mockRejectedValueOnce(new Error("host refused"))
+    render(
+      <MoreSwitches offered={["monitoroff"]} onHostError={onHostError} />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "更多开关" }))
+    const box = screen.getByRole("checkbox", { name: "息屏（不睡眠）" })
+    expect(box).toHaveProperty("checked", false)
+    fireEvent.click(box)
+    await waitFor(() => {
+      expect(onHostError).toHaveBeenCalledWith("host refused")
+    })
+    expect(box).toHaveProperty("checked", false)
   })
 
   it("reports set_quick_switch failure through onHostError instead of swallowing it", async () => {

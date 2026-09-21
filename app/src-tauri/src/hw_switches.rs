@@ -421,7 +421,11 @@ impl Backend {
                         .map_err(|err| HostError::Io(std::io::Error::other(err.to_string())));
                 }
                 if key == "monitoroff" {
-                    return Err(HostError::RealUnavailable);
+                    if on {
+                        return crate::hw_screen_blank::dim();
+                    }
+                    crate::hw_screen_blank::restore();
+                    return Ok(());
                 }
                 if crate::hw_shell::is_shell_key(key) {
                     return crate::hw_shell::system_apply(key, on)
@@ -454,7 +458,7 @@ impl Backend {
                 apply_monitor_off(&mut state.wmi);
                 Ok(())
             }
-            Self::Real { .. } => Err(HostError::RealUnavailable),
+            Self::Real { .. } => crate::hw_screen_blank::dim(),
         }
     }
 }

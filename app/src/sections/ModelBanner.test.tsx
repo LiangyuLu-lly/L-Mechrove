@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import { ModelBanner } from "./ModelBanner"
 
@@ -43,7 +43,7 @@ describe("ModelBanner", () => {
     expect(status.textContent).toContain("unserved")
   })
 
-  it("invokes setProjectId with the typed id when 应用 is clicked", () => {
+  it("offers no override input or 应用 when writeAllowed is false", () => {
     render(
       <ModelBanner
         writeAllowed={false}
@@ -51,10 +51,12 @@ describe("ModelBanner", () => {
         projectId=""
       />,
     )
-    fireEvent.change(screen.getByRole("textbox", { name: "手动机型" }), {
-      target: { value: "GK7NXXR" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "应用" }))
-    expect(invoke).toHaveBeenCalledWith("set_project_id", { id: "GK7NXXR" })
+    expect(screen.queryByLabelText("手动机型")).toBeNull()
+    expect(screen.queryByRole("textbox")).toBeNull()
+    expect(screen.queryByRole("button", { name: "应用" })).toBeNull()
+    expect(invoke).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.some((call) => call[0] === "set_project_id")).toBe(
+      false,
+    )
   })
 })

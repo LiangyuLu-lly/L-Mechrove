@@ -108,10 +108,12 @@ function SwitchRow({ switchKey, onHostError }: SwitchRowProps) {
   const label = SWITCH_LABELS[switchKey] ?? switchKey
 
   async function onChange(next: boolean): Promise<void> {
+    const previous = checked
     setChecked(next)
     try {
       await setQuickSwitch(switchKey, next)
     } catch (error) {
+      setChecked(previous)
       onHostError?.(error instanceof Error ? error.message : String(error))
     }
   }

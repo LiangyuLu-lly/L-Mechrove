@@ -348,6 +348,13 @@ impl Backend {
         }
     }
 
+    pub fn apply_gpu_generation(&mut self, generation: DgpuGeneration) {
+        match self {
+            Self::Fake { state } => state.gpu_generation = generation,
+            Self::Real { state } => state.gpu_generation = generation,
+        }
+    }
+
     pub fn apply_inbound(&mut self, topic: &str, payload: &[u8]) {
         match self {
             Self::Fake { state } => {

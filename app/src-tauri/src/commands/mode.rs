@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::hw_backend::AppState;
 
@@ -12,11 +12,17 @@ pub async fn set_performance_mode(mode: String, state: State<'_, AppState>) -> R
 }
 
 #[tauri::command]
-pub fn open_custom_mode_window() -> Result<(), String> {
-    Err("not implemented".to_string())
+pub fn open_custom_mode_window(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("custom-mode")
+        .ok_or_else(|| "custom-mode window missing".to_string())?;
+    window.show().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-pub fn close_custom_mode_window() -> Result<(), String> {
-    Err("not implemented".to_string())
+pub fn close_custom_mode_window(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("custom-mode")
+        .ok_or_else(|| "custom-mode window missing".to_string())?;
+    window.hide().map_err(|err| err.to_string())
 }
