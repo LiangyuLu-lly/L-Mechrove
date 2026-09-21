@@ -190,6 +190,8 @@ input:focus-visible {
   min-height: var(--row-control-height);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
 }
 
 .auto-hz {
@@ -227,7 +229,8 @@ input:focus-visible {
 
 .segmented {
   display: flex;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: var(--segmented-inset);
   background: var(--input);
   border: 1px solid var(--border);
@@ -258,8 +261,8 @@ input:focus-visible {
 }
 
 .slider {
-  flex: 1;
-  width: 100%;
+  flex: 1 1 120px;
+  min-width: 120px;
   height: var(--slider-track-height);
   appearance: none;
   background: var(--track);

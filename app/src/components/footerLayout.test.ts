@@ -29,4 +29,18 @@ describe("footerLayout", () => {
     expect(declarations).toContain("max-width: 420px")
     expect(declarations).not.toContain("width: 420px")
   })
+
+  it("lets a segmented row share its line instead of starving the slider", async () => {
+    const css = await Bun.file(new URL("../App.css", import.meta.url)).text()
+
+    const segmented = declarationBlock(css, ".segmented")
+      .split(";")
+      .map((declaration) => declaration.trim())
+    expect(segmented).not.toContain("width: 100%")
+
+    const slider = declarationBlock(css, ".slider")
+      .split(";")
+      .map((declaration) => declaration.trim())
+    expect(slider.some((declaration) => declaration.startsWith("min-width:"))).toBe(true)
+  })
 })

@@ -32,9 +32,7 @@ export function Collapse({
           <span className="collapse__summary">{summary}</span>
         ) : null}
       </button>
-      <div className="collapse__body" hidden={!open}>
-        {children}
-      </div>
+      {open ? <div className="collapse__body">{children}</div> : null}
     </div>
   )
 }
