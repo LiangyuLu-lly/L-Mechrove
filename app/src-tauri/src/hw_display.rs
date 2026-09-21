@@ -86,6 +86,10 @@ fn lock_mutex<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|err| err.into_inner())
 }
 
+fn unavailable<T>() -> Result<T, HostError> {
+    Err(HostError::RealUnavailable)
+}
+
 fn real_brightness_queue() -> std::sync::MutexGuard<'static, BrightnessQueue> {
     lock_mutex(&REAL_BRIGHTNESS_QUEUE)
 }
@@ -106,7 +110,7 @@ fn sta_handle() -> Result<&'static StaHandle, HostError> {
         }
     }) {
         Ok(handle) => Ok(handle),
-        Err(()) => Err(HostError::RealUnavailable),
+        Err(()) => unavailable(),
     }
 }
 
@@ -138,7 +142,7 @@ fn live_wmi_set_brightness(timeout: u32, brightness: u8) -> Result<(), HostError
     #[cfg(not(all(windows, not(miri))))]
     {
         let _ = (timeout, brightness);
-        Err(HostError::RealUnavailable)
+        unavailable()
     }
 }
 
@@ -153,8 +157,8 @@ async fn commit_brightness_on_sta(timeout: u32, brightness: u8) -> Result<(), Ho
             sink: snapshot_injected_wmi(),
             reply,
         })
-        .map_err(|_| HostError::RealUnavailable)?;
-    rx.await.map_err(|_| HostError::RealUnavailable)?
+        .or_else(|_| unavailable())?;
+    rx.await.or_else(|_| unavailable())?
 }
 
 async fn apply_real_brightness(percent: u8) -> Result<(), HostError> {
@@ -541,18 +545,18 @@ mod live_wmi {
         if wrote {
             Ok(())
         } else {
-            Err(HostError::RealUnavailable)
+            super::unavailable()
         }
     }
 
     fn bstr(text: &str) -> Result<BStr, HostError> {
         let units: Vec<u16> = text.encode_utf16().collect();
-        let len = u32::try_from(units.len()).map_err(|_| HostError::RealUnavailable)?;
+        let len = u32::try_from(units.len()).or_else(|_| super::unavailable())?;
         // SAFETY: [Category 8 — FFI boundary]
         // `units` is a valid UTF-16 buffer of `len` code units; OLE copies it.
         let ptr = unsafe { SysAllocStringLen(units.as_ptr(), len) };
         if ptr.is_null() {
-            return Err(HostError::RealUnavailable);
+            return super::unavailable();
         }
         Ok(BStr(ptr))
     }
@@ -650,13 +654,7 @@ mod live_wmi {
                 *mut *mut c_void,
                 *mut *mut c_void,
             ) -> i32 = vcall(class_obj, 19);
-            get_method(
-                class_obj,
-                name.as_ptr(),
-                0,
-                &mut in_sig,
-                ptr::null_mut(),
-            )
+            get_method(class_obj, name.as_ptr(), 0, &mut in_sig, ptr::null_mut())
         };
         com_ok(hr, in_sig)
     }
@@ -681,12 +679,7 @@ mod live_wmi {
         put_variant(object, name, VT_UI1, u64::from(value))
     }
 
-    fn put_variant(
-        object: *mut c_void,
-        name: &str,
-        vt: u16,
-        value: u64,
-    ) -> Result<(), HostError> {
+    fn put_variant(object: *mut c_void, name: &str, vt: u16, value: u64) -> Result<(), HostError> {
         let name = wide(name);
         let mut variant = Variant::empty();
         variant.vt = vt;
@@ -704,7 +697,7 @@ mod live_wmi {
             put(object, name.as_ptr(), 0, &mut variant, 0)
         };
         if hr < 0 {
-            return Err(HostError::RealUnavailable);
+            return super::unavailable();
         }
         Ok(())
     }
@@ -749,7 +742,7 @@ mod live_wmi {
             next(enumerator, WBEM_INFINITE, 1, &mut object, &mut returned)
         };
         if hr < 0 {
-            return Err(HostError::RealUnavailable);
+            return super::unavailable();
         }
         if returned == 0 || object.is_null() {
             return Ok(None);
@@ -782,7 +775,7 @@ mod live_wmi {
         };
         if hr < 0 || variant.vt != VT_BSTR || variant.data == 0 {
             unsafe { VariantClear(&mut variant) };
-            return Err(HostError::RealUnavailable);
+            return super::unavailable();
         }
         let ptr = variant.data as *mut u16;
         variant.vt = 0;
@@ -823,14 +816,14 @@ mod live_wmi {
             )
         };
         if hr < 0 {
-            return Err(HostError::RealUnavailable);
+            return super::unavailable();
         }
         Ok(())
     }
 
     fn com_ok(hr: i32, ptr: *mut c_void) -> Result<ComPtr, HostError> {
         if hr < 0 || ptr.is_null() {
-            return Err(HostError::RealUnavailable);
+            return super::unavailable();
         }
         Ok(ComPtr(ptr))
     }

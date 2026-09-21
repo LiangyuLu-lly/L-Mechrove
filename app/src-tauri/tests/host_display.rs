@@ -6,10 +6,13 @@ use std::time::Duration;
 
 use app_lib::hw_display::{
     apply_auto_refresh_rate, apply_brightness, apply_calibration, apply_direct_connect_restart,
-    apply_display_hz, color_calibration_file_name, BrightnessQueue, BrightnessSink,
+    apply_display_hz, apply_local_dimming, apply_overdrive, color_calibration_file_name,
+    BrightnessQueue, BrightnessSink,
 };
 use app_lib::hw_wmi::FakeWmi;
 use app_lib::Backend;
+#[cfg(not(windows))]
+use app_lib::HostError;
 use gcu_mqtt::fake::{FakeBroker, Recorded};
 use gcu_mqtt::handshake::run_handshake;
 
@@ -308,6 +311,77 @@ async fn auto_refresh_rate_publishes_only_when_live_dc_hz_seen() {
 }
 
 #[tokio::test]
+async fn overdrive_on_publishes_lcdoverdrive_on() {
+    let mut broker = FakeBroker::new();
+    apply_overdrive(&mut broker, true)
+        .await
+        .expect("LCDOverdrive_ON");
+    let actions = write_actions(&broker);
+    assert_eq!(actions, vec!["LCDOverdrive_ON".to_owned()]);
+}
+
+#[tokio::test]
+async fn overdrive_off_publishes_lcdoverdrive_off() {
+    let mut broker = FakeBroker::new();
+    apply_overdrive(&mut broker, false)
+        .await
+        .expect("LCDOverdrive_OFF");
+    let actions = write_actions(&broker);
+    assert_eq!(actions, vec!["LCDOverdrive_OFF".to_owned()]);
+}
+
+#[tokio::test]
+async fn local_dimming_on_publishes_localdimming_on() {
+    let mut broker = FakeBroker::new();
+    apply_local_dimming(&mut broker, true)
+        .await
+        .expect("LOCALDIMMING_ON");
+    let actions = write_actions(&broker);
+    assert_eq!(actions, vec!["LOCALDIMMING_ON".to_owned()]);
+}
+
+#[tokio::test]
+async fn local_dimming_off_publishes_localdimming_off() {
+    let mut broker = FakeBroker::new();
+    apply_local_dimming(&mut broker, false)
+        .await
+        .expect("LOCALDIMMING_OFF");
+    let actions = write_actions(&broker);
+    assert_eq!(actions, vec!["LOCALDIMMING_OFF".to_owned()]);
+}
+
+#[tokio::test]
+async fn backend_set_overdrive_publishes_after_start() {
+    let mut backend = Backend::fake_from_json("{}").expect("parse");
+    backend.start().await.expect("start");
+    backend.set_overdrive(true).await.expect("overdrive");
+    let publishes = backend.recorded_publishes();
+    assert!(
+        publishes.iter().any(|(topic, payload)| {
+            topic == "Setting/Control" && payload["Action"] == "LCDOverdrive_ON"
+        }),
+        "LCDOverdrive_ON missing: {publishes:?}"
+    );
+}
+
+#[tokio::test]
+async fn backend_set_local_dimming_publishes_after_start() {
+    let mut backend = Backend::fake_from_json("{}").expect("parse");
+    backend.start().await.expect("start");
+    backend
+        .set_local_dimming(false)
+        .await
+        .expect("local dimming");
+    let publishes = backend.recorded_publishes();
+    assert!(
+        publishes.iter().any(|(topic, payload)| {
+            topic == "Setting/Control" && payload["Action"] == "LOCALDIMMING_OFF"
+        }),
+        "LOCALDIMMING_OFF missing: {publishes:?}"
+    );
+}
+
+#[tokio::test]
 async fn direct_connect_restart_frame_recorded_with_delay_skipped_in_tests() {
     let mut broker = FakeBroker::new();
     apply_direct_connect_restart(&mut broker, Duration::ZERO)
@@ -323,6 +397,8 @@ async fn direct_connect_restart_frame_recorded_with_delay_skipped_in_tests() {
     });
     assert_eq!(payload, &expected);
 }
+
+static BRIGHTNESS_SEAM: Mutex<()> = Mutex::new(());
 
 struct RecordingWmi {
     writes: Mutex<Vec<(u32, u8)>>,
@@ -345,13 +421,32 @@ impl BrightnessSink for RecordingWmi {
         *self.thread_id.lock().expect("thread_id") = Some(std::thread::current().id());
         *self.on_tokio_worker.lock().expect("tokio flag") =
             Some(tokio::runtime::Handle::try_current().is_ok());
-        self.writes.lock().expect("writes").push((timeout, brightness));
+        self.writes
+            .lock()
+            .expect("writes")
+            .push((timeout, brightness));
     }
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn real_set_brightness_without_sink_is_unavailable_off_windows() {
+    let _seam = BRIGHTNESS_SEAM.lock().expect("brightness seam");
+    let mut backend = Backend::real();
+    let err = backend
+        .set_brightness(40)
+        .await
+        .expect_err("live WMI does not exist off Windows");
+    assert!(
+        matches!(err, HostError::RealUnavailable),
+        "expected RealUnavailable, got {err}"
+    );
 }
 
 #[tokio::test]
 async fn real_set_brightness_runs_wmi_on_sta_thread_not_tokio_worker() {
     // Given: Real arm + injected WMI double that records the calling thread
+    let _seam = BRIGHTNESS_SEAM.lock().expect("brightness seam");
     let sink = RecordingWmi::new();
     let _guard = Backend::inject_brightness_sink(Arc::clone(&sink) as Arc<dyn BrightnessSink>);
     let mut backend = Backend::real();
