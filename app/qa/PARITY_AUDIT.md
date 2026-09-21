@@ -63,20 +63,33 @@ as CANNOT-VERIFY with its cheapest falsifier — never as done.
   session, not an accepted debt.
 - Usage telemetry is off (the vendor ships it on by default).
 
-## Open defects found by the display audit (commit bf0d89e)
+## Resolved by the display-defect session
 
-The display audit answered the open question: the twelve unavailable tokens in `hw_display.rs` are one
-non-Windows live-WMI fallback, the STA plumbing, and the live COM/WMI failure points — **no unimplemented
-user-visible display feature**. They now collapse into one constructor (12 → 1 token). But it surfaced three
-real items that are NOT fixed:
+The display audit's three open items are closed by test. C# HDR is **not** an MQTT field.
 
-1. **`RealState.hdr_on` is never filled from inbound MQTT** (`hw_real.rs`, outside the audited file). HDR
-   blocking therefore never activates on the real path; only the fake path is covered by a test. Falsifier:
-   turn HDR on with the machine, try to change calibration, see whether it is refused.
-2. **`set_calibration` always sends `FileName=Default`** (`color_calibration_file_name(0)`). C# sends the file
-   name of the current mode, so returning from sRGB to the default may not restore the right profile.
-   Falsifier: switch to sRGB and back, compare the panel.
-3. **CI hazard**: integration tests compile the library without `cfg(test)`, so a real brightness call that
-   does not install the injected sink would open live WMI on a Windows runner. Mitigation in place: the sink
-   test holds `BRIGHTNESS_SEAM` and no sink-less real brightness test may be added.
+1. **HDR guard on the real path — fail-closed.** C# reads HDR from `ScreenCCD.GetHDRStatus`
+   (`Display/ScreenCCD.cs:11`) via `MechrevoService.GetAdvancedColorState` / `IsHdrEnabled`
+   (`Hardware/MechrevoService.cs:956-970`), injected as `_readHdrEnabled = IsAdvancedColorEnabled`
+   (`MechrevoService.cs:118`) and applied in `SetColorCalibration` (`MechrevoService.cs:752`).
+   There is no MQTT topic or payload field. Inventing one would be a false source. The Real arm
+   therefore refuses calibration when HDR has never been observed from CCD
+   (`real_inbound_does_not_invent_mqtt_hdr_and_calibration_is_fail_closed`). Fake still uses
+   `hdr_on` (`hdr_on_blocks_color_calibration_without_publish`). Live CCD query is not ported;
+   until it is, Real calibration stays refused. Falsifier on the machine: turn HDR on, try to
+   change calibration — must be refused; with HDR off, calibration still cannot proceed until CCD
+   is wired.
+2. **`set_calibration` OFF sends the current mode's file name.** C# `SetColorCalibration` off-path
+   publishes `ColorCalibrationFileName(currentMode)` (`MechrevoService.cs:778-779, 986-992`).
+   Current mode is `MechrevoHw.ColorCalibrationMode` from Setting/Status FirstField
+   `CurrentColorCalibration` / `ColorCalibrationMode` / `ColorCalibration` (`MechrevoHw.cs:1938-1944`),
+   else the last ON_* write. Evidence: `set_calibration_off_sends_file_name_of_current_mode`,
+   `set_calibration_off_uses_inbound_color_calibration_mode`,
+   `apply_inbound_setting_status_sets_color_calibration_mode`. Falsifier: switch to sRGB and back,
+   compare the panel ICC name.
+3. **CI brightness seam is locked.** Integration tests compile the library without `cfg(test)`.
+   `apply_real_brightness` now returns `RealUnavailable` when no injected sink is installed and the
+   process is a rustc test binary under `deps`. Evidence:
+   `real_brightness_refuses_unless_injected_sink_is_installed` (all platforms) plus the existing
+   serialized `BRIGHTNESS_SEAM` test `real_set_brightness_runs_wmi_on_sta_thread_not_tokio_worker`.
+   Falsifier: WMI brightness still needs a look at the panel.
 

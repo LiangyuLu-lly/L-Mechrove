@@ -16,6 +16,7 @@ pub struct InboundLive {
     pub cpu_rpm: Option<i64>,
     pub gpu_rpm: Option<i64>,
     pub custom_profile_index: Option<u8>,
+    pub color_calibration_mode: Option<i32>,
 }
 
 impl Default for InboundLive {
@@ -30,6 +31,7 @@ impl Default for InboundLive {
             cpu_rpm: None,
             gpu_rpm: None,
             custom_profile_index: None,
+            color_calibration_mode: None,
         }
     }
 }
@@ -122,7 +124,30 @@ fn apply_setting_status(live: &mut InboundLive, value: &Value) -> bool {
         && set_flag(&mut live.seen.uni_omni, true);
     changed |= present(obj, "PowerLightSwitch") && set_flag(&mut live.seen.power_light, true);
     changed |= present(obj, "BatteryLogo_Status") && set_flag(&mut live.seen.battery_logo, true);
+    // C# MechrevoHw.cs:1938-1944 FirstField then ParseColorCalibrationMode.
+    if let Some(mode) = color_calibration_mode_from_status(value) {
+        if live.color_calibration_mode != Some(mode) {
+            live.color_calibration_mode = Some(mode);
+            changed = true;
+        }
+    }
     changed
+}
+
+fn color_calibration_mode_from_status(value: &Value) -> Option<i32> {
+    let token = ["CurrentColorCalibration", "ColorCalibrationMode", "ColorCalibration"]
+        .iter()
+        .find_map(|key| value.get(*key).filter(|item| !item.is_null()))?;
+    let parsed = json_i64(Some(token))
+        .and_then(|n| i32::try_from(n).ok())
+        .unwrap_or_else(|| match token.as_str().unwrap_or("").to_ascii_lowercase() {
+            ref lower if lower.contains("srgb") => 2,
+            ref lower if lower.contains("p3") => 3,
+            ref lower if lower.contains("adobe") => 4,
+            ref lower if lower.contains("default") => 1,
+            _ => 0,
+        });
+    (1..=4).contains(&parsed).then_some(parsed)
 }
 
 fn apply_fan_status(live: &mut InboundLive, value: &Value) -> bool {

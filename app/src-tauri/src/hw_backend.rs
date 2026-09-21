@@ -361,6 +361,8 @@ impl Backend {
                     cpu_rpm: state.cpu_rpm,
                     gpu_rpm: state.gpu_rpm,
                     custom_profile_index: Some(state.custom_profile_index),
+                    color_calibration_mode: (state.color_calibration_mode >= 1)
+                        .then_some(state.color_calibration_mode),
                 };
                 if apply_inbound(&mut live, topic, payload) {
                     state.seen = live.seen;
@@ -373,6 +375,9 @@ impl Backend {
                     state.gpu_rpm = live.gpu_rpm;
                     if let Some(index) = live.custom_profile_index {
                         state.custom_profile_index = index;
+                    }
+                    if let Some(mode) = live.color_calibration_mode {
+                        state.color_calibration_mode = mode;
                     }
                 }
             }

@@ -49,6 +49,7 @@ pub struct FakeState {
     pub(crate) official_isolation: Option<bool>,
     #[allow(dead_code)]
     pub(crate) custom_profile_index: u8,
+    pub(crate) color_calibration_mode: i32,
     #[allow(dead_code)]
     pub(crate) on_battery: bool,
     #[allow(dead_code)]
@@ -96,6 +97,7 @@ impl FakeState {
             gpu_watt: Some(80.0),
             official_isolation: None,
             custom_profile_index: 0,
+            color_calibration_mode: 0,
             on_battery: false,
             idle_ms: 0,
             lighting_suspended: false,

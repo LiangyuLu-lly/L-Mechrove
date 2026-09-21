@@ -31,6 +31,7 @@ pub struct RealState {
     pub(crate) gpu_watt: Option<f64>,
     pub(crate) project_id: String,
     pub(crate) custom_profile_index: u8,
+    pub(crate) color_calibration_mode: i32,
     pub(crate) profile_dir: Option<PathBuf>,
     pub(crate) theme_mode: String,
     pub(crate) keyboard_hid_unavailable: bool,
@@ -66,6 +67,7 @@ impl RealState {
             gpu_watt: None,
             project_id: String::new(),
             custom_profile_index: 0,
+            color_calibration_mode: 0,
             profile_dir: None,
             theme_mode: "night".to_owned(),
             keyboard_hid_unavailable: false,
@@ -96,6 +98,9 @@ impl RealState {
         if let Some(index) = live.custom_profile_index {
             self.custom_profile_index = index;
         }
+        if let Some(mode) = live.color_calibration_mode {
+            self.color_calibration_mode = mode;
+        }
     }
 
     pub fn inbound_live(&self) -> InboundLive {
@@ -109,6 +114,8 @@ impl RealState {
             cpu_rpm: self.cpu_rpm,
             gpu_rpm: self.gpu_rpm,
             custom_profile_index: Some(self.custom_profile_index),
+            color_calibration_mode: (self.color_calibration_mode >= 1)
+                .then_some(self.color_calibration_mode),
         }
     }
 }

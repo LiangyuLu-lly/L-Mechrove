@@ -10,9 +10,7 @@ use app_lib::hw_display::{
     BrightnessQueue, BrightnessSink,
 };
 use app_lib::hw_wmi::FakeWmi;
-use app_lib::Backend;
-#[cfg(not(windows))]
-use app_lib::HostError;
+use app_lib::{Backend, HostError};
 use gcu_mqtt::fake::{FakeBroker, Recorded};
 use gcu_mqtt::handshake::run_handshake;
 
@@ -146,6 +144,99 @@ async fn hdr_on_blocks_color_calibration_without_publish() {
             .all(|action| !action.contains("COLOR_CALIBRATION")),
         "HDR block must not publish COLOR_CALIBRATION_*, got {actions:?}"
     );
+}
+
+#[tokio::test]
+async fn real_inbound_does_not_invent_mqtt_hdr_and_calibration_is_fail_closed() {
+    // Given: C# HDR is ScreenCCD.GetHDRStatus (ScreenCCD.cs:11) via
+    // MechrevoService.GetAdvancedColorState/IsHdrEnabled (MechrevoService.cs:956-970),
+    // wired as _readHdrEnabled = IsAdvancedColorEnabled (MechrevoService.cs:118).
+    // There is no MQTT topic or field. An inbound Setting/Status must not
+    // silently pass the S4-style guard on the Real path.
+    let mut backend = Backend::real();
+    backend.apply_inbound(
+        "Setting/Status",
+        br#"{"WinKey":"WINKEY_LOCK","ColorCalibrationMode":2}"#,
+    );
+
+    // When: calibration is requested with HDR never observed from CCD
+    let err = backend
+        .set_calibration("COLOR_CALIBRATION_ON_SRGB")
+        .await
+        .expect_err("unobserved HDR must refuse calibration");
+
+    // Then: DisplayDenied, no silent pass
+    assert!(
+        matches!(err, HostError::DisplayDenied(ref action) if action == "COLOR_CALIBRATION_ON_SRGB"),
+        "expected DisplayDenied(COLOR_CALIBRATION_ON_SRGB), got {err}"
+    );
+}
+
+#[tokio::test]
+async fn set_calibration_off_sends_file_name_of_current_mode() {
+    // Given: Fake backend after handshake. C# SetColorCalibration(off) sends
+    // ColorCalibrationFileName(currentMode) (MechrevoService.cs:778-779, 986-992).
+    let mut backend = Backend::fake_from_json("{}").expect("parse");
+    backend.start().await.expect("start");
+
+    // When: sRGB is selected, then calibration is turned off
+    backend
+        .set_calibration("COLOR_CALIBRATION_ON_SRGB")
+        .await
+        .expect("sRGB");
+    backend
+        .set_calibration("COLOR_CALIBRATION_OFF")
+        .await
+        .expect("off after sRGB");
+
+    // Then: FileName is the C# sRGB literal
+    let publishes = backend.recorded_publishes();
+    let off = publishes.iter().rev().find(|(topic, payload)| {
+        topic == "Setting/Control" && payload["Action"] == "COLOR_CALIBRATION_OFF"
+    });
+    let (_, payload) = off.expect("COLOR_CALIBRATION_OFF after sRGB missing");
+    assert_eq!(payload["FileName"], "sRGB");
+
+    // When: returning to the default, then off
+    backend
+        .set_calibration("COLOR_CALIBRATION_ON_DEFAULT")
+        .await
+        .expect("default");
+    backend
+        .set_calibration("COLOR_CALIBRATION_OFF")
+        .await
+        .expect("off after default");
+
+    // Then: FileName is the C# Default literal
+    let publishes = backend.recorded_publishes();
+    let off = publishes.iter().rev().find(|(topic, payload)| {
+        topic == "Setting/Control" && payload["Action"] == "COLOR_CALIBRATION_OFF"
+    });
+    let (_, payload) = off.expect("COLOR_CALIBRATION_OFF after default missing");
+    assert_eq!(payload["FileName"], "Default");
+}
+
+#[tokio::test]
+async fn set_calibration_off_uses_inbound_color_calibration_mode() {
+    // Given: Setting/Status reports the current mode the way C# FirstField does
+    // (MechrevoHw.cs:1938-1944).
+    let mut backend = Backend::fake_from_json("{}").expect("parse");
+    backend.start().await.expect("start");
+    backend.apply_inbound("Setting/Status", br#"{"ColorCalibrationMode":2}"#);
+
+    // When: calibration is turned off
+    backend
+        .set_calibration("COLOR_CALIBRATION_OFF")
+        .await
+        .expect("off from inbound sRGB");
+
+    // Then: FileName matches ColorCalibrationFileName(2) == "sRGB"
+    let publishes = backend.recorded_publishes();
+    let off = publishes.iter().find(|(topic, payload)| {
+        topic == "Setting/Control" && payload["Action"] == "COLOR_CALIBRATION_OFF"
+    });
+    let (_, payload) = off.expect("COLOR_CALIBRATION_OFF missing");
+    assert_eq!(payload["FileName"], "sRGB");
 }
 
 #[tokio::test]
@@ -437,6 +528,23 @@ async fn real_set_brightness_without_sink_is_unavailable_off_windows() {
         .set_brightness(40)
         .await
         .expect_err("live WMI does not exist off Windows");
+    assert!(
+        matches!(err, HostError::RealUnavailable),
+        "expected RealUnavailable, got {err}"
+    );
+}
+
+#[tokio::test]
+async fn real_brightness_refuses_unless_injected_sink_is_installed() {
+    // Integration tests compile the library without cfg(test). A Real brightness
+    // write that does not install the injected sink must not open live WMI on a
+    // Windows runner. The sink is the seam; missing it is RealUnavailable.
+    let _seam = BRIGHTNESS_SEAM.lock().expect("brightness seam");
+    let mut backend = Backend::real();
+    let err = backend
+        .set_brightness(40)
+        .await
+        .expect_err("live WMI is forbidden unless the brightness sink is installed");
     assert!(
         matches!(err, HostError::RealUnavailable),
         "expected RealUnavailable, got {err}"

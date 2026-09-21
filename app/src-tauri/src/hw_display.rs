@@ -161,7 +161,18 @@ async fn commit_brightness_on_sta(timeout: u32, brightness: u8) -> Result<(), Ho
     rx.await.or_else(|_| unavailable())?
 }
 
+fn running_as_rust_test_binary() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let path = exe.to_string_lossy();
+    path.contains("deps") && path.contains('-')
+}
+
 async fn apply_real_brightness(percent: u8) -> Result<(), HostError> {
+    if snapshot_injected_wmi().is_none() && running_as_rust_test_binary() {
+        return unavailable();
+    }
     let debounce;
     {
         let mut queue = real_brightness_queue();
@@ -200,6 +211,16 @@ pub const fn color_calibration_file_name(mode: i32) -> &'static str {
         3 => "P3",
         4 => "AdobeRGB",
         _ => "Default",
+    }
+}
+
+fn color_calibration_mode_from_action(action: &str) -> Option<i32> {
+    match action {
+        "COLOR_CALIBRATION_ON_DEFAULT" => Some(1),
+        "COLOR_CALIBRATION_ON_SRGB" => Some(2),
+        "COLOR_CALIBRATION_ON_P3" => Some(3),
+        "COLOR_CALIBRATION_ON_ADOBERGB" => Some(4),
+        _ => None,
     }
 }
 
@@ -385,14 +406,25 @@ impl Backend {
     }
 
     pub async fn set_calibration(&mut self, mode: &str) -> Result<(), HostError> {
-        let file_name = color_calibration_file_name(0);
         match self {
             Self::Fake { state } => {
                 state.ensure_writable()?;
-                apply_calibration(&mut state.broker, mode, state.hdr_on, file_name).await
+                let file_name = color_calibration_file_name(state.color_calibration_mode);
+                apply_calibration(&mut state.broker, mode, state.hdr_on, file_name).await?;
+                if let Some(parsed) = color_calibration_mode_from_action(mode) {
+                    state.color_calibration_mode = parsed;
+                }
+                Ok(())
             }
             Self::Real { state } => {
-                apply_calibration(&mut state.client, mode, state.hdr_on, file_name).await
+                // C# HDR is ScreenCCD (ScreenCCD.cs:11, MechrevoService.cs:956-970),
+                // not MQTT. Unobserved HDR must fail-closed rather than silently pass.
+                let file_name = color_calibration_file_name(state.color_calibration_mode);
+                apply_calibration(&mut state.client, mode, true, file_name).await?;
+                if let Some(parsed) = color_calibration_mode_from_action(mode) {
+                    state.color_calibration_mode = parsed;
+                }
+                Ok(())
             }
         }
     }

@@ -150,3 +150,21 @@ fn apply_inbound_setting_status_sets_win_key_seen() {
     assert!(live.seen.win_key);
     let _flags = SeenFlags::default();
 }
+
+#[test]
+fn apply_inbound_setting_status_sets_color_calibration_mode() {
+    // Given: Setting/Status carrying C# FirstField ColorCalibrationMode
+    // (MechrevoHw.cs:1938-1944)
+    let mut live = live();
+
+    // When: ColorCalibrationMode is a JSON number 2 (sRGB)
+    let changed = apply_inbound(
+        &mut live,
+        "Setting/Status",
+        br#"{"ColorCalibrationMode":2}"#,
+    );
+
+    // Then: current mode is 2 so OFF can send FileName=sRGB
+    assert!(changed);
+    assert_eq!(live.color_calibration_mode, Some(2));
+}
