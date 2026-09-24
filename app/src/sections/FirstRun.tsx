@@ -54,8 +54,22 @@ const LATER_STEPS: readonly Step[] = [
   },
 ]
 
-function consoleStep(requiresPrompt: boolean): Step {
-  return requiresPrompt ? UNINSTALL_STEP : REPLACED_STEP
+const UNKNOWN_STEP: Step = {
+  marker: "?",
+  title: "未能确认官方控制台是否已卸载",
+  body: "无法检测官方控制台。不要把它当成已经清理。请到设置 → 应用里自行确认，仍在就卸载，然后重新打开本程序。",
+  warning: true,
+  appsSettings: true,
+}
+
+function consoleStep(status: "clean" | "leftover" | "unknown"): Step {
+  if (status === "leftover") {
+    return UNINSTALL_STEP
+  }
+  if (status === "unknown") {
+    return UNKNOWN_STEP
+  }
+  return REPLACED_STEP
 }
 
 function openAppsSettings(): void {
@@ -68,28 +82,27 @@ function openAppsSettings(): void {
 }
 
 export function FirstRun({ onLater, onGoSystem }: FirstRunProps) {
-  const [requiresPrompt, setRequiresPrompt] = useState(false)
+  const [consoleState, setConsoleState] = useState<"clean" | "leftover" | "unknown">("unknown")
 
   useEffect(() => {
     let cancelled = false
     void invoke<CoexistenceStatus>("gcu_coexistence_status")
       .then((status) => {
         if (!cancelled) {
-          setRequiresPrompt(status.requiresPrompt)
+          setConsoleState(status.requiresPrompt ? "leftover" : "clean")
         }
       })
-      .catch((error: unknown) => {
-        if (error instanceof Error) {
-          return
+      .catch(() => {
+        if (!cancelled) {
+          setConsoleState("unknown")
         }
-        throw error
       })
     return () => {
       cancelled = true
     }
   }, [])
 
-  const steps = [consoleStep(requiresPrompt), ...LATER_STEPS]
+  const steps = [consoleStep(consoleState), ...LATER_STEPS]
 
   return (
     <div className="first-run" role="dialog" aria-labelledby="first-run-title">

@@ -46,8 +46,16 @@ describe("FirstRun leftover console prompt", () => {
   it("opens ms-settings:appsfeatures when the apps-settings button is clicked", async () => {
     invoke.mockImplementation(() => Promise.resolve(leftoverStatus()))
     render(<FirstRun onLater={() => undefined} onGoSystem={() => undefined} />)
-    fireEvent.click(await screen.findByRole("button", { name: "打开应用设置" }))
+    expect(await screen.findByText("请卸载官方控制台")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "打开应用设置" }))
     expect(openUrl).toHaveBeenCalledWith("ms-settings:appsfeatures")
+  })
+
+  it("does not claim the official console was cleaned when detection fails", async () => {
+    invoke.mockImplementation(() => Promise.reject(new Error("无法检测官方控制台")))
+    render(<FirstRun onLater={() => undefined} onGoSystem={() => undefined} />)
+    expect(await screen.findByText(/无法检测官方控制台/)).toBeTruthy()
+    expect(screen.queryByText("无需安装任何其他控制台")).toBeNull()
   })
 
   it("does not invoke a process-kill or leftover-removal command", async () => {
