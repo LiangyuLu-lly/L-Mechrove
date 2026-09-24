@@ -151,4 +151,23 @@ describe("UpdateDialog", () => {
     render(<UpdateDialog onClose={() => undefined} />)
     expect(await screen.findByText(/无法连接到更新服务器/)).toBeTruthy()
   })
+
+  it("surfaces the install error and clears the progress bar when updates_install rejects", async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === "updates_check") {
+        return Promise.resolve(AVAILABLE)
+      }
+      if (command === "updates_install") {
+        return Promise.reject(new Error("校验失败"))
+      }
+      return Promise.resolve()
+    })
+    render(<UpdateDialog onClose={() => undefined} hasValidSha256 />)
+    fireEvent.click(await screen.findByRole("button", { name: "下载并安装" }))
+    expect(await screen.findByText("校验失败")).toBeTruthy()
+    expect(screen.queryByRole("progressbar")).toBeNull()
+    expect((screen.getByRole("button", { name: "下载并安装" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+  })
 })

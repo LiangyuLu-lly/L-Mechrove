@@ -19,15 +19,14 @@ type CheckState =
 
 const PROGRESS_EVENT = "updates_progress"
 
-async function swallowHostError(run: () => Promise<unknown>): Promise<void> {
-  try {
-    await run()
-  } catch (error) {
-    if (error instanceof Error || typeof error === "string") {
-      return
-    }
-    throw error
+function hostMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message
   }
+  if (typeof error === "string" && error.length > 0) {
+    return error
+  }
+  return fallback
 }
 
 function headline(state: CheckState): string {
@@ -61,6 +60,7 @@ export function UpdateDialog({
   const [state, setState] = useState<CheckState>({ kind: "checking" })
   const [installing, setInstalling] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [actionError, setActionError] = useState("")
   const notes = releaseNotes?.trim() ?? ""
 
   useEffect(() => {
@@ -164,6 +164,7 @@ export function UpdateDialog({
         {state.kind === "failed" ? (
           <p className="settings-dialog__zone-title">{state.message}</p>
         ) : null}
+        {actionError.length > 0 ? <p className="settings-dialog__zone-title">{actionError}</p> : null}
         {notes.length > 0 ? (
           <pre className="update-dialog__notes">{releaseNotes}</pre>
         ) : null}
@@ -191,7 +192,14 @@ export function UpdateDialog({
                 onClick={() => {
                   setInstalling(true)
                   setProgress(0)
-                  void swallowHostError(() => updatesInstall())
+                  setActionError("")
+                  void updatesInstall()
+                    .catch((error: unknown) => {
+                      setActionError(hostMessage(error, "安装失败"))
+                    })
+                    .finally(() => {
+                      setInstalling(false)
+                    })
                 }}
               >
                 下载并安装
@@ -201,7 +209,10 @@ export function UpdateDialog({
                 className="settings-dialog__action"
                 disabled={installing}
                 onClick={() => {
-                  void swallowHostError(() => updatesOpenPage())
+                  setActionError("")
+                  void updatesOpenPage().catch((error: unknown) => {
+                    setActionError(hostMessage(error, "无法打开下载页"))
+                  })
                 }}
               >
                 打开下载页
