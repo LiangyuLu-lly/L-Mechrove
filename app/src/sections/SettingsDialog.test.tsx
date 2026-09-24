@@ -87,6 +87,18 @@ describe("SettingsDialog", () => {
     expect(invoke).toHaveBeenCalledWith("set_theme_mode", { mode: "day" })
   })
 
+  it("shows the host error when set_theme_mode rejects", async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === "set_theme_mode") {
+        return Promise.reject(new Error("主题未能保存"))
+      }
+      return Promise.resolve()
+    })
+    render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole("radio", { name: "日间" }))
+    expect(await screen.findByText("主题未能保存")).toBeTruthy()
+  })
+
   it("does not invoke set_ui_language when English is clicked", () => {
     render(<SettingsDialog hdrOn={false} onClose={() => undefined} />)
     fireEvent.click(screen.getByRole("radio", { name: /English/ }))

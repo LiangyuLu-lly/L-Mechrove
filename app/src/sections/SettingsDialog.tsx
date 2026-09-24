@@ -41,19 +41,14 @@ export type SettingsDialogProps = {
   readonly overlay?: OverlaySettings
 }
 
-async function swallowHostError(run: () => Promise<unknown>): Promise<void> {
-  try {
-    await run()
-  } catch (error) {
-    if (error instanceof Error) {
-      return
-    }
-    throw error
+function hostMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message
   }
-}
-
-function persistOverlayPrefs(prefs: OverlayPersistPrefs): void {
-  void swallowHostError(() => overlayUpdate(prefs))
+  if (typeof error === "string" && error.length > 0) {
+    return error
+  }
+  return fallback
 }
 
 function flagsFromOverlay(overlay: OverlaySettings): HudBlockFlags {
@@ -74,16 +69,34 @@ export function SettingsDialog({ onClose, overlay }: SettingsDialogProps) {
   const [gameOnly, setGameOnly] = useState(overlay?.gameOnly ?? false)
   const [displayOff, setDisplayOff] = useState(overlay?.displayOff ?? false)
   const [flags, setFlags] = useState(() => flagsFromOverlay(overlay ?? {}))
+  const [hostError, setHostError] = useState("")
+
+  function report(error: unknown, fallback: string): void {
+    setHostError(hostMessage(error, fallback))
+  }
+
+  function persistOverlayPrefs(prefs: OverlayPersistPrefs): void {
+    setHostError("")
+    void overlayUpdate(prefs).catch((error: unknown) => {
+      report(error, "悬浮窗设置未能保存")
+    })
+  }
 
   function onTheme(next: ThemeMode): void {
     setTheme(next)
     document.documentElement.dataset.theme = next
-    void swallowHostError(() => setThemeMode(next))
+    setHostError("")
+    void setThemeMode(next).catch((error: unknown) => {
+      report(error, "主题未能保存")
+    })
   }
 
   function onLanguage(next: UiLanguage): void {
     setLanguage(next)
-    void swallowHostError(() => setUiLanguage(next))
+    setHostError("")
+    void setUiLanguage(next).catch((error: unknown) => {
+      report(error, "语言未能保存")
+    })
   }
 
   return (
@@ -119,6 +132,9 @@ export function SettingsDialog({ onClose, overlay }: SettingsDialogProps) {
             </svg>
           </button>
         </div>
+        {hostError.length > 0 ? (
+          <p className="settings-dialog__zone-title">{hostError}</p>
+        ) : null}
         <section className="settings-dialog__zone">
           <h3 className="settings-dialog__zone-title">外观</h3>
           <Row name="主题">
