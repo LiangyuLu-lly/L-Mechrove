@@ -67,9 +67,11 @@ That consequence text is the honest replacement for the deleted guard. Isolation
   not ported.
 - The 24-character manual-model override is replaced by the served-machine rule.
 - The GPU overclock elevation row is not shown: an MQTT-only host has no elevation to request.
-- `hw_display.rs` still reports unavailable on eleven arms (non-Windows fallbacks and the sub-commands whose
-  device handle is not implemented). This file was NOT audited arm-by-arm; it is the first item for the next
-  session, not an accepted debt.
+- `hw_display.rs` still returns unavailable when the platform cannot run the call: non-Windows and miri
+  builds, a test binary with no injected brightness seam, a missing WMI instance, or a failed COM allocation.
+  Those are fail-closed refusals, not missing user features. The three display defects that were open are
+  closed in the section below. Live panel photons and live CCD versus the HDR switch remain in the
+  cannot-verify table.
 - Usage telemetry is off (the vendor ships it on by default).
 
 ## Resolved by the display-defect session
