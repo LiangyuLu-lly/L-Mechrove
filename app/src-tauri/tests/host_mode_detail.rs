@@ -296,6 +296,33 @@ async fn persists_pl1_under_custom_key_when_current_mode_is_custom() {
 }
 
 #[tokio::test]
+async fn firmware_slot_writes_flag_defaults_to_false_all_fixed_slots_stay_silent() {
+    // Given: the firmware_slot_writes flag is FALSE until a machine test
+    // (write, reboot, read back) proves the fixed slots
+    // When: each fixed firmware slot (gaming, turbo, silentTurbo) has a
+    // detail field changed
+    // Then: none of them publishes SET_OPERATING_MODE_DETAIL; only Custom
+    // does (see the office/custom publish tests below).
+    for mode in ["gaming", "turbo", "silentTurbo"] {
+        let (mut backend, _dir) = started_with_profiles().await;
+        backend
+            .set_performance_mode(mode)
+            .await
+            .expect("current_mode fixed slot");
+        let start = backend.recorded_publishes().len();
+        backend
+            .set_custom_detail("PL1", "45")
+            .await
+            .expect("save PL1");
+        let published = mode_detail_after(&backend, start);
+        assert!(
+            published.is_empty(),
+            "{mode} must not publish SET_OPERATING_MODE_DETAIL by default: {published:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn publishes_operating_mode_detail_when_current_mode_is_custom() {
     // Given: current mode is Custom
     let (mut backend, _dir) = started_with_profiles().await;

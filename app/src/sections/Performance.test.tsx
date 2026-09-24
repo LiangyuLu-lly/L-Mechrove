@@ -58,7 +58,39 @@ describe("Performance", () => {
     render(<Performance />)
     fireEvent.click(screen.getByRole("radio", { name: "自定义" }))
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window")
+      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window", {
+        mode: "custom",
+      })
+    })
+  })
+
+  it("opens the editor when 静音模式 is clicked", async () => {
+    render(<Performance />)
+    fireEvent.click(screen.getByRole("radio", { name: "静音模式" }))
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window", {
+        mode: "office",
+      })
+    })
+  })
+
+  it("opens the editor when 平衡模式 is clicked", async () => {
+    render(<Performance />)
+    fireEvent.click(screen.getByRole("radio", { name: "平衡模式" }))
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window", {
+        mode: "gaming",
+      })
+    })
+  })
+
+  it("opens the editor when 狂暴 is clicked", async () => {
+    render(<Performance />)
+    fireEvent.click(screen.getByRole("radio", { name: "狂暴" }))
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window", {
+        mode: "turbo",
+      })
     })
   })
 

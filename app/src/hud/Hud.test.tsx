@@ -124,6 +124,9 @@ describe("HudPanel", () => {
       expect(screen.queryAllByRole("checkbox")).toHaveLength(0)
       expect(screen.queryAllByRole("button")).toHaveLength(0)
       expect(screen.queryAllByRole("combobox")).toHaveLength(0)
+      expect(screen.queryAllByRole("switch")).toHaveLength(0)
+      expect(screen.queryAllByRole("slider")).toHaveLength(0)
+      expect(document.querySelectorAll("select")).toHaveLength(0)
       expect(screen.queryByText("仅游戏显示")).toBeNull()
       expect(screen.queryByText("熄屏挂起")).toBeNull()
       expect(screen.queryByText("温度")).toBeNull()
@@ -233,12 +236,42 @@ describe("HudPanel", () => {
     })
   })
 
-  it("starts dragging on pointer down", () => {
+  it("does not start drag on bare pointerdown", () => {
     const { container } = render(<HudPanel snapshot={FAKE_TELEMETRY} />)
 
     fireEvent.pointerDown(hudRoot(container))
 
+    expect(startDragging).not.toHaveBeenCalled()
+  })
+
+  it("does not start drag when movement stays under4px", () => {
+    const { container } = render(<HudPanel snapshot={FAKE_TELEMETRY} />)
+    const root = hudRoot(container)
+
+    fireEvent.pointerDown(root, { clientX: 50, clientY: 50 })
+    fireEvent.pointerMove(root, { clientX: 52, clientY: 51 })
+
+    expect(startDragging).not.toHaveBeenCalled()
+  })
+
+  it("starts drag after 5px of pointer movement", () => {
+    const { container } = render(<HudPanel snapshot={FAKE_TELEMETRY} />)
+    const root = hudRoot(container)
+
+    fireEvent.pointerDown(root, { clientX: 50, clientY: 50 })
+    fireEvent.pointerMove(root, { clientX: 50, clientY: 56 })
+
     expect(startDragging).toHaveBeenCalled()
+  })
+
+  it("click with no movement still cycles mode", () => {
+    const { container } = render(<HudPanel snapshot={FAKE_TELEMETRY} />)
+
+    fireEvent.click(hudRoot(container))
+
+    expect(invoke).toHaveBeenCalledWith("overlay_update", {
+      prefs: { mode: "full" },
+    })
   })
 
   it("hides telemetry when gameOnly is on and is_game is false", () => {
@@ -284,5 +317,68 @@ describe("HudPanel", () => {
     await Promise.resolve()
 
     expect(onHostError).toHaveBeenCalledWith("overlay host down")
+  })
+
+  it("complete mode drops names when container is 320px wide", () => {
+    const orig = window.innerWidth
+    Object.defineProperty(window, "innerWidth", {
+      value: 320,
+      configurable: true,
+      writable: true,
+    })
+
+    render(
+      <HudPanel snapshot={NAMED_TELEMETRY} mode="complete" names />,
+    )
+
+    expect(screen.queryByText("Ultra 185H")).toBeNull()
+    expect(screen.queryByText("RTX 4070")).toBeNull()
+    expect(screen.getByText("78C")).toBeTruthy()
+    expect(screen.getByText("82C")).toBeTruthy()
+
+    Object.defineProperty(window, "innerWidth", {
+      value: orig,
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  it("complete mode drops ram usage battery when container is 320px wide", () => {
+    const orig = window.innerWidth
+    Object.defineProperty(window, "innerWidth", {
+      value: 320,
+      configurable: true,
+      writable: true,
+    })
+
+    render(
+      <HudPanel snapshot={NAMED_TELEMETRY} mode="complete" names />,
+    )
+
+    expect(screen.queryByText("8.5GB")).toBeNull()
+    expect(screen.queryByText("40%")).toBeNull()
+    expect(screen.queryByText("70%")).toBeNull()
+    expect(screen.queryByText("100%")).toBeNull()
+    expect(screen.getByText("78C")).toBeTruthy()
+    expect(screen.getByText("45.0W")).toBeTruthy()
+
+    Object.defineProperty(window, "innerWidth", {
+      value: orig,
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  it("hud root has overflow hidden and lines do not wrap", () => {
+    const { container } = render(<HudPanel snapshot={FAKE_TELEMETRY} />)
+    const root = hudRoot(container)
+
+    expect(root.classList.contains("hud")).toBe(true)
+
+    const lines = root.querySelectorAll(".hud__line")
+    expect(lines.length).toBe(2)
+    for (const line of lines) {
+      expect(line.classList.contains("hud__line")).toBe(true)
+    }
   })
 })

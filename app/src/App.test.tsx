@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import App from "./App"
+import { DISARMED_SNAPSHOT } from "./lib/api"
 import type { HwSnapshot } from "./lib/types"
 
 const invoke = mock(() => Promise.reject(new Error("no host")))
@@ -134,7 +135,9 @@ describe("App main column", () => {
     render(<App />)
     fireEvent.click(await screen.findByRole("radio", { name: "自定义" }))
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window")
+      expect(invoke).toHaveBeenCalledWith("open_custom_mode_window", {
+        mode: "custom",
+      })
     })
   })
 
@@ -171,5 +174,51 @@ describe("App main column", () => {
     })
     render(<App />)
     expect(await screen.findByRole("checkbox", { name: "过驱动" })).toBeTruthy()
+  })
+})
+
+describe("App capability-off rendering", () => {
+  beforeEach(() => {
+    window.localStorage.setItem("lmechrevo.firstRun.done", "1")
+    invoke.mockReset()
+    invoke.mockImplementation((command: string) => {
+      if (command === "hw_snapshot") {
+        return Promise.resolve(DISARMED_SNAPSHOT)
+      }
+      return Promise.reject(new Error("no host"))
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("omits GPU action row when gpuActions is empty", async () => {
+    render(<App />)
+    expect(screen.queryByText("显卡模式")).toBeNull()
+  })
+
+  it("omits keyboard lighting row when lighting is all false", async () => {
+    render(<App />)
+    expect(screen.queryByText("键盘")).toBeNull()
+    expect(screen.queryByText("灯条")).toBeNull()
+    expect(screen.queryByText("Logo")).toBeNull()
+  })
+
+  it("omits custom-profile option when customProfileOffered is false", async () => {
+    render(<App />)
+    expect(screen.queryByRole("radio", { name: "自定义" })).toBeNull()
+  })
+
+  it("omits liquid-cooling row when liquidCooling is false", async () => {
+    render(<App />)
+    expect(screen.queryByText("液冷")).toBeNull()
+  })
+
+  it("renders zero data-capability=false elements — never shows a dead control", async () => {
+    render(<App />)
+    expect(
+      document.querySelectorAll('[data-capability="false"]').length,
+    ).toBe(0)
   })
 })

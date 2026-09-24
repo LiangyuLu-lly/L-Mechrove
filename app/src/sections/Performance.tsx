@@ -50,13 +50,12 @@ export function Performance({
       onHostError?.(error instanceof Error ? error.message : String(error))
     }
     // Opening the editor is the user's request; a failed mode switch must not
-    // swallow it.
-    if (next === "custom") {
-      try {
-        await openCustomModeWindow()
-      } catch (error) {
-        onHostError?.(error instanceof Error ? error.message : String(error))
-      }
+    // swallow it. Every mode gets the editor; firmware-slot writes stay gated
+    // on the host side until a machine test proves them.
+    try {
+      await openCustomModeWindow(next)
+    } catch (error) {
+      onHostError?.(error instanceof Error ? error.message : String(error))
     }
   }
 

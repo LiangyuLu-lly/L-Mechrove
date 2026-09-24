@@ -180,8 +180,8 @@ export function setLightingPolicy(policy: LightingPolicy): Promise<void> {
   })
 }
 
-export function openCustomModeWindow(): Promise<void> {
-  return invoke("open_custom_mode_window")
+export function openCustomModeWindow(mode?: PerformanceMode): Promise<void> {
+  return invoke("open_custom_mode_window", mode ? { mode } : {})
 }
 
 export function closeCustomModeWindow(): Promise<void> {

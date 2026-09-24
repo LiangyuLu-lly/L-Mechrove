@@ -29,13 +29,14 @@ pub fn is_custom_detail_field(field: &str) -> bool {
     CUSTOM_DETAIL_FIELDS.contains(&field)
 }
 
-/// Per-mode firmware writes for Office/Gaming/Turbo. Off until a machine test.
-pub(crate) const PUBLISH_NON_CUSTOM_MODE_DETAIL: bool = false;
+/// Explicit `firmware_slot_writes` flag for Office/Gaming/Turbo firmware
+/// slots. FALSE until a machine test (write, reboot, read back) proves them.
+pub(crate) const FIRMWARE_SLOT_WRITES: bool = false;
 
 pub(crate) fn should_publish_operating_mode_detail(current_mode: Option<&str>) -> bool {
     match current_mode {
         Some("custom") => true,
-        Some(_) => PUBLISH_NON_CUSTOM_MODE_DETAIL,
+        Some(_) => FIRMWARE_SLOT_WRITES,
         None => false,
     }
 }

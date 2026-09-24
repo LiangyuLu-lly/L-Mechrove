@@ -12,9 +12,11 @@ import {
 } from "./hudOverlay"
 import {
   clampScalePercent,
+  fitColumnsToWidth,
   hudLinesFromSnapshot,
   nextOverlayMode,
   nextScalePercent,
+  overlayBlocks,
   type HudLine,
   type HudTelemetry,
   type OverlayModeName,
@@ -87,22 +89,6 @@ function panelFromPrefs(prefs: OverlayPersistPrefs): Omit<HudPanelProps, "snapsh
   }
 }
 
-function viewFromProps(
-  props: HudPanelProps,
-  mode: OverlayModeName,
-): OverlayView {
-  return {
-    mode,
-    showTemp: props.showTemp,
-    showFans: props.showFans,
-    showPower: props.showPower,
-    showUsage: props.showUsage,
-    showRam: props.showRam,
-    showBattery: props.showBattery,
-    names: props.names,
-  }
-}
-
 function HudMetric({
   className,
   value,
@@ -133,6 +119,8 @@ function HudUsageBar({ line }: { readonly line: HudLine }) {
   )
 }
 
+const DRAG_THRESHOLD = 4
+
 export function HudPanel(props: HudPanelProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const { onHostError } = props
@@ -147,10 +135,37 @@ export function HudPanel(props: HudPanelProps) {
     displayOff,
     display_off: props.display_off,
   })
-  const lines = hudLinesFromSnapshot(
-    props.snapshot,
-    viewFromProps(props, mode),
+
+  const pointerStart = useRef<{ x: number; y: number } | null>(null)
+  const didDrag = useRef(false)
+
+  const view: OverlayView = {
+    mode,
+    showTemp: props.showTemp,
+    showFans: props.showFans,
+    showPower: props.showPower,
+    showUsage: props.showUsage,
+    showRam: props.showRam,
+    showBattery: props.showBattery,
+    names: props.names,
+  }
+
+  const baseBlocks = overlayBlocks(mode, view)
+  const effectiveBlocks = fitColumnsToWidth(
+    baseBlocks,
+    typeof window !== "undefined" ? window.innerWidth : 320,
   )
+
+  const lines = hudLinesFromSnapshot(props.snapshot, {
+    ...view,
+    showTemp: effectiveBlocks.temp,
+    showFans: effectiveBlocks.fans,
+    showPower: effectiveBlocks.power,
+    showUsage: effectiveBlocks.usage,
+    showRam: effectiveBlocks.ram,
+    showBattery: effectiveBlocks.battery,
+    names: effectiveBlocks.names,
+  })
 
   useLayoutEffect(() => {
     rootRef.current?.style.setProperty("--hud-scale", String(scale / 100))
@@ -167,12 +182,24 @@ export function HudPanel(props: HudPanelProps) {
       data-scale={String(scale)}
       data-mode={mode}
       onClick={() => {
+        if (didDrag.current) return
         const next = nextOverlayMode(mode)
         setMode(next)
         persistOverlay({ mode: next }, onHostError)
       }}
-      onPointerDown={() => {
-        startHudDrag(onHostError)
+      onPointerDown={(e) => {
+        pointerStart.current = { x: e.clientX, y: e.clientY }
+        didDrag.current = false
+      }}
+      onPointerMove={(e) => {
+        if (!pointerStart.current || didDrag.current) return
+        const dx = e.clientX - pointerStart.current.x
+        const dy = e.clientY - pointerStart.current.y
+        if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+          didDrag.current = true
+          pointerStart.current = null
+          startHudDrag(onHostError)
+        }
       }}
       onWheel={(event) => {
         if (!event.ctrlKey) {

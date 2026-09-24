@@ -38,4 +38,28 @@ describe("Collapse", () => {
 
     expect(screen.getByText("键盘")).toBeTruthy()
   })
+
+  it("paints 0 body height when collapsed — no .collapse__body in DOM", () => {
+    render(
+      <Collapse name="更多开关">
+        <p>触摸板</p>
+      </Collapse>,
+    )
+
+    expect(document.querySelector(".collapse__body")).toBeNull()
+  })
+
+  it("removes .collapse__body from DOM when toggled closed", () => {
+    render(
+      <Collapse name="灯光" defaultOpen={true}>
+        <p>键盘</p>
+      </Collapse>,
+    )
+
+    expect(document.querySelector(".collapse__body")).not.toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: /灯光/ }))
+
+    expect(document.querySelector(".collapse__body")).toBeNull()
+  })
 })

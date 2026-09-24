@@ -263,4 +263,28 @@ describe("CustomModeWindow", () => {
     expect(await screen.findByRole("status")).toBeTruthy()
     expect(screen.getByText("curve host down")).toBeTruthy()
   })
+
+  it("names the edited mode in the title instead of always 自定义", () => {
+    render(<CustomModeWindow mode="office" />)
+    expect(screen.getByText("静音性能模式")).toBeTruthy()
+    expect(screen.queryByText("自定义性能模式")).toBeNull()
+  })
+
+  it("keeps the 自定义 title when no mode is given", () => {
+    render(<CustomModeWindow />)
+    expect(screen.getByText("自定义性能模式")).toBeTruthy()
+  })
+
+  it("shows the unproven firmware-slot banner inside the editor", () => {
+    render(<CustomModeWindow mode="turbo" />)
+    expect(screen.getByText("固件槽可写性：未验证。")).toBeTruthy()
+    expect(
+      screen.getByText(
+        "写入静音、平衡、狂暴前需要本机测试：把非默认风扇曲线写入该模式，重启，再读回。",
+      ),
+    ).toBeTruthy()
+    expect(
+      screen.getByText("未通过前，只有自定义会下发设置。"),
+    ).toBeTruthy()
+  })
 })

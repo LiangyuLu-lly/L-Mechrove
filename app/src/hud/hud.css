@@ -14,6 +14,8 @@
   color: var(--muted);
   cursor: grab;
   user-select: none;
+  overflow: hidden;
+  flex-wrap: nowrap;
 }
 
 .hud:active {
@@ -25,6 +27,8 @@
   align-items: center;
   gap: var(--space-sm);
   min-height: 1em;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .hud__label,

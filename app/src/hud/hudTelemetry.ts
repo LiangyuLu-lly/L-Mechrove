@@ -122,6 +122,86 @@ export function nextScalePercent(current: number, deltaY: number): number {
   return clampScalePercent(stepped)
 }
 
+export const COLUMN_DROP_ORDER: readonly (keyof OverlayBlocks)[] = [
+  "names",
+  "ram",
+  "usage",
+  "battery",
+]
+
+const CHAR_WIDTH = 12
+const COL_GAP = 10
+const LINE_PAD_X = 24
+
+function columnWidth(key: string): number {
+  switch (key) {
+    case "label":
+      return 3 * CHAR_WIDTH
+    case "temp":
+      return 3 * CHAR_WIDTH
+    case "fans":
+      return 7 * CHAR_WIDTH
+    case "watt":
+      return 5 * CHAR_WIDTH
+    case "usage":
+      return 4 * CHAR_WIDTH
+    case "ram":
+      return 5 * CHAR_WIDTH
+    case "battery":
+      return 4 * CHAR_WIDTH
+    case "names":
+      return 12 * CHAR_WIDTH
+    default:
+      return 0
+  }
+}
+
+export function estimateLinePx(blocks: OverlayBlocks): number {
+  let cols = 0
+  let chars = 0
+  chars += columnWidth("label")
+  cols++
+  chars += columnWidth("temp")
+  cols++
+  if (blocks.fans) {
+    chars += columnWidth("fans")
+    cols++
+  }
+  chars += columnWidth("watt")
+  cols++
+  if (blocks.usage) {
+    chars += columnWidth("usage")
+    cols++
+  }
+  if (blocks.ram) {
+    chars += columnWidth("ram")
+    cols++
+  }
+  if (blocks.battery) {
+    chars += columnWidth("battery")
+    cols++
+  }
+  if (blocks.names) {
+    chars += columnWidth("names")
+    cols++
+  }
+  return Math.ceil(chars + Math.max(0, cols - 1) * COL_GAP + LINE_PAD_X)
+}
+
+export function fitColumnsToWidth(
+  blocks: OverlayBlocks,
+  width: number,
+): OverlayBlocks {
+  if (estimateLinePx(blocks) <= width) return blocks
+  const adjusted = { ...blocks }
+  for (const key of COLUMN_DROP_ORDER) {
+    if (!adjusted[key]) continue
+    adjusted[key] = false
+    if (estimateLinePx(adjusted) <= width) break
+  }
+  return adjusted
+}
+
 function overlayModePreset(mode: OverlayModeName): OverlayBlocks {
   switch (mode) {
     case "light":
