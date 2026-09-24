@@ -46,7 +46,6 @@ const UI_COMMANDS = [
   "overlay_update",
   "set_theme_mode",
   "set_ui_language",
-  "set_project_id",
   "set_lighting_policy",
   "open_custom_mode_window",
   "close_custom_mode_window",

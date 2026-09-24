@@ -164,10 +164,6 @@ export function setUiLanguage(code: string): Promise<void> {
   return invoke("set_ui_language", { code })
 }
 
-export function setProjectId(id: string): Promise<void> {
-  return invoke("set_project_id", { id })
-}
-
 export type LightingPolicy = {
   readonly offOnBattery: boolean
   readonly idleSeconds: number

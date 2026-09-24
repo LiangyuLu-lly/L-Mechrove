@@ -29,12 +29,6 @@ pub fn set_ui_language(code: String, app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_project_id(id: String) -> Result<(), String> {
-    let _ = id;
-    Err("not implemented".to_string())
-}
-
-#[tauri::command]
 pub async fn set_lighting_policy(
     off_on_battery: bool,
     idle_seconds: i32,

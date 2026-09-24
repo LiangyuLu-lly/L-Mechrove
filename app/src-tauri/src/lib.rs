@@ -52,7 +52,7 @@ use commands::{
     set_charge_full, set_charge_limit, set_custom_detail, set_display_hz, set_fan_boost,
     set_fan_curve, set_gpu_route, set_lc_connect, set_lc_disconnect, set_lc_fan, set_lc_pump,
     set_light_effect, set_light_power, set_lighting_policy, set_local_dimming, set_monitor_off,
-    set_overdrive, set_performance_mode, set_project_id, set_quick_switch, set_theme_mode,
+    set_overdrive, set_performance_mode, set_quick_switch, set_theme_mode,
     set_ui_language, updates_check, updates_install, updates_open_page,
 };
 use hw_backend::{AppState, Backend as HwBackend};
@@ -144,7 +144,6 @@ pub fn run() {
             overlay_update,
             set_theme_mode,
             set_ui_language,
-            set_project_id,
             set_lighting_policy,
             open_custom_mode_window,
             close_custom_mode_window
