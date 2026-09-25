@@ -239,4 +239,109 @@ public class SwitchConcurrencyTests
         // 让位之后热切换应当以「被取代」收敛。
         Assert.False(await hotSwitch.WaitAsync(TimeSpan.FromSeconds(10)));
     }
+
+    /// <summary>
+    /// Given 正在确认 SwitchCustomProfile(0)，When 又发起 SwitchCustomProfile(1)，
+    /// Then 第一次必须因 CTS 取消返回 false，而不是把迟到的 0 档回读当成成功。
+    /// </summary>
+    [Fact]
+    public async Task InFlightCustomProfileSwitchReturnsFalseWhenANewerSwitchStarts()
+    {
+        MechrevoHw? hardware = null;
+        var firstPublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic == "Fan/Control" &&
+                payload is IDictionary<string, object> values &&
+                values.TryGetValue("Action", out object? action) &&
+                action?.ToString() == "OPERATING_CUSTOM_MODE" &&
+                values.TryGetValue("ProfileIndex", out object? raw) &&
+                raw is int index)
+            {
+                if (index == 0) firstPublished.TrySetResult();
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(80);
+                    hardware!.HandleMessage("Fan/Status",
+                        $"{{\"OperatingMode\":3,\"CustomProfileIndex\":{index}}}");
+                });
+            }
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities());
+
+        using (hardware)
+        {
+            hardware.HandleMessage("Fan/Status", "{\"OperatingMode\":1,\"CustomProfileIndex\":0}");
+            var service = new MechrevoService(hardware);
+
+            Task<bool> first = service.SwitchCustomProfile(0);
+            await firstPublished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Task<bool> second = service.SwitchCustomProfile(1);
+
+            Assert.False(await first.WaitAsync(TimeSpan.FromSeconds(5)));
+            _ = await second.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    /// <summary>
+    /// Given 正在确认 SwitchCustomProfile，When 滑条防抖触发 SetCustomDetail，
+    /// Then 档位切换不得被 detail 写入的 CTS 取消——硬件已经切过去时不得报「切换未确认」。
+    /// </summary>
+    [Fact]
+    public async Task SetCustomDetailDoesNotCancelAnInFlightCustomProfileSwitch()
+    {
+        MechrevoHw? hardware = null;
+        var profilePublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var echoProfile = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        hardware = new MechrevoHw((topic, payload) =>
+        {
+            if (topic != "Fan/Control" || payload is not IDictionary<string, object> values)
+                return Task.CompletedTask;
+            if (!values.TryGetValue("Action", out object? action))
+                return Task.CompletedTask;
+
+            string? command = action?.ToString();
+            if (command == "OPERATING_CUSTOM_MODE" &&
+                values.TryGetValue("ProfileIndex", out object? raw) &&
+                raw is int index)
+            {
+                profilePublished.TrySetResult();
+                _ = Task.Run(async () =>
+                {
+                    await echoProfile.Task;
+                    hardware!.HandleMessage("Fan/Status",
+                        $"{{\"OperatingMode\":3,\"CustomProfileIndex\":{index},\"CPU_PL1\":55,\"CPU_PL1Minimum\":35,\"CPU_PL1Maximum\":120}}");
+                });
+            }
+            else if (command == "SET_OPERATING_MODE_DETAIL" && values.TryGetValue("PL1", out object? pl1))
+            {
+                hardware!.HandleMessage("Fan/Status",
+                    $"{{\"OperatingMode\":3,\"CustomProfileIndex\":1,\"CPU_PL1\":{pl1},\"CPU_PL1Minimum\":35,\"CPU_PL1Maximum\":120}}");
+            }
+            else if (command == "GETSTATUS")
+            {
+                hardware!.HandleMessage("Fan/Status",
+                    "{\"OperatingMode\":3,\"CustomProfileIndex\":1,\"CPU_PL1\":55,\"CPU_PL1Minimum\":35,\"CPU_PL1Maximum\":120}");
+            }
+
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true });
+
+        using (hardware)
+        {
+            hardware.HandleMessage("Fan/Status",
+                "{\"OperatingMode\":3,\"CustomProfileIndex\":0,\"CPU_PL1\":45,\"CPU_PL1Minimum\":35,\"CPU_PL1Maximum\":120}");
+            var service = new MechrevoService(hardware);
+
+            Task<bool> switching = service.SwitchCustomProfile(1);
+            await profilePublished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Task<bool> detail = service.SetCustomDetail(new() { ["PL1"] = "55" });
+            echoProfile.SetResult();
+
+            Assert.True(
+                await switching.WaitAsync(TimeSpan.FromSeconds(5)),
+                "SetCustomDetail must not cancel an in-flight SwitchCustomProfile");
+            _ = await detail.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
 }

@@ -76,6 +76,12 @@ internal static class UpdateSelfTest
             return 2;
         }
 
+        if (UpdateInstaller.LooksLikeInstallerPackage(info) || UpdateInstaller.IsPeExecutable(package))
+        {
+            Logger.WriteLine("更新自测：决定=接受（安装包已校验；--updatetest 不拉起安装器）");
+            return 0;
+        }
+
         string? newExe = UpdateInstaller.ExtractPackage(package, info);
         if (newExe is null)
         {

@@ -7,7 +7,7 @@ namespace MechrevoLite.Tests;
 /// <summary>
 /// 更新链路的纯逻辑部分：版本比较、响应解析、下载地址策略、包校验。
 ///
-/// 版本比较的口径来自真机实测（2026-09-11 对 l-mechrevo.onismy.cn）：
+/// 版本比较的口径来自真机实测（2026-09-11 对 stats.l-mechrevo.cn）：
 /// 服务端按"提取数字段后比数值"，所以 beta13 ≡ 13-beta、beta9 &lt; beta10、
 /// 而 0.289.0.0（我们的 AssemblyVersion 形态）会被判成比 13-beta 更旧。
 /// </summary>
@@ -55,8 +55,8 @@ public class UpdateCheckerTests
     {"ok":true,"data":{"current_version":"0.1.0.0","latest_version":"13-beta","channel":"beta",
     "channel_fallback":false,"is_latest":false,"update_available":true,"release_date":"2026-08-31",
     "notes":"- 修复重复启动。\r\n- 改进性能模式。","filename":null,"size":null,"sha256":null,
-    "download_url":"https://l-mechrevo.onismy.cn/lzzl.php?url=https%3A%2F%2Fminestar.lanzouu.com%2FikY8b462fw5a&type=down",
-    "download_page":"https://l-mechrevo.onismy.cn/download.html","checked_at":"2026-09-11T13:46:55+08:00"}}
+    "download_url":"https://stats.l-mechrevo.cn/lzzl.php?url=https%3A%2F%2Fminestar.lanzouu.com%2FikY8b462fw5a&type=down",
+    "download_page":"https://stats.l-mechrevo.cn/download.html","checked_at":"2026-09-11T13:46:55+08:00"}}
     """;
 
     [Fact]
@@ -73,7 +73,7 @@ public class UpdateCheckerTests
         Assert.Contains("改进性能模式", info.Notes);
         Assert.Null(info.Sha256);
         Assert.Contains("lzzl.php", info.DownloadUrl);
-        Assert.Equal("https://l-mechrevo.onismy.cn/download.html", info.DownloadPage);
+        Assert.Equal("https://stats.l-mechrevo.cn/download.html", info.DownloadPage);
         // 网盘发布：没有 sha256 → 不能算"可校验的包"
         Assert.False(info.HasVerifiablePackage);
     }
@@ -132,16 +132,16 @@ public class UpdateCheckerTests
     }
 
     [Theory]
-    [InlineData("https://l-mechrevo.onismy.cn", "https://l-mechrevo.onismy.cn/api/update_check.php?version=beta13&channel=beta")]
-    [InlineData("https://l-mechrevo.onismy.cn/", "https://l-mechrevo.onismy.cn/api/update_check.php?version=beta13&channel=beta")]
+    [InlineData("https://stats.l-mechrevo.cn", "https://stats.l-mechrevo.cn/api/update_check.php?version=beta13&channel=beta")]
+    [InlineData("https://stats.l-mechrevo.cn/", "https://stats.l-mechrevo.cn/api/update_check.php?version=beta13&channel=beta")]
     public void BuildsTheDocumentedCheckUrl(string baseUrl, string expected) =>
         Assert.Equal(expected, UpdateChecker.BuildCheckUrl(baseUrl, "beta13"));
 
     /// <summary>只认 HTTPS；明文 http 只有回环地址放行（本地联调桩服务器用）。</summary>
     [Theory]
-    [InlineData("https://l-mechrevo.onismy.cn", "https://l-mechrevo.onismy.cn")]
+    [InlineData("https://stats.l-mechrevo.cn", "https://stats.l-mechrevo.cn")]
     [InlineData("http://127.0.0.1:8080", "http://127.0.0.1:8080")]
-    [InlineData("http://l-mechrevo.onismy.cn", UpdateChecker.DefaultBaseUrl)]
+    [InlineData("http://stats.l-mechrevo.cn", UpdateChecker.DefaultBaseUrl)]
     [InlineData("ftp://x", UpdateChecker.DefaultBaseUrl)]
     [InlineData("", UpdateChecker.DefaultBaseUrl)]
     [InlineData(null, UpdateChecker.DefaultBaseUrl)]
@@ -231,6 +231,18 @@ public class UpdateCheckerTests
     }
 
     [Fact]
+    public void ParseResponse_reads_force_flag()
+    {
+        UpdateInfo? info = UpdateChecker.ParseResponse(
+            """{"ok":true,"data":{"latest_version":"0.290.0-beta1","update_available":true,"force":true}}""");
+        Assert.NotNull(info);
+        Assert.True(info!.Force);
+        Assert.True(info.UpdateAvailable);
+        Assert.False(UpdateChecker.ParseResponse(
+            """{"ok":true,"data":{"latest_version":"0.290.0-beta1","update_available":true}}""")!.Force);
+    }
+
+    [Fact]
     public async Task APlausibleUpdateIsKept()
     {
         const string newer = """
@@ -287,9 +299,20 @@ public class UpdatePackageTests
         return zipPath;
     }
 
+    static string CreateSignedPackage(string directory)
+    {
+        string zipPath = Path.Combine(directory, "package.zip");
+        string signed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe");
+        using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+        using Stream stream = archive.CreateEntry("L-Mechrevo.exe").Open();
+        using FileStream source = File.OpenRead(signed);
+        source.CopyTo(stream);
+        return zipPath;
+    }
+
     static UpdateInfo Info(string? sha256 = null, long? size = null, string? fileName = null) =>
         new("beta13", "beta14", "beta", false, true, "2026-09-01", "notes",
-            fileName, size, sha256, "https://l-mechrevo.onismy.cn/pkg.zip", "https://l-mechrevo.onismy.cn/download.html");
+            fileName, size, sha256, "https://stats.l-mechrevo.cn/pkg.zip", "https://stats.l-mechrevo.cn/download.html");
 
     [Fact]
     public void Sha256MatchesTheKnownVector()
@@ -311,12 +334,12 @@ public class UpdatePackageTests
         string dir = NewTempDirectory();
         try
         {
-            string zip = CreatePackage(dir, "L-Mechrevo.exe", [1, 2, 3, 4]);
+            string zip = CreateSignedPackage(dir);
             string hash = UpdateInstaller.ComputeSha256(zip);
 
             PackageVerification result = UpdateInstaller.Verify(zip, Info(sha256: hash, size: new FileInfo(zip).Length));
 
-            Assert.True(result.Ok);
+            Assert.True(result.Ok, result.Reason);
             Assert.Contains("SHA-256", result.Reason);
         }
         finally { Directory.Delete(dir, true); }
@@ -329,7 +352,8 @@ public class UpdatePackageTests
         try
         {
             string zip = CreatePackage(dir, "L-Mechrevo.exe", [1, 2, 3, 4]);
-            PackageVerification result = UpdateInstaller.Verify(zip, Info(sha256: new string('0', 64)));
+            PackageVerification result = UpdateInstaller.Verify(
+                zip, Info(sha256: new string('0', 64), size: new FileInfo(zip).Length));
 
             Assert.False(result.Ok);
             Assert.Contains("SHA-256", result.Reason);
@@ -375,7 +399,8 @@ public class UpdatePackageTests
         try
         {
             string zip = CreatePackage(dir, "readme.txt", [1, 2, 3]);
-            PackageVerification result = UpdateInstaller.Verify(zip, Info(sha256: UpdateInstaller.ComputeSha256(zip)));
+            PackageVerification result = UpdateInstaller.Verify(
+                zip, Info(sha256: UpdateInstaller.ComputeSha256(zip), size: new FileInfo(zip).Length));
 
             Assert.False(result.Ok);
             Assert.Contains(".exe", result.Reason);
@@ -391,18 +416,22 @@ public class UpdatePackageTests
         {
             string file = Path.Combine(dir, "not-a-zip.zip");
             File.WriteAllText(file, "hello");
-            PackageVerification result = UpdateInstaller.Verify(file, Info(sha256: UpdateInstaller.ComputeSha256(file)));
+            PackageVerification result = UpdateInstaller.Verify(
+                file, Info(sha256: UpdateInstaller.ComputeSha256(file), size: new FileInfo(file).Length));
 
             Assert.False(result.Ok);
         }
         finally { Directory.Delete(dir, true); }
     }
 
-    /// <summary>服务端给的 filename 不可信：必须只取最后一段，不能让路径穿越到别的目录。</summary>
+    /// <summary>
+    /// 服务端给的 filename 不可信：必须只取最后一段，不能让路径穿越到别的目录。
+    /// 没给文件名时按安装器 exe 命名（beta18 起默认包体是 setup.exe，不是 zip）。
+    /// </summary>
     [Theory]
     [InlineData(@"..\..\Windows\System32\evil.exe", "evil.exe")]
     [InlineData("sub/dir/L-Mechrevo-beta14.zip", "L-Mechrevo-beta14.zip")]
-    [InlineData(null, "L-Mechrevo-beta14.zip")]
+    [InlineData(null, "L-Mechrevo-beta14.exe")]
     public void PackageFileNameIgnoresAnyPathFromTheServer(string? serverName, string expected)
     {
         Assert.Equal(expected, UpdateInstaller.PackageFileName(Info(fileName: serverName)));

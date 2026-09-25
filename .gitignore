@@ -46,6 +46,11 @@ _tools/
 /*.png
 /*.jpg
 
+# ---- Local update credentials (never commit) ----
+.local/update.env
+app/.env.local
+app/src-tauri/.env
+
 # ---- Local tool state / design audit scratch ----
 .omo/
 .codegraph/

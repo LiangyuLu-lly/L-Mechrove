@@ -50,6 +50,14 @@ public class LightRowsLayoutTests
     static ComboBox GetPicker(TableLayoutPanel row) =>
         row.Controls.OfType<ComboBox>().Single();
 
+    static bool LightChannelOffered(SettingsForm form, string channel)
+    {
+        FieldInfo? field = typeof(SettingsForm).GetField(
+            "_lightChannel" + channel, BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return (bool)field!.GetValue(form)!;
+    }
+
     static string ExpectedLightbarSelectedText()
     {
         string effect = LightingSettingsStore.Load("HidLightbar/Ctrl", LightForm.LightbarEffects[0].Effect).Effect;
@@ -182,6 +190,161 @@ public class LightRowsLayoutTests
                 };
                 Assert.Equal(expectedText, picker.GetItemText(picker.SelectedItem));
             }
+        }
+        finally
+        {
+            RestoreHarness(previousAuditMode, previousHardware!);
+        }
+    }
+
+    [Fact]
+    public void LogoRow_VisibleOnlyIfLogoLightStatusSeen()
+    {
+        bool previousAuditMode = Program.UiAuditMode;
+        MechrevoHw? previousHardware = Program.hw;
+        Program.UiAuditMode = false;
+        using var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            Keyboard = true,
+            LogoLight = true,
+        });
+        Program.hw = hardware;
+        try
+        {
+            using var form = new SettingsForm();
+            form.CreateControl();
+            form.PerformLayout();
+            form.RefreshDeviceCapabilities();
+            Assert.False(LightChannelOffered(form, "Logo"), "ItemSupport LogoSupport aliases must not show an empty Logo row.");
+
+            hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\"}");
+            form.RefreshDeviceCapabilities();
+            Assert.True(LightChannelOffered(form, "Logo"));
+        }
+        finally
+        {
+            RestoreHarness(previousAuditMode, previousHardware!);
+        }
+    }
+
+    [Fact]
+    public void LightbarRow_VisibleIfCapsOrStatusSeen()
+    {
+        bool previousAuditMode = Program.UiAuditMode;
+        MechrevoHw? previousHardware = Program.hw;
+        Program.UiAuditMode = false;
+        try
+        {
+            using (var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities
+            {
+                ProfileAvailable = true,
+                Keyboard = true,
+                Lightbar = true,
+                RgbLightbar = false,
+            }))
+            {
+                Program.hw = hardware;
+                using var form = new SettingsForm();
+                form.CreateControl();
+                form.PerformLayout();
+                form.RefreshDeviceCapabilities();
+                Assert.True(LightChannelOffered(form, "Lightbar"));
+            }
+
+            using (var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities
+            {
+                ProfileAvailable = true,
+                Keyboard = true,
+                Lightbar = false,
+                RgbLightbar = true,
+            }))
+            {
+                Program.hw = hardware;
+                using var form = new SettingsForm();
+                form.CreateControl();
+                form.PerformLayout();
+                form.RefreshDeviceCapabilities();
+                Assert.True(LightChannelOffered(form, "Lightbar"));
+            }
+
+            using (var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities
+            {
+                ProfileAvailable = true,
+                Keyboard = true,
+                Lightbar = false,
+                RgbLightbar = false,
+            }))
+            {
+                Program.hw = hardware;
+                using var form = new SettingsForm();
+                form.CreateControl();
+                form.PerformLayout();
+                form.RefreshDeviceCapabilities();
+                hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\"}");
+                form.RefreshDeviceCapabilities();
+                Assert.True(LightChannelOffered(form, "Lightbar"));
+            }
+        }
+        finally
+        {
+            RestoreHarness(previousAuditMode, previousHardware!);
+        }
+    }
+
+    [Fact]
+    public void LightbarRow_HiddenWhenNoCapsAndNotStatusSeen()
+    {
+        bool previousAuditMode = Program.UiAuditMode;
+        MechrevoHw? previousHardware = Program.hw;
+        Program.UiAuditMode = false;
+        using var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            Keyboard = true,
+            Lightbar = false,
+            RgbLightbar = false,
+        });
+        Program.hw = hardware;
+        try
+        {
+            using var form = new SettingsForm();
+            form.CreateControl();
+            form.PerformLayout();
+            form.RefreshDeviceCapabilities();
+            Assert.False(LightChannelOffered(form, "Lightbar"));
+        }
+        finally
+        {
+            RestoreHarness(previousAuditMode, previousHardware!);
+        }
+    }
+
+    [Fact]
+    public void MqttLightbarContentShowsTheMatchingRows()
+    {
+        bool previousAuditMode = Program.UiAuditMode;
+        MechrevoHw? previousHardware = Program.hw;
+        Program.UiAuditMode = false;
+        using var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            Keyboard = true,
+        });
+        hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\"}");
+        hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\"}");
+        Assert.True(hardware.SupportsLightbar);
+        Assert.True(hardware.SupportsLogoLight);
+        Program.hw = hardware;
+        try
+        {
+            using var form = new SettingsForm();
+            form.CreateControl();
+            form.PerformLayout();
+            form.RefreshDeviceCapabilities();
+
+            Assert.True(LightChannelOffered(form, "Lightbar"));
+            Assert.True(LightChannelOffered(form, "Logo"));
         }
         finally
         {

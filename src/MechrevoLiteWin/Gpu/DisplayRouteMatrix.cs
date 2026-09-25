@@ -77,8 +77,9 @@ public sealed record GenerationRouteFacts(
 /// 一档**带双显三模**（混合 / 独显直连 / 核显，对应 5.17.51.27，有 <c>IGPU_ONLY_*</c>），
 /// 另一档**不带**（对应 5.17.49.19，无 <c>IGPU_ONLY_*</c>）。这正是业主给两个 40 系控制台的原因。
 /// 载荷侧 <c>GCU-40-51749</c>(UniwillService) 与 <c>GCU-40-51751</c>(AiStoneService) 与两档对应。</para>
-/// <para>因此"代际"单轴不够：档位判据必须是**服务写入的 <c>ItemSupport</c> 能力位**
-/// （<c>iGPUModeOnlySupport</c>，同源厂商），而不是按机型硬编码分档。</para></item>
+/// <para>因此"代际"单轴不够：档位判据必须是运行时 MQTT 上报的
+/// <c>IGpuOnlyConnectionSwitch_Support</c>（叠加官方 UI 是否提供核显档），而不是
+/// <c>ItemSupport.iGPUModeOnlySupport</c> 或按机型硬编码分档。</para></item>
 /// <item><b>50 系</b>：控制台侧 <c>PROVEN</c>——厂商控制台是真实反编译的 C# 代码
 /// （<c>CCUWinUI.decompiled.cs</c>，15 万行量级）；服务侧 <c>UNKNOWN</c>（50 系服务 IL 混淆）。</item>
 /// </list>
@@ -218,6 +219,12 @@ public static class DisplayRouteMatrix
     /// </summary>
     public static bool TierFromCapability(int igpuModeOnlySupport) => igpuModeOnlySupport == 1;
 
+    /// <summary>
+    /// Cold-start overlay: MQTT bit wins when present; last-known candidate only while MQTT is null.
+    /// </summary>
+    public static bool TierFromCapability(int? mqttIgpuModeOnlySupport, bool persistedThreeModeCandidate) =>
+        mqttIgpuModeOnlySupport is int bit ? bit == 1 : persistedThreeModeCandidate;
+
     /// <summary>该代际的"服务侧写路由"落地方式可信度。只有 40 系是 PROVEN。</summary>
     public static EvidenceMark ServiceWritePathMark(DgpuGenerationKind generation) =>
         Find(generation)?.ServiceWritePath.Mark ?? EvidenceMark.Unknown;
@@ -251,32 +258,44 @@ public static class DisplayRouteMatrix
     public static IReadOnlyList<string> ConsoleActions(DgpuGenerationKind generation) =>
         Find(generation)?.ConsoleActions ?? Array.Empty<string>();
 
-    /// <summary>全部已知动作词汇（"没判出代际"时照旧放行的动作集合）。</summary>
+    /// <summary>厂商控制台词汇表。成员资格不是放行：没判出代际时事实表没有行，一个动作都不发。</summary>
     static readonly IReadOnlySet<string> KnownActions = new HashSet<string>(StringComparer.Ordinal)
     {
         ToggleOn, ToggleOff, ToggleIgpu, Restart, IgpuOnlyOn, IgpuOnlyOff, IgpuOnlyAuto, HotSwapOn, HotSwapOff,
     };
 
-    /// <summary>该动作是否属于厂商控制台词汇表（用于"没判出代际"时不放行发明出来的动作）。</summary>
+    /// <summary>该动作是否属于厂商控制台词汇表。不是权限：权限见 <see cref="DisplayRoutePolicy.AllowsAction"/>。</summary>
     public static bool IsKnownAction(string action) =>
         !string.IsNullOrWhiteSpace(action) && KnownActions.Contains(action);
 }
 
 /// <summary>
 /// 代际边界策略：把事实表翻译成"这个动作在这个代际能不能发"。
-/// **只收紧、不发明**：表里说某代际没有的动作一律不许发；<c>Unknown</c>/<c>NoDgpu</c>
-/// 不套用任何代际的限制（读不到代际不等于某个已知代际）。
+/// **只收紧、不发明**：表里没有的动作一律不许发。
+/// <c>Unknown</c>/<c>NoDgpu</c> 没有事实行，因此一个代际动作都不放行——
+/// 读不到代际不等于把 30/40/50 的动作并集都放开（那会发出事实表标成 ProvenAbsent 的重启/核显/热切）。
 /// </summary>
 public static class DisplayRoutePolicy
 {
-    /// <summary>该动作在该代际是否允许。动作名不在控制台词汇表内时返回 <c>false</c>。</summary>
+    /// <summary>该动作在该代际是否允许。没有事实行、或动作不在该行词汇内时返回 <c>false</c>。</summary>
     public static bool AllowsAction(DgpuGenerationKind generation, string action)
     {
         if (string.IsNullOrWhiteSpace(action)) return false;
 
-        if (generation is DgpuGenerationKind.Unknown or DgpuGenerationKind.NoDgpu)
-            return DisplayRouteMatrix.IsKnownAction(action);
-
         return DisplayRouteMatrix.ConsoleActions(generation).Contains(action, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Production GPU gate: use <see cref="DisplayRouteMatrix.FindTier"/>, never <see cref="DisplayRouteMatrix.Find"/>.
+    /// <paramref name="threeMode"/> is <c>IgpuOnlyStatusSupport == true</c>; do not default it true.
+    /// <c>Unknown</c>/<c>NoDgpu</c> have no tier row, so this returns <c>false</c>.
+    /// </summary>
+    public static bool AllowsAction(DgpuGenerationKind generation, string action, bool threeMode)
+    {
+        if (string.IsNullOrWhiteSpace(action)) return false;
+
+        IReadOnlyList<string> actions =
+            DisplayRouteMatrix.FindTier(generation, threeMode)?.ConsoleActions ?? Array.Empty<string>();
+        return actions.Contains(action, StringComparer.Ordinal);
     }
 }

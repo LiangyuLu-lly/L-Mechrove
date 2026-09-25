@@ -28,7 +28,9 @@ public static class RuntimeModelSupport
             if (!AcpiDriverReadTransport.TryOpen(out AcpiDriverReadTransport? transport, out string error) || transport is null)
             {
                 Logger.WriteLine("Model identity unavailable: " + error);
-                return SupportDecision.Unparsable();
+                return IsServiceServed()
+                    ? SupportDecision.Supported("GCU")
+                    : SupportDecision.Unparsable();
             }
             using (transport)
             {
@@ -51,6 +53,20 @@ public static class RuntimeModelSupport
     /// <summary>是否被判为**明确不支持**（识别到但厂商服务未服务该机）。无法判定（Unparsable）不算。</summary>
     public static bool IsPositivelyUnsupported(SupportDecision decision) =>
         decision.Reason == SupportReason.NotInSet;
+
+    /// <summary>
+    /// 仪表盘是否进入只读降级。GCU 首连仍在重试时不锁死——EC/ItemSupport 都还没到，
+    /// 把「连接中」显示成「机型无法识别」是 beta18 现场误伤。
+    /// </summary>
+    public static bool ShouldDegradeToReadOnly(SupportDecision decision, bool gcuFirstConnectInProgress) =>
+        !gcuFirstConnectInProgress && !decision.IsSupported;
+
+    /// <summary>
+    /// First MQTT handshake (ConnectionGeneration==0, never connected) is still in progress,
+    /// whether or not <paramref name="isReconnecting"/> has flipped yet.
+    /// </summary>
+    public static bool IsGcuFirstConnectInProgress(bool isReconnecting, int connectionGeneration) =>
+        connectionGeneration == 0;
 
     /// <summary>
     /// 厂商服务是否在服务本机（N8 的判据来源）。任一为真即算：

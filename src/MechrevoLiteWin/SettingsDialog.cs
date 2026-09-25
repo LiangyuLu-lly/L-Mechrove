@@ -1,5 +1,6 @@
 namespace MechrevoLite;
 
+using System.Diagnostics;
 using MechrevoLite.UI;
 
 /// <summary>
@@ -12,22 +13,27 @@ public sealed class SettingsDialog : UI.RForm
     Control? _displayHeader;
     Control? _displayRow;
     Form? _owner;
+    bool _syncingLanguage;
 
-    public SettingsDialog(Control themePanel, Control officialPanel,
-        Control? overdriveChk, bool displayGroupAvailable)
+    /// <summary>测试接缝：非 null 时写入语言后不弹重启框、不重启进程。</summary>
+    internal static Action<string>? LanguageChangedOverride { get; set; }
+
+    public SettingsDialog(Control themePanel, Control? overdriveChk, bool displayGroupAvailable)
     {
         BackColor = UI.UiVisualStyle.Window;
         ForeColor = UI.UiVisualStyle.Text;
-        Text = "设置";
+        Text = Properties.Strings.FooterSettings;
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.Manual;
-        // 托管控件（界面外观/官方控制台面板）已由主窗体按**设备像素**缩放（D()），若此处再让
-        // WinForms 按 DPI 自动缩放一次，就是二次缩放（实测 ≈3.06×），内容撑破窗口 →
-        // 「控制台」按钮被右边缘裁掉（真机 2026-09-13 截图）。与 RColorPicker 同策略：
+        // 托管控件（界面外观）已由主窗体按**设备像素**缩放（D()），若此处再让
+        // WinForms 按 DPI 自动缩放一次，就是二次缩放。与 RColorPicker 同策略：
         // 关掉自动缩放，尺寸一律用设备像素自算（D() 与 ShrinkToContent）。
         AutoScaleMode = AutoScaleMode.None;
-        ClientSize = new Size(470, 340);   // 占位；OnLoad（首帧之前）按实测内容收口
+        // 占位宽对齐主窗；OnLoad（首帧之前）按实测内容收口，且不超过主窗。
+        ClientSize = new Size(
+            UI.ResponsiveLayout.LogicalToDevice(this, SettingsForm.CompactDashboardLogicalClientSize.Width),
+            UI.ResponsiveLayout.LogicalToDevice(this, 340));
         AutoScroll = true;
         InitTheme(true);
         // I5：非模态 Show() 的窗体被 Close() 会连同被过继进来的主界面面板一起释放，
@@ -84,29 +90,98 @@ public sealed class SettingsDialog : UI.RForm
             root.Controls.Add(control, 0, r++);
         }
 
-        AddHeader("界面", 0);
+        AddHeader(Properties.Strings.SettingsZoneAppearance, 0);
         themePanel.Dock = DockStyle.Top;
         // 主窗以 Visible=false 延迟托管（Settings.cs 构建尾部）；弹窗接管后必须重新显示，
-        // 否则 界面外观（日间/夜间）与 官方控制台 两节在弹窗里永远空白（真机实测）。
+        // 否则界面外观（日间/夜间）在弹窗里永远空白。
         themePanel.Visible = true;
-        officialPanel.Visible = true;
         AddRow(themePanel);
+        AddRow(BuildLanguageRow(D));
 
         // 「显示」组只有响应加速一行（屏幕校色已迁出弹窗：改为「屏幕」行头内联下拉，
         // Settings.cs，2026-09-14）。控件缺失或机型不支持响应加速时整组（标题 + 行）
         // 都不建，避免截图里「显示」下面空无一物。
         if (overdriveChk is not null)
         {
-            _displayHeader = AddHeader("显示", 10);
+            _displayHeader = AddHeader(Properties.Strings.SettingsZoneDisplay, 10);
             overdriveChk.Dock = DockStyle.Left;
             AddRow(overdriveChk);
             _displayRow = overdriveChk;
             SetDisplayGroupAvailable(displayGroupAvailable);
         }
+    }
 
-        AddHeader("系统", 10);
-        officialPanel.Dock = DockStyle.Top;
-        AddRow(officialPanel);
+    TableLayoutPanel BuildLanguageRow(Func<int, int> D)
+    {
+        var row = new UI.BufferedTableLayoutPanel
+        {
+            Name = "panelLanguage",
+            ColumnCount = 2,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
+            Margin = new Padding(0, D(8), 0, 0),
+        };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        var label = new Label
+        {
+            Name = "labelLanguage",
+            Text = Properties.Strings.Language,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            ForeColor = UI.UiVisualStyle.Text,
+            Font = UI.UiVisualStyle.Font(UI.UiVisualStyle.TypeScale.Body),
+            Margin = new Padding(0, D(6), D(8), 0),
+        };
+
+        var combo = new UI.RComboBox
+        {
+            Name = "comboLanguage",
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = D(140),
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, D(2), 0, D(2)),
+        };
+        combo.Items.Add("中文");
+        combo.Items.Add("English");
+        string current = UiLanguage.Normalize(
+            AppConfig.GetString(UiLanguage.ConfigKey),
+            Thread.CurrentThread.CurrentUICulture.Name);
+        _syncingLanguage = true;
+        combo.SelectedIndex = UiLanguage.IndexOf(current);
+        _syncingLanguage = false;
+        combo.SelectedIndexChanged += (_, _) => OnLanguageSelected(combo);
+        row.Controls.Add(label, 0, 0);
+        row.Controls.Add(combo, 1, 0);
+        return row;
+    }
+
+    void OnLanguageSelected(ComboBox combo)
+    {
+        if (_syncingLanguage) return;
+        string code = UiLanguage.CodeFromIndex(combo.SelectedIndex);
+        string? previous = AppConfig.GetString(UiLanguage.ConfigKey);
+        if (string.Equals(previous, code, StringComparison.OrdinalIgnoreCase)) return;
+        AppConfig.Set(UiLanguage.ConfigKey, code);
+        if (LanguageChangedOverride is { } captured)
+        {
+            captured(code);
+            return;
+        }
+
+        DialogResult answer = MessageBox.Show(
+            this,
+            Properties.Strings.LanguageRestartPrompt,
+            Properties.Strings.LanguageRestartTitle,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes) return;
+
+        string path = Environment.ProcessPath ?? Application.ExecutablePath;
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        Application.Exit();
     }
 
     /// <summary>
@@ -131,7 +206,8 @@ public sealed class SettingsDialog : UI.RForm
         int maxH = Math.Max(160, wa.Height - 64);
 
         int needW = content.Padding.Horizontal + RequiredRowWidth(content);
-        int targetW = Math.Min(Math.Max(needW, 320), maxW);
+        int parentCap = UI.ResponsiveLayout.LogicalToDevice(this, SettingsForm.CompactDashboardLogicalClientSize.Width);
+        int targetW = Math.Min(Math.Max(needW, 320), Math.Min(maxW, parentCap));
         int targetH = Math.Min(content.Height, maxH);
         if (ClientSize.Width == targetW && ClientSize.Height == targetH) return;
         ClientSize = new Size(targetW, targetH);

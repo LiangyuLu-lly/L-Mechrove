@@ -115,6 +115,40 @@ namespace MechrevoLite.Helpers
                 new PointF(Bound.Width / 2 + shiftX, Bound.Height / 2), _toastFormat);
         }
 
+        /// <summary>测试接缝：失败 Toast 在调用 <see cref="RunToast"/> 之前先通知这里，避免测试构造 WinForms OSD。</summary>
+        internal static Action<string>? FailureCallback;
+
+        /// <summary>测试接缝：非失败提示（例如回读不能证明充电已受控）。不走 <see cref="FailureCallback"/>。</summary>
+        internal static Action<string>? NoticeCallback;
+
+        internal static void ShowFailure(string message)
+        {
+            FailureCallback?.Invoke(message);
+            try { Program.toast?.RunToast(message); }
+            catch (Exception tex) { Logger.WriteLine("Failure toast failed: " + tex.Message); }
+        }
+
+        internal static void ShowNotice(string message)
+        {
+            NoticeCallback?.Invoke(message);
+            try
+            {
+                SettingsForm? form = Program.settingsForm;
+                if (form is null || form.IsDisposed || Program.toast is null) return;
+                void Show()
+                {
+                    try { Program.toast?.RunToast(message); }
+                    catch (Exception tex) { Logger.WriteLine("Notice toast failed: " + tex.Message); }
+                }
+                if (form.InvokeRequired) form.BeginInvoke(Show);
+                else Show();
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("Notice toast failed: " + ex.Message);
+            }
+        }
+
         public void RunToast(string text, ToastIcon? icon = null)
         {
 

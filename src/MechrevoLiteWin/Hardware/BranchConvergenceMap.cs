@@ -257,6 +257,6 @@ public static class BranchConvergenceMap
         yield return new("E7", BranchArea.UngatedConsumers, "AppConfig.cs:498-501,596-599", BranchDisposition.MatrixGated, "T8",
             "OLED/动态照明假探测器删除，改显式配置开关。");
         yield return new("E8", BranchArea.UngatedConsumers, "GpuSwitchPolicy.cs:23-36; MechrevoHw.cs:2444", BranchDisposition.MatrixGated, "T8",
-            "策略恒 Restart 经证实为刻意产品决策（T8 证据 E8），保留并有测试锁定。");
+            "厂商 Resolve 已恢复（mux Restart / Standard→iGPU HotSwitch / else Direct）；E8 MATRIX_GATED。");
     }
 }

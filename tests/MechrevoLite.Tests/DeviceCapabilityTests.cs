@@ -1,9 +1,20 @@
+using MechrevoLite.Gpu;
 using MechrevoLite.Hardware;
 
 namespace MechrevoLite.Tests;
 
 public class DeviceCapabilityTests
 {
+    [Fact]
+    public void DashboardAndTrayFailClosedOnGpuSwitchWhenHardwareIsNull()
+    {
+        string source = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Settings.cs");
+        Assert.DoesNotContain("CanOfferGpuModeSwitch ?? true", source, StringComparison.Ordinal);
+        int first = source.IndexOf("CanOfferGpuModeSwitch ?? false", StringComparison.Ordinal);
+        int second = source.IndexOf("CanOfferGpuModeSwitch ?? false", first + 1, StringComparison.Ordinal);
+        Assert.True(first >= 0 && second > first, "dashboard and tray must both fail-closed when hw is null");
+    }
+
     [Fact]
     public void OfficialProfileEnablesGpuOverclockUntilRuntimeStatusArrives()
     {
@@ -256,6 +267,8 @@ public class DeviceCapabilityTests
         int publishCount = 0;
         using var hardware = new MechrevoHw((_, _) => { publishCount++; return Task.CompletedTask; },
             new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = false });
+        // T1: SupportsIgpuOnly is MQTT overlay only, not Capabilities.IgpuOnly.
+        hardware.HandleMessage("Setting/Status", "{\"IGpuOnlyConnectionSwitch_Support\":true,\"DiscreteGpuDirectConnectionSwitch_Support\":false}");
         var service = new MechrevoService(hardware);
 
         Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
@@ -511,7 +524,7 @@ public class DeviceCapabilityTests
     public void GpuRestartRoute_UsesOfficialTargetActions(int targetMode, bool supportsDgpuDirect, string expected)
     {
         string actions = string.Join('|', MechrevoService.CreateGpuRestartTargetPayloads(
-            targetMode, supportsDgpuDirect).Select(payload => payload["Action"]));
+            targetMode, supportsDgpuDirect, DgpuGenerationKind.Gen50).Select(payload => payload["Action"]));
 
         Assert.Equal(expected, actions);
     }

@@ -125,6 +125,8 @@ public class KeyboardFallbackNoDoubleApplyTests
                 }
                 return Task.CompletedTask;
             }, new MechrevoDeviceCapabilities { Lightbar = true, LogoLight = true, Keyboard = true });
+            hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\"}");
+            hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\"}");
             Hardware = hardware;
 
             Device = new SpyKeyboardHid(op => { lock (_gate) Events.Add(op); });

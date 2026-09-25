@@ -27,9 +27,9 @@ public class SupportDecisionFailTests
     }
 
     [Fact]
-    public void AnUnreadableEcIsUnparsableAndNotSupported()
+    public void AnUnreadableEcIsUnparsableWhenTheVendorServiceIsNotServing()
     {
-        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported, serviceServed: true);
+        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported, serviceServed: false);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.Unparsable, decision.Reason);
@@ -37,10 +37,19 @@ public class SupportDecisionFailTests
     }
 
     [Fact]
+    public void AnUnreadableEcIsSupportedWhenTheVendorServiceIsServing()
+    {
+        SupportDecision decision = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported, serviceServed: true);
+
+        Assert.True(decision.IsSupported);
+        Assert.Equal(SupportReason.Ok, decision.Reason);
+    }
+
+    [Fact]
     public void AnOutOfEnumProjectByteIsUnparsableNotNotInSet()
     {
         SupportDecision decision = ModelSupport.Determine(
-            ModelRegistry.Read(new ModelRegistryTests.FakeEc(new() { [1856] = 250 })), Supported, serviceServed: true);
+            ModelRegistry.Read(new ModelRegistryTests.FakeEc(new() { [1856] = 250 })), Supported, serviceServed: false);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.Unparsable, decision.Reason);
@@ -53,7 +62,7 @@ public class SupportDecisionFailTests
 
         SupportDecision decision = ModelSupport.Determine(
             new ModelIdentity(ModelIdentity.UnknownName, -1, ModelIdentity.UnknownName, ModelSource.Unknown),
-            setWithUnknown, serviceServed: true);
+            setWithUnknown, serviceServed: false);
 
         Assert.False(decision.IsSupported);
         Assert.Equal(SupportReason.Unparsable, decision.Reason);
@@ -84,7 +93,7 @@ public class SupportDecisionFailTests
     [Fact]
     public void EveryNonOkReasonCarriesIsSupportedFalse()
     {
-        SupportDecision unparsable = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported, serviceServed: true);
+        SupportDecision unparsable = ModelSupport.Determine(ModelRegistry.Read(new UnreadableEc()), Supported, serviceServed: false);
         SupportDecision notInSet = ModelSupport.Determine(ModelRegistry.Read(Project(22)), Supported, serviceServed: false);
 
         Assert.Equal(SupportReason.Unparsable, unparsable.Reason);

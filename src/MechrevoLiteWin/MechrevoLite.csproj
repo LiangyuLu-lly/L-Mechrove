@@ -37,15 +37,20 @@
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <AssemblyVersion>0.289.0.0</AssemblyVersion>
     <FileVersion>0.289.0.0</FileVersion>
-    <Version>0.289.0-beta18</Version>
+    <Version>0.289.0-beta19</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
+    <!-- English lives in the main Strings.resx; only ship the zh-CN satellite. Also filters TaskScheduler package satellites. -->
+    <SatelliteResourceLanguages>zh-CN</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="logs\**" />
     <EmbeddedResource Remove="logs\**" />
     <None Remove="logs\**" />
+    <!-- Keep English (Strings.resx in the main DLL) and zh-CN only. Other g-helper satellites stay on disk but do not compile or ship. -->
+    <EmbeddedResource Remove="Properties\Strings.*.resx" />
+    <EmbeddedResource Include="Properties\Strings.zh-CN.resx" />
     <Compile Remove="artifacts\**" />
     <EmbeddedResource Remove="artifacts\**" />
     <None Remove="artifacts\**" />
@@ -72,9 +77,6 @@
 
   <ItemGroup>
     <Content Include="favicon.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="rgb.cfg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Resources\qrcode1.jpg">
@@ -153,5 +155,29 @@
 	<Target Name="StopRunningLMechrevo" BeforeTargets="Build" Condition="'$(GITHUB_ACTIONS)'!='true'">
 		<Exec Command="powershell -NoProfile -Command &quot;try { [System.Threading.EventWaitHandle]::OpenExisting('Global\LMechrevoApp-Exit').Set() } catch {}; for ($i = 0; $i -lt 50; $i++) { if (-not (Get-Process -Name 'L-Mechrevo' -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 100 }&quot;" />
 	</Target>
+
+  <!--
+    Probe.exe is a diagnostic host (keep Probe.dll). rgb.cfg lives in %AppData%.
+    System.IO.Ports / Mono.Posix are LHM Linux/serial leftovers unused on this Windows build.
+    WinRT (liquid-cooling BLE fallback) and LibreHardwareMonitorLib (watts; MQTT has none) stay.
+  -->
+  <Target Name="TrimPublishJunk" AfterTargets="Publish">
+    <ItemGroup>
+      <_PublishJunk Include="$(PublishDir)Probe.exe" />
+      <_PublishJunk Include="$(PublishDir)Probe.pdb" />
+      <_PublishJunk Include="$(PublishDir)Probe.deps.json" />
+      <_PublishJunk Include="$(PublishDir)Probe.runtimeconfig.json" />
+      <_PublishJunk Include="$(PublishDir)rgb.cfg" />
+      <_PublishJunk Include="$(PublishDir)System.IO.Ports.dll" />
+      <_PublishJunk Include="$(PublishDir)Mono.Posix.NETStandard.dll" />
+      <_PublishJunk Include="$(PublishDir)libMonoPosixHelper.dll" />
+      <_PublishJunk Include="$(PublishDir)MonoPosixHelper.dll" />
+      <_JunkCultureName Include="ar;cs-CZ;da;de;es;fr;hu;id;it;ja;ko;lt;pl;pt-BR;pt-PT;ro;tr;uk;vi;zh-TW" />
+      <_JunkCultureDll Include="@(_JunkCultureName->'$(PublishDir)%(Identity)\*.dll')" />
+      <_JunkCultureDir Include="@(_JunkCultureName->'$(PublishDir)%(Identity)')" />
+    </ItemGroup>
+    <Delete Files="@(_PublishJunk);@(_JunkCultureDll)" TreatErrorsAsWarnings="true" />
+    <RemoveDir Directories="@(_JunkCultureDir)" />
+  </Target>
 
 </Project>

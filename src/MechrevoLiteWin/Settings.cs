@@ -12,6 +12,7 @@ using MechrevoLite.Mode;
 using MechrevoLite.Properties;
 using MechrevoLite.UI;
 using System.Diagnostics;
+using System.Threading;
 using System.Timers;
 
 namespace MechrevoLite
@@ -27,8 +28,6 @@ namespace MechrevoLite
         // 改成 D(…) 后在 175% 缩放下反而变大，把卡内内容挤爆（实测 248 条 text-clipping
         // + 288 条 parent-overflow，见 docs/ui-consistency-pass.md §3.3）。紧凑化只动
         // 真正有余量的三张卡。
-        internal const int CompactOfficialConsoleLogicalHeight = 56;     // 官方控制台卡（46 在 420 宽下状态文字上下贴边，3840-200% 实测裁切）
-
         // 这两张卡的内部行是按内容顶死的（液冷卡是三行控件），
         // 2026-09-11 压到 84/88 时 --ui-audit 直接报出 376 条越界，故维持原值。
         // 液冷卡 106→116：灯光按钮高度跟随下拉首选高（字体驱动），420 窄卡内
@@ -129,15 +128,12 @@ namespace MechrevoLite
             "sliderBattery", "buttonEco", "buttonStandard", "buttonOptimized", "buttonUltimate",
             "buttonTurbo", "buttonSilentTurbo", "buttonCustomMode",
         };
-        Panel? _officialConsolePanel;
-        Label? _officialConsoleStatus;
-        RButton? _officialConsoleButton;
-        readonly System.Windows.Forms.Timer _officialConsoleStatusTimer = new() { Interval = 3000 };
         bool _arrangingDashboard;
         string _lastStackLayout = "";
         string _lastWindowHeightSignature = "";
         readonly MechrevoDeviceCapabilities _deviceCapabilities = MechrevoDeviceCapabilities.Load();
         string _lastCapabilityLayout = "";
+        int _refreshCapsQueued;
 
         static IEnumerable<Control> AllDescendants(Control root)
         {
@@ -256,11 +252,10 @@ namespace MechrevoLite
             if (_liquidGroup is not null) _liquidGroup.BackColor = UiVisualStyle.Window;
             if (_quickGroup is not null) _quickGroup.BackColor = UiVisualStyle.Window;
             UiVisualStyle.ApplyWindow(this);
-            // 主题/官方控制台/版本三张卡的标题是内联局部变量，按控件名在这里补线性图标。
+            // 主题卡的标题是内联局部变量，按控件名在这里补线性图标。
             foreach ((string name, UiGlyph.Kind kind) in new[]
             {
                 ("labelThemeModeTitle", UiGlyph.Kind.Contrast),
-                ("labelOfficialConsoleTitle", UiGlyph.Kind.Console),
             })
             {
                 if (Controls.Find(name, true).FirstOrDefault() is Label titleLabel)
@@ -388,7 +383,6 @@ namespace MechrevoLite
         DateTime _lastBrightnessUi = DateTime.MinValue;
         DateTime _lastCalibUi = DateTime.MinValue;   // 校色下拉用户操作后的回显抑制（同亮度 3s 规则）
         int _runtimeResourcesDisposed;
-        int _officialStatusRefreshRunning;
         int _startupStatusLoading;
         bool _syncingStartup;
         int _lastVisualMode = int.MinValue;
@@ -529,7 +523,11 @@ namespace MechrevoLite
                 box.Enabled = false;
                 bool confirmed = false;
                 try { confirmed = await command(requested); }
-                catch (Exception ex) { Logger.WriteLine("Quick switch failed: " + ex.Message); }
+                catch (Exception ex)
+                {
+                    Logger.WriteLine("Quick switch failed: " + ex.Message);
+                    ToastForm.ShowFailure(Properties.Strings.QuickSwitchFailed);
+                }
                 if (!confirmed)
                 {
                     // 回滚要按硬件此刻的真实状态，不能简单取反。
@@ -728,7 +726,7 @@ namespace MechrevoLite
                     // Click（程序化写 Checked 不触发 Click），并要求 GetLastInputInfo 显示刚刚有真实
                     // 输入——回读同步、自动化写值都不会刷新它。写入失败/被拒绝一律回滚到系统真实状态。
                     bool? initial = Startup.ReadScheduledState();
-                    if (initial.HasValue) cb.Checked = initial.Value;
+                    cb.Checked = initial ?? Startup.IsAutostartPreferred();
                     cb.Click += (_, _) =>
                     {
                         if (_syncingSwitches) return;
@@ -757,6 +755,7 @@ namespace MechrevoLite
                         catch (Exception ex)
                         {
                             Logger.WriteLine("Autostart switch failed: " + ex.Message);
+                            ToastForm.ShowFailure(Properties.Strings.StartupTaskFailed);
                             RevertCheck(cb, Startup.ReadScheduledState() ?? !requested);
                         }
                         finally { cb.Enabled = true; }
@@ -829,7 +828,7 @@ namespace MechrevoLite
             var autoHzChk = new RCheckBox
             {
                 Name = "checkAutoRefreshRate",
-                Text = "自动刷新率",
+                Text = Properties.Strings.AutoRefreshRate,
                 ForeColor = UiVisualStyle.Text,
                 AutoSize = true,
                 Checked = Program.hw?.DcHz ?? false,
@@ -894,7 +893,7 @@ namespace MechrevoLite
             brightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));   // 亮度滑条行
             _screenRowsLayout = brightLayout;
             brightPanel.Controls.Add(brightLayout);
-            var brightLabel = new Label { Name = "labelScreenBrightness", Text = "亮度", Font = UiStyleBody(), ForeColor = UiStyleXXX(), AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty, BackColor = brightPanel.BackColor };
+            var brightLabel = new Label { Name = "labelScreenBrightness", Text = Properties.Strings.Brightness, Font = UiStyleBody(), ForeColor = UiStyleXXX(), AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Margin = Padding.Empty, BackColor = brightPanel.BackColor };
             // 深潜座舱：亮度滑条用自绘 RSlider（4px 轨道 + Accent 填充 + 圆环滑块），不再用原生 TrackBar。
             var brightSlider = new RSlider { Name = "sliderScreenBrightness", Minimum = 10, Maximum = 100, Dock = DockStyle.Fill, Margin = Padding.Empty };
             var brightPercent = new Label { Name = "labelScreenBrightnessValue", Text = "100%", ForeColor = UiVisualStyle.Muted, AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight, Font = new Font("Consolas", UiStyleCaption(), FontStyle.Regular, GraphicsUnit.Point), MinimumSize = new Size(44, 0), Margin = Padding.Empty, BackColor = brightPanel.BackColor };
@@ -909,7 +908,7 @@ namespace MechrevoLite
             };
             brightSlider.KeyUp += (_, _) => _brightnessCommitQueue.Flush();
             // 行头「屏幕」+ 刷新率分段行（此前只装了滑条行，头两行一直空着）
-            var screenTitle = new Label { Name = "labelScreenRow", Text = "屏幕", Dock = DockStyle.Fill, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiVisualStyle.Text, BackColor = brightPanel.BackColor, Margin = Padding.Empty };
+            var screenTitle = new Label { Name = "labelScreenRow", Text = Properties.Strings.Screen, Dock = DockStyle.Fill, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiVisualStyle.Text, BackColor = brightPanel.BackColor, Margin = Padding.Empty };
             UiVisualStyle.ApplyTitle(screenTitle);
             // 屏幕校色（2026-09-14 用户要求）：P3/AdobeRGB 在本机不生效，整个删除；二级校色弹窗
             // 移除，改为行头内联圆角下拉（RComboBox，与行头控件同皮肤），
@@ -975,7 +974,7 @@ namespace MechrevoLite
             var overdriveChk = new RCheckBox
             {
                 Name = "checkLcdOverdrive",
-                Text = "响应加速",
+                Text = Properties.Strings.ResponseBoost,
                 ForeColor = UiVisualStyle.Text,
                 AutoSize = true,
                 Margin = new Padding(0, 8, 14, 0),
@@ -1003,7 +1002,7 @@ namespace MechrevoLite
 
             // 液冷系统面板（外接水冷机：状态 + 泵速/风扇档位，原版 BT_LC 协议）
             var lcPanel = new BufferedPanel { Name = "panelLc", CardStyle = true, Dock = DockStyle.Top, Width = 414, Height = 96, BackColor = UiVisualStyle.Surface, Padding = new Padding(12, 4, 12, 4) };
-            var lcTitle = new Label { Text = "液冷系统", Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold), ForeColor = UiVisualStyle.Text, AutoSize = true, Location = new Point(20, 16) };
+            var lcTitle = new Label { Text = Properties.Strings.LcPanelTitle, Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold), ForeColor = UiVisualStyle.Text, AutoSize = true, Location = new Point(20, 16) };
             UiVisualStyle.ApplyGlyph(lcTitle, UiGlyph.Kind.Droplet);
             // 连接状态按钮：点击打开蓝牙水冷连接窗口（原版匹配流程）
             // 迷你圆角读数（预览 .mini）：RButton 幽灵态（ctor 已置 BorderSize=0）+
@@ -1013,7 +1012,7 @@ namespace MechrevoLite
             var lcStatus = new RButton
             {
                 Tag = "mini-chip",
-                Text = "未连接",
+                Text = Properties.Strings.LcStatusDisconnected,
                 ForeColor = UiVisualStyle.Muted,
                 // 无边框幽灵按钮：底色随父卡片（不能用 Color.Transparent——WinForms 的
                 // "透明"要求父容器支持透明绘制，自绘容器上会画成黑条，见 DESIGN.md 日间模式缺陷）
@@ -1142,7 +1141,7 @@ namespace MechrevoLite
                 await Program.ble.RestoreSavedSettingsAsync(CurrentCoolingTemperature());
                 _lcWasConnected = true;
                 _lcReconnectAttempts = 0;
-                lcStatus.Text = "已直连";
+                lcStatus.Text = Properties.Strings.LcStatusDirect;
                 toolTip.SetToolTip(lcStatus, "已直连 " + Program.ble.ConnectedName);
                 lcStatus.ForeColor = UiVisualStyle.Ok;
                 return true;
@@ -1195,7 +1194,7 @@ namespace MechrevoLite
                 _lcConnecting = true;
                 if (!silent)
                 {
-                    lcStatus.Text = "连接水冷箱中…";
+                    lcStatus.Text = Properties.Strings.LcStatusConnecting;
                     lcStatus.ForeColor = UiVisualStyle.Warn;
                 }
                 try
@@ -1204,18 +1203,28 @@ namespace MechrevoLite
                     if (GetLiquidCoolingRoute() == LiquidCoolingControlRoute.Gcu)
                     {
                         await RestoreSavedGcuLightingAsync();
-                        lcStatus.Text = "GCU 已连接水冷";
+                        lcStatus.Text = Properties.Strings.LcStatusGcuConnected;
                         lcStatus.ForeColor = UiVisualStyle.Ok;
                         return;
                     }
 
                     bool gcuAttempted = Program.hw is { IsConnected: true } && Program.service is not null;
-                    if (gcuAttempted && await TryConnectGcuLiquidCoolingAsync(
-                        silent ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(4)))
+                    if (gcuAttempted && await TryConnectGcuLiquidCoolingAsync(TimeSpan.FromSeconds(20)))
                     {
                         await RestoreSavedGcuLightingAsync();
-                        lcStatus.Text = "GCU 已连接水冷";
+                        lcStatus.Text = Properties.Strings.LcStatusGcuConnected;
                         lcStatus.ForeColor = UiVisualStyle.Ok;
+                        return;
+                    }
+
+                    string gcuState = Program.hw?.LcConnectString ?? "";
+                    if (LiquidCoolingConnectionPolicy.ShouldSkipDirectFallbackBecauseGcuHoldsRadio(gcuState))
+                    {
+                        if (!silent)
+                        {
+                            lcStatus.Text = Properties.Strings.LcStatusGcuConnecting;
+                            lcStatus.ForeColor = UiVisualStyle.Warn;
+                        }
                         return;
                     }
 
@@ -1231,7 +1240,7 @@ namespace MechrevoLite
                     if (!silent)
                     {
                         lcStatus.Text = gcuReportedLiquidCooling || systemAlreadyConnected
-                            ? "水冷连接失败（点击重试）"
+                            ? "水冷连接失败（蓝牙被占用或GATT失败，点击重试）"
                             : "未找到水冷箱（点击重试）";
                         lcStatus.ForeColor = UiVisualStyle.Warn;
                     }
@@ -1242,7 +1251,7 @@ namespace MechrevoLite
                     Logger.WriteLine("AutoConnectLc fail: " + ex.Message);
                     if (!silent)
                     {
-                        lcStatus.Text = "连接失败（点击重试）";
+                        lcStatus.Text = Properties.Strings.LcStatusConnectFailed;
                         lcStatus.ForeColor = UiVisualStyle.Danger;
                     }
                 }
@@ -1264,7 +1273,7 @@ namespace MechrevoLite
                 }
                 if (route == LiquidCoolingControlRoute.Gcu)
                 {
-                    lcStatus.Text = "正在刷新 GCU 水冷状态…";
+                    lcStatus.Text = Properties.Strings.LcStatusRefreshing;
                     lcStatus.ForeColor = UiVisualStyle.Warn;
                     await RequestGcuLiquidCoolingStatusAsync(force: true);
                     return;
@@ -1411,7 +1420,7 @@ namespace MechrevoLite
             {
                 Name = "buttonLcLight",
                 Tag = "mini-chip",
-                Text = "水冷灯光",
+                Text = Properties.Strings.LcLightButton,
                 TextAlign = ContentAlignment.MiddleCenter,
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = UiVisualStyle.Text,
@@ -1674,7 +1683,7 @@ namespace MechrevoLite
                         else if (route == LiquidCoolingControlRoute.BluetoothObserved)
                         {
                             string device = _lcSystemBluetoothObservation.Name;
-                            lcStatus.Text = "蓝牙已连接";
+                            lcStatus.Text = Properties.Strings.LcStatusBluetooth;
                             toolTip.SetToolTip(lcStatus, "蓝牙已连接，等待 GCU 接管" +
                                 (string.IsNullOrWhiteSpace(device) ? "" : " · " + device));
                             lcStatus.ForeColor = UiVisualStyle.Warn;
@@ -1689,7 +1698,7 @@ namespace MechrevoLite
                         }
                         else
                         {
-                            lcStatus.Text = "未连接（点击连接）";
+                            lcStatus.Text = Properties.Strings.LcStatusClickConnect;
                             lcStatus.ForeColor = UiVisualStyle.Muted;
                         }
                     }
@@ -1957,7 +1966,7 @@ namespace MechrevoLite
 
             sliderBattery.AccessibleName = Properties.Strings.BatteryChargeLimit;
             buttonQuit.AccessibleName = Properties.Strings.Quit;
-            buttonUpdates.AccessibleName = "检查更新";   // 按钮已改为检查更新（不再是 BIOS/驱动更新入口）
+            buttonUpdates.AccessibleName = Properties.Strings.CheckForUpdates;   // 按钮已改为检查更新（不再是 BIOS/驱动更新入口）
             panelPerformance.AccessibleName = Properties.Strings.PerformanceMode;
             buttonSilent.AccessibleName = Properties.Strings.Silent;
             buttonBalanced.AccessibleName = Properties.Strings.Balanced;
@@ -2018,15 +2027,13 @@ namespace MechrevoLite
             buttonTurbo.TextAlign = ContentAlignment.MiddleCenter;
 
             // Mechrevo：性能面板 5 列 = 静音(0) 平衡(1) 静音狂暴(2) 狂暴(3) 风扇增强(4)
-            buttonTurbo.Text = "狂暴";
-            // 可访问名与可见文字保持一致：默认的 Strings.Turbo 是「增强模式」，与「狂暴」不一致。
-            buttonTurbo.AccessibleName = "狂暴";
+            // 文案走 Strings.Silent / Balanced / Turbo，与托盘同一套，不再在这里覆盖成硬编码。
             tablePerf.Controls.Remove(buttonTurbo);
             tablePerf.Controls.Add(buttonTurbo, 3, 0);   // 狂暴移到第 4 列
 
             buttonSilentTurbo = new RButton
             {
-                Text = "静音狂暴",
+                Text = Properties.Strings.SilentTurbo,
                 Dock = DockStyle.Fill,
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = UiVisualStyle.Text,
@@ -2044,7 +2051,7 @@ namespace MechrevoLite
             // （原「风扇增强」按钮移入快捷开关面板）
             buttonCustomMode = new RButton
             {
-                Text = "自定义",
+                Text = Properties.Strings.ModeCustom,
                 Dock = DockStyle.Fill,
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = UiVisualStyle.Text,
@@ -2054,24 +2061,15 @@ namespace MechrevoLite
             buttonCustomMode.BorderColor = colorCustom;
             buttonCustomMode.Click += async (_, _) =>
             {
-                if (customModeForm is null || customModeForm.IsDisposed) { customModeForm = new CustomModeForm(); AddOwnedForm(customModeForm); }
-                if (customModeForm.Visible) { customModeForm.Hide(); return; }
+                if (customModeForm is { IsDisposed: false, Visible: true }
+                    && customModeForm.EditingTarget.VisualMode == MechrevoService.ModeCustom)
+                {
+                    customModeForm.Hide();
+                    return;
+                }
 
-                // Finish the first native paint and final placement while effectively
-                // transparent. Otherwise WinForms can expose its default light surface
-                // for one DWM frame before the dark child controls have painted.
-                customModeForm.Opacity = 0.01;
-                ResponsiveLayout.PlaceAdjacent(customModeForm, this);
-                try
-                {
-                    customModeForm.Show();
-                    customModeForm.Update();
-                }
-                finally
-                {
-                    if (!customModeForm.IsDisposed) customModeForm.Opacity = 1;
-                }
-                if (!Program.UiAuditMode && !customModeForm.IsDisposed)
+                ShowModeEditor(ModeEditorTarget.Custom);
+                if (!Program.UiAuditMode && customModeForm is { IsDisposed: false })
                 {
                     if (await customModeForm.ActivateProfileAsync(0))
                     {
@@ -2080,6 +2078,11 @@ namespace MechrevoLite
                     }
                 }
             };
+            AttachModeEditorMenu(buttonSilent, ModeEditorTarget.Office);
+            AttachModeEditorMenu(buttonBalanced, ModeEditorTarget.Gaming);
+            AttachModeEditorMenu(buttonSilentTurbo, ModeEditorTarget.SilentTurbo);
+            AttachModeEditorMenu(buttonTurbo, ModeEditorTarget.Turbo);
+            AttachModeEditorMenu(buttonCustomMode, ModeEditorTarget.Custom);
             tablePerf.Controls.Add(buttonCustomMode, 4, 0);
 
             // 深潜座舱：初始布局（未走 Reflow 前）也按分段控件成型；状态仍由 Activated 驱动。
@@ -2103,7 +2106,7 @@ namespace MechrevoLite
             buttonHDRControl.Click += ButtonHDRControl_Click;
 
             buttonQuit.Click += ButtonQuit_Click;
-            buttonUpdates.Text = "检查更新";
+            buttonUpdates.Text = Properties.Strings.CheckForUpdates;
             buttonUpdates.Click += (_, _) => ShowUpdateDialog();   // 更新按钮 → 检查更新窗口
 
             buttonKeyboardColor.Click += ButtonKeyboardColor_Click;
@@ -2186,7 +2189,7 @@ namespace MechrevoLite
             var batteryLimitLabel = new Label
             {
                 Name = "labelBatteryLimit",
-                Text = "限充",
+                Text = Properties.Strings.ChargeLimitShort,
                 ForeColor = UiVisualStyle.Text,
                 BackColor = panelBattery.BackColor,
                 // AutoSize 标签是审计裁剪检查的白名单（同行头状态标签）——「限充」两字在 10% 列里
@@ -2256,161 +2259,9 @@ namespace MechrevoLite
             labelBacklight.ForeColor = colorStandard;
             labelBacklight.Click += LabelBacklight_Click;
 
-            BuildOfficialConsolePanel();
             BuildDashboardLayout();
             ConfigureResponsiveWindow();
             RefreshDeviceCapabilities();
-        }
-
-        private void BuildOfficialConsolePanel()
-        {
-            int D(int value) => ResponsiveLayout.LogicalToDevice(this, value);
-            _officialConsolePanel = new BufferedPanel
-            {
-                Name = "panelOfficialConsole",
-                CardStyle = true,   // 主题重刷在面板创建之前跑过，卡片外观必须自带（见 ApplyTheme 的说明）
-                Height = D(CompactOfficialConsoleLogicalHeight),
-                Padding = new Padding(D(12), D(8), D(12), D(8)),
-                BackColor = UiVisualStyle.Surface,
-            };
-            var layout = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 3,
-                RowCount = 1,
-                Margin = Padding.Empty,
-                Padding = Padding.Empty,
-                BackColor = _officialConsolePanel.BackColor,
-            };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(126)));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(150)));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-            var title = new Label
-            {
-                Name = "labelOfficialConsoleTitle",
-                Text = "官方控制台",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Margin = Padding.Empty,
-            };
-            UiVisualStyle.ApplyGlyph(title, UiGlyph.Kind.Console);   // 构建期挂：AutoSize 会把图标算进首选宽度
-            _officialConsoleStatus = new Label
-            {
-                Text = "正在检测...",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleRight,
-                AutoEllipsis = true,
-                Margin = Padding.Empty,
-            };
-            _officialConsoleButton = new RButton
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(D(8), 0, 0, 0),
-                BackColor = UiVisualStyle.SurfaceRaised,
-                ForeColor = UiVisualStyle.Text,
-                Cursor = Cursors.Hand,
-            };
-            _officialConsoleButton.Click += OfficialConsoleButton_Click;
-            layout.Controls.Add(title, 0, 0);
-            layout.Controls.Add(_officialConsoleStatus, 1, 0);
-            layout.Controls.Add(_officialConsoleButton, 2, 0);
-            _officialConsolePanel.Controls.Add(layout);
-            UiVisualStyle.ApplyTitle(title);
-            UiVisualStyle.ApplyMuted(_officialConsoleStatus);
-            if (!Program.UiAuditMode) RefreshOfficialConsolePanel();
-            _officialConsoleStatusTimer.Tick += (_, _) => RefreshOfficialConsolePanel();
-            Shown += (_, _) =>
-            {
-                RefreshOfficialConsolePanel();
-                if (!Program.UiAuditMode) _officialConsoleStatusTimer.Start();
-            };
-        }
-
-        private async void OfficialConsoleButton_Click(object? sender, EventArgs e)
-        {
-            if (_officialConsoleButton is null || Program.UiAuditMode) return;
-            _officialConsoleButton.Enabled = false;
-            OfficialConsoleIsolation.IsolationStatus status;
-            try
-            {
-                bool gcuConnected = Program.hw is { IsConnected: true };
-                status = await Task.Run(() => OfficialConsoleIsolation.GetStatus(gcuConnected));
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine("Official console status check failed: " + ex.Message);
-                _officialConsoleButton.Enabled = true;
-                return;
-            }
-            bool isolate = !status.Isolated;
-            string prompt = isolate
-                ? "隔离官方界面和托盘？\n\n无需卸载官方控制台。GCUBridge、GCUService、UWACPI 驱动及机型配置都会保留。"
-                : "恢复官方控制台的原始启动状态？";
-            if (MessageBox.Show(prompt, "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-            {
-                ApplyOfficialConsoleStatus(status);
-                return;
-            }
-
-            _officialConsoleStatus!.Text = isolate ? "正在隔离..." : "正在恢复...";
-            if (!isolate) OfficialConsoleIsolation.StopGuard();
-            OfficialConsoleIsolation.OperationResult result = await OfficialConsoleIsolation.SetIsolationAsync(isolate);
-            if (result.Success)
-            {
-                if (isolate)
-                    OfficialConsoleIsolation.StartGuardIfNeeded();
-                else
-                    OfficialConsoleIsolation.LaunchOfficialUi();
-            }
-            else if (!isolate)
-            {
-                OfficialConsoleIsolation.StartGuardIfNeeded();
-            }
-            RefreshOfficialConsolePanel();
-            _officialConsoleButton.Enabled = true;
-            MessageBox.Show(result.Message, "L-Mechrevo", MessageBoxButtons.OK,
-                result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        }
-
-        private void RefreshOfficialConsolePanel()
-        {
-            if (Program.UiAuditMode || _officialConsoleStatus is null || _officialConsoleButton is null) return;
-            if (Interlocked.Exchange(ref _officialStatusRefreshRunning, 1) != 0) return;
-            bool gcuConnected = Program.hw is { IsConnected: true };
-            _ = RefreshOfficialConsoleStatusAsync(gcuConnected);
-        }
-
-        private async Task RefreshOfficialConsoleStatusAsync(bool gcuConnected)
-        {
-            try
-            {
-                OfficialConsoleIsolation.IsolationStatus status =
-                    await Task.Run(() => OfficialConsoleIsolation.GetStatus(gcuConnected)).ConfigureAwait(false);
-                Volatile.Write(ref _officialStatusRefreshRunning, 0);
-                if (IsDisposed || !IsHandleCreated) return;
-                try { BeginInvoke(() => ApplyOfficialConsoleStatus(status)); }
-                catch (Exception ex) { Logger.WriteLine("Official console status UI update failed: " + ex.Message); }
-            }
-            catch (Exception ex)
-            {
-                Volatile.Write(ref _officialStatusRefreshRunning, 0);
-                Logger.WriteLine("Official console background status failed: " + ex.GetBaseException().Message);
-            }
-        }
-
-        private void ApplyOfficialConsoleStatus(OfficialConsoleIsolation.IsolationStatus status)
-        {
-            if (_officialConsoleStatus is null || _officialConsoleButton is null || IsDisposed) return;
-            _officialConsoleStatus.Text = status.Detail;
-            _officialConsoleStatus.ForeColor = status.Isolated && !status.OfficialUiRunning && status.GcuRunning
-                ? UiVisualStyle.Accent
-                : status.OfficialUiRunning && status.Isolated ? UiVisualStyle.Danger : UiVisualStyle.Muted;
-            _officialConsoleButton.Text = status.Isolated ? "恢复官方控制台" : "隔离官方界面与托盘";
-            _officialConsoleButton.BorderColor = status.Isolated ? UiVisualStyle.Accent : UiVisualStyle.Border;
-            _officialConsoleButton.Activated = status.Isolated;
-            _officialConsoleButton.Enabled = status.OfficialUiInstalled || status.Isolated;
         }
 
         private void BuildDashboardLayout()
@@ -2455,14 +2306,14 @@ namespace MechrevoLite
             tableGPU.RowStyles.Add(new RowStyle(SizeType.Absolute, D(34)));
             tableGPU.Height = D(34);
             foreach (Button button in tableGPU.Controls.OfType<Button>()) MakeCompactModeButton(button);
-            buttonEco.Text = "集显";
-            buttonStandard.Text = "标准";
-            buttonOptimized.Text = "自动";
-            buttonUltimate.Text = "直连";
-            toolTip.SetToolTip(buttonEco, "集显模式");
-            toolTip.SetToolTip(buttonStandard, "标准模式");
-            toolTip.SetToolTip(buttonOptimized, "自动切换");
-            toolTip.SetToolTip(buttonUltimate, "独显直连");
+            buttonEco.Text = Properties.Strings.GpuRouteIgpu;
+            buttonStandard.Text = Properties.Strings.GpuRouteStandard;
+            buttonOptimized.Text = Properties.Strings.AutoMode;
+            buttonUltimate.Text = Properties.Strings.GpuRouteDirect;
+            toolTip.SetToolTip(buttonEco, Properties.Strings.GpuRouteIgpuTip);
+            toolTip.SetToolTip(buttonStandard, Properties.Strings.GpuRouteStandardTip);
+            toolTip.SetToolTip(buttonOptimized, Properties.Strings.GpuRouteAutoTip);
+            toolTip.SetToolTip(buttonUltimate, Properties.Strings.GpuRouteDirectTip);
             panelGPUTitle.AutoSize = false;
             panelGPUTitle.Height = D(26);
             pictureGPU.Image = UiGlyph.Render(UiGlyph.Kind.VideoCard, D(16), UiVisualStyle.Muted, 0);
@@ -2485,7 +2336,7 @@ namespace MechrevoLite
             pictureBattery.Image = UiGlyph.Render(UiGlyph.Kind.Battery, D(16), UiVisualStyle.Muted, 0);
             pictureBattery.SizeMode = PictureBoxSizeMode.Zoom;
             pictureBattery.Visible = true;
-            labelBatteryTitle.Text = "电池";
+            labelBatteryTitle.Text = Properties.Strings.Battery;
             panelBattery.Padding = new Padding(D(16), D(2), D(12), 0);
             panelBattery.MinimumSize = Size.Empty;
             panelBattery.Height = D(56);
@@ -2515,14 +2366,12 @@ namespace MechrevoLite
                 panelPeripherals, panelStartup,
             }) legacy.Visible = false;
 
-            if (_officialConsolePanel is null) return;
-            _officialConsolePanel.Height = D(48);
             BuildThemeModePanel(D);
             BuildTelemetryRow();
 
             // ===== 单页纵排（预览 1:1）：性能 / 遥测 / 显卡 / 屏幕 / 电池 / 三组收放 =====
             lc.Dock = DockStyle.Top;
-            _liquidGroup = new RCollapseGroup("液冷", UiGlyph.Kind.Droplet, "group_lc_open", defaultExpanded: false, showDivider: true);
+            _liquidGroup = new RCollapseGroup(Properties.Strings.LiquidCooling, UiGlyph.Kind.Droplet, "group_lc_open", defaultExpanded: false, showDivider: true);
             _liquidGroup.SetContent(lc);
             _liquidGroup.Toggled += (_, _) =>
             {
@@ -2530,7 +2379,7 @@ namespace MechrevoLite
                 UpdateDashboardScroll();   // 内容高度变了：重算滚动量（窗口高度固定时不会自动重算）
             };
             quick.Dock = DockStyle.Top;
-            _quickGroup = new RCollapseGroup("更多开关", UiGlyph.Kind.Chevrons, "group_quick_open", defaultExpanded: false);
+            _quickGroup = new RCollapseGroup(Properties.Strings.MoreSwitches, UiGlyph.Kind.Chevrons, "group_quick_open", defaultExpanded: false);
             _quickGroup.SetContent(quick);
             _quickGroup.Toggled += (_, _) =>
             {
@@ -2538,7 +2387,7 @@ namespace MechrevoLite
                 if (_quickGroup.Expanded) _fitQuickCards?.Invoke();   // I3：展开后确定性重排
                 UpdateDashboardScroll();   // 展开的快捷开关越多，滚动量必须跟着长（否则滚不到底）
             };
-            _lightGroup = new RCollapseGroup("灯光", UiGlyph.Kind.Gear, "group_light_open", defaultExpanded: true);
+            _lightGroup = new RCollapseGroup(Properties.Strings.LightingGroup, UiGlyph.Kind.Gear, "group_light_open", defaultExpanded: true);
             _lightGroup.Toggled += (_, _) =>
             {
                 UpdateDashboardWindowHeight();
@@ -2636,7 +2485,7 @@ namespace MechrevoLite
             AttachDashboardChrome();
             foreach (Control section in _dashboardSections)
             {
-                section.Dock = DockStyle.Fill;
+                section.Dock = DockStyle.Top;
                 // v2 行间距：行间垂直 Sm(8)，无卡片描边后的分隔感来自留白。
                 section.Margin = new Padding(0, 0, 0, D(6));
             }
@@ -2645,7 +2494,7 @@ namespace MechrevoLite
             ApplyRowSkins();
 
             // v2：低频项随 ⚙ 设置弹窗承载——面板先隐藏，弹窗懒建时再托管（模式同校色/自定义）。
-            foreach (Control deferred in new Control[] { _themeModePanel!, _officialConsolePanel, panelVersion })
+            foreach (Control deferred in new Control[] { _themeModePanel!, panelVersion })
                 deferred.Visible = false;
             checkStartup.Visible = false;   // 开机自启随 ⚙ 弹窗承载（真机首验发现其浮在页首）
             BuildFooterV2(D);
@@ -2658,7 +2507,7 @@ namespace MechrevoLite
             Controls.Add(_dashboard);
             _dashboard.BringToFront();
             UiVisualStyle.ApplyWindow(this);
-            ArrangeDashboard(force: true);
+            ArrangeDashboard();
             RefreshThemeButtons();
 
             void MakeCompactModeButton(Button button)
@@ -2698,7 +2547,7 @@ namespace MechrevoLite
             {
                 Name = "labelGcuStatus",
                 AutoSize = true,
-                Text = "● GCU 状态未知",
+                Text = Properties.Strings.GcuUnknown,
                 ForeColor = UiVisualStyle.Muted,
                 BackColor = _panelGcuStatus.BackColor,
                 Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold),
@@ -2717,7 +2566,7 @@ namespace MechrevoLite
             MechrevoLite.Hardware.MechrevoHw? hw = Program.hw;
             var state = UI.GcuConnectionStatus.Resolve(
                 hw is not null, hw?.IsConnected == true, hw?.IsReconnecting == true,
-                hw is { ConnectionGeneration: > 0 });
+                hw is { ConnectionGeneration: > 0 }, hw?.ReconnectAgeMs ?? 0);
             (Color fore, string text, string tooltip) = UI.GcuConnectionStatus.Describe(state);
             if (_labelGcuStatus.Text != text) _labelGcuStatus.Text = text;
             if (_labelGcuStatus.ForeColor != fore) _labelGcuStatus.ForeColor = fore;
@@ -2726,6 +2575,12 @@ namespace MechrevoLite
 
         /// <summary>测试缝：指示条当前 tooltip 文本（toolTip 字段是 Designer 私有）。</summary>
         internal string GcuStatusTooltip => _labelGcuStatus is null ? "" : toolTip.GetToolTip(_labelGcuStatus);
+
+        /// <summary>测试缝：充电滑条当前说明（可用时是未验证声明，不可用时是禁用原因）。</summary>
+        internal string ChargeLimitSliderReason => toolTip.GetToolTip(sliderBattery);
+
+        /// <summary>测试缝：Mini-LED 是否按 SupportsLocalDimming 提供（祖先 panelScreen 可能仍隐藏）。</summary>
+        internal bool MiniledOffered { get; private set; }
 
         /// <summary>ConnectionReady 等后台线程事件的入口：封送到 UI 线程刷新。</summary>
         internal void RefreshGcuStatus()
@@ -2764,7 +2619,7 @@ namespace MechrevoLite
             var title = new Label
             {
                 Name = "labelThemeModeTitle",
-                Text = "界面外观",
+                Text = Properties.Strings.Appearance,
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Margin = Padding.Empty,
@@ -2772,8 +2627,8 @@ namespace MechrevoLite
                 Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body, FontStyle.Bold),
             };
             UiVisualStyle.ApplyGlyph(title, UiGlyph.Kind.Contrast);   // 构建期挂：AutoSize 会把图标算进首选宽度
-            _dayModeButton = CreateThemeButton("日间", false);
-            _nightModeButton = CreateThemeButton("夜间", true);
+            _dayModeButton = CreateThemeButton(Properties.Strings.DayMode, false);
+            _nightModeButton = CreateThemeButton(Properties.Strings.NightMode, true);
             layout.Controls.Add(title, 0, 0);
             layout.Controls.Add(_dayModeButton, 1, 0);
             layout.Controls.Add(_nightModeButton, 2, 0);
@@ -2798,7 +2653,11 @@ namespace MechrevoLite
         private static readonly string[] DashboardAuditPageNames = { "Main" };
         internal int DashboardPageCount => 1;
         internal string DashboardPageAuditName(int index) => DashboardAuditPageNames[0];
-        internal void SelectDashboardPageForAudit(int index) => SelectDashboardPage(index, persist: false);
+        /// <summary>
+        /// 单页纵排后没有可切换的页。审计仍会传入索引；忽略它，截图留在这一页上。
+        /// </summary>
+        internal void SelectDashboardPageForAudit(int index) =>
+            ArgumentOutOfRangeException.ThrowIfNegative(index);
 
         internal void ShowFirstRunGuideIfNeeded()
         {
@@ -2806,24 +2665,23 @@ namespace MechrevoLite
             if (Program.UiAuditMode || IsDisposed || AppConfig.Get("onboarding_version", 0) >= guideVersion) return;
 
             using var guide = new FirstRunGuideForm();
-            DialogResult result = guide.ShowDialog(this);
+            guide.ShowDialog(this);
             AppConfig.Set("onboarding_version", guideVersion);
-            if (result == DialogResult.OK)
-                SelectDashboardPage(2, persist: true);
-        }
-
-        /// <summary>
-        /// 单页纵排（DESIGN.md v2）后标签页不存在了；保留空实现给审计与引导流程的旧调用点，
-        /// 这些调用点在 P2/P3 迁到新的导航方式后删除。
-        /// </summary>
-        private void SelectDashboardPage(int index, bool persist)
-        {
         }
 
         public void RefreshDeviceCapabilities()
         {
             if (IsDisposed) return;
-            if (InvokeRequired) { BeginInvoke(RefreshDeviceCapabilities); return; }
+            if (InvokeRequired)
+            {
+                if (Interlocked.Exchange(ref _refreshCapsQueued, 1) != 0) return;
+                BeginInvoke(() =>
+                {
+                    Interlocked.Exchange(ref _refreshCapsQueued, 0);
+                    RefreshDeviceCapabilities();
+                });
+                return;
+            }
 
             MechrevoHw? hw = Program.hw;
             MechrevoDeviceCapabilities caps = hw?.Capabilities ?? _deviceCapabilities;
@@ -2831,7 +2689,9 @@ namespace MechrevoLite
             bool Show(bool supported) => audit || supported;
             // D1：机型支持判定（注入/EC/持久化覆盖统一在 RuntimeModelSupport）。只对"明确不支持"降级。
             SupportDecision modelSupport = RuntimeModelSupport.Current();
-            bool unsupportedModel = RuntimeModelSupport.IsPositivelyUnsupported(modelSupport);
+            bool unsupportedModel = RuntimeModelSupport.ShouldDegradeToReadOnly(
+                modelSupport,
+                hw is not null && RuntimeModelSupport.IsGcuFirstConnectInProgress(hw.IsReconnecting, hw.ConnectionGeneration));
 
             bool StaticQuick(string key) => key switch
             {
@@ -2850,13 +2710,56 @@ namespace MechrevoLite
             {
                 string key = box.Tag as string ?? "";
                 bool visible = audit || hw?.SupportsQuickSwitch(key) == true || StaticQuick(key);
-                box.Visible = visible;
                 visibleByKey[key] = visible;
                 quickVisibility.Add(visible);
             }
-            // 整组都被机型/能力挡住时，连组标题一起收掉——否则会留下一个只有小标题的空块。
-            // 判组要用刚算出的 visibleByKey，不能读 child.Visible：那个属性的 getter 把父容器的
-            // 隐藏也算作不可见，页面没选中时整页为 false，会把所有组误收。
+            bool quick = audit || quickVisibility.Any(visible => visible);
+
+            bool keyboard = Show(caps.Keyboard || hw?.SupportsKeyboard == true);
+            bool lightbar = Show(hw?.LightbarStatusSeen == true || caps.Lightbar || caps.RgbLightbar);
+            bool logo = Show(hw?.LogoLightStatusSeen == true);
+            bool refresh = Show(caps.DisplayRefresh || hw?.SupportsDisplayRefresh == true);
+            bool anyLighting = keyboard || lightbar || logo;
+            bool lightEnabled = audit || anyLighting;
+            bool brightness = Show(hw?.ScreenBrightnessSeen == true);
+            bool calibration = Show(caps.ColorCalibration || hw?.SupportsColorCalibration == true);
+            bool overdrive = Show(caps.LcdOverdrive || hw?.SupportsLcdOverdrive == true);
+            bool display = brightness || calibration || overdrive;
+            bool liquidCooling = Show(caps.LiquidCooling || hw?.SupportsLiquidCooling == true);
+            bool turbo = Show(caps.TurboMode || hw?.FanStatusSeen == true);
+            bool silentTurbo = Show(caps.SilentTurboAvailability == FeatureAvailability.Supported);
+            bool custom = Show(caps.CpuPerformanceTuning || caps.FanSettings || hw?.HasAnyCustomRange == true);
+            bool gpuSwitchOffered = audit || (hw?.CanOfferGpuModeSwitch ?? false);
+            bool eco = gpuSwitchOffered && Show(hw?.CanOfferIgpuOnly ?? false);
+            bool ultimate = gpuSwitchOffered && Show(hw?.SupportsDgpuDirect ?? caps.DgpuDirect);
+            bool gpuCapabilitiesKnown = caps.ProfileAvailable || hw?.SettingStatusSeen == true;
+            bool gpu = audit || eco || ultimate;
+            bool miniled = Show(hw?.LocalDimmingSeen == true || caps.LocalDimming);
+            bool brightnessSection = display || refresh;
+            bool controllerUnsupported = Program.rgb?.ControllerAvailability == FeatureAvailability.Unsupported;
+
+            if (!audit && !unsupportedModel && gpuCapabilitiesKnown && !eco && AppConfig.Is("gpu_auto"))
+            {
+                AppConfig.Set("gpu_auto", 0);
+                AppConfig.Set("gpu_mode", MechrevoService.GpuStandard);
+            }
+
+            bool generationRouteHidden = GenerationRouteHidden(hw, gpu, audit, unsupportedModel);
+            string fingerprint = string.Join('|', new object[]
+            {
+                true, true, true, true, gpu, brightnessSection, true, liquidCooling, lightEnabled, quick,
+            }) + '|' +
+                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{miniled}|{unsupportedModel}|{controllerUnsupported}|{generationRouteHidden}|{hw?.DgpuGeneration}";
+            if (fingerprint == _lastCapabilityLayout)
+            {
+                ApplyChargeLimitSliderGating(unsupportedModel);
+                return;
+            }
+            _lastCapabilityLayout = fingerprint;
+
+            int quickIndex = 0;
+            foreach (CheckBox box in _quickSwitches)
+                box.Visible = quickVisibility[quickIndex++];
             foreach ((string groupTitle, string[] keys) in QuickSwitchGroups)
             {
                 if (!_quickGroupContainers.TryGetValue(groupTitle, out (Control Header, Control Grid) containers)) continue;
@@ -2864,20 +2767,8 @@ namespace MechrevoLite
                 containers.Header.Visible = anyVisible;
                 containers.Grid.Visible = anyVisible;
             }
-            // 快捷开关面板现在装在「更多开关」折叠组里：可见性由组容器统一承担，
-            // 不再直接对 panelQuickSwitch 设 Visible（否则组收起时控制链路会打架）。
-            bool quick = audit || quickVisibility.Any(visible => visible);
-            if (_quickGroup is not null)
-            {
-                RefreshQuickGroupSummary();
-            }
+            if (_quickGroup is not null) RefreshQuickGroupSummary();
 
-            bool keyboard = Show(caps.Keyboard || hw?.SupportsKeyboard == true);
-            bool lightbar = Show(caps.Lightbar || hw?.SupportsLightbar == true);
-            bool logo = Show(caps.LogoLight || hw?.SupportsLogoLight == true);
-            bool refresh = Show(caps.DisplayRefresh || hw?.SupportsDisplayRefresh == true);
-            // v2 屏幕行 = 屏幕行头 + 刷新率分段 + 亮度滑条（灯效/自动刷新率已入弹窗/灯光组）
-            bool anyLighting = keyboard || lightbar || logo;
             if (_lightGroup is not null)
             {
                 foreach (Control descendant in AllDescendants(_lightGroup))
@@ -2886,99 +2777,54 @@ namespace MechrevoLite
                     if (descendant.Name == "rowLightbar") descendant.Visible = lightbar;
                     if (descendant.Name == "rowLogo") descendant.Visible = logo;
                 }
-            }
-            if (_lightGroup is not null)
-            {
                 _lightChannelKeyboard = keyboard;
                 _lightChannelLightbar = lightbar;
                 _lightChannelLogo = logo;
-                EnableSection(_lightGroup, audit || anyLighting);
+                EnableSection(_lightGroup, lightEnabled);
                 SyncLightRows();
             }
-            // 键盘控制器状态行（设计 §5）：只有确定性「不支持」才提示已改走官方通道；Supported/Unknown 隐藏，
-            // 现有用户布局不变。判定只读缓存——**绝不**在 UI 线程（这里）启动探测；审计模式下判定保持
-            // Unknown，标签因审计而可见（布局演练），路径仍走 HID 分支、不碰硬件。
             if (_lblKeyboardControllerStatus is not null)
-            {
-                bool controllerUnsupported = Program.rgb?.ControllerAvailability == FeatureAvailability.Unsupported;
                 _lblKeyboardControllerStatus.Visible = keyboard && (audit || controllerUnsupported);
-            }
 
-            bool brightness = Show(hw?.ScreenBrightnessSeen == true);
-            bool calibration = Show(caps.ColorCalibration || hw?.SupportsColorCalibration == true);
-            bool overdrive = Show(caps.LcdOverdrive || hw?.SupportsLcdOverdrive == true);
             _overdriveAvailable = audit || overdrive;
             if (_overdriveChk is not null) _overdriveChk.Visible = _overdriveAvailable;
-            // 设置弹窗的「显示」组标题只在响应加速行可见时渲染：空组不保留标题。
             _settingsDialog?.SetDisplayGroupAvailable(_overdriveAvailable);
             if (_calibCombo is not null) _calibCombo.Visible = audit || calibration;
-            bool display = brightness || calibration || overdrive;
-            bool liquidCooling = Show(caps.LiquidCooling || hw?.SupportsLiquidCooling == true);
-            // 亮度行/Hz 行是固定行高（26/34/28 字面量）：隐藏内容时必须把行高一起收为 0，
-            // 否则留下空带（例如「有校色无刷新率」的机型会留 34px 空行）。
+
             SetScreenRowVisible(2, brightness, "labelScreenBrightness", "sliderScreenBrightness", "labelScreenBrightnessValue");
             if (_hzSegTable is not null) SetScreenRowControls(1, _hzButtons.Count > 0, _hzSegTable);
             SetVisible("panelBrightness", display);
 
-            bool turbo = Show(caps.TurboMode);
-            // 静音狂暴入口只在证据确认支持时出现（Unknown/Unsupported 一律隐藏，见
-            // MechrevoDeviceCapabilities.SilentTurboAvailability 与官方判据 CCUWinUI.decompiled.cs:57721）。
-            bool silentTurbo = Show(caps.SilentTurboAvailability == FeatureAvailability.Supported);
-            bool custom = Show(caps.CpuPerformanceTuning || caps.FanSettings || hw?.HasAnyCustomRange == true);
             if (buttonSilentTurbo is not null) buttonSilentTurbo.Visible = silentTurbo;
             buttonTurbo.Visible = turbo;
             if (buttonCustomMode is not null) buttonCustomMode.Visible = custom;
             ReflowPerformanceButtons(silentTurbo, turbo, custom);
 
-            // Runtime support flags are authoritative when GCU reports them. Do
-            // not resurrect a stale registry capability with an OR expression.
-            // 能力级门控：本代际没有 RESTART 动作（30 系 = ProvenAbsent）时产品的手动切换
-            // 没有任何可用路由（GpuSwitchPolicy 对一切模式变更返回 Restart），整段不得出现。
-            bool gpuSwitchOffered = audit || (hw?.CanOfferGpuModeSwitch ?? true);
-            bool eco = gpuSwitchOffered && Show(hw?.CanOfferIgpuOnly ?? caps.IgpuOnly);
-            bool ultimate = gpuSwitchOffered && Show(hw?.SupportsDgpuDirect ?? caps.DgpuDirect);
-            bool gpuCapabilitiesKnown = caps.ProfileAvailable || hw?.SettingStatusSeen == true;
-            if (!audit && !unsupportedModel && gpuCapabilitiesKnown && !eco && AppConfig.Is("gpu_auto"))
-            {
-                AppConfig.Set("gpu_auto", 0);
-                AppConfig.Set("gpu_mode", MechrevoService.GpuStandard);
-            }
-            bool gpu = audit || eco || ultimate;
             panelGPU.Visible = gpu;
             VisualiseGPUButtons(eco || ultimate, ultimate, eco);
+            MiniledOffered = miniled;
+            buttonMiniled.Visible = miniled;
 
             _enabledDashboardSections.Clear();
             EnableSection(panelPerformance, true);
-            // GCU 状态条不依赖机型能力，恒可见（能力门禁 Clear 后必须重发，同 panelPerformance）。
             EnableSection(_panelGcuStatus!, true);
             EnableSection(panelGPU, gpu);
             EnableSection(_telemetryPanel, true);
-            // 液冷/快捷/灯光装在折叠组里：能力位决定**组**的出现与否。
             EnableSection(_liquidGroup, liquidCooling);
             EnableSection(_quickGroup, quick);
-            // 灯光组的 EnableSection 必须在 Clear 之后重发：上方 2650 行的调用发生在
-            // 本次 Clear 之前，set 成员会被这里清掉，ArrangeDashboard 就不会把
-            // 灯光组装进页面栈（审计/真机都实测过整组消失）。
-            EnableSection(_lightGroup, audit || anyLighting);
+            EnableSection(_lightGroup, lightEnabled);
             EnableSection(panelBattery, true);
-            EnableSection(Controls.Find("panelBrightness", true).FirstOrDefault(), display || refresh);
-            // v2：主题/官方控制台/版本面板由 ⚙ 设置弹窗承载（懒建+托管），
-            // 此处不能再 EnableSection——否则面板会在页面顶部重新浮动出现（真机首验实证）。
-            // footer 是页面固定底栏，仍需启用。
+            EnableSection(Controls.Find("panelBrightness", true).FirstOrDefault(), brightnessSection);
             EnableSection(panelFooter, true);
-            // D1：不支持机型 → 顶部横幅 + 只读降级（横幅作为首个分区；隐藏时整行收拢）。
             ApplyUnsupportedModelNotice(unsupportedModel, modelSupport);
-            // 横幅恒在栈里（隐藏时 AutoSize 行收为 0），这样隐藏态也能被脚本按名字找到。
+            if (generationRouteHidden)
+                ApplyUnresolvedGenerationNotice(hw!.DgpuGeneration);
             if (_unsupportedModelBanner is not null && !_enabledDashboardSections.Contains(_unsupportedModelBanner))
                 _enabledDashboardSections.Add(_unsupportedModelBanner);
+            ApplyChargeLimitSliderGating(unsupportedModel);
 
-            string fingerprint = string.Join('|', _dashboardSections.Select(section => _enabledDashboardSections.Contains(section))) + '|' +
-                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{_lightGroup?.Summary}|{unsupportedModel}";
-            if (fingerprint == _lastCapabilityLayout) return;
-            _lastCapabilityLayout = fingerprint;
-            // 刷新率分段按钮随 Hz 列表重建（签名守卫内部处理）
             SyncHzButtons();
-            ArrangeDashboard(force: true);
+            ArrangeDashboard();
             PerformLayout();
             UpdateTelemetryText();
 
@@ -3007,26 +2853,92 @@ namespace MechrevoLite
         }
 
         /// <summary>
+        /// 画像声称有显卡路由，但代际没有事实行，显卡区已被藏起。用既有横幅说明原因，
+        /// 不进入机型只读降级（其它写入入口仍可用）。
+        /// </summary>
+        static bool GenerationRouteHidden(MechrevoHw? hw, bool gpuSectionVisible, bool audit, bool unsupportedModel)
+        {
+            if (audit || unsupportedModel || gpuSectionVisible || hw is null) return false;
+            if (hw.DgpuGeneration is not (DgpuGenerationKind.Unknown or DgpuGenerationKind.NoDgpu)) return false;
+            return hw.SupportsDgpuDirect || hw.SupportsIgpuOnly;
+        }
+
+        internal static string UnresolvedGenerationNoticeText => Properties.Strings.UnresolvedGenerationNotice;
+        internal static string NoDgpuGenerationNoticeText => Properties.Strings.NoDgpuGenerationNotice;
+
+        void ApplyUnresolvedGenerationNotice(DgpuGenerationKind generation)
+        {
+            if (_unsupportedModelLabel is not null)
+                _unsupportedModelLabel.Text = generation == DgpuGenerationKind.NoDgpu
+                    ? NoDgpuGenerationNoticeText
+                    : UnresolvedGenerationNoticeText;
+            if (_unsupportedModelBanner is not null) _unsupportedModelBanner.Visible = true;
+        }
+
+        /// <summary>
         /// D1：把"机型不支持"落成可见横幅 + 只读降级——禁用仪表盘的全部写入入口
         /// （电池滑条、显卡档位、性能档位、快捷开关、整块 dashboard 栈），**不写任何配置、不发任何命令**。
         /// 设置弹窗（⚙，在 panelFooter）保持可用，手动覆盖入口因此始终可达。
         /// </summary>
         void ApplyUnsupportedModelNotice(bool unsupported, SupportDecision decision)
         {
-            IsReadOnlyDegraded = unsupported;
-            if (_unsupportedModelLabel is not null && unsupported)
-                _unsupportedModelLabel.Text = $"当前机型不在支持列表（识别到 {decision.ProjectId}），已进入只读模式。";
-            if (_unsupportedModelBanner is not null) _unsupportedModelBanner.Visible = unsupported;
+            bool showNotice = unsupported;
+            IsReadOnlyDegraded = showNotice;
+            if (_unsupportedModelLabel is not null && showNotice)
+                _unsupportedModelLabel.Text = decision.Reason == SupportReason.Unparsable
+                    ? "机型无法识别，已进入只读模式。"
+                    : $"当前机型不在支持列表（识别到 {decision.ProjectId}），已进入只读模式。";
+            if (_unsupportedModelBanner is not null) _unsupportedModelBanner.Visible = showNotice;
 
             foreach (string name in WriteEntryControlNames)
             {
                 Control? control = Controls.Find(name, true).FirstOrDefault();
-                if (control is not null) control.Enabled = !unsupported;
+                if (control is not null) control.Enabled = !showNotice;
             }
-            foreach (Control box in _quickSwitches) box.Enabled = !unsupported;
+            foreach (Control box in _quickSwitches) box.Enabled = !showNotice;
             // 注意：不整体禁用 _dashboardStack——横幅里的手动机型覆盖入口必须在只读降级下仍可达。
             // 写入入口由上面的具名控件 + 快捷开关逐个禁用。
             if (_modelOverrideBox is not null) _modelOverrideBox.Enabled = true;
+        }
+
+        void ApplyChargeLimitSliderGating(bool unsupportedModel)
+        {
+            bool channel = EcChargeLimit.IsAvailableOnThisMachine() && !unsupportedModel;
+            bool confirmed = channel && EcChargeLimit.ReadbackProvesChargingStopped;
+            sliderBattery.Enabled = confirmed;
+            buttonBatteryFull.Enabled = confirmed;
+            // The card stays up so an unverified limit is visible. Hiding it would look like the
+            // control was never offered, while a percent readout would look like a working limit.
+            if (panelBattery is not null) panelBattery.Visible = !unsupportedModel || Program.UiAuditMode;
+            string reason = confirmed
+                ? ""
+                : channel
+                    ? EcChargeLimit.UnverifiedWriteNotice
+                    : ChargeLimitDisabledReason(RuntimeModelSupport.Current());
+            if (!confirmed && RuntimeModelSupport.Current().IsSupported && AppConfig.GetString("ec_charge_limit") != "0")
+                reason = EcChargeLimit.UnverifiedWriteNotice;
+            toolTip.SetToolTip(sliderBattery, reason);
+            if (_batteryLimitValue is not null) toolTip.SetToolTip(_batteryLimitValue, reason);
+            sliderBattery.AccessibleDescription = reason;
+            if (!confirmed)
+            {
+                if (BatteryControl.chargeFull) BatteryControl.chargeFull = false;
+                VisualiseBatteryUnverified();
+            }
+        }
+
+        internal static string ChargeLimitDisabledReason(SupportDecision support)
+        {
+            if (AppConfig.GetString("ec_charge_limit") == "0") return "充电上限已关闭";
+            return support.Reason switch
+            {
+                SupportReason.Unparsable => "机型无法识别，充电上限不可用",
+                SupportReason.NotInSet => ModelRegistry.IsKnownProjectName(support.ProjectId)
+                    ? "当前机型不支持充电上限"
+                    : "机型无法识别，充电上限不可用",
+                SupportReason.Ok => EcChargeLimit.UnverifiedWriteNotice,
+                _ => "充电上限不可用",
+            };
         }
 
         /// <summary>D1 横幅内容：第一行提示，第二行手动机型覆盖入口（文本框 + 应用/自动 + 状态）。</summary>
@@ -3064,7 +2976,7 @@ namespace MechrevoLite
 
             var caption = new Label
             {
-                Text = "手动机型",
+                Text = Properties.Strings.ManualModel,
                 Dock = DockStyle.Fill,
                 ForeColor = UiVisualStyle.Muted,
                 TextAlign = ContentAlignment.MiddleLeft,
@@ -3089,19 +3001,19 @@ namespace MechrevoLite
                 AutoEllipsis = true,
                 Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
             };
-            var apply = new RButton { Name = "buttonModelOverrideApply", Text = "应用", Dock = DockStyle.Fill, AutoSize = true };
-            var auto = new RButton { Name = "buttonModelOverrideAuto", Text = "自动", Dock = DockStyle.Fill, AutoSize = true };
+            var apply = new RButton { Name = "buttonModelOverrideApply", Text = Properties.Strings.Apply, Dock = DockStyle.Fill, AutoSize = true };
+            var auto = new RButton { Name = "buttonModelOverrideAuto", Text = Properties.Strings.AutoMode, Dock = DockStyle.Fill, AutoSize = true };
             apply.Click += (_, _) =>
             {
                 bool ok = ModelOverrideStateMachine.TrySetManual(_modelOverrideBox?.Text, out SupportDecision decision);
                 if (ok) ModelOverrideStateMachine.SetMode(ModelOverrideMode.ManualPinned);
-                _modelOverrideStatus.Text = ok ? "已手动固定" : $"无效（{decision.Reason}）";
+                _modelOverrideStatus.Text = ok ? Properties.Strings.ModelFixed : string.Format(Properties.Strings.ModelInvalid, decision.Reason);
                 _modelOverrideStatus.ForeColor = ok ? UiVisualStyle.Text : UiVisualStyle.Danger;
             };
             auto.Click += (_, _) =>
             {
                 ModelOverrideStateMachine.SetMode(ModelOverrideMode.Auto);
-                _modelOverrideStatus.Text = "已恢复自动";
+                _modelOverrideStatus.Text = Properties.Strings.ModelRestoredAuto;
                 _modelOverrideStatus.ForeColor = UiVisualStyle.Muted;
             };
             row.Controls.Add(caption, 0, 0);
@@ -3144,8 +3056,6 @@ namespace MechrevoLite
                 style.Height = restore;
                 card.Height += restore;
             }
-            _screenRowsLayout.SuspendLayout();
-            _screenRowsLayout.ResumeLayout(true);
         }
 
         /// <summary>
@@ -3250,7 +3160,7 @@ namespace MechrevoLite
                     _dashboardStack.Controls.Add(section, 0, row++);
                 }
                 _dashboardStack.RowCount = row;
-                _dashboardStack.ResumeLayout(true);
+                _dashboardStack.ResumeLayout(false);
             }
             finally { _arrangingDashboard = false; }
             UpdateDashboardWindowHeight();
@@ -3427,6 +3337,9 @@ namespace MechrevoLite
 
         private void SliderBattery_ValueChanged(object? sender, EventArgs e)
         {
+            // Disabled while the write is unconfirmed, so a drag cannot paint a percent.
+            // Programmatic VisualiseBattery still sets Value and must keep its own readout.
+            if (!sliderBattery.Enabled) return;
             VisualiseBatteryTitle(sliderBattery.Value);
         }
 
@@ -3677,84 +3590,151 @@ namespace MechrevoLite
                 {
                     item.Enabled = false;
                     try { await onClick(); }
-                    catch (Exception ex) { Logger.WriteLine("Tray action failed: " + ex.Message); }
+                    catch (Exception ex)
+                    {
+                        Logger.WriteLine("Tray action failed: " + ex.Message);
+                        ToastForm.ShowFailure(Properties.Strings.TrayActionFailed);
+                    }
                     finally { if (!item.IsDisposed) item.Enabled = true; }
                 };
                 contextMenuStrip.Items.Add(item);
             }
 
-            // ---- 性能模式（含静音狂暴）----
-            AddDisabledTitle("性能模式");
-            AddAsyncAction("静音 (办公)", opMode == 0, async () => { if (Program.service is not null) await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeOffice); });
-            AddAsyncAction("平衡 (游戏)", opMode == 1, async () => { if (Program.service is not null) await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeGaming); });
-            if (Program.hw?.Capabilities.SilentTurboAvailability == FeatureAvailability.Supported)
+            menuEco = menuStandard = menuUltimate = menuOptimized = null!;
+            MechrevoHw? trayHw = Program.hw;
+            MechrevoDeviceCapabilities trayCaps = trayHw?.Capabilities ?? _deviceCapabilities;
+            bool trayAudit = Program.UiAuditMode;
+            bool TrayShow(bool supported) => trayAudit || supported;
+
+            AddDisabledTitle(Properties.Strings.PerformanceMode);
+            AddAsyncAction(Properties.Strings.Silent, opMode == 0, async () =>
             {
-                AddAsyncAction("静音狂暴", opMode == 2 && silentTurbo, async () =>
+                if (Program.service is null || !await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeOffice))
+                    ToastForm.ShowFailure(Properties.Strings.PerfModeSwitchFailed);
+            });
+            AddAsyncAction(Properties.Strings.Balanced, opMode == 1, async () =>
+            {
+                if (Program.service is null || !await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeGaming))
+                    ToastForm.ShowFailure(Properties.Strings.PerfModeSwitchFailed);
+            });
+            if (TrayShow(trayCaps.SilentTurboAvailability == FeatureAvailability.Supported))
+            {
+                AddAsyncAction(Properties.Strings.SilentTurbo, opMode == 2 && silentTurbo, async () =>
                 {
-                    if (Program.service is null || !await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeTurbo)) return;
+                    if (Program.service is null || !await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeTurbo))
+                    {
+                        ToastForm.ShowFailure(Properties.Strings.PerfModeSwitchFailed);
+                        return;
+                    }
                     await Program.service.SwitchTurboSubMode(true);
                     ShowMode(AsusACPI.PerformanceTurbo);
                     SetContextMenu();
                 });
             }
-            if (Program.hw?.Capabilities.TurboMode == true)
+            if (TrayShow(trayCaps.TurboMode || trayHw?.FanStatusSeen == true))
             {
-                AddAsyncAction("狂暴 (增强)", opMode == 2 && !silentTurbo, async () =>
+                AddAsyncAction(Properties.Strings.Turbo, opMode == 2 && !silentTurbo, async () =>
                 {
-                    if (Program.service is null || !await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeTurbo)) return;
-                    if (Program.hw?.Capabilities.TurboSubMode == true)
+                    if (Program.service is null || !await Program.service.SwitchMode(MechrevoLite.Hardware.MechrevoService.ModeTurbo))
+                    {
+                        ToastForm.ShowFailure(Properties.Strings.PerfModeSwitchFailed);
+                        return;
+                    }
+                    if (trayHw?.Capabilities.TurboSubMode == true)
                         await Program.service.SwitchTurboSubMode(false);
                     ShowMode(AsusACPI.PerformanceTurbo);
                     SetContextMenu();
                 });
             }
-            AddAsyncAction("风扇增强", Program.hw?.FanBoost ?? false, async () =>
+            if (TrayShow(trayCaps.FanBoost || trayHw?.SupportsFanBoost == true))
             {
-                bool target = !(Program.hw?.FanBoost ?? false);
-                if (Program.service is not null) await Program.service.SwitchFanBoost(target);
-            });
-
-            // ---- 自定义模式 4 档（当前激活档勾选）----
-            int cpi = Program.hw?.CustomProfileIndex ?? -1;
-            bool customActive = opMode == 3 && cpi is >= 0 and <= 3;
-            var customMenu = new ToolStripMenuItem(customActive ? $"自定义模式（当前 {cpi + 1}）" : "自定义模式")
-            {
-                Margin = padding,
-                Checked = customActive,
-                ForeColor = customActive ? UiVisualStyle.Ok : contextMenuStrip.ForeColor,
-                Font = new Font(contextMenuStrip.Font, customActive ? FontStyle.Bold : FontStyle.Regular),
-            };
-            for (int i = 0; i < 4; i++)
-            {
-                int idx = i;
-                var ci = new ToolStripMenuItem("自定义 " + (i + 1)) { Margin = padding, Checked = opMode == 3 && cpi == idx };
-                ci.Click += async (_, _) =>
+                AddAsyncAction(Properties.Strings.TrayFanBoost, trayHw?.FanBoost ?? false, async () =>
                 {
-                        if (Program.service is null || !await Program.service.SwitchCustomProfile(idx)) return;
-                        if (!MechrevoLite.Hardware.WinPowerPlan.ApplyProfile(idx))
-                            Logger.WriteLine($"Tray custom profile {idx + 1}: Windows power settings were not confirmed.");
-                        ShowMode(MechrevoLite.Hardware.MechrevoService.ToVisualMode(
-                            MechrevoLite.Hardware.MechrevoService.ModeCustom));
-                        SetContextMenu();
-                };
-                customMenu.DropDownItems.Add(ci);
+                    bool target = !(trayHw?.FanBoost ?? false);
+                    if (Program.service is not null) await Program.service.SwitchFanBoost(target);
+                });
             }
-            contextMenuStrip.Items.Add(customMenu);
+
+            bool customOffered = TrayShow(trayCaps.CpuPerformanceTuning || trayCaps.FanSettings || trayHw?.HasAnyCustomRange == true);
+            if (customOffered)
+            {
+                int cpi = trayHw?.CustomProfileIndex ?? -1;
+                bool customActive = opMode == 3 && cpi is >= 0 and <= 3;
+                var customMenu = new ToolStripMenuItem(customActive ? string.Format(Properties.Strings.TrayCustomModeActive, cpi + 1) : Properties.Strings.TrayCustomMode)
+                {
+                    Margin = padding,
+                    Checked = customActive,
+                    ForeColor = customActive ? UiVisualStyle.Ok : contextMenuStrip.ForeColor,
+                    Font = new Font(contextMenuStrip.Font, customActive ? FontStyle.Bold : FontStyle.Regular),
+                };
+                for (int i = 0; i < 4; i++)
+                {
+                    int idx = i;
+                    var ci = new ToolStripMenuItem(string.Format(Properties.Strings.CustomProfileN, i + 1)) { Margin = padding, Checked = opMode == 3 && cpi == idx };
+                    ci.Click += async (_, _) =>
+                    {
+                            if (Program.service is null || !await Program.service.SwitchCustomProfile(idx))
+                            {
+                                ToastForm.ShowFailure(Properties.Strings.PerfModeSwitchFailed);
+                                return;
+                            }
+                            if (!MechrevoLite.Hardware.WinPowerPlan.ApplyProfile(idx))
+                                ToastForm.ShowFailure(Properties.Strings.CustomProfilePlanUnconfirmed);
+                            ShowMode(MechrevoLite.Hardware.MechrevoService.ToVisualMode(
+                                MechrevoLite.Hardware.MechrevoService.ModeCustom));
+                            SetContextMenu();
+                    };
+                    customMenu.DropDownItems.Add(ci);
+                }
+                contextMenuStrip.Items.Add(customMenu);
+            }
+
+            var secondaryEditor = new ToolStripMenuItem(ModeSecondaryEditor.EditorMenuText)
+            {
+                Name = "menuSecondaryCustomize",
+                Margin = padding,
+            };
+            void AddEditorTarget(ModeEditorTarget target)
+            {
+                var child = new ToolStripMenuItem(ModeSecondaryEditor.TrayItemText(target))
+                {
+                    Name = "menuSecondaryCustomizeChild",
+                    Tag = target,
+                    Margin = padding,
+                };
+                child.Click += (_, _) => ShowModeEditor(target);
+                secondaryEditor.DropDownItems.Add(child);
+            }
+            AddEditorTarget(ModeEditorTarget.Office);
+            AddEditorTarget(ModeEditorTarget.Gaming);
+            if (TrayShow(trayCaps.SilentTurboAvailability == FeatureAvailability.Supported))
+                AddEditorTarget(ModeEditorTarget.SilentTurbo);
+            if (TrayShow(trayCaps.TurboMode || trayHw?.FanStatusSeen == true))
+                AddEditorTarget(ModeEditorTarget.Turbo);
+            if (customOffered)
+                AddEditorTarget(ModeEditorTarget.Custom);
+            contextMenuStrip.Items.Add(secondaryEditor);
 
             contextMenuStrip.Items.Add("-");
 
-            if (isGpuSection)
+            bool gpuSwitchOffered = trayAudit || (trayHw?.CanOfferGpuModeSwitch ?? false);
+            bool eco = gpuSwitchOffered && TrayShow(trayHw?.CanOfferIgpuOnly ?? false);
+            bool ultimate = gpuSwitchOffered && TrayShow(trayHw?.SupportsDgpuDirect ?? trayCaps.DgpuDirect);
+            if (eco || ultimate)
             {
                 var titleGPU = new ToolStripMenuItem(Properties.Strings.GPUMode);
                 titleGPU.Margin = padding;
                 titleGPU.Enabled = false;
                 contextMenuStrip.Items.Add(titleGPU);
 
-                menuEco = new ToolStripMenuItem(Properties.Strings.EcoMode);
-                menuEco.Click += ButtonEco_Click;
-                menuEco.Margin = padding;
-                menuEco.Checked = buttonEco.Activated;
-                contextMenuStrip.Items.Add(menuEco);
+                if (eco)
+                {
+                    menuEco = new ToolStripMenuItem(Properties.Strings.EcoMode);
+                    menuEco.Click += ButtonEco_Click;
+                    menuEco.Margin = padding;
+                    menuEco.Checked = buttonEco.Activated;
+                    contextMenuStrip.Items.Add(menuEco);
+                }
 
                 menuStandard = new ToolStripMenuItem(Properties.Strings.StandardMode);
                 menuStandard.Click += ButtonStandard_Click;
@@ -3762,42 +3742,26 @@ namespace MechrevoLite
                 menuStandard.Checked = buttonStandard.Activated;
                 contextMenuStrip.Items.Add(menuStandard);
 
-                menuUltimate = new ToolStripMenuItem(Properties.Strings.UltimateMode);
-                menuUltimate.Click += ButtonUltimate_Click;
-                menuUltimate.Margin = padding;
-                menuUltimate.Checked = buttonUltimate.Activated;
-                menuUltimate.Visible = isMuxGpu;
-                contextMenuStrip.Items.Add(menuUltimate);
-
-                menuOptimized = new ToolStripMenuItem(Properties.Strings.Optimized);
-                menuOptimized.Click += ButtonOptimized_Click;
-                menuOptimized.Margin = padding;
-                menuOptimized.Checked = buttonOptimized.Activated;
-                contextMenuStrip.Items.Add(menuOptimized);
+                if (ultimate)
+                {
+                    menuUltimate = new ToolStripMenuItem(Properties.Strings.UltimateMode);
+                    menuUltimate.Click += ButtonUltimate_Click;
+                    menuUltimate.Margin = padding;
+                    menuUltimate.Checked = buttonUltimate.Activated;
+                    contextMenuStrip.Items.Add(menuUltimate);
+                }
 
                 contextMenuStrip.Items.Add("-");
             }
 
-            // ---- 电池三档 ----
-            AddDisabledTitle("电池");
-            int bp = Program.hw?.BatteryProtection ?? -1;
-            AddAsyncAction("性能 (满充)", bp == 0, async () => { if (Program.hw is not null) await Program.hw.SetBatteryProtection(0); });
-            AddAsyncAction("平衡 (80%)", bp == 1, async () => { if (Program.hw is not null) await Program.hw.SetBatteryProtection(1); });
-            AddAsyncAction("健康 (60%)", bp == 2, async () => { if (Program.hw is not null) await Program.hw.SetBatteryProtection(2); });
-
-            contextMenuStrip.Items.Add("-");
-
-            // N12 审计（死按钮）：仪表盘键盘行按能力隐藏，托盘入口却一直暴露——无键盘灯效的机器上
-            // 点开是一个空窗体。这里用与仪表盘行完全相同的判据；审计模式仍强制可见（布局基线依赖它）。
-            MechrevoDeviceCapabilities trayCaps = Program.hw?.Capabilities ?? _deviceCapabilities;
-            bool keyboardLighting = Program.UiAuditMode
+            bool keyboardLighting = trayAudit
                 || trayCaps.Keyboard
-                || Program.hw?.SupportsKeyboard == true;
-            if (keyboardLighting) AddAction("键盘灯效", false, () => OpenRgbForm());
-            AddAction("悬浮监控", AppConfig.IsOverlay(), () => ToggleOverlay());   // Overlay 硬件状态悬浮窗
-            AddAction("打开主界面", false, () => Program.SettingsToggle(false, true));
+                || trayHw?.SupportsKeyboard == true;
+            if (keyboardLighting) AddAction(Properties.Strings.TrayKeyboardLighting, false, () => OpenRgbForm());
+            AddAction(Properties.Strings.TrayOverlayMonitor, AppConfig.IsOverlay(), () => ToggleOverlay());   // Overlay 硬件状态悬浮窗
+            AddAction(Properties.Strings.TrayOpenMain, false, () => ShowAll());
             // 导出诊断包：与 footer「诊断」键同一入口（本地打包，不联网）。
-            AddAsyncAction("导出诊断包", false, () => MechrevoLite.Diagnostics.DiagnosticPackCommand.RunAsync(this, null));
+            AddAsyncAction(Properties.Strings.ExportDiagnostics, false, () => MechrevoLite.Diagnostics.DiagnosticPackCommand.RunAsync(this, null));
 
             contextMenuStrip.Items.Add("-");
 
@@ -3866,9 +3830,9 @@ namespace MechrevoLite
             if (IsDisposed) return;
             try
             {
-                buttonUpdates.Text = "检查更新 ●";
+                buttonUpdates.Text = Properties.Strings.CheckForUpdatesBadge;
                 buttonUpdates.ForeColor = UiVisualStyle.Accent;
-                toolTip.SetToolTip(buttonUpdates, $"发现新版本 {info.LatestVersion}（点击查看）");
+                toolTip.SetToolTip(buttonUpdates, string.Format(Properties.Strings.UpdateAvailableTip, info.LatestVersion));
             }
             catch (Exception ex)
             {
@@ -3907,30 +3871,15 @@ namespace MechrevoLite
             labelTipScreen.Text = Properties.Strings.AutoRefreshTooltip.Replace("60", ScreenControl.MIN_RATE.ToString());
         }
 
-        private void ButtonUltimate_MouseHover(object? sender, EventArgs e)
-        {
-            labelTipGPU.Text = Properties.Strings.UltimateGPUTooltip;
-        }
+        private void ButtonUltimate_MouseHover(object? sender, EventArgs e) { }
 
-        private void ButtonStandard_MouseHover(object? sender, EventArgs e)
-        {
-            labelTipGPU.Text = Properties.Strings.StandardGPUTooltip;
-        }
+        private void ButtonStandard_MouseHover(object? sender, EventArgs e) { }
 
-        private void ButtonEco_MouseHover(object? sender, EventArgs e)
-        {
-            labelTipGPU.Text = Properties.Strings.EcoGPUTooltip;
-        }
+        private void ButtonEco_MouseHover(object? sender, EventArgs e) { }
 
-        private void ButtonOptimized_MouseHover(object? sender, EventArgs e)
-        {
-            labelTipGPU.Text = Properties.Strings.OptimizedGPUTooltip;
-        }
+        private void ButtonOptimized_MouseHover(object? sender, EventArgs e) { }
 
-        private void ButtonGPU_MouseLeave(object? sender, EventArgs e)
-        {
-            labelTipGPU.Text = HasPendingGpuRestart() ? "显卡模式已更改，重启后生效。" : "";
-        }
+        private void ButtonGPU_MouseLeave(object? sender, EventArgs e) { }
 
 
         private void ButtonScreenAuto_Click(object? sender, EventArgs e)
@@ -4026,6 +3975,7 @@ namespace MechrevoLite
 
         private void SetColorPicker(string colorField, Color initial)
         {
+            if (Aura.IsMechrevoConnected) return;
             using RColorPicker colorDlg = new RColorPicker(initial, colorField == "aura_color" && Aura.HasRandomColor());
             colorDlg.ColorChanged += c =>
             {
@@ -4055,6 +4005,7 @@ namespace MechrevoLite
 
         public void SetAura()
         {
+            if (Aura.IsMechrevoConnected) return;
             Task.Run(() =>
             {
                 Aura.ApplyAura();
@@ -4112,9 +4063,10 @@ namespace MechrevoLite
         }
 
 
-        private void ButtonMiniled_Click(object? sender, EventArgs e)
+        private async void ButtonMiniled_Click(object? sender, EventArgs e)
         {
-            ScreenControl.ToogleMiniled();
+            if (Program.service is null || Program.hw is null) return;
+            await Program.service.SwitchLocalDimming(!Program.hw.LocalDimming);
         }
 
 
@@ -4156,13 +4108,11 @@ namespace MechrevoLite
             if (maxFrequency > ScreenControl.MIN_RATE)
             {
                 button120Hz.Text = maxFrequency.ToString() + "Hz" + (overdriveSetting ? " + OD" : "");
-                panelScreen.Visible = ScreenPanelVisibility.PanelVisible(maxFrequency);
                 tableScreen.Visible = ScreenPanelVisibility.RefreshTableVisible(maxFrequency, ScreenControl.MIN_RATE);
             }
             else if (maxFrequency > 0)
             {
                 tableScreen.Visible = ScreenPanelVisibility.RefreshTableVisible(maxFrequency, ScreenControl.MIN_RATE);
-                panelScreen.Visible = ScreenPanelVisibility.PanelVisible(maxFrequency);
             }
 
             if (fhd >= 0)
@@ -4173,43 +4123,13 @@ namespace MechrevoLite
 
             bool hdrControlVisible = (hdr && hdrControl >= 0);
 
-            if (miniled1 >= 0)
+            if (Program.hw?.SupportsLocalDimming == true)
             {
-                buttonMiniled.Visible = !hdrControlVisible;
-                buttonMiniled.Enabled = !hdr;
-                buttonMiniled.Activated = miniled1 == 1 || hdr;
-            }
-            else if (miniled2 >= 0)
-            {
-                buttonMiniled.Visible = !hdrControlVisible;
-                buttonMiniled.Enabled = !hdr;
-                if (hdr) miniled2 = 1; // Show HDR as Multizone Strong
-
-                switch (miniled2)
-                {
-                    // Multizone On
-                    case 0:
-                        buttonMiniled.Text = Properties.Strings.Multizone;
-                        buttonMiniled.BorderColor = colorStandard;
-                        buttonMiniled.Activated = true;
-                        break;
-                    // Multizone Strong
-                    case 1:
-                        buttonMiniled.Text = Properties.Strings.MultizoneStrong;
-                        buttonMiniled.BorderColor = colorTurbo;
-                        buttonMiniled.Activated = true;
-                        break;
-                    // Multizone Off
-                    case 2:
-                        buttonMiniled.Text = Properties.Strings.OneZone;
-                        buttonMiniled.BorderColor = colorStandard;
-                        buttonMiniled.Activated = false;
-                        break;
-                }
-            }
-            else
-            {
-                buttonMiniled.Visible = false;
+                buttonMiniled.Enabled = screenEnabled;
+                buttonMiniled.Activated = Program.hw.LocalDimming || hdr;
+                buttonMiniled.Text = Program.hw.LocalDimming
+                    ? Properties.Strings.Multizone
+                    : Properties.Strings.OneZone;
             }
 
             if (hdrControlVisible)
@@ -4286,7 +4206,6 @@ namespace MechrevoLite
             _liquidCoolingStatusTimer.Stop();
             _displayStatusTimer.Stop();
             _quickSwitchStatusTimer.Stop();
-            _officialConsoleStatusTimer.Stop();
             batteryTimer.Stop();
             _sensorTimer.Stop();
         }
@@ -4300,11 +4219,58 @@ namespace MechrevoLite
             _liquidCoolingStatusTimer.Dispose();
             _displayStatusTimer.Dispose();
             _quickSwitchStatusTimer.Dispose();
-            _officialConsoleStatusTimer.Dispose();
             batteryTimer.Dispose();
             _sensorTimer.Dispose();
             _liquidCoolingLightMenu?.Dispose();
             contextMenuStrip.Dispose();
+            buttonSilent.ContextMenuStrip?.Dispose();
+            buttonBalanced.ContextMenuStrip?.Dispose();
+            buttonTurbo.ContextMenuStrip?.Dispose();
+            buttonSilentTurbo?.ContextMenuStrip?.Dispose();
+            buttonCustomMode?.ContextMenuStrip?.Dispose();
+        }
+
+        void AttachModeEditorMenu(RButton button, ModeEditorTarget target)
+        {
+            var menu = new ContextMenuStrip();
+            var item = new ToolStripMenuItem(ModeSecondaryEditor.EditorMenuText)
+            {
+                Name = "menuSecondaryCustomize",
+                Tag = target,
+            };
+            item.Click += (_, _) => ShowModeEditor(target);
+            menu.Items.Add(item);
+            button.ContextMenuStrip = menu;
+        }
+
+        void ShowModeEditor(ModeEditorTarget target)
+        {
+            if (customModeForm is null || customModeForm.IsDisposed)
+            {
+                customModeForm = new CustomModeForm();
+                AddOwnedForm(customModeForm);
+            }
+            customModeForm.BindEditingTarget(target);
+            if (customModeForm.Visible)
+            {
+                customModeForm.Activate();
+                return;
+            }
+
+            // Finish the first native paint and final placement while effectively
+            // transparent. Otherwise WinForms can expose its default light surface
+            // for one DWM frame before the dark child controls have painted.
+            customModeForm.Opacity = 0.01;
+            ResponsiveLayout.PlaceAdjacent(customModeForm, this);
+            try
+            {
+                customModeForm.Show();
+                customModeForm.Update();
+            }
+            finally
+            {
+                if (!customModeForm.IsDisposed) customModeForm.Opacity = 1;
+            }
         }
 
         /// <summary>
@@ -4329,23 +4295,23 @@ namespace MechrevoLite
 
         private async void ButtonUltimate_Click(object? sender, EventArgs e)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuDgpu, "独显直连");
+            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuDgpu, Properties.Strings.GpuRouteDirectTip);
         }
 
         private async void ButtonStandard_Click(object? sender, EventArgs e)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuStandard, "标准");
+            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuStandard, Properties.Strings.GpuRouteStandard);
         }
 
         private async void ButtonEco_Click(object? sender, EventArgs e)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuIGpu, "核显");
+            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuIGpu, Properties.Strings.GpuSwitchIgpu);
         }
 
 
         private async void ButtonOptimized_Click(object? sender, EventArgs e)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuAuto, "自动");
+            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuAuto, Properties.Strings.AutoMode);
         }
 
         private async Task SwitchGpuModeFromUi(int targetMode, string modeName)
@@ -4375,16 +4341,32 @@ namespace MechrevoLite
                 Program.service.CurrentGpuMode,
                 Program.hw.GpuSwitchResult,
                 targetMode,
-                Program.hw.CanOfferGpuHotSwap,
+                Program.hw.CanOfferIgpuOnly,
                 currentStateFresh: statusReadback == GpuModeStatusReadback.Fresh);
             if (plan.Route == GpuSwitchRoute.NoChange)
             {
                 if (HasPendingGpuRestart()) await ShowGpuRestartPromptAsync(targetMode, modeName);
                 return;
             }
-            // GpuSwitchPolicy 对一切模式变更只返回 Restart：手动切换一律走官方
-            // RestartDialog 流程（确认前不发任何命令），热切换路径已整体移除。
-            await ShowGpuRestartPromptAsync(targetMode, modeName);
+            switch (plan.Route)
+            {
+                case GpuSwitchRoute.Direct:
+                case GpuSwitchRoute.HotSwitch:
+                    await Program.service.SwitchGpuMode(targetMode);
+                    await RefreshGpuModeUiStateAsync();
+                    return;
+                case GpuSwitchRoute.Restart:
+                    if (DisplayRouteMatrix.AllowsRestart(Program.hw.DgpuGeneration))
+                        await ShowGpuRestartPromptAsync(targetMode, modeName);
+                    else
+                    {
+                        await Program.service.SwitchGpuMode(targetMode);
+                        await RefreshGpuModeUiStateAsync();
+                    }
+                    return;
+                default:
+                    return;
+            }
         }
 
         private async Task<DgpuPreflightResult> PrepareDgpuApplicationsForHotSwitchAsync()
@@ -4642,7 +4624,8 @@ namespace MechrevoLite
                 // 「重启生效」常驻提示（本机 MUX 切换重启后才生效）。旧实现把遥测摘要塞进这两处，
                 // 与下方遥测行完全重复（真机验收暴露）。
                 UpdatePerfRowStatus();
-                if (labelGPUFan.Text != "重启生效") labelGPUFan.Text = "重启生效";
+                string gpuStatus = HasPendingGpuRestart() ? "重启生效" : "";
+                if (labelGPUFan.Text != gpuStatus) labelGPUFan.Text = gpuStatus;
                 UpdateTelemetryText();
                 UpdateGcuStatus();   // 复用既有传感器节拍（≤2s），不新增轮询机制
 
@@ -4833,7 +4816,7 @@ namespace MechrevoLite
             buttonStandard.Visible = false;
             buttonUltimate.Visible = false;
             buttonOptimized.Visible = false;
-            buttonStopGPU.Visible = true;
+            buttonStopGPU.Visible = false;
 
             tableGPU.ColumnCount = 0;
 
@@ -4923,15 +4906,14 @@ namespace MechrevoLite
             }
 
             VisualiseIcon();
-            labelTipGPU.Text = HasPendingGpuRestart() ? "显卡模式已更改，重启后生效。" : "";
-            labelTipGPU.Visible = labelTipGPU.Text.Length > 0;
+            labelTipGPU.Text = "";
+            labelTipGPU.Visible = false;
 
             if (isGpuSection)
             {
-                menuEco.Checked = buttonEco.Activated;
-                menuStandard.Checked = buttonStandard.Activated;
-                menuUltimate.Checked = buttonUltimate.Activated;
-                // menuOptimized.Checked = buttonOptimized.Activated; // 已移除自动模式
+                if (menuEco is not null) menuEco.Checked = buttonEco.Activated;
+                if (menuStandard is not null) menuStandard.Checked = buttonStandard.Activated;
+                if (menuUltimate is not null) menuUltimate.Checked = buttonUltimate.Activated;
             }
 
             // UI Fix for small screeens
@@ -4992,12 +4974,6 @@ namespace MechrevoLite
         {
             MechrevoService? mechrevoService = Program.service;
             if (mechrevoService is null) return;
-            if (mode == MechrevoService.ModeTurbo && Program.hw?.Capabilities.TurboMode != true)
-            {
-                Logger.WriteLine("Turbo mode UI request rejected as unsupported by this device profile.");
-                RefreshDeviceCapabilities();
-                return;
-            }
 
             int request = Interlocked.Increment(ref _performanceRequest);
             ShowMode(MechrevoService.ToVisualMode(mode)); // Immediate visual acknowledgement while hardware confirms in the background.
@@ -5020,6 +4996,7 @@ namespace MechrevoLite
 
             ShowMode(MechrevoService.ToVisualMode(confirmed ? mode : mechrevoService.CurrentMode));
             SetContextMenu();
+            ModeControl.NotifySwitchOutcome(success: confirmed, cancelled: false);
         }
 
 
@@ -5032,7 +5009,7 @@ namespace MechrevoLite
         void InitQuickSwitchRefresh()
         {
             BuildQuickSwitchPanel();
-            VisualiseBatteryTitle(BatteryControl.ResolveDisplayLimitPercent());   // 百分比读数首次回显（EC 实际阈值优先）
+            PresentChargeLimitReadout();
             // 面板布局调整（依赖 QuickSwitch 面板已创建）：
             // 1. 删蓝色 100% 满充按钮（上限由滑条设定，这个按钮已无意义）
             buttonBatteryFull.Visible = false;
@@ -5071,7 +5048,7 @@ namespace MechrevoLite
                 if (Program.hw is not { IsConnected: true }) return;
                 // 电池健康后缀要等 System/BatteryInfo 到达之后才有内容，所以跟着这个定时器刷
                 // （顺带回显上限百分比）。读 EC 实际阈值而不是配置：配置只是缓存，刷新不得覆盖真值。
-                VisualiseBatteryTitle(BatteryControl.ResolveDisplayLimitPercent());
+                PresentChargeLimitReadout();
             };
             if (!Program.UiAuditMode) _quickSwitchStatusTimer.Start();
         }
@@ -5080,13 +5057,15 @@ namespace MechrevoLite
         /// 充电上限读数未知（从未成功写入 / 写失败 / 机型不支持）时的占位。绝不能把
         /// AppConfig 缺失键的 -1 哨兵当成一个真实的「-1%」上限显示出去。
         /// </summary>
-        internal const string BatteryLimitUnknownText = "无法读取";
+        internal static string BatteryLimitUnknownText => Properties.Strings.BatteryLimitUnknown;
+
+        void PresentChargeLimitReadout() => VisualiseBatteryUnverified();
 
         public void VisualiseBatteryTitle(int limit)
         {
             // v2（预览 1:1）：标题就是「电池」；循环次数/容量这类健康摘要在右侧 muted 状态里，
             // 充电状态为空时才顶上（避免每秒覆盖掉健康信息）。
-            labelBatteryTitle.Text = "电池";
+            labelBatteryTitle.Text = Properties.Strings.Battery;
             if (_batteryLimitValue is null) return;
             if (!EcChargeLimit.IsSupportedLimit(limit))
             {
@@ -5154,8 +5133,21 @@ namespace MechrevoLite
             sliderBattery.Value = Math.Clamp(limit, sliderBattery.Minimum, sliderBattery.Maximum);
 
             sliderBattery.AccessibleName = Properties.Strings.BatteryChargeLimit + ": " + limit.ToString() + "%";
+            sliderBattery.AccessibleDescription = "";
             //sliderBattery.AccessibilityObject.Select(AccessibleSelection.TakeFocus);
 
+            VisualiseBatteryFull();
+        }
+
+        /// <summary>
+        /// Persistent unverified readout. Does not move the slider or paint a percent.
+        /// </summary>
+        public void VisualiseBatteryUnverified()
+        {
+            if (InvokeRequired) { Invoke(VisualiseBatteryUnverified); return; }
+            if (_batteryLimitValue is not null) _batteryLimitValue.Text = EcChargeLimit.UnverifiedLimitLabel;
+            sliderBattery.AccessibleName = Properties.Strings.BatteryChargeLimit + ": " + EcChargeLimit.UnverifiedLimitLabel;
+            sliderBattery.AccessibleDescription = EcChargeLimit.UnverifiedWriteNotice;
             VisualiseBatteryFull();
         }
 

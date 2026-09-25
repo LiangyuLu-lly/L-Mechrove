@@ -175,7 +175,14 @@ namespace MechrevoLite.Gpu
                         catch (Exception tex) { Logger.WriteLine("GPU switch failure toast failed: " + tex.Message); }
                     }
                 }
-                catch (Exception ex) { Logger.WriteLine("Legacy SetGPUMode failed: " + ex.Message); }
+                catch (Exception ex)
+                {
+                    Logger.WriteLine("Legacy SetGPUMode failed: " + ex.Message);
+                    if (Program.hw is not null)
+                        settings.VisualiseGPUMode(Program.hw.GpuMode);
+                    try { Program.toast?.RunToast("显卡模式切换失败，已恢复切换前模式。"); }
+                    catch (Exception tex) { Logger.WriteLine("GPU switch failure toast failed: " + tex.Message); }
+                }
                 return;
             }
 

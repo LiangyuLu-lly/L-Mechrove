@@ -4,6 +4,8 @@ namespace MechrevoLite.UI;
 
 internal class BufferedPanel : Panel
 {
+    const int WmEraseBkgnd = 0x0014;
+
     /// <summary>
     /// 卡片外观（DESIGN.md 第 4 节）：Surface 底 + 1px Border 描边 + 8px 圆角，无阴影。
     /// 圆角靠 Region 裁形，描边在 OnPaint 里画；父容器底在四角透出即是圆角效果。
@@ -11,6 +13,7 @@ internal class BufferedPanel : Panel
     public bool CardStyle { get; set; }
 
     private int _cardRadius = 8;
+    Size _lastSize;
     public int CardRadius
     {
         get => _cardRadius;
@@ -19,8 +22,15 @@ internal class BufferedPanel : Panel
 
     public BufferedPanel()
     {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         DoubleBuffered = true;
-        ResizeRedraw = true;
+        ResizeRedraw = false;
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmEraseBkgnd) { m.Result = IntPtr.Zero; return; }
+        base.WndProc(ref m);
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -32,7 +42,10 @@ internal class BufferedPanel : Panel
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        if (Size == _lastSize) return;
+        _lastSize = Size;
         UpdateCardRegion();
+        Invalidate();
     }
 
     void UpdateCardRegion()
@@ -69,9 +82,27 @@ internal class BufferedPanel : Panel
 
 internal sealed class BufferedTableLayoutPanel : TableLayoutPanel
 {
+    const int WmEraseBkgnd = 0x0014;
+    Size _lastSize;
+
     public BufferedTableLayoutPanel()
     {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         DoubleBuffered = true;
-        ResizeRedraw = true;
+        ResizeRedraw = false;
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmEraseBkgnd) { m.Result = IntPtr.Zero; return; }
+        base.WndProc(ref m);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (Size == _lastSize) return;
+        _lastSize = Size;
+        Invalidate();
     }
 }

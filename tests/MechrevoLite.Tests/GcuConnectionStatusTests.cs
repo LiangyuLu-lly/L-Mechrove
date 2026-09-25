@@ -31,6 +31,30 @@ public class GcuConnectionStatusTests
     }
 
     [Fact]
+    public void Resolve_FirstConnectRetry_StaysConnectingThroughGiveUpWindow()
+    {
+        Assert.Equal(GcuConnectionState.Connecting,
+            Resolve(true, false, true, false, 0));
+        Assert.Equal(GcuConnectionState.Connecting,
+            Resolve(true, false, true, false, FirstConnectGiveUpMs - 1));
+        Assert.Equal(GcuConnectionState.Connecting,
+            Resolve(true, false, true, false, FirstConnectGiveUpMs));
+    }
+
+    [Fact]
+    public void Resolve_FirstConnectGiveUpWithoutRetry_IsDisconnectedNotUnparsable()
+    {
+        Assert.Equal(GcuConnectionState.Disconnected,
+            Resolve(true, false, false, false, FirstConnectGiveUpMs));
+        var (_, text, tooltip) = Describe(GcuConnectionState.Disconnected);
+        Assert.Contains("未连接", text);
+        Assert.DoesNotContain("Unparsable", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("无法识别", text);
+        Assert.DoesNotContain("Unparsable", tooltip, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("无法识别", tooltip);
+    }
+
+    [Fact]
     public void Resolve_ServiceStoppedAfterConnected_GoesDisconnectedNotConnecting()
     {
         // 服务停止的实机序列：IsConnected 翻 false、重连循环起飞、ConnectionGeneration>0。

@@ -7,7 +7,7 @@ namespace MechrevoLite;
 /// <summary>
 /// 键盘灯效窗口：HID 自定义组（BetterRGB 10 效果），软件渲染发帧，各效果专属参数
 /// （方向/速度/颜色等）；睡眠时间由应用内实现。
-/// 官方固件效果（16 种，走 GCU 下发并写键盘 NVRAM）已整体移除。
+/// GCU 回退路径用 <see cref="KeyboardFirmwareEffects"/>（厂商剩余 11 项，不是 CHANGELOG 口误的 16）。
 /// </summary>
 public class RgbForm : RForm
 {
@@ -18,6 +18,14 @@ public class RgbForm : RForm
         (KeyboardRgb.ModeLightning, "闪电"), (KeyboardRgb.ModeFlame, "火焰"), (KeyboardRgb.ModeRain, "雨滴"),
         (KeyboardRgb.ModeMatrix, "矩阵"),
     };
+
+    internal static readonly (int Mode, string Name)[] HidSingleZoneEffects =
+    {
+        (KeyboardRgb.ModeStatic, "静态"), (KeyboardRgb.ModeBreath, "呼吸"),
+    };
+
+    internal static (int Mode, string Name)[] VisibleHidEffects(int keyboardType) =>
+        KeyboardFirmwareEffects.IsSingleZoneRgb(keyboardType) ? HidSingleZoneEffects : HidEffects;
 
     readonly KeyboardRgb _rgb;
     Panel _hidPanel = null!;
@@ -31,9 +39,11 @@ public class RgbForm : RForm
     int _gcuBrightGen;           // 回退态亮度载体代际：拖动中的中间值不发布，停顿后发布最新档
     readonly SemaphoreSlim _gcuBrightLock = new(1, 1);   // 亮度载体单飞：迟到的旧档不得覆盖新档
     int _teardownDone;           // FormClosed 对同一实例会触发两次（Application.Exit 反序循环 + 拥有窗体循环），teardown 必须幂等
-    RSlider _brightSlider = null!;   // 回退态下唯一保持可用的参数控件（状态行承诺「仅电源与亮度」）
+    RSlider _brightSlider = null!;   // 亮度滑条：HID 写渲染器；GCU 回退走官方通道亮度载体
     System.Windows.Forms.Timer? _modeSyncTimer;   // 仪表盘改效果时，已打开的对话框跟随重放
     int _activeHidMode = KeyboardRgb.ModeWave;
+    string _gcuSyncedEffect = "";
+    bool _updatingClientHeight;
     Action? _updateClientHeight;   // 内容定高；OnLoad 里首帧之前跑一次（Shown 时窗口已可见，改高会跳）
 
     int D(int value) => ResponsiveLayout.LogicalToDevice(this, value);
@@ -59,7 +69,7 @@ public class RgbForm : RForm
 
         BackColor = UiVisualStyle.Window;
         ForeColor = UiVisualStyle.Text;
-        Text = "键盘灯效";
+        Text = Properties.Strings.TrayKeyboardLighting;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         StartPosition = FormStartPosition.Manual;
@@ -83,7 +93,7 @@ public class RgbForm : RForm
         int row = 0;
         void SpanRow(Control ctrl)
         {
-            ctrl.Dock = DockStyle.Fill;
+            ctrl.Dock = DockStyle.Top;
             table.Controls.Add(ctrl, 0, row);
             table.SetColumnSpan(ctrl, 2);
             row++;
@@ -92,7 +102,7 @@ public class RgbForm : RForm
         // ---- 参数面板 ----
         _hidPanel = new Panel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoScroll = false,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -104,7 +114,8 @@ public class RgbForm : RForm
         table.Controls.Add(_hidPanel, 0, row);
         table.SetColumnSpan(_hidPanel, 2);
         row++;
-        BuildHidParams();
+        if (IsGcuKeyboardFallback()) BuildGcuFirmwareParams();
+        else BuildHidParams();
 
         // ---- 状态（只在有事可说时占行：SetStatus 把行高在 0 与 D(25) 间切换）----
         _statusRowStyle = new RowStyle(SizeType.Absolute, 0);
@@ -147,24 +158,39 @@ public class RgbForm : RForm
         // 只调高度不动宽度 → 表宽不变 → 不会回环。MinimumSize 仍是下限，窗口保持可调。
         void UpdateClientHeight()
         {
-            if (IsDisposed || table.Height <= 0) return;
-            int desired = table.Height;
-            // MinimumSize 是窗口下限，但内容变矮时必须随之下调：否则下限把窗口顶得比内容高，
-            // 底部留出死空白（实测 minH=442 钉住 442 窗口而内容只要 406）。
-            int nonClient = Math.Max(0, Height - ClientSize.Height);
-            MinimumSize = new Size(MinimumSize.Width, Math.Min(MinimumSize.Height, desired + nonClient));
-            if (ClientSize.Height != desired) ClientSize = new Size(ClientSize.Width, desired);
+            if (IsDisposed || table.Height <= 0 || _updatingClientHeight) return;
+            _updatingClientHeight = true;
+            try
+            {
+                int desired = table.Height;
+                // MinimumSize 是窗口下限，但内容变矮时必须随之下调：否则下限把窗口顶得比内容高，
+                // 底部留出死空白（实测 minH=442 钉住 442 窗口而内容只要 406）。
+                int nonClient = Math.Max(0, Height - ClientSize.Height);
+                MinimumSize = new Size(MinimumSize.Width, Math.Min(MinimumSize.Height, desired + nonClient));
+                if (ClientSize.Height != desired) ClientSize = new Size(ClientSize.Width, desired);
+            }
+            finally { _updatingClientHeight = false; }
         }
         table.SizeChanged += (_, _) => UpdateClientHeight();
         UpdateClientHeight();   // 构建期先校一次，避免首帧停在初始 D(120) 高
         _updateClientHeight = UpdateClientHeight;
 
-        // 模式跟随：仪表盘键盘行改 KbHidMode 时（对话框已打开/可见），2s 内重放到本窗。
+        // 模式跟随：仪表盘键盘行改效果时（对话框已打开/可见），2s 内重放到本窗。
         // 睡眠空闲检测已由 Program.StartLightingIdleMonitor 统一轮询，这里不再重复。
         _modeSyncTimer = new System.Windows.Forms.Timer { Interval = 2000 };
         _modeSyncTimer.Tick += (_, _) =>
         {
             if (!Visible || IsDisposed) return;
+            if (IsGcuKeyboardFallback())
+            {
+                string current = GcuSettings().Effect;
+                if (current != _gcuSyncedEffect)
+                {
+                    _gcuSyncedEffect = current;
+                    BuildGcuFirmwareParams();
+                }
+                return;
+            }
             int dashboardIdx = Array.FindIndex(HidEffects, e => e.Mode == _rgb.KbHidMode);
             int appliedIdx = Array.FindIndex(HidEffects, e => e.Mode == _activeHidMode);
             if (dashboardIdx >= 0 && dashboardIdx != appliedIdx) ApplyModeSelection();
@@ -237,37 +263,212 @@ public class RgbForm : RForm
         _hidPanel.Enabled = enabled;
     }
 
-    /// <summary>
-    /// N9-2：HID 亮度写入是否生效。默认 true（未观测到失败前 HID 是主路径）——绝不能由构造期的
-    /// 写入置为 false：那时设备尚不存在，会把 Unknown 判定永久路由到 GCU 并跳过 HID 探测
-    /// （5a6cf0a 被回退的原因）。只有运行时真实效果帧失败才置 false。
-    /// </summary>
-    bool _hidBrightnessTookEffect = true;
-
     /// <summary>唯一接缝的窗内读法：确定性「不支持」或 HID 亮度写入未生效且官方通道可用时，键盘电源/亮度走 GCU 回退。</summary>
     bool IsGcuKeyboardFallback() =>
         KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
             _rgb.ControllerAvailability, _rgb.IsConnected,
             Program.service is not null && Program.hw is { IsConnected: true },
-            _hidBrightnessTookEffect);
+            _rgb.BrightnessWriteTookEffectForRouting());
 
-    /// <summary>
-    /// 回退态 UI：HID 专属控件全部禁用（本机没有软件灯效控制器，它们毫无意义），仅亮度滑条保持
-    /// 可用——其变更经官方通道的亮度载体下发（状态行承诺「仅电源与亮度」）。面板本身不能整体
-    /// 禁用：禁用父容器会连带禁用滑条，所以逐个禁用后代控件，再恢复滑条及其祖先链。
-    /// </summary>
-    void SetGcuFallbackUiState()
+    /// <summary>官方通道接管。探测后的改道与入口处的提前返回共用这一处，避免一条只改状态、一条才恢复。</summary>
+    void BeginGcuKeyboardFallback()
     {
-        SetDeviceUiEnabled(true);
-        foreach (Control child in _hidPanel.Controls) DisableTree(child);
-        for (Control? c = _brightSlider; c is not null && !ReferenceEquals(c, _hidPanel); c = c.Parent)
-            c.Enabled = true;
+        BuildGcuFirmwareParams();
+        int applyGen = _applyGen;
+        int brightGen = Volatile.Read(ref _gcuBrightGen);
+        if (Program.service is not null && Program.hw is { IsConnected: true } && !Program.hw.KeyboardPower)
+            _ = Task.Run(() => Program.service.SetLightPower(MqttTopics.KeyboardCtrl, true));
+        // 同步发布能在返回前落地（测试桩的 Publish 是已完成任务）。不能 Task.Run：
+        // 迟到的旧 light 会掉进亮度滑条的计量窗口，把用户刚选的档盖掉。
+        Task<bool> restore = RestoreKeyboardEffectIfUnchangedAsync(applyGen, brightGen);
+        if (restore.IsCompleted)
+        {
+            bool restored = false;
+            try { restored = restore.GetAwaiter().GetResult(); }
+            catch (Exception ex) { Logger.WriteLine("RGB fallback restore failed: " + ex.Message); }
+            if (!restored) SetStatus("官方通道灯效未能下发");
+            else SetStatus("本机控制器不支持软件灯效控制，已改用官方通道");
+        }
+        else
+        {
+            SetStatus("本机控制器不支持软件灯效控制，已改用官方通道");
+            _ = ReportRestoreFailureAsync(restore, applyGen);
+        }
+        _ = SyncDeviceCloseTimerAsync();
+        _rgb.QueueSaveConfig();
     }
 
-    static void DisableTree(Control root)
+    /// <summary>
+    /// 复用唤醒路径的 SetKeyboardEffect。滑条代际已前进则放弃，避免旧效果盖住新亮度档。
+    /// 无竞争的锁等待是同步完成的，所以同步 Publish 会在调用方返回前写入。
+    /// </summary>
+    async Task<bool> RestoreKeyboardEffectIfUnchangedAsync(int applyGen, int brightGen)
     {
-        root.Enabled = false;
-        foreach (Control child in root.Controls) DisableTree(child);
+        if (Program.service is null || Program.hw is not { IsConnected: true }) return false;
+        if (applyGen != _applyGen || brightGen != Volatile.Read(ref _gcuBrightGen)) return false;
+        await _gcuBrightLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (applyGen != _applyGen || brightGen != Volatile.Read(ref _gcuBrightGen)) return false;
+            return await Program.RestoreKeyboardEffectViaGcuAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _gcuBrightLock.Release();
+        }
+    }
+
+    async Task ReportRestoreFailureAsync(Task<bool> restore, int applyGen)
+    {
+        bool restored;
+        try { restored = await restore.ConfigureAwait(false); }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("RGB fallback restore failed: " + ex.Message);
+            restored = false;
+        }
+        if (restored || IsDisposed || applyGen != _applyGen) return;
+        try
+        {
+            Invoke(() =>
+            {
+                if (applyGen == _applyGen && !IsDisposed) SetStatus("官方通道灯效未能下发");
+            });
+        }
+        catch (Exception ex) { Logger.WriteLine("RGB fallback status update failed: " + ex.GetType().Name + " " + ex.Message); }
+    }
+
+    LightChannelSettings GcuSettings() =>
+        LightingSettingsStore.Load(MqttTopics.KeyboardCtrl, KeyboardFirmwareEffects.All[0].Id);
+
+    /// <summary>
+    /// 亮度变更不得把 store 缺省的 Single 盖掉 GCU 当前回报效果。
+    /// 有合法存档效果用存档；否则用 KeyboardEffect；再否则 Single。
+    /// </summary>
+    string ResolveGcuEffect(LightChannelSettings stored)
+    {
+        if (LightingSettingsStore.TryLoad(MqttTopics.KeyboardCtrl, out LightChannelSettings loaded)
+            && KeyboardFirmwareEffects.Contains(loaded.Effect))
+            return loaded.Effect;
+        string reported = Program.hw?.KeyboardEffect ?? "";
+        if (KeyboardFirmwareEffects.Contains(reported)) return reported;
+        return KeyboardFirmwareEffects.Contains(stored.Effect) ? stored.Effect : KeyboardFirmwareEffects.All[0].Id;
+    }
+
+    void PersistGcuLightAndPublishBrightness(int light0to4)
+    {
+        LightChannelSettings stored = GcuSettings();
+        LightingSettingsStore.Save(MqttTopics.KeyboardCtrl,
+            stored with { Light = light0to4, Effect = ResolveGcuEffect(stored) });
+        _rgb.Brightness = KeyboardRgb.MapHardwareBrightnessLevel(light0to4);
+        _rgb.QueueSaveConfig();
+        PublishGcuBrightness();
+    }
+
+    void PublishGcuFirmwareEffect(LightChannelSettings settings)
+    {
+        if (Program.UiAuditMode || !_rgb.KbPowerOn) return;
+        if (Program.service is null || Program.hw is not { IsConnected: true }) return;
+        Color? color = LightingSettingsStore.ColorForEffect(settings.Effect, settings.ColorArgb);
+        _ = Program.service.SetKeyboardEffect(
+            settings.Effect, settings.Light, settings.Speed, "None", color, save: true);
+    }
+
+    /// <summary>GCU 回退参数：亮度 + 速度 + 单色。效果选择由仪表盘键盘行承担，本窗不再切效果。</summary>
+    void BuildGcuFirmwareParams()
+    {
+        SetDeviceUiEnabled(true);
+        _hidPanel.Controls.Clear();
+        LightChannelSettings settings = GcuSettings();
+        _gcuSyncedEffect = settings.Effect;
+        var table = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right,
+            ColumnCount = 2,
+            Padding = new Padding(D(8)),
+            BackColor = UiVisualStyle.Surface,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, _paramLabelCol > 0 ? _paramLabelCol : D(96)));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        int row = 0;
+        void AddRow(string label, Control ctrl)
+        {
+            _paramLabels.Add(label);
+            table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            table.Controls.Add(new Label
+            {
+                Text = label,
+                ForeColor = UiVisualStyle.Text,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+            }, 0, row);
+            if (ctrl is ComboBox or TrackBar or RSlider)
+            {
+                ctrl.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+                ctrl.Margin = new Padding(0, D(2), 0, D(2));
+            }
+            else if (ctrl is Button)
+            {
+                ctrl.Anchor = AnchorStyles.Left;
+                ctrl.Margin = new Padding(0, D(2), 0, D(2));
+            }
+            else ctrl.Dock = DockStyle.Fill;
+            table.Controls.Add(ctrl, 1, row);
+            row++;
+        }
+
+        _brightSlider = new RSlider
+        {
+            Minimum = 0, Maximum = 100, Value = Math.Clamp(settings.Light, 0, 4) * 25,
+            MinimumSize = new Size(D(RSlider.MinTrackLogicalWidth), D(20)), Height = D(24),
+        };
+        _brightSlider.ValueChanged += (_, _) =>
+        {
+            PersistGcuLightAndPublishBrightness(Math.Clamp(_brightSlider.Value * 4 / 100, 0, 4));
+        };
+        AddRow("亮度", _brightSlider);
+
+        var speedCombo = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        speedCombo.Items.AddRange(new[] { "慢", "中", "快" });
+        speedCombo.SelectedIndex = Math.Clamp(settings.Speed - 1, 0, 2);
+        speedCombo.SelectedIndexChanged += (_, _) =>
+        {
+            LightChannelSettings next = GcuSettings() with { Speed = speedCombo.SelectedIndex + 1 };
+            LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next);
+            PublishGcuFirmwareEffect(next);
+        };
+        AddRow("速度", speedCombo);
+
+        var colorBtn = new RColorButton
+        {
+            Size = new Size(D(46), D(24)),
+            BackColor = UiVisualStyle.Input,
+            BorderColor = UiVisualStyle.Border,
+            SwatchColor = Color.FromArgb(settings.ColorArgb),
+            Cursor = Cursors.Hand,
+        };
+        colorBtn.Click += (_, _) =>
+        {
+            var dlg = new RColorPicker(Color.FromArgb(GcuSettings().ColorArgb), false);
+            dlg.ColorChanged += c =>
+            {
+                LightChannelSettings next = GcuSettings() with { ColorArgb = c.ToArgb() };
+                LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next);
+                colorBtn.SwatchColor = c;
+                if (LightingSettingsStore.EffectUsesSingleColor(next.Effect)) PublishGcuFirmwareEffect(next);
+            };
+            dlg.ShowDialog(this);
+        };
+        AddRow("单色颜色", colorBtn);
+
+        _hidPanel.Controls.Add(table);
+        FitParameterTable(_hidPanel);
+        UiVisualStyle.ApplySection(_hidPanel);
     }
 
     /// <summary>回退态亮度滑条 → 官方通道的亮度载体（SetKeyboardBrightnessPreservingEffect）。
@@ -337,12 +538,13 @@ public class RgbForm : RForm
     {
         // 单一真相源是 _rgb.KbHidMode（仪表盘键盘行写它，Settings.V2.cs 回显同步）：
         // 本窗不再有自己的模式下拉，直接按 KbHidMode 找目录项。
-        int idx = Array.FindIndex(HidEffects, e => e.Mode == _rgb.KbHidMode);
+        var hidCatalog = VisibleHidEffects(Program.hw?.Capabilities.KeyboardType ?? 0);
+        int idx = Array.FindIndex(hidCatalog, e => e.Mode == _rgb.KbHidMode);
         if (idx < 0) idx = 0;
         _rgb.KbPowerOn = true;
         Program.NotifyLightingUserIntent();
         int gen = ++_applyGen;          // 切换代际：快速连点/来回切换时，旧任务的延迟动作不得晚到覆盖新选择
-        var hid = HidEffects[idx];
+        var hid = hidCatalog[idx];
         _activeHidMode = hid.Mode;
         _rgb.KbHidMode = hid.Mode;
         Program.MarkKeyboardCustomStatusBaseline();
@@ -351,12 +553,7 @@ public class RgbForm : RForm
         // 键盘电源交给官方通道（固件电源关时补开）；Supported/Unknown 保持今天的 HID 阶梯（Unknown 视为支持）。
         if (IsGcuKeyboardFallback())
         {
-            SetGcuFallbackUiState();
-            SetStatus("本机控制器不支持软件灯效控制，已改用官方通道（仅电源与亮度）");
-            if (Program.service is not null && Program.hw is { IsConnected: true } && !Program.hw.KeyboardPower)
-                _ = Task.Run(() => Program.service.SetLightPower(MqttTopics.KeyboardCtrl, true));
-            _ = SyncDeviceCloseTimerAsync();
-            _rgb.QueueSaveConfig();
+            BeginGcuKeyboardFallback();
             return;
         }
         if (!_rgb.IsConnected)
@@ -373,6 +570,19 @@ public class RgbForm : RForm
                     // 判定到达：刷新仪表盘键盘状态行（RefreshDeviceCapabilities 自带 InvokeRequired 守卫）。
                     if (_rgb.ControllerAvailability != FeatureAvailability.Unknown)
                         Program.settingsForm?.RefreshDeviceCapabilities();
+                }
+                // 探测刚记下的写入拒绝必须改道这次点击，不能再 StartMode。
+                if (IsGcuKeyboardFallback())
+                {
+                    try
+                    {
+                        Invoke(() =>
+                        {
+                            if (gen == _applyGen && !IsDisposed) BeginGcuKeyboardFallback();
+                        });
+                    }
+                    catch (Exception ex) { Logger.WriteLine("RGB fallback redirect failed: " + ex.GetType().Name + " " + ex.Message); }
+                    return;
                 }
                 bool ok = _rgb.IsConnected
                     || (_rgb.ControllerAvailability != FeatureAvailability.Unsupported && _rgb.Connect());
@@ -558,9 +768,10 @@ public class RgbForm : RForm
         {
             _rgb.Brightness = v;   // UI 亮度持久化（回退态下也是亮度载体的输入档）
             // N9-2：只有设备真的在、且这次写入真的失败，才把 HID 判为「亮度不生效」并回退官方通道。
-            // 设备不在时保持 true（未观测到失败），否则构造期/断连期会把 Unknown 永久路由到 GCU。
-            if (_rgb.IsConnected) _hidBrightnessTookEffect = _rgb.ApplyBrightnessToDevice();
-            if (IsGcuKeyboardFallback()) PublishGcuBrightness();
+            // 设备不在时 Apply 的 false 不被路由采信，否则构造期/断连期会把 Unknown 永久路由到 GCU。
+            if (_rgb.IsConnected) _rgb.ApplyBrightnessToDevice();
+            if (IsGcuKeyboardFallback())
+                PersistGcuLightAndPublishBrightness(KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(v));
         });
         AddRow("亮度", _brightSlider);
         var fps = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList };

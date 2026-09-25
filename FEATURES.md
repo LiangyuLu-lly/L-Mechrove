@@ -74,6 +74,7 @@
 | EC 灯带(旧机型) | ToggleSwitch+Slider×3 | MyRgbLightbar/Control | `{Action: POWER_ON/OFF, COLORFUL_ON/OFF, BREATHINGLIGHT, DEFAULT, <R/G/B>, Level}`（电池下动作名加 _DC） |
 | 灯效定时关闭 | ComboBox | Setting/Control | `{KEYBOARD_LIGHTBAR_TIMER_ON, Mins}` / `{OFF}` |
 状态订阅：Keyboard/Status、HidLightbar*/Status、MyRgbLightbar/Status。键盘布局分 MEZone 多机型(97~103键)。
+键盘灯：HID 可用时走 HID 10 种效果；GCU 路径用厂商 11 种（Single/Breathing/Wave/Reactive/Rainbow/Ripple/Raindrop/Marquee/Spark/Aurora/Gaming）。
 
 ## 5. 电池（PowerManagePage）
 | 功能 | 控件 | 发布 topic | 载荷要点 |

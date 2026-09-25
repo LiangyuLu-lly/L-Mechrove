@@ -107,9 +107,22 @@ internal static class LightingSettingsStore
         : "Single";
 
     /// <summary>
+    /// 固件用单色 ColorBuffer（ColorBlocks=1）的效果（含 Mix）。Wave/Raindrop 走 7 色默认盘。
+    /// 冲击（Impact）也吃这一色；只给 Single 传颜色时冲击会停在默认红。
+    /// </summary>
+    internal static bool EffectUsesSingleColor(string effect) =>
+        effect is "Single" or "Breathing" or "Impact" or "Mix";
+
+    internal static Color? ColorForEffect(string effect, Color color) =>
+        EffectUsesSingleColor(effect) ? color : null;
+
+    internal static Color? ColorForEffect(string effect, int colorArgb) =>
+        ColorForEffect(effect, Color.FromArgb(colorArgb));
+
+    /// <summary>
     /// 灯光配置目录重定向开关（环境变量），与 Logger.LogDirectoryOverrideVariable 同源。
     /// 测试宿主用假硬件驱动灯行时，Save/SavePower 必须落到临时目录，
-    /// 否则会覆盖用户真实的 lightbar.cfg / logolight.cfg。
+    /// 否则会覆盖用户真实的 lightbar.cfg / logolight.cfg / keyboard.cfg。
     /// </summary>
     internal const string ConfigDirectoryOverrideVariable = "LMECHREVO_LIGHT_CFG_DIR";
 
@@ -117,7 +130,9 @@ internal static class LightingSettingsStore
     {
         string fileName = topic.Contains("Logo", StringComparison.OrdinalIgnoreCase)
             ? "logolight.cfg"
-            : "lightbar.cfg";
+            : topic.Contains("Keyboard", StringComparison.OrdinalIgnoreCase)
+                ? "keyboard.cfg"
+                : "lightbar.cfg";
         string? overridden = Environment.GetEnvironmentVariable(ConfigDirectoryOverrideVariable);
         string directory = string.IsNullOrWhiteSpace(overridden)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MechrevoLite")

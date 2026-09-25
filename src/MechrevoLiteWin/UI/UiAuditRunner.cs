@@ -172,9 +172,9 @@ internal static class UiAuditRunner
             ("LogoLight", () => new LightForm(MqttTopics.LogoLightCtrl, "Logo灯效", LightForm.LogoEffects), null),
             ("Donate", () => new DonateForm(), null),
             ("ColorPicker", () => new RColorPicker(Color.FromArgb(50, 219, 190), true), null),
-            // 设置弹窗此前漏采：宿主面板在主窗里是游离（未挂树）控件，只有 ⚙ 弹窗托管时才参与布局，
-            // 因此它的「控制台」右缘裁切从未进入审计。这里复刻 Settings.cs 的构建：
-            // BuildThemeModePanel / BuildOfficialConsolePanel 的面板结构 + 两个可选控件。
+            // 设置弹窗此前漏采：宿主面板在主窗里是游离（未挂树）控件，只有 ⚙ 弹窗托管时才参与布局。
+            // 这里复刻 Settings.cs 的构建：BuildThemeModePanel 的面板结构 + 可选的响应加速。
+            // 隔离官方控制台已从弹窗移除，审计不再构造那一块。
             ("SettingsDialog", () =>
             {
                 // 与主窗构建一致：面板按宿主 DPI 定尺寸（设备像素），随后由审计的相对 scaling 归一到视口。
@@ -227,55 +227,6 @@ internal static class UiAuditRunner
                 }, 2, 0);
                 themePanel.Controls.Add(themeLayout);
 
-                var officialPanel = new BufferedPanel
-                {
-                    Name = "panelOfficialConsole",
-                    CardStyle = true,
-                    Height = D(48),
-                    Padding = new Padding(D(12), D(8), D(12), D(8)),
-                    BackColor = UiVisualStyle.Surface,
-                };
-                var officialLayout = new TableLayoutPanel
-                {
-                    Dock = DockStyle.Fill,
-                    ColumnCount = 3,
-                    RowCount = 1,
-                    Margin = Padding.Empty,
-                    Padding = Padding.Empty,
-                    BackColor = officialPanel.BackColor,
-                };
-                officialLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(126)));
-                officialLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-                officialLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(150)));
-                officialLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-                officialLayout.Controls.Add(new Label
-                {
-                    Name = "labelOfficialConsoleTitle",
-                    Text = "官方控制台",
-                    Dock = DockStyle.Fill,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    Margin = Padding.Empty,
-                    AutoEllipsis = true,
-                }, 0, 0);
-                officialLayout.Controls.Add(new Label
-                {
-                    Name = "labelOfficialConsoleStatus",
-                    Text = "正在检测...",
-                    Dock = DockStyle.Fill,
-                    TextAlign = ContentAlignment.MiddleRight,
-                    Margin = Padding.Empty,
-                    AutoEllipsis = true,
-                }, 1, 0);
-                officialLayout.Controls.Add(new Button
-                {
-                    Name = "buttonOfficialConsole",
-                    Text = "打开官方控制台",
-                    Dock = DockStyle.Fill,
-                    Margin = new Padding(D(8), 0, 0, 0),
-                    Cursor = Cursors.Hand,
-                }, 2, 0);
-                officialPanel.Controls.Add(officialLayout);
-
                 var overdrive = new RCheckBox
                 {
                     Name = "checkLcdOverdrive",
@@ -285,7 +236,7 @@ internal static class UiAuditRunner
                     ForeColor = UiVisualStyle.Text,
                 };
                 // 屏幕校色按钮已删（改为屏幕行头内联下拉，主窗审计已覆盖该行）。
-                return new SettingsDialog(themePanel, officialPanel, overdrive, displayGroupAvailable: true);
+                return new SettingsDialog(themePanel, overdrive, displayGroupAvailable: true);
             }, null),
             // 更新窗口同样漏采；注入合成更新信息（网盘发布态：无直链/哈希，不走自替换检查），
             // 保证渲染不触网（Shown 不再刷新）。
@@ -798,8 +749,27 @@ internal static class UiAuditRunner
         }
     }
 
-    private static string? GetTextClipping(Control control)
+    internal static string? GetTextClipping(Control control)
     {
+        if (control is ComboBox combo)
+        {
+            int dropReserve = SystemInformation.HorizontalScrollBarArrowWidth + 8;
+            int comboWidth = Math.Max(1, combo.ClientSize.Width - combo.Padding.Horizontal - dropReserve);
+            int comboHeight = Math.Max(1, combo.ClientSize.Height - combo.Padding.Vertical - 4);
+            TextFormatFlags comboFlags = TextFormatFlags.NoPrefix | TextFormatFlags.GlyphOverhangPadding | TextFormatFlags.SingleLine;
+            IEnumerable<string> items = combo.Items.Count > 0
+                ? combo.Items.Cast<object>().Select(item => combo.GetItemText(item) ?? string.Empty)
+                : (string.IsNullOrWhiteSpace(combo.Text) ? Array.Empty<string>() : new[] { combo.Text });
+            foreach (string item in items)
+            {
+                if (string.IsNullOrWhiteSpace(item)) continue;
+                Size itemSize = TextRenderer.MeasureText(item, combo.Font, new Size(comboWidth, int.MaxValue), comboFlags);
+                if (itemSize.Width > comboWidth + 2 || itemSize.Height > comboHeight + 2)
+                    return $"Text '{item.Replace(Environment.NewLine, " / ")}' needs {itemSize}, available {comboWidth}x{comboHeight}.";
+            }
+            return null;
+        }
+
         if (string.IsNullOrWhiteSpace(control.Text)) return null;
         if (control is Label { AutoSize: true } || control is CheckBox { AutoSize: true } || control is RadioButton { AutoSize: true })
             return null;
@@ -808,13 +778,16 @@ internal static class UiAuditRunner
         int reserve = control is CheckBox or RadioButton ? SystemInformation.MenuCheckSize.Width + 8 : 8;
         int availableWidth = Math.Max(1, control.ClientSize.Width - control.Padding.Horizontal - reserve);
         int availableHeight = Math.Max(1, control.ClientSize.Height - control.Padding.Vertical - 4);
-        TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
-        if (control is Label label && !label.AutoSize)
+        bool cjk = control.Text.Any(ch => ch >= '\u2E80' && ch <= '\u9FFF');
+        TextFormatFlags flags = TextFormatFlags.NoPrefix | (cjk ? TextFormatFlags.GlyphOverhangPadding : TextFormatFlags.NoPadding);
+        if (control is Label label && !label.AutoSize && !cjk)
             flags |= TextFormatFlags.WordBreak;
         else
             flags |= TextFormatFlags.SingleLine;
-        Size measured = TextRenderer.MeasureText(control.Text, control.Font, new Size(availableWidth, int.MaxValue), flags);
-        return measured.Width > availableWidth + 2 || measured.Height > availableHeight + 2
+        Size proposed = cjk ? new Size(int.MaxValue, int.MaxValue) : new Size(availableWidth, int.MaxValue);
+        Size measured = TextRenderer.MeasureText(control.Text, control.Font, proposed, flags);
+        int slack = cjk ? 0 : 2;
+        return measured.Width > availableWidth + slack || measured.Height > availableHeight + slack
             ? $"Text '{control.Text.Replace(Environment.NewLine, " / ")}' needs {measured}, available {availableWidth}x{availableHeight}."
             : null;
     }

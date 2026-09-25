@@ -4,6 +4,7 @@
 // 迁移某个文件时删掉下面这行（保留注解上下文，只关闭警告），然后把该文件的 CS86xx 告警修干净即可。
 #nullable disable warnings
 using MechrevoLite.Hardware;
+using MechrevoLite.Properties;
 using MechrevoLite.UI;
 
 namespace MechrevoLite;
@@ -35,12 +36,13 @@ public class FanCurveForm : RForm
     {
         BackColor = UiVisualStyle.Window;
         ForeColor = UiVisualStyle.Text;
-        Text = "风扇曲线";
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        Text = Strings.FanCurve;
+        // 纵排后内容在 420 主窗宽内放得下；可缩放 + AutoScroll 是小屏钳制时的退路，不是把 FixedSingle 改小后裁切。
+        FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
+        AutoScroll = true;
         StartPosition = FormStartPosition.Manual;
         InitTheme(true);
-        StartPosition = FormStartPosition.CenterScreen;
 
         var root = new TableLayoutPanel
         {
@@ -55,31 +57,40 @@ public class FanCurveForm : RForm
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(root);
 
-        // 标题行用表格而不是 FlowLayout：FlowLayout 在 200% 缩放下两段文字放不下会换行，
-        // 而行高是固定的 44 —— 换到第二行的内容直接被裁掉（`--ui-audit` 报的 parent-overflow
-        // 就是这一处）。表格不换行，行高随内容自适应。
+        // 标题两行：标题+状态，拖动提示换行。三列横排在 420 主窗里放不下。
+        // 行数与放入的行一致，避免 ColumnCount 对不上时 WinForms 多出幻影空行。
+        int parentWidth = D(SettingsForm.CompactDashboardLogicalClientSize.Width);
         var titleFlow = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            // 3 列 = 标题 + 状态 + 常驻提示。此前声明 ColumnCount=2 却放了 3 列内容，
-            // WinForms 会多出一条 ~22px 的幻影空行（run5 门禁审计 empty-band 实证）。
-            ColumnCount = 3,
-            RowCount = 1,
+            ColumnCount = 2,
+            RowCount = 2,
             BackColor = UiVisualStyle.Window,
             Padding = new Padding(D(12), D(8), D(12), 0),
         };
         titleFlow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        titleFlow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         titleFlow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        titleFlow.Controls.Add(new Label { Text = "风扇曲线（当前自定义档）", Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Title, FontStyle.Bold), ForeColor = UiVisualStyle.Text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, D(12), 0) }, 0, 0);
+        titleFlow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        titleFlow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var titleLabel = new Label { Text = Strings.FanCurveTitle, Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Title, FontStyle.Bold), ForeColor = UiVisualStyle.Text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 0, D(12), 0) };
+        titleFlow.Controls.Add(titleLabel, 0, 0);
         // 状态与常驻提示拆两个 Label（run4 §3.3 语义拆分）：_status 只装动态状态
         //（表名/保存回显），拖动提示是常驻文案，不再被状态覆盖。
-        _status = new Label { Text = "", ForeColor = UiVisualStyle.Muted, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, D(2), D(12), 0) };
+        _status = new Label { Text = "", ForeColor = UiVisualStyle.Muted, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, D(2), 0, 0) };
         titleFlow.Controls.Add(_status, 1, 0);
-        var hint = new Label { Text = "拖动曲线点上下调整占空比", ForeColor = UiVisualStyle.Muted, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, D(2), 0, 0) };
-        titleFlow.Controls.Add(hint, 2, 0);
+        var hint = new Label
+        {
+            Text = Strings.FanCurveDrag,
+            ForeColor = UiVisualStyle.Muted,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, D(2), 0, 0),
+            MaximumSize = new Size(Math.Max(1, parentWidth - D(24)), 0),
+        };
+        titleFlow.SetColumnSpan(hint, 2);
+        titleFlow.Controls.Add(hint, 0, 1);
         root.Controls.Add(titleFlow, 0, 0);
 
         _saveTimer = new System.Windows.Forms.Timer { Interval = 150 };
@@ -94,7 +105,7 @@ public class FanCurveForm : RForm
         // 保住原来的视觉高度。
         var bottom = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             WrapContents = true,
@@ -104,7 +115,7 @@ public class FanCurveForm : RForm
         };
         var btnSave = new RButton
         {
-            Text = "保存",
+            Text = Strings.Save,
             Width = D(88), Height = D(30), Margin = new Padding(0, 0, D(12), 0),
             Cursor = Cursors.Hand,
         };
@@ -114,7 +125,7 @@ public class FanCurveForm : RForm
         // 风扇独立控制（原版 SET_FAN_CONTROL_RESPECTIVE）：关=双风扇共用 GPU 曲线，开=CPU/GPU 各自独立
         _respectiveChk = new RCheckBox
         {
-            Text = "风扇独立控制",
+            Text = Strings.FanIndependent,
             Checked = Program.hw?.FanRespective ?? false,
             ForeColor = UiVisualStyle.Text,
             AutoSize = true,
@@ -133,14 +144,14 @@ public class FanCurveForm : RForm
                 _syncingRespective = true;
                 _respectiveChk.Checked = Program.hw?.FanRespective ?? !requested;
                 _syncingRespective = false;
-                _status.Text = "风扇独立控制未确认";
+                _status.Text = Strings.FanIndependentUnconfirmed;
             }
             _respectiveChk.Enabled = true;
         };
         bottom.Controls.Add(_respectiveChk);
         _respectiveHint = new Label
         {
-            Text = "关 = 双风扇跟随 GPU 曲线（默认）；开 = CPU/GPU 各自独立。",
+            Text = Strings.FanIndependentHint,
             ForeColor = UiVisualStyle.Muted,
             AutoSize = true, Margin = new Padding(0, D(4), 0, 0),
             Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
@@ -160,19 +171,20 @@ public class FanCurveForm : RForm
             Padding = new Padding(D(12), 0, D(12), 0),
         };
 
-        // 双图横排（run5 二级界面收尾）：CPU 左、GPU 右，与主窗「CPU 优先」阅读顺序一致。
+        // 纵排（G-Helper tableFanCharts：CPU 上、GPU 下）。横排两张 340 图要 728 宽，
+        // 缩到并排则 16 个拖点重叠。纵排后每张图拿到整列，仍宽于 MinLogicalWidth。
         var charts = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
+            ColumnCount = 1,
+            RowCount = 2,
             BackColor = UiVisualStyle.Window,
         };
-        charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        charts.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        charts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        charts.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        charts.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         charts.Controls.Add(_cpuPanel, 0, 0);
-        charts.Controls.Add(_gpuPanel, 1, 0);
+        charts.Controls.Add(_gpuPanel, 0, 1);
         root.Controls.Add(charts, 0, 1);
         root.Controls.Add(bottom, 0, 2);
 
@@ -199,19 +211,6 @@ public class FanCurveForm : RForm
         OnCurveUpdated();
         OnCustomChanged();
 
-        // 内容实测窗口尺寸（FixedSingle 不可调）：
-        // 宽 = max(标题行实测, 2×曲线最小宽 + 双图内距)；高 = 标题行实测 + 曲线最小高 + 底行实测。
-        // 底行的说明文字换行数依赖宽度，所以先定宽完成换行布局，再按实测行高定高。
-        var titleLabel = (Label)titleFlow.Controls[0];
-        int titleW = titleLabel.PreferredSize.Width + titleLabel.Margin.Horizontal
-            + _status.PreferredSize.Width + _status.Margin.Horizontal
-            + hint.PreferredSize.Width + hint.Margin.Horizontal + titleFlow.Padding.Horizontal + D(8);
-        int width = Math.Max(titleW, 2 * D(CurvePanel.MinLogicalWidth) + 2 * _cpuPanel.Padding.Horizontal);
-        ClientSize = new Size(width, D(400));
-        ResponsiveLayout.PerformLayoutTree(this);
-        int height = titleFlow.Height + D(CurvePanel.MinLogicalHeight) + bottom.Height + D(2);
-        ClientSize = new Size(width, height);
-
         Shown += async (_, _) =>
         {
             _shown = true;
@@ -230,6 +229,18 @@ public class FanCurveForm : RForm
         UiVisualStyle.ApplyTitle((Label)titleFlow.Controls[0], UiVisualStyle.TypeScale.Title);
         UiVisualStyle.ApplyMuted(_status);
         UiVisualStyle.ApplyPrimaryButton(btnSave);
+
+        // 宽对齐主窗（420 逻辑）。先定宽让底行换行，再按标题 + 两张曲线最小高 + 底行定高。
+        // 高不超过主窗；超出部分由 AutoScroll 承接，不裁切曲线。
+        // D() 已是设备像素，不再 ScaleFrom96（会叠乘宿主 DPI）。
+        int width = parentWidth;
+        MinimumSize = new Size(D(320), D(240));
+        if (!IsHandleCreated) CreateControl();
+        ClientSize = new Size(width, ClientSize.Height);
+        ResponsiveLayout.PerformLayoutTree(this);
+        int height = titleFlow.Height + 2 * D(CurvePanel.MinLogicalHeight) + bottom.Height + D(2);
+        int parentHeight = D(SettingsForm.CompactDashboardLogicalClientSize.Height);
+        ClientSize = new Size(width, Math.Min(height, parentHeight));
     }
 
     void OnCurveUpdated()
@@ -242,7 +253,7 @@ public class FanCurveForm : RForm
             if (hw is null) return;
             _cpuPanel.Load(hw.CpuCurveUpT, hw.CpuCurveDuty);
             _gpuPanel.Load(hw.GpuCurveUpT, hw.GpuCurveDuty);
-            _status.Text = "表：" + (string.IsNullOrEmpty(hw.TableName) ? "未知" : hw.TableName);
+            _status.Text = Strings.FanTablePrefix + (string.IsNullOrEmpty(hw.TableName) ? Strings.UnknownValue : hw.TableName);
         }
         catch (Exception ex) { Logger.WriteLine("Fan curve refresh failed: " + ex.GetType().Name + " " + ex.Message); }
     }
@@ -285,7 +296,7 @@ public class FanCurveForm : RForm
         if (!ShouldRequestIndependentControlOnOpen(hw.SupportsFanRespective, hw.FanRespective)) return;
 
         _respectiveChk.Enabled = false;
-        _status.Text = "正在开启风扇独立控制…";
+            _status.Text = Strings.FanIndependentEnabling;
         bool confirmed = await Program.service.SwitchFanRespective(true);
         if (IsDisposed || _respectiveChk is null) return;
 
@@ -293,7 +304,7 @@ public class FanCurveForm : RForm
         _respectiveChk.Checked = Program.hw?.FanRespective ?? false;
         _syncingRespective = false;
         _respectiveChk.Enabled = true;
-        _status.Text = confirmed ? "风扇独立控制已默认开启" : "风扇独立控制未确认";
+            _status.Text = confirmed ? Strings.FanIndependentOn : Strings.FanIndependentUnconfirmed;
     }
 
     async Task SendBoth()
@@ -307,7 +318,7 @@ public class FanCurveForm : RForm
         if (_saveInProgress) return;
         if (Program.hw is not { IsConnected: true })
         {
-            _status.Text = "未连接，未保存";
+            _status.Text = Strings.NotConnectedNotSaved;
             return;
         }
 
@@ -326,13 +337,13 @@ public class FanCurveForm : RForm
                 await Task.Delay(700);
                 bool confirmed = (!sendCpu || CurveMatches(cpu, Program.hw.CpuCurveDuty, Program.hw.CpuCurveUpT))
                     && (!sendGpu || CurveMatches(gpu, Program.hw.GpuCurveDuty, Program.hw.GpuCurveUpT));
-                _status.Text = confirmed ? "已确认 " + DateTime.Now.ToString("HH:mm:ss") : "保存未确认，请重试";
+                _status.Text = confirmed ? string.Format(Strings.ConfirmedAt, DateTime.Now.ToString("HH:mm:ss")) : Strings.SaveUnconfirmedRetry;
             }
         }
         catch (Exception ex)
         {
             Logger.WriteLine("Fan curve save failed: " + ex.Message);
-            _status.Text = "保存失败";
+            _status.Text = Strings.SaveFailed;
         }
         finally
         {
@@ -438,7 +449,7 @@ public class FanCurveForm : RForm
             g.DrawLine(axisPen, left, bottom, left + w, bottom);   // X 轴
 
             using var titleBrush = new SolidBrush(_color);
-            g.DrawString(_label + " 风扇曲线（拖动点调占空比）", TitleFont, titleBrush, left, 3 * UiDpi.Paint(this) / 96F);
+            g.DrawString(string.Format(Strings.FanCurvePaint, _label), TitleFont, titleBrush, left, 3 * UiDpi.Paint(this) / 96F);
 
             // 折线 + 点
             var pts = new Point[_valid];

@@ -14,7 +14,7 @@ The installer consumes a **framework-dependent** publish under `dist\<label>\`. 
 
 ```powershell
 dotnet publish src\MechrevoLiteWin\MechrevoLite.csproj -c Release -r win-x64 `
-  --self-contained false -p:PublishSingleFile=false -p:PublishReadyToRun=false -o dist\beta18
+  --self-contained false -p:PublishSingleFile=false -p:PublishReadyToRun=false -o dist\beta19
 ```
 
 then build the package:
@@ -26,7 +26,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File installer\Build-Installer.ps
 What the build script does:
 
 1. Reads `<Version>` / `<AssemblyVersion>` from `src\MechrevoLiteWin\MechrevoLite.csproj`
-   (currently `0.289.0-beta18`) and derives the release label (`beta18`).
+   (currently `0.289.0-beta19`) and derives the release label (`beta19`).
 2. Picks the publish directory: `dist\<label>\` if it holds `L-Mechrevo.exe`, otherwise the
    newest `dist\*` directory that does. Override with `-AppSourceDir <dir>`.
 3. **Asserts the app source is framework-dependent** (`L-Mechrevo.dll` +
@@ -42,7 +42,7 @@ What the build script does:
 Useful switches: `-OutputDir <dir>`, `-IsccPath <ISCC.exe>`, `-ProvisionCompiler`, `-AppSourceDir <dir>`.
 
 The `.iss` can also be compiled directly when `ISCC.exe` is on `PATH`; its `#ifndef` defaults
-target `dist\beta18` and the current version. `Build-Installer.ps1` is the supported path
+target `dist\beta19` and the current version. `Build-Installer.ps1` is the supported path
 because it injects the real version and source directory as `/D` defines.
 
 ## .NET Desktop Runtime requirement
@@ -149,7 +149,7 @@ re-registered. `Uninstall-Gcu.ps1` stops/deletes the service, removes the firewa
 
 ```powershell
 # silent install (per-machine; triggers UAC)
-L-Mechrevo-beta18-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+L-Mechrevo-beta19-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 
 # /GCUVARIANT= is retired: only one payload ships, so the flag has no effect.
 

@@ -333,6 +333,9 @@
   <data name="Silent" xml:space="preserve">
     <value>静音模式</value>
   </data>
+  <data name="SilentTurbo" xml:space="preserve">
+    <value>静音狂暴</value>
+  </data>
   <data name="Sleep" xml:space="preserve">
     <value>睡眠时</value>
   </data>
@@ -355,7 +358,7 @@
     <value>切换 Fn 锁定</value>
   </data>
   <data name="Turbo" xml:space="preserve">
-    <value>增强模式</value>
+    <value>狂暴</value>
   </data>
   <data name="TurnedOff" xml:space="preserve">
     <value>已关闭</value>
@@ -386,5 +389,533 @@
   </data>
   <data name="Overlay" xml:space="preserve">
     <value>Overlay</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>语言</value>
+  </data>
+  <data name="LanguageRestartPrompt" xml:space="preserve">
+    <value>切换语言需要重启应用，现在重启吗？</value>
+  </data>
+  <data name="LanguageRestartTitle" xml:space="preserve">
+    <value>需要重启</value>
+  </data>
+  <data name="ModelInvalid" xml:space="preserve">
+    <value>无效（{0}）</value>
+  </data>
+  <data name="SettingsZoneAppearance" xml:space="preserve">
+    <value>界面</value>
+  </data>
+  <data name="SettingsZoneDisplay" xml:space="preserve">
+    <value>显示</value>
+  </data>
+  <data name="ModeCustom" xml:space="preserve">
+    <value>自定义</value>
+  </data>
+  <data name="GpuRouteIgpu" xml:space="preserve">
+    <value>集显</value>
+  </data>
+  <data name="GpuRouteStandard" xml:space="preserve">
+    <value>标准</value>
+  </data>
+  <data name="GpuRouteDirect" xml:space="preserve">
+    <value>直连</value>
+  </data>
+  <data name="GpuRouteIgpuTip" xml:space="preserve">
+    <value>集显模式</value>
+  </data>
+  <data name="GpuRouteStandardTip" xml:space="preserve">
+    <value>标准模式</value>
+  </data>
+  <data name="GpuRouteAutoTip" xml:space="preserve">
+    <value>自动切换</value>
+  </data>
+  <data name="GpuRouteDirectTip" xml:space="preserve">
+    <value>独显直连</value>
+  </data>
+  <data name="GpuSwitchIgpu" xml:space="preserve">
+    <value>核显</value>
+  </data>
+  <data name="FooterSettings" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="FooterDiagnostics" xml:space="preserve">
+    <value>诊断</value>
+  </data>
+  <data name="FooterOverlay" xml:space="preserve">
+    <value>悬浮窗</value>
+  </data>
+  <data name="ExportDiagnostics" xml:space="preserve">
+    <value>导出诊断包</value>
+  </data>
+  <data name="CheckForUpdates" xml:space="preserve">
+    <value>检查更新</value>
+  </data>
+  <data name="CheckForUpdatesBadge" xml:space="preserve">
+    <value>检查更新 ●</value>
+  </data>
+  <data name="UpdateAvailableTip" xml:space="preserve">
+    <value>发现新版本 {0}（点击查看）</value>
+  </data>
+  <data name="TrayFanBoost" xml:space="preserve">
+    <value>风扇增强</value>
+  </data>
+  <data name="TrayCustomMode" xml:space="preserve">
+    <value>自定义模式</value>
+  </data>
+  <data name="TrayCustomModeActive" xml:space="preserve">
+    <value>自定义模式（当前 {0}）</value>
+  </data>
+  <data name="CustomProfileN" xml:space="preserve">
+    <value>自定义 {0}</value>
+  </data>
+  <data name="TrayKeyboardLighting" xml:space="preserve">
+    <value>键盘灯效</value>
+  </data>
+  <data name="TrayOverlayMonitor" xml:space="preserve">
+    <value>悬浮监控</value>
+  </data>
+  <data name="TrayOpenMain" xml:space="preserve">
+    <value>打开主界面</value>
+  </data>
+  <data name="TrayActionFailed" xml:space="preserve">
+    <value>托盘操作失败。</value>
+  </data>
+  <data name="PerfModeSwitchFailed" xml:space="preserve">
+    <value>性能模式切换失败。</value>
+  </data>
+  <data name="CustomProfilePlanUnconfirmed" xml:space="preserve">
+    <value>自定义档已切换，电源计划未确认。</value>
+  </data>
+  <data name="QuickSwitchFailed" xml:space="preserve">
+    <value>快捷开关设置失败。</value>
+  </data>
+  <data name="StartupTaskFailed" xml:space="preserve">
+    <value>开机自启动设置失败。</value>
+  </data>
+  <data name="GcuConnected" xml:space="preserve">
+    <value>● GCU 已连接</value>
+  </data>
+  <data name="GcuConnectedTip" xml:space="preserve">
+    <value>GCU 服务连接正常（GCUBridge，MQTT 127.0.0.1:13688）</value>
+  </data>
+  <data name="GcuConnecting" xml:space="preserve">
+    <value>● GCU 连接中</value>
+  </data>
+  <data name="GcuConnectingTip" xml:space="preserve">
+    <value>正在连接 GCU 服务（127.0.0.1:13688）——服务通常在登录后数秒内就绪，应用会自动重试</value>
+  </data>
+  <data name="GcuDisconnected" xml:space="preserve">
+    <value>● GCU 未连接</value>
+  </data>
+  <data name="GcuDisconnectedTip" xml:space="preserve">
+    <value>GCU 服务未运行或连接失败（127.0.0.1:13688）；应用正在自动重连，恢复后此指示会变绿</value>
+  </data>
+  <data name="GcuUnknown" xml:space="preserve">
+    <value>● GCU 状态未知</value>
+  </data>
+  <data name="GcuUnknownTip" xml:space="preserve">
+    <value>硬件后端尚未初始化</value>
+  </data>
+  <data name="FanCurve" xml:space="preserve">
+    <value>风扇曲线</value>
+  </data>
+  <data name="FanCurveTitle" xml:space="preserve">
+    <value>风扇曲线（当前自定义档）</value>
+  </data>
+  <data name="FanCurveDrag" xml:space="preserve">
+    <value>拖动曲线点上下调整占空比</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="FanIndependent" xml:space="preserve">
+    <value>风扇独立控制</value>
+  </data>
+  <data name="FanIndependentUnconfirmed" xml:space="preserve">
+    <value>风扇独立控制未确认</value>
+  </data>
+  <data name="FanIndependentHint" xml:space="preserve">
+    <value>关 = 双风扇跟随 GPU 曲线（默认）；开 = CPU/GPU 各自独立。</value>
+  </data>
+  <data name="FanTablePrefix" xml:space="preserve">
+    <value>表：</value>
+  </data>
+  <data name="UnknownValue" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="FanIndependentEnabling" xml:space="preserve">
+    <value>正在开启风扇独立控制…</value>
+  </data>
+  <data name="FanIndependentOn" xml:space="preserve">
+    <value>风扇独立控制已默认开启</value>
+  </data>
+  <data name="NotConnectedNotSaved" xml:space="preserve">
+    <value>未连接，未保存</value>
+  </data>
+  <data name="ConfirmedAt" xml:space="preserve">
+    <value>已确认 {0}</value>
+  </data>
+  <data name="SaveUnconfirmedRetry" xml:space="preserve">
+    <value>保存未确认，请重试</value>
+  </data>
+  <data name="SaveFailed" xml:space="preserve">
+    <value>保存失败</value>
+  </data>
+  <data name="FanCurvePaint" xml:space="preserve">
+    <value>{0} 风扇曲线（拖动点调占空比）</value>
+  </data>
+  <data name="DonateTitle" xml:space="preserve">
+    <value>赞助支持</value>
+  </data>
+  <data name="DonateThanks" xml:space="preserve">
+    <value>感谢支持 L-Mechrevo</value>
+  </data>
+  <data name="DonateScan" xml:space="preserve">
+    <value>扫码赞助，支持持续开发</value>
+  </data>
+  <data name="DonateQrMissing" xml:space="preserve">
+    <value>二维码资源缺失</value>
+  </data>
+  <data name="UpdateChecking" xml:space="preserve">
+    <value>正在检查更新…</value>
+  </data>
+  <data name="UpdateNotesEmpty" xml:space="preserve">
+    <value>暂无更新说明</value>
+  </data>
+  <data name="UpdateInstall" xml:space="preserve">
+    <value>下载并安装</value>
+  </data>
+  <data name="UpdateOpenPage" xml:space="preserve">
+    <value>打开下载页</value>
+  </data>
+  <data name="UpdateLater" xml:space="preserve">
+    <value>稍后</value>
+  </data>
+  <data name="UpdateFeedback" xml:space="preserve">
+    <value>反馈</value>
+  </data>
+  <data name="UpdateRequired" xml:space="preserve">
+    <value>必须更新</value>
+  </data>
+  <data name="UpdateCheckFailed" xml:space="preserve">
+    <value>检查更新失败</value>
+  </data>
+  <data name="UpdateCheckFailedDetail" xml:space="preserve">
+    <value>无法连接到更新服务器（网络不可用或服务端异常）。</value>
+  </data>
+  <data name="UpdateUpToDate" xml:space="preserve">
+    <value>已是最新版本</value>
+  </data>
+  <data name="UpdateCurrentVersion" xml:space="preserve">
+    <value>当前版本 {0}</value>
+  </data>
+  <data name="UpdateServerLatest" xml:space="preserve">
+    <value>，服务端最新 {0}</value>
+  </data>
+  <data name="UpdateFound" xml:space="preserve">
+    <value>发现新版本 {0}</value>
+  </data>
+  <data name="UpdateReleaseDate" xml:space="preserve">
+    <value> · 发布于 {0}</value>
+  </data>
+  <data name="UpdateNetdisk" xml:space="preserve">
+    <value>该版本在网盘发布，请点『打开下载页』手动下载。</value>
+  </data>
+  <data name="UpdateShaPresent" xml:space="preserve">
+    <value>下载后校验 SHA-256，并启动安装包。</value>
+  </data>
+  <data name="UpdateShaProvided" xml:space="preserve">
+    <value>服务端提供了 SHA-256，下载后会自动校验。</value>
+  </data>
+  <data name="UpdateCannotAutoInstall" xml:space="preserve">
+    <value>无法自动安装</value>
+  </data>
+  <data name="UpdateWillOpenPage" xml:space="preserve">
+    <value>&#10;&#10;将为你打开下载页。</value>
+  </data>
+  <data name="UpdateConfirmInstaller" xml:space="preserve">
+    <value>将下载安装包并启动安装程序。安装过程中本程序会退出。&#10;&#10;继续吗？</value>
+  </data>
+  <data name="UpdateConfirmReplace" xml:space="preserve">
+    <value>安装会关闭本程序，替换当前 exe 后自动重启。&#10;&#10;继续吗？</value>
+  </data>
+  <data name="UpdateInstallTitle" xml:space="preserve">
+    <value>安装更新</value>
+  </data>
+  <data name="UpdateDownloadFailed" xml:space="preserve">
+    <value>下载失败。可以点『打开下载页』手动下载。</value>
+  </data>
+  <data name="UpdateVerifyFailedPrefix" xml:space="preserve">
+    <value>更新包未通过校验：</value>
+  </data>
+  <data name="UpdateCannotStartInstaller" xml:space="preserve">
+    <value>无法启动安装包，请用『打开下载页』手动更新。</value>
+  </data>
+  <data name="UpdateInstallerStarted" xml:space="preserve">
+    <value>安装包已启动，程序即将退出…</value>
+  </data>
+  <data name="UpdateExtractFailed" xml:space="preserve">
+    <value>更新包解压失败（没找到可执行文件）。</value>
+  </data>
+  <data name="UpdateCannotStartUpdater" xml:space="preserve">
+    <value>无法启动更新器（可能是当前目录不可写），请用『打开下载页』手动更新。</value>
+  </data>
+  <data name="UpdateUpdaterStarted" xml:space="preserve">
+    <value>更新器已启动，程序即将退出…</value>
+  </data>
+  <data name="UpdateInstallFailedPrefix" xml:space="preserve">
+    <value>安装失败：</value>
+  </data>
+  <data name="CustomModeTitle" xml:space="preserve">
+    <value>自定义性能模式</value>
+  </data>
+  <data name="CustomModePick" xml:space="preserve">
+    <value>选择一个自定义档</value>
+  </data>
+  <data name="EnabledLabel" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="SwitchPending" xml:space="preserve">
+    <value>切换中…</value>
+  </data>
+  <data name="SwitchUnconfirmed" xml:space="preserve">
+    <value>切换未确认</value>
+  </data>
+  <data name="GcuDisconnectedShort" xml:space="preserve">
+    <value>GCU 未连接</value>
+  </data>
+  <data name="FanTableNotReady" xml:space="preserve">
+    <value>风扇曲线未就绪</value>
+  </data>
+  <data name="PowerPlanUnconfirmed" xml:space="preserve">
+    <value>电源计划未确认，未保存</value>
+  </data>
+  <data name="PowerPlanBoostUnconfirmed" xml:space="preserve">
+    <value>电源计划已确认，睿频模式未确认</value>
+  </data>
+  <data name="PowerPlanBoostConfirmed" xml:space="preserve">
+    <value>电源计划与睿频模式已确认</value>
+  </data>
+  <data name="BoostConfirmed" xml:space="preserve">
+    <value>睿频模式已确认</value>
+  </data>
+  <data name="BoostUnconfirmed" xml:space="preserve">
+    <value>睿频模式未确认，未保存</value>
+  </data>
+  <data name="PowerPlan" xml:space="preserve">
+    <value>电源计划</value>
+  </data>
+  <data name="BoostMode" xml:space="preserve">
+    <value>睿频模式</value>
+  </data>
+  <data name="CpuPl1" xml:space="preserve">
+    <value>CPU 功耗墙 PL1 (W)</value>
+  </data>
+  <data name="CpuPl2" xml:space="preserve">
+    <value>CPU 功耗墙 PL2 (W)</value>
+  </data>
+  <data name="CpuFppt" xml:space="preserve">
+    <value>CPU 峰值功耗墙 fPPT (W)</value>
+  </data>
+  <data name="CpuPl4" xml:space="preserve">
+    <value>CPU 瞬时功耗墙 PL4 (W)</value>
+  </data>
+  <data name="CpuTempWall" xml:space="preserve">
+    <value>CPU 温度墙</value>
+  </data>
+  <data name="TempWallValue" xml:space="preserve">
+    <value>温度墙值 (°C)</value>
+  </data>
+  <data name="GpuTgp" xml:space="preserve">
+    <value>GPU TGP 目标 (W)</value>
+  </data>
+  <data name="GpuDynamicBoost" xml:space="preserve">
+    <value>GPU 动态加速</value>
+  </data>
+  <data name="DynamicBoostValue" xml:space="preserve">
+    <value>动态加速值</value>
+  </data>
+  <data name="FanSwitchSensitivity" xml:space="preserve">
+    <value>风扇转换灵敏度</value>
+  </data>
+  <data name="FanSwitchDelay" xml:space="preserve">
+    <value>换挡延迟 (ms)</value>
+  </data>
+  <data name="GpuOverclock" xml:space="preserve">
+    <value>GPU 超频</value>
+  </data>
+  <data name="CoreOffset" xml:space="preserve">
+    <value>核心频率偏移 (MHz)</value>
+  </data>
+  <data name="MemoryOffset" xml:space="preserve">
+    <value>显存频率偏移 (MHz)</value>
+  </data>
+  <data name="OcNeedsAdmin" xml:space="preserve">
+    <value>超频需要管理员权限</value>
+  </data>
+  <data name="RestartAsAdmin" xml:space="preserve">
+    <value>以管理员身份重启</value>
+  </data>
+  <data name="RestoreProfileDefault" xml:space="preserve">
+    <value>恢复当前档默认</value>
+  </data>
+  <data name="RestoreModeDefault" xml:space="preserve">
+    <value>恢复此模式默认</value>
+  </data>
+  <data name="RestoreCustomPrompt" xml:space="preserve">
+    <value>恢复当前自定义档为默认参数？</value>
+  </data>
+  <data name="RestoreModePrompt" xml:space="preserve">
+    <value>恢复当前运行的{0}为默认参数？</value>
+  </data>
+  <data name="Restoring" xml:space="preserve">
+    <value>恢复中…</value>
+  </data>
+  <data name="RestoreSent" xml:space="preserve">
+    <value>已发送恢复命令</value>
+  </data>
+  <data name="CustomModeHint" xml:space="preserve">
+    <value>参数保存到当前选中的自定义档。</value>
+  </data>
+  <data name="CustomProfileActive" xml:space="preserve">
+    <value>自定义 {0} 已激活</value>
+  </data>
+  <data name="CustomProfileActivePlanUnconfirmed" xml:space="preserve">
+    <value>自定义 {0} 已激活，Windows 电源设置未确认</value>
+  </data>
+  <data name="ParamsConfirmed" xml:space="preserve">
+    <value>参数已确认</value>
+  </data>
+  <data name="ParamsReverted" xml:space="preserve">
+    <value>参数未应用，已恢复回读值</value>
+  </data>
+  <data name="ParamsSaveFailed" xml:space="preserve">
+    <value>参数保存失败</value>
+  </data>
+  <data name="EditorMenu" xml:space="preserve">
+    <value>二次自定义</value>
+  </data>
+  <data name="UnknownMode" xml:space="preserve">
+    <value>未知模式</value>
+  </data>
+  <data name="FirmwareDetailHint" xml:space="preserve">
+    <value>固件参数只在{0}正在运行时，经 SET_OPERATING_MODE_DETAIL 写入该模式。当前不是该模式时拒绝下发，不会改写自定义档。</value>
+  </data>
+  <data name="SilentTurboSharedSlot" xml:space="preserve">
+    <value>静音狂暴与狂暴共用同一 Turbo 固件档，没有单独的参数槽。本窗口不改变静音标记，也不补发狂暴的自动 GPU 超频。</value>
+  </data>
+  <data name="RefusedWrite" xml:space="preserve">
+    <value>未切换到{0}，固件参数未下发，也没有写入自定义档。</value>
+  </data>
+  <data name="BatteryLimitUnknown" xml:space="preserve">
+    <value>无法读取</value>
+  </data>
+  <data name="Screen" xml:space="preserve">
+    <value>屏幕</value>
+  </data>
+  <data name="ResponseBoost" xml:space="preserve">
+    <value>响应加速</value>
+  </data>
+  <data name="AutoRefreshRate" xml:space="preserve">
+    <value>自动刷新率</value>
+  </data>
+  <data name="ChargeLimitShort" xml:space="preserve">
+    <value>限充</value>
+  </data>
+  <data name="Appearance" xml:space="preserve">
+    <value>界面外观</value>
+  </data>
+  <data name="DayMode" xml:space="preserve">
+    <value>日间</value>
+  </data>
+  <data name="NightMode" xml:space="preserve">
+    <value>夜间</value>
+  </data>
+  <data name="ManualModel" xml:space="preserve">
+    <value>手动机型</value>
+  </data>
+  <data name="ModelFixed" xml:space="preserve">
+    <value>已手动固定</value>
+  </data>
+  <data name="ModelRestoredAuto" xml:space="preserve">
+    <value>已恢复自动</value>
+  </data>
+  <data name="LiquidCooling" xml:space="preserve">
+    <value>液冷</value>
+  </data>
+  <data name="MoreSwitches" xml:space="preserve">
+    <value>更多开关</value>
+  </data>
+  <data name="LightingGroup" xml:space="preserve">
+    <value>灯光</value>
+  </data>
+  <data name="KeyboardControllerUnsupported" xml:space="preserve">
+    <value>本机控制器不支持软件灯效控制，已改用官方通道</value>
+  </data>
+  <data name="KeyboardGcuNotRunning" xml:space="preserve">
+    <value>官方 GCU 服务未运行，软件灯效无法回退</value>
+  </data>
+  <data name="UnresolvedGenerationNotice" xml:space="preserve">
+    <value>无法识别独显代际，已隐藏显卡模式切换。</value>
+  </data>
+  <data name="NoDgpuGenerationNotice" xml:space="preserve">
+    <value>未检测到独显，已隐藏显卡模式切换。</value>
+  </data>
+  <data name="LcPanelTitle" xml:space="preserve">
+    <value>液冷系统</value>
+  </data>
+  <data name="LcStatusDisconnected" xml:space="preserve">
+    <value>未连接</value>
+  </data>
+  <data name="LcStatusDirect" xml:space="preserve">
+    <value>已直连</value>
+  </data>
+  <data name="LcStatusConnecting" xml:space="preserve">
+    <value>连接水冷箱中…</value>
+  </data>
+  <data name="LcStatusGcuConnected" xml:space="preserve">
+    <value>GCU 已连接水冷</value>
+  </data>
+  <data name="LcStatusGcuConnecting" xml:space="preserve">
+    <value>GCU 正在连接水冷，请稍候（点击刷新）</value>
+  </data>
+  <data name="LcStatusConnectFailed" xml:space="preserve">
+    <value>连接失败（点击重试）</value>
+  </data>
+  <data name="LcStatusRefreshing" xml:space="preserve">
+    <value>正在刷新 GCU 水冷状态…</value>
+  </data>
+  <data name="LcLightButton" xml:space="preserve">
+    <value>水冷灯光</value>
+  </data>
+  <data name="LcStatusBluetooth" xml:space="preserve">
+    <value>蓝牙已连接</value>
+  </data>
+  <data name="LcStatusClickConnect" xml:space="preserve">
+    <value>未连接（点击连接）</value>
+  </data>
+  <data name="FirstRunTitle" xml:space="preserve">
+    <value>首次使用</value>
+  </data>
+  <data name="FirstRunHeadline" xml:space="preserve">
+    <value>开始使用 L-Mechrevo</value>
+  </data>
+  <data name="FirstRunLead" xml:space="preserve">
+    <value>完成下面三步，保留硬件服务并避免控制冲突。</value>
+  </data>
+  <data name="ColorPickerHex" xml:space="preserve">
+    <value>十六进制</value>
+  </data>
+  <data name="ColorPickerOk" xml:space="preserve">
+    <value>确定</value>
+  </data>
+  <data name="ColorPickerCancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="LightRowEdit" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="LightingOffOnBattery" xml:space="preserve">
+    <value>离电自动关闭全部灯效</value>
   </data>
 </root>

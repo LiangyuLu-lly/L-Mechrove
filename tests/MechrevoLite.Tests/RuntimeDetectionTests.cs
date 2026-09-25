@@ -74,11 +74,11 @@ public class RuntimeDetectionTests
     }
 
     [Fact]
-    public void TheInstallerReadsValueNamesNotSubkeyNames()
+    public void TheInstallerReadsValueNamesAndSubkeyNames()
     {
         string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
         Assert.Contains("RegGetValueNames", iss, StringComparison.Ordinal);
-        Assert.DoesNotContain("RegGetSubkeyNames", iss, StringComparison.Ordinal);
+        Assert.Contains("RegGetSubkeyNames", iss, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -47,4 +47,23 @@ public class AutostartRegressionN15Tests
         string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
         Assert.Contains("-RunLevel Highest", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void AutostartIsRegisteredBeforeGcuVerificationCanAbort()
+    {
+        string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
+        int autostart = script.IndexOf("Register-AutostartTask -AppExe", StringComparison.Ordinal);
+        int fatal = script.LastIndexOf("exit 1", StringComparison.Ordinal);
+        Assert.True(autostart >= 0, "installer must register the autostart task");
+        Assert.True(fatal >= 0, "installer still has a verification abort");
+        Assert.True(autostart < fatal, "autostart must be registered before GCU verification can exit 1");
+    }
+
+    [Fact]
+    public void MissingAppExeSkipsAutostartInsteadOfThrowing()
+    {
+        string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
+        Assert.Contains("skipping autostart task: app exe not found", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("autostart task target not found", script, StringComparison.Ordinal);
+    }
 }

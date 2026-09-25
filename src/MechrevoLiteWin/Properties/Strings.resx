@@ -333,6 +333,9 @@
   <data name="Silent" xml:space="preserve">
     <value>Silent</value>
   </data>
+  <data name="SilentTurbo" xml:space="preserve">
+    <value>Silent Turbo</value>
+  </data>
   <data name="Sleep" xml:space="preserve">
     <value>Sleep</value>
   </data>
@@ -386,5 +389,533 @@
   </data>
   <data name="Overlay" xml:space="preserve">
     <value>Overlay</value>
+  </data>
+  <data name="Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="LanguageRestartPrompt" xml:space="preserve">
+    <value>Restart the app to apply the language?</value>
+  </data>
+  <data name="LanguageRestartTitle" xml:space="preserve">
+    <value>Restart required</value>
+  </data>
+  <data name="ModelInvalid" xml:space="preserve">
+    <value>Invalid ({0})</value>
+  </data>
+  <data name="SettingsZoneAppearance" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="SettingsZoneDisplay" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="ModeCustom" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="GpuRouteIgpu" xml:space="preserve">
+    <value>iGPU</value>
+  </data>
+  <data name="GpuRouteStandard" xml:space="preserve">
+    <value>Standard</value>
+  </data>
+  <data name="GpuRouteDirect" xml:space="preserve">
+    <value>Direct</value>
+  </data>
+  <data name="GpuRouteIgpuTip" xml:space="preserve">
+    <value>iGPU mode</value>
+  </data>
+  <data name="GpuRouteStandardTip" xml:space="preserve">
+    <value>Standard mode</value>
+  </data>
+  <data name="GpuRouteAutoTip" xml:space="preserve">
+    <value>Automatic switching</value>
+  </data>
+  <data name="GpuRouteDirectTip" xml:space="preserve">
+    <value>Discrete GPU direct</value>
+  </data>
+  <data name="GpuSwitchIgpu" xml:space="preserve">
+    <value>iGPU</value>
+  </data>
+  <data name="FooterSettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="FooterDiagnostics" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
+  <data name="FooterOverlay" xml:space="preserve">
+    <value>Overlay</value>
+  </data>
+  <data name="ExportDiagnostics" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="CheckForUpdates" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="CheckForUpdatesBadge" xml:space="preserve">
+    <value>Check for updates ●</value>
+  </data>
+  <data name="UpdateAvailableTip" xml:space="preserve">
+    <value>New version {0} (click to view)</value>
+  </data>
+  <data name="TrayFanBoost" xml:space="preserve">
+    <value>Fan boost</value>
+  </data>
+  <data name="TrayCustomMode" xml:space="preserve">
+    <value>Custom mode</value>
+  </data>
+  <data name="TrayCustomModeActive" xml:space="preserve">
+    <value>Custom mode (current {0})</value>
+  </data>
+  <data name="CustomProfileN" xml:space="preserve">
+    <value>Custom {0}</value>
+  </data>
+  <data name="TrayKeyboardLighting" xml:space="preserve">
+    <value>Keyboard lighting</value>
+  </data>
+  <data name="TrayOverlayMonitor" xml:space="preserve">
+    <value>Overlay</value>
+  </data>
+  <data name="TrayOpenMain" xml:space="preserve">
+    <value>Open main window</value>
+  </data>
+  <data name="TrayActionFailed" xml:space="preserve">
+    <value>Tray action failed.</value>
+  </data>
+  <data name="PerfModeSwitchFailed" xml:space="preserve">
+    <value>Performance mode switch failed.</value>
+  </data>
+  <data name="CustomProfilePlanUnconfirmed" xml:space="preserve">
+    <value>Custom profile switched; power plan was not confirmed.</value>
+  </data>
+  <data name="QuickSwitchFailed" xml:space="preserve">
+    <value>Quick switch failed.</value>
+  </data>
+  <data name="StartupTaskFailed" xml:space="preserve">
+    <value>Startup task failed.</value>
+  </data>
+  <data name="GcuConnected" xml:space="preserve">
+    <value>● GCU connected</value>
+  </data>
+  <data name="GcuConnectedTip" xml:space="preserve">
+    <value>GCU service is connected (GCUBridge, MQTT 127.0.0.1:13688)</value>
+  </data>
+  <data name="GcuConnecting" xml:space="preserve">
+    <value>● GCU connecting</value>
+  </data>
+  <data name="GcuConnectingTip" xml:space="preserve">
+    <value>Connecting to the GCU service (127.0.0.1:13688). It is usually ready within seconds of sign-in; the app retries automatically.</value>
+  </data>
+  <data name="GcuDisconnected" xml:space="preserve">
+    <value>● GCU disconnected</value>
+  </data>
+  <data name="GcuDisconnectedTip" xml:space="preserve">
+    <value>The GCU service is not running or the connection failed (127.0.0.1:13688). The app is reconnecting; this indicator turns green when it recovers.</value>
+  </data>
+  <data name="GcuUnknown" xml:space="preserve">
+    <value>● GCU status unknown</value>
+  </data>
+  <data name="GcuUnknownTip" xml:space="preserve">
+    <value>The hardware backend is not initialized yet.</value>
+  </data>
+  <data name="FanCurve" xml:space="preserve">
+    <value>Fan curve</value>
+  </data>
+  <data name="FanCurveTitle" xml:space="preserve">
+    <value>Fan curve (current custom profile)</value>
+  </data>
+  <data name="FanCurveDrag" xml:space="preserve">
+    <value>Drag a point up or down to change duty cycle</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="FanIndependent" xml:space="preserve">
+    <value>Independent fan control</value>
+  </data>
+  <data name="FanIndependentUnconfirmed" xml:space="preserve">
+    <value>Independent fan control was not confirmed</value>
+  </data>
+  <data name="FanIndependentHint" xml:space="preserve">
+    <value>Off = both fans follow the GPU curve (default). On = CPU and GPU fans are independent.</value>
+  </data>
+  <data name="FanTablePrefix" xml:space="preserve">
+    <value>Table: </value>
+  </data>
+  <data name="UnknownValue" xml:space="preserve">
+    <value>Unknown</value>
+  </data>
+  <data name="FanIndependentEnabling" xml:space="preserve">
+    <value>Turning on independent fan control…</value>
+  </data>
+  <data name="FanIndependentOn" xml:space="preserve">
+    <value>Independent fan control is on by default</value>
+  </data>
+  <data name="NotConnectedNotSaved" xml:space="preserve">
+    <value>Not connected; nothing was saved</value>
+  </data>
+  <data name="ConfirmedAt" xml:space="preserve">
+    <value>Confirmed {0}</value>
+  </data>
+  <data name="SaveUnconfirmedRetry" xml:space="preserve">
+    <value>Save was not confirmed. Try again.</value>
+  </data>
+  <data name="SaveFailed" xml:space="preserve">
+    <value>Save failed</value>
+  </data>
+  <data name="FanCurvePaint" xml:space="preserve">
+    <value>{0} fan curve (drag points to set duty)</value>
+  </data>
+  <data name="DonateTitle" xml:space="preserve">
+    <value>Sponsor</value>
+  </data>
+  <data name="DonateThanks" xml:space="preserve">
+    <value>Thank you for supporting L-Mechrevo</value>
+  </data>
+  <data name="DonateScan" xml:space="preserve">
+    <value>Scan to sponsor continued development</value>
+  </data>
+  <data name="DonateQrMissing" xml:space="preserve">
+    <value>QR code resource is missing</value>
+  </data>
+  <data name="UpdateChecking" xml:space="preserve">
+    <value>Checking for updates…</value>
+  </data>
+  <data name="UpdateNotesEmpty" xml:space="preserve">
+    <value>No release notes</value>
+  </data>
+  <data name="UpdateInstall" xml:space="preserve">
+    <value>Download and install</value>
+  </data>
+  <data name="UpdateOpenPage" xml:space="preserve">
+    <value>Open download page</value>
+  </data>
+  <data name="UpdateLater" xml:space="preserve">
+    <value>Later</value>
+  </data>
+  <data name="UpdateFeedback" xml:space="preserve">
+    <value>Feedback</value>
+  </data>
+  <data name="UpdateRequired" xml:space="preserve">
+    <value>Update required</value>
+  </data>
+  <data name="UpdateCheckFailed" xml:space="preserve">
+    <value>Update check failed</value>
+  </data>
+  <data name="UpdateCheckFailedDetail" xml:space="preserve">
+    <value>Could not reach the update server (network unavailable or server error).</value>
+  </data>
+  <data name="UpdateUpToDate" xml:space="preserve">
+    <value>You are up to date</value>
+  </data>
+  <data name="UpdateCurrentVersion" xml:space="preserve">
+    <value>Current version {0}</value>
+  </data>
+  <data name="UpdateServerLatest" xml:space="preserve">
+    <value>, server latest {0}</value>
+  </data>
+  <data name="UpdateFound" xml:space="preserve">
+    <value>New version {0}</value>
+  </data>
+  <data name="UpdateReleaseDate" xml:space="preserve">
+    <value> · released {0}</value>
+  </data>
+  <data name="UpdateNetdisk" xml:space="preserve">
+    <value>This release is on a cloud drive. Use Open download page to download it manually.</value>
+  </data>
+  <data name="UpdateShaPresent" xml:space="preserve">
+    <value>The download is checked against SHA-256, then the installer starts.</value>
+  </data>
+  <data name="UpdateShaProvided" xml:space="preserve">
+    <value>The server provided a SHA-256; the download is checked automatically.</value>
+  </data>
+  <data name="UpdateCannotAutoInstall" xml:space="preserve">
+    <value>Cannot install automatically</value>
+  </data>
+  <data name="UpdateWillOpenPage" xml:space="preserve">
+    <value>&#10;&#10;The download page will open.</value>
+  </data>
+  <data name="UpdateConfirmInstaller" xml:space="preserve">
+    <value>The package will download and the installer will start. This app will exit.&#10;&#10;Continue?</value>
+  </data>
+  <data name="UpdateConfirmReplace" xml:space="preserve">
+    <value>Installation closes this app, replaces the current exe, and restarts it.&#10;&#10;Continue?</value>
+  </data>
+  <data name="UpdateInstallTitle" xml:space="preserve">
+    <value>Install update</value>
+  </data>
+  <data name="UpdateDownloadFailed" xml:space="preserve">
+    <value>Download failed. Use Open download page to download it manually.</value>
+  </data>
+  <data name="UpdateVerifyFailedPrefix" xml:space="preserve">
+    <value>Package verification failed: </value>
+  </data>
+  <data name="UpdateCannotStartInstaller" xml:space="preserve">
+    <value>Could not start the installer. Use Open download page to update manually.</value>
+  </data>
+  <data name="UpdateInstallerStarted" xml:space="preserve">
+    <value>Installer started. This app will exit…</value>
+  </data>
+  <data name="UpdateExtractFailed" xml:space="preserve">
+    <value>Could not extract the package (no executable found).</value>
+  </data>
+  <data name="UpdateCannotStartUpdater" xml:space="preserve">
+    <value>Could not start the updater (the current folder may not be writable). Use Open download page to update manually.</value>
+  </data>
+  <data name="UpdateUpdaterStarted" xml:space="preserve">
+    <value>Updater started. This app will exit…</value>
+  </data>
+  <data name="UpdateInstallFailedPrefix" xml:space="preserve">
+    <value>Installation failed: </value>
+  </data>
+  <data name="CustomModeTitle" xml:space="preserve">
+    <value>Custom performance mode</value>
+  </data>
+  <data name="CustomModePick" xml:space="preserve">
+    <value>Choose a custom profile</value>
+  </data>
+  <data name="EnabledLabel" xml:space="preserve">
+    <value>Enable</value>
+  </data>
+  <data name="SwitchPending" xml:space="preserve">
+    <value>Switching…</value>
+  </data>
+  <data name="SwitchUnconfirmed" xml:space="preserve">
+    <value>Switch was not confirmed</value>
+  </data>
+  <data name="GcuDisconnectedShort" xml:space="preserve">
+    <value>GCU is not connected</value>
+  </data>
+  <data name="FanTableNotReady" xml:space="preserve">
+    <value>Fan curve is not ready</value>
+  </data>
+  <data name="PowerPlanUnconfirmed" xml:space="preserve">
+    <value>Power plan was not confirmed; nothing was saved</value>
+  </data>
+  <data name="PowerPlanBoostUnconfirmed" xml:space="preserve">
+    <value>Power plan confirmed; boost mode was not confirmed</value>
+  </data>
+  <data name="PowerPlanBoostConfirmed" xml:space="preserve">
+    <value>Power plan and boost mode confirmed</value>
+  </data>
+  <data name="BoostConfirmed" xml:space="preserve">
+    <value>Boost mode confirmed</value>
+  </data>
+  <data name="BoostUnconfirmed" xml:space="preserve">
+    <value>Boost mode was not confirmed; nothing was saved</value>
+  </data>
+  <data name="PowerPlan" xml:space="preserve">
+    <value>Power plan</value>
+  </data>
+  <data name="BoostMode" xml:space="preserve">
+    <value>Boost mode</value>
+  </data>
+  <data name="CpuPl1" xml:space="preserve">
+    <value>CPU power limit PL1 (W)</value>
+  </data>
+  <data name="CpuPl2" xml:space="preserve">
+    <value>CPU power limit PL2 (W)</value>
+  </data>
+  <data name="CpuFppt" xml:space="preserve">
+    <value>CPU peak power limit fPPT (W)</value>
+  </data>
+  <data name="CpuPl4" xml:space="preserve">
+    <value>CPU instantaneous power limit PL4 (W)</value>
+  </data>
+  <data name="CpuTempWall" xml:space="preserve">
+    <value>CPU temperature limit</value>
+  </data>
+  <data name="TempWallValue" xml:space="preserve">
+    <value>Temperature limit (°C)</value>
+  </data>
+  <data name="GpuTgp" xml:space="preserve">
+    <value>GPU TGP target (W)</value>
+  </data>
+  <data name="GpuDynamicBoost" xml:space="preserve">
+    <value>GPU dynamic boost</value>
+  </data>
+  <data name="DynamicBoostValue" xml:space="preserve">
+    <value>Dynamic boost</value>
+  </data>
+  <data name="FanSwitchSensitivity" xml:space="preserve">
+    <value>Fan step sensitivity</value>
+  </data>
+  <data name="FanSwitchDelay" xml:space="preserve">
+    <value>Step delay (ms)</value>
+  </data>
+  <data name="GpuOverclock" xml:space="preserve">
+    <value>GPU overclock</value>
+  </data>
+  <data name="CoreOffset" xml:space="preserve">
+    <value>Core clock offset (MHz)</value>
+  </data>
+  <data name="MemoryOffset" xml:space="preserve">
+    <value>Memory clock offset (MHz)</value>
+  </data>
+  <data name="OcNeedsAdmin" xml:space="preserve">
+    <value>Overclocking requires administrator rights</value>
+  </data>
+  <data name="RestartAsAdmin" xml:space="preserve">
+    <value>Restart as administrator</value>
+  </data>
+  <data name="RestoreProfileDefault" xml:space="preserve">
+    <value>Restore this profile</value>
+  </data>
+  <data name="RestoreModeDefault" xml:space="preserve">
+    <value>Restore this mode</value>
+  </data>
+  <data name="RestoreCustomPrompt" xml:space="preserve">
+    <value>Restore the current custom profile to its defaults?</value>
+  </data>
+  <data name="RestoreModePrompt" xml:space="preserve">
+    <value>Restore the running {0} mode to its defaults?</value>
+  </data>
+  <data name="Restoring" xml:space="preserve">
+    <value>Restoring…</value>
+  </data>
+  <data name="RestoreSent" xml:space="preserve">
+    <value>Restore command sent</value>
+  </data>
+  <data name="CustomModeHint" xml:space="preserve">
+    <value>Settings are saved to the selected custom profile.</value>
+  </data>
+  <data name="CustomProfileActive" xml:space="preserve">
+    <value>Custom {0} is active</value>
+  </data>
+  <data name="CustomProfileActivePlanUnconfirmed" xml:space="preserve">
+    <value>Custom {0} is active; the Windows power plan was not confirmed</value>
+  </data>
+  <data name="ParamsConfirmed" xml:space="preserve">
+    <value>Settings confirmed</value>
+  </data>
+  <data name="ParamsReverted" xml:space="preserve">
+    <value>Settings were not applied; restored the read-back value</value>
+  </data>
+  <data name="ParamsSaveFailed" xml:space="preserve">
+    <value>Could not save settings</value>
+  </data>
+  <data name="EditorMenu" xml:space="preserve">
+    <value>Customize again</value>
+  </data>
+  <data name="UnknownMode" xml:space="preserve">
+    <value>Unknown mode</value>
+  </data>
+  <data name="FirmwareDetailHint" xml:space="preserve">
+    <value>Firmware settings are written with SET_OPERATING_MODE_DETAIL only while {0} is running. If that mode is not running, the write is refused and the custom profile is left unchanged.</value>
+  </data>
+  <data name="SilentTurboSharedSlot" xml:space="preserve">
+    <value>Silent Turbo and Turbo share one Turbo firmware slot and have no separate parameter store. This window does not change the silent flag and does not apply Turbo's automatic GPU overclock.</value>
+  </data>
+  <data name="RefusedWrite" xml:space="preserve">
+    <value>Did not switch to {0}. Firmware settings were not sent, and the custom profile was not written.</value>
+  </data>
+  <data name="BatteryLimitUnknown" xml:space="preserve">
+    <value>Unable to read</value>
+  </data>
+  <data name="Screen" xml:space="preserve">
+    <value>Screen</value>
+  </data>
+  <data name="ResponseBoost" xml:space="preserve">
+    <value>Response boost</value>
+  </data>
+  <data name="AutoRefreshRate" xml:space="preserve">
+    <value>Auto refresh rate</value>
+  </data>
+  <data name="ChargeLimitShort" xml:space="preserve">
+    <value>Charge limit</value>
+  </data>
+  <data name="Appearance" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="DayMode" xml:space="preserve">
+    <value>Day</value>
+  </data>
+  <data name="NightMode" xml:space="preserve">
+    <value>Night</value>
+  </data>
+  <data name="ManualModel" xml:space="preserve">
+    <value>Manual model</value>
+  </data>
+  <data name="ModelFixed" xml:space="preserve">
+    <value>Pinned manually</value>
+  </data>
+  <data name="ModelRestoredAuto" xml:space="preserve">
+    <value>Restored to automatic</value>
+  </data>
+  <data name="LiquidCooling" xml:space="preserve">
+    <value>Liquid cooling</value>
+  </data>
+  <data name="MoreSwitches" xml:space="preserve">
+    <value>More switches</value>
+  </data>
+  <data name="LightingGroup" xml:space="preserve">
+    <value>Lighting</value>
+  </data>
+  <data name="KeyboardControllerUnsupported" xml:space="preserve">
+    <value>This controller does not support software lighting; using the official channel</value>
+  </data>
+  <data name="KeyboardGcuNotRunning" xml:space="preserve">
+    <value>The official GCU service is not running, so software lighting cannot fall back</value>
+  </data>
+  <data name="UnresolvedGenerationNotice" xml:space="preserve">
+    <value>Could not identify the discrete GPU generation, so GPU mode switching is hidden.</value>
+  </data>
+  <data name="NoDgpuGenerationNotice" xml:space="preserve">
+    <value>No discrete GPU was detected, so GPU mode switching is hidden.</value>
+  </data>
+  <data name="LcPanelTitle" xml:space="preserve">
+    <value>Liquid cooling system</value>
+  </data>
+  <data name="LcStatusDisconnected" xml:space="preserve">
+    <value>Not connected</value>
+  </data>
+  <data name="LcStatusDirect" xml:space="preserve">
+    <value>Connected directly</value>
+  </data>
+  <data name="LcStatusConnecting" xml:space="preserve">
+    <value>Connecting to the cooler...</value>
+  </data>
+  <data name="LcStatusGcuConnected" xml:space="preserve">
+    <value>GCU cooler connected</value>
+  </data>
+  <data name="LcStatusGcuConnecting" xml:space="preserve">
+    <value>GCU is connecting the cooler. Please wait (click to refresh).</value>
+  </data>
+  <data name="LcStatusConnectFailed" xml:space="preserve">
+    <value>Connection failed (click to retry)</value>
+  </data>
+  <data name="LcStatusRefreshing" xml:space="preserve">
+    <value>Refreshing GCU cooler status...</value>
+  </data>
+  <data name="LcLightButton" xml:space="preserve">
+    <value>Cooler lights</value>
+  </data>
+  <data name="LcStatusBluetooth" xml:space="preserve">
+    <value>Bluetooth connected</value>
+  </data>
+  <data name="LcStatusClickConnect" xml:space="preserve">
+    <value>Not connected (click to connect)</value>
+  </data>
+  <data name="FirstRunTitle" xml:space="preserve">
+    <value>First run</value>
+  </data>
+  <data name="FirstRunHeadline" xml:space="preserve">
+    <value>Get started with L-Mechrevo</value>
+  </data>
+  <data name="FirstRunLead" xml:space="preserve">
+    <value>Finish these three steps to keep the hardware service and avoid control conflicts.</value>
+  </data>
+  <data name="ColorPickerHex" xml:space="preserve">
+    <value>Hex</value>
+  </data>
+  <data name="ColorPickerOk" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="ColorPickerCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="LightRowEdit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="LightingOffOnBattery" xml:space="preserve">
+    <value>Turn off all lighting on battery</value>
   </data>
 </root>

@@ -112,6 +112,7 @@ public class GpuSwitchCommandTests
                 DgpuGenerationKind.Gen30, DgpuProbeSource.MarketingName, true, "RTX 3050", "25A2");
             using MechrevoHw hardware = NewHardware(published,
                 new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true });
+            hardware.SetIgpuOnlyStatusSupportForTests(true);
             var service = new MechrevoService(hardware);
 
             GpuRestartRequestOutcome outcome =
@@ -164,6 +165,7 @@ public class GpuSwitchCommandTests
                 DgpuGenerationKind.Gen30, DgpuProbeSource.MarketingName, true, "RTX 3050", "25A2");
             using MechrevoHw hardware = NewHardware(published,
                 new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true });
+            hardware.SetIgpuOnlyStatusSupportForTests(true);
 
             bool ok = await hardware.SetGpuMode(MechrevoService.GpuIGpu);
 

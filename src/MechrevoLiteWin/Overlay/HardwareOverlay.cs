@@ -45,10 +45,6 @@ namespace MechrevoLite.Overlay
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
-        private const uint GW_HWNDPREV = 3;
-
         private const int GWL_EXSTYLE        = -20;
         private const int WS_EX_TRANSPARENT_FLAG = 0x00000020;
         private const int WM_LBUTTONDOWN     = 0x0201;
@@ -212,6 +208,7 @@ namespace MechrevoLite.Overlay
         private IntPtr _fgHook;
         private WinEventProc? _fgHookProc; // keep delegate alive
         private int _gameTicks;
+        private string? _lastPaintedFingerprint;
 
         private static readonly HashSet<string> DesktopApps = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -407,9 +404,13 @@ namespace MechrevoLite.Overlay
             if (keysDown != _dragModeActive && !_dragging)
                 ApplyDragMode(keysDown);
 
-            if (Handle != nint.Zero && GetWindow(Handle, GW_HWNDPREV) != IntPtr.Zero)
-                SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (Handle != nint.Zero)
+            {
+                bool currentlyTopmost = (GetWindowLong(Handle, GWL_EXSTYLE) & User32.WS_EX_TOPMOST) != 0;
+                if (OverlayZOrderPolicy.ShouldReassertTopmost(currentlyTopmost))
+                    SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
 
             // 前台进程检测（gameOnly 判定用，纯系统调用零开销）——ETW FPS 监控已彻底移除：
             // ETW 实时会话的内核事件泵运行在 System 进程上下文，导致 System 进程持续 3-5% CPU，
@@ -490,6 +491,15 @@ namespace MechrevoLite.Overlay
                     _gpuShortName = ShortGpuName(HardwareControl.GpuControl?.FullName);
             }
 
+            string fingerprint = string.Join('\n',
+                _gpuTempStr, _cpuTempStr, _gpuFanNum, _cpuFanNum,
+                _gpuPow, _cpuPow,
+                _gpuUsage, _cpuUsage, _vramUsage, _vramUsedMb, _ramUsage, _ramUsedMb,
+                _gpuShortName, _cpuShortName,
+                _batLevel, _batRate, _batPercent, _batCharging, _onBattery);
+            if (!OverlayPaintPolicy.ShouldInvalidate(_lastPaintedFingerprint, fingerprint))
+                return;
+            _lastPaintedFingerprint = fingerprint;
             Invalidate();
         }
 
@@ -1016,6 +1026,7 @@ namespace MechrevoLite.Overlay
         {
             if (_active) return;
             _active = true;
+            _lastPaintedFingerprint = null;
             HardwareControl.EnableLocalMonitoring();
             _lastFgPid = 0;
             _gameOnly = AppConfig.IsOverlayGameOnly();

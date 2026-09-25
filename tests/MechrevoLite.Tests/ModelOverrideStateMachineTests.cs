@@ -89,6 +89,32 @@ public class ModelOverrideStateMachineTests
     }
 
     [Fact]
+    public void ValidateManualAcceptsParseableProjectIdNames()
+    {
+        SupportDecision ag = ModelOverrideStateMachine.ValidateManual("PH6AGxx");
+        Assert.True(ag.IsSupported);
+        Assert.Equal(SupportReason.Ok, ag.Reason);
+        Assert.Equal("PH6AGxx", ag.ProjectId);
+
+        SupportDecision tq = ModelOverrideStateMachine.ValidateManual("PH6TQxx");
+        Assert.True(tq.IsSupported);
+        Assert.Equal(SupportReason.Ok, tq.Reason);
+        Assert.Equal("PH6TQxx", tq.ProjectId);
+    }
+
+    [Fact]
+    public void ValidateManualRejectsUnknownAndBlankValues()
+    {
+        Assert.Equal(SupportReason.Unparsable, ModelOverrideStateMachine.ValidateManual(null).Reason);
+        Assert.Equal(SupportReason.Unparsable, ModelOverrideStateMachine.ValidateManual("").Reason);
+        Assert.Equal(SupportReason.Unparsable, ModelOverrideStateMachine.ValidateManual("   ").Reason);
+
+        SupportDecision unknown = ModelOverrideStateMachine.ValidateManual("NOTAMODEL");
+        Assert.False(unknown.IsSupported);
+        Assert.Equal(SupportReason.NotInSet, unknown.Reason);
+    }
+
+    [Fact]
     public void TrySetManualPersistsAValidCodeAndRejectsAnIllegalOne()
     {
         WithConfig(() =>
@@ -99,9 +125,13 @@ public class ModelOverrideStateMachineTests
             Assert.True(accepted.IsSupported);
             Assert.Equal("PH4PUxx", AppConfig.GetString(ModelOverrideStateMachine.ModelKey));
 
-            Assert.False(ModelOverrideStateMachine.TrySetManual("PH6AGxx", out SupportDecision rejected));
+            Assert.True(ModelOverrideStateMachine.TrySetManual("PH6AGxx", out SupportDecision parseable));
+            Assert.True(parseable.IsSupported);
+            Assert.Equal("PH6AGxx", AppConfig.GetString(ModelOverrideStateMachine.ModelKey));
+
+            Assert.False(ModelOverrideStateMachine.TrySetManual("NOTAMODEL", out SupportDecision rejected));
             Assert.False(rejected.IsSupported);
-            Assert.Equal("PH4PUxx", AppConfig.GetString(ModelOverrideStateMachine.ModelKey));
+            Assert.Equal("PH6AGxx", AppConfig.GetString(ModelOverrideStateMachine.ModelKey));
         });
     }
 
@@ -110,7 +140,7 @@ public class ModelOverrideStateMachineTests
     {
         WithConfig(() =>
         {
-            AppConfig.Set(ModelOverrideStateMachine.ModelKey, "PH6TQxx");
+            AppConfig.Set(ModelOverrideStateMachine.ModelKey, "NOTAMODEL");
             Assert.Null(ModelOverrideStateMachine.ReadConfiguredManualModel());
 
             AppConfig.Set(ModelOverrideStateMachine.ModelKey, "PH4PUxx");

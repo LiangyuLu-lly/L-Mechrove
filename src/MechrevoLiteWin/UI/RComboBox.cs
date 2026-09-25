@@ -6,7 +6,7 @@ namespace MechrevoLite.UI
 {
     public class RComboBox : ComboBox
     {
-        private const int TextLeftPad = 1;
+        private const int TextLeftPad = 8;
         public bool UseCustomTextPadding = true;
 
         public RComboBox()

@@ -1,6 +1,7 @@
 ﻿using MechrevoLite.Helpers;
 using MechrevoLite;
 using Microsoft.Win32.TaskScheduler;
+using System.Diagnostics;
 using System.Security.Principal;
 
 internal readonly record struct StartupTaskPlan(
@@ -220,7 +221,9 @@ public class Startup
             return;
         }
 
-        bool startupEnabled = AppConfig.Is("startup_enabled");
+        bool startupEnabled = IsAutostartPreferred();
+        if (!AppConfig.Exists("startup_enabled"))
+            AppConfig.Set("startup_enabled", 1);
         using (TaskService taskService = new TaskService())
         {
             var task = GetUserTask(taskService);
@@ -257,6 +260,9 @@ public class Startup
     /// （也就是有能力重建）时才删除充电任务。
     /// </summary>
     public static bool ShouldAutoRepairStartupTask(bool needsReschedule, bool _) => needsReschedule;
+
+    /// <summary>缺省开机自启：配置键未写过时视为开，只有用户明确关掉才是关。</summary>
+    internal static bool IsAutostartPreferred() => AppConfig.IsNotFalse("startup_enabled");
 
     internal static bool ShouldRestoreEnabledStartupTask(bool taskMissing, bool startupEnabled) =>
         taskMissing && startupEnabled;
@@ -318,7 +324,7 @@ public class Startup
         RestartCount: 3,
         RestartInterval: TimeSpan.FromMinutes(1));
 
-    internal static TaskRunLevel GetUserStartupTaskRunLevel() => TaskRunLevel.LUA;
+    internal static TaskRunLevel GetUserStartupTaskRunLevel() => TaskRunLevel.Highest;
 
     static bool MatchesCurrentUserStartupTask(TaskDefinition definition)
     {
@@ -337,9 +343,12 @@ public class Startup
             .Any(trigger => trigger.Delay >= plan.TriggerDelay);
         bool consoleDelay = definition.Triggers.OfType<SessionStateChangeTrigger>()
             .Any(trigger => trigger.StateChange == TaskSessionStateChangeType.ConsoleConnect && trigger.Delay >= plan.TriggerDelay);
-        return logonDelay && consoleDelay &&
+        // Installer registers Highest + two AtLogOn triggers (no ConsoleConnect). Treat that as
+        // matching so the unelevated app does not try to rewrite a working Highest task and toast.
+        bool runLevelOk = definition.Principal.RunLevel is TaskRunLevel.LUA or TaskRunLevel.Highest;
+        return (logonDelay || consoleDelay) &&
             definition.Principal.LogonType == TaskLogonType.InteractiveToken &&
-            definition.Principal.RunLevel == GetUserStartupTaskRunLevel() &&
+            runLevelOk &&
             definition.Settings.RestartCount >= plan.RestartCount &&
             definition.Settings.RestartInterval >= plan.RestartInterval &&
             definition.Settings.StartWhenAvailable;
@@ -441,8 +450,11 @@ public class Startup
         }
     }
 
+    internal const string RegisterAutostartArgument = "--register-autostart";
+
     /// <summary>
-    /// 只注册用户级自启动任务（LUA 级别，当前用户即可注册），不涉及 SYSTEM 充电任务。
+    /// 注册开机自启任务（Highest，登录后以管理员运行，GPU 超频才写得进去）。
+    /// 非提权进程不能创建 Highest 任务，改为 UAC 拉起一次 <see cref="RegisterAutostartArgument"/>。
     /// </summary>
     internal static bool ScheduleUserTaskOnly()
     {
@@ -452,6 +464,9 @@ public class Startup
             Logger.WriteLine("Refusing to register the startup task from a transient location: " + strExeFilePath);
             return false;
         }
+
+        if (!ProcessHelper.IsUserAdministrator())
+            return RegisterAutostartElevated();
 
         try
         {
@@ -472,6 +487,41 @@ public class Startup
         catch (Exception ex)
         {
             Logger.WriteLine("Can't create startup task: " + ex.Message);
+            return false;
+        }
+    }
+
+    internal static bool RegisterAutostartElevated()
+    {
+        try
+        {
+            using Process? helper = Process.Start(new ProcessStartInfo
+            {
+                FileName = strExeFilePath,
+                Arguments = RegisterAutostartArgument,
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = Path.GetDirectoryName(strExeFilePath) ?? AppContext.BaseDirectory,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            });
+            if (helper is null)
+            {
+                Logger.WriteLine("Can't start elevated autostart registration.");
+                return false;
+            }
+            helper.WaitForExit();
+            bool ok = helper.ExitCode == 0;
+            Logger.WriteLine("Elevated autostart registration exit=" + helper.ExitCode);
+            return ok;
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            Logger.WriteLine("Autostart elevation cancelled.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("Can't elevate autostart registration: " + ex.Message);
             return false;
         }
     }

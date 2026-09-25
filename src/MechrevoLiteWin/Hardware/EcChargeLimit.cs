@@ -84,26 +84,41 @@ internal static class EcChargeLimit
     public static bool IsSupportedLimit(int percent) => percent is >= MinimumPercent and <= MaximumPercent;
 
     /// <summary>
-    /// 是否允许写充电上限。EC 字段布局随机型而变，判定改由 <see cref="FeatureMatrix"/>（服务写入的
-    /// 机型能力画像）+ F3（<see cref="SupportDecision"/>，机型在 24 集合内）决定——**不再做机型名串匹配**。
-    /// 配置项 <c>ec_charge_limit</c> 可强制开关（"1"/"0"），供新机型验证时用，语义不变。
+    /// Never true. <see cref="TrySet"/> returning true means <see cref="UpperRegister"/>/<see cref="LowerRegister"/>
+    /// echoed; CGLM 0x78F also echoed and did not control charging. The 0x7B9/0x7D0 pair was verified
+    /// on one machine only (2026-09-11). <see cref="FeatureMatrix"/> has no charge-limit bit — vendor
+    /// BatteryProtection2 has no ItemSupport flag — so this cannot be decided per machine.
     /// </summary>
-    public static bool IsSupportedMachine(SupportDecision support, FeatureMatrix matrix)
+    public const bool ReadbackProvesChargingStopped = false;
+
+    /// <summary>Shown instead of a success claim. A register echo is not proof charging stopped.</summary>
+    public const string UnverifiedWriteNotice =
+        "寄存器回读一致不能证明充电已受控（该地址对只在一台机器上验证过）。";
+
+    /// <summary>
+    /// Persistent readout. A bare percent here would look like a normal active limit.
+    /// </summary>
+    public const string UnverifiedLimitLabel = "未验证";
+
+    /// <summary>
+    /// Whether this process may attempt the EC write. There is no charge-limit capability bit.
+    /// <paramref name="support"/>.IsSupported means the vendor service serves this machine, not that
+    /// 0x7B9/0x7D0 control charging. Without <see cref="ReadbackProvesChargingStopped"/> the channel
+    /// stays closed. <c>ec_charge_limit</c> "1"/"0" still forces an attempt; an echo is still not a
+    /// confirmed limit.
+    /// </summary>
+    public static bool IsSupportedMachine(SupportDecision support)
     {
         ArgumentNullException.ThrowIfNull(support);
-        ArgumentNullException.ThrowIfNull(matrix);
         string? forced = AppConfig.GetString("ec_charge_limit");
         if (forced == "1") return true;
         if (forced == "0") return false;
-        // N15 #15: the profile is written by the vendor service and may lag the first sample, so
-        // requiring it here locked a service-served machine out of the charge limit entirely. The
-        // support decision already encodes "the service serves this machine"; the profile is only
-        // an additional signal, not a veto.
-        return support.IsSupported;
+        return support.IsSupported && ReadbackProvesChargingStopped;
     }
 
     /// <summary>
-    /// 本机是否允许走 EC 直写通道（矩阵 + F3）。身份与覆盖判定统一见 <see cref="RuntimeModelSupport"/>。
+    /// 本机是否允许尝试 EC 直写。身份与覆盖判定见 <see cref="RuntimeModelSupport"/>。
+    /// 这不是「该地址对在本机控制充电」的证明，见 <see cref="ReadbackProvesChargingStopped"/>。
     ///
     /// <para><b>N15 #12 订正</b>：此前这里把判定缓存在 <c>Lazy&lt;SupportDecision&gt;</c> 里，进程生命周期内
     /// 只求值一次。支持判据现在依赖"厂商服务是否在服务本机"，而服务可能在应用启动之后才连上 ——
@@ -111,9 +126,9 @@ internal static class EcChargeLimit
     /// 判定是纯函数，代价只是一次 EC 读 + 一次注册表读。</para>
     /// </summary>
     public static bool IsAvailableOnThisMachine() =>
-        IsSupportedMachine(RuntimeModelSupport.Current(), FeatureMatrix.Current());
+        IsSupportedMachine(RuntimeModelSupport.Current());
 
-    /// <summary>写入充电阈值（上限 + 复充下限一对）并回读确认。</summary>
+    /// <summary>写入充电阈值（上限 + 复充下限一对）并回读。回读一致不是充电已受控的证明。</summary>
     public static bool TrySet(int percent, out int appliedPercent)
     {
         appliedPercent = -1;
@@ -154,6 +169,7 @@ internal static class EcChargeLimit
                 }
 
                 appliedPercent = PercentFor(Read(handle, UpperRegister));
+                // Echo match is not proof these bytes control charging. See ReadbackProvesChargingStopped.
                 return appliedPercent == PercentFor(wantedUpper);
             }
             finally { CloseHandle(handle); }

@@ -48,6 +48,10 @@ public class GpuOverclockApplyRegressionTests
             return true;
         }
 
+        /// <summary>GCU/firmware wrote the P-state; NVAPI readback sees it even when Set* would reject the range.</summary>
+        public void ReportCoreOffset(int value) => CoreOffset = CoreOffset with { Current = value };
+        public void ReportMemoryOffset(int value) => MemoryOffset = MemoryOffset with { Current = value };
+
         public void Dispose() { }
     }
 
@@ -192,5 +196,155 @@ public class GpuOverclockApplyRegressionTests
         Assert.False(Field<RNumericUpDown>(form, "_coreOcVal").Enabled, "开关 OFF 时核心数值框必须禁用。");
         Assert.False(Field<RSlider>(form, "_memOc").Enabled, "开关 OFF 时显存滑条必须禁用。");
         Assert.False(Field<RNumericUpDown>(form, "_memOcVal").Enabled, "开关 OFF 时显存数值框必须禁用。");
+    }
+
+    // ------------------------------------------------------------ GCU-extended persist (T-W0-OC)
+
+    /// <summary>
+    /// Characterization: <see cref="MechrevoHw.MarkGcuGpuOverclockActive"/> currently only
+    /// nulls <c>_directGpuOverclockEnabled</c>. It does not call
+    /// <c>SaveDirectGpuOverclockValue</c>, so a confirmed GCU-extended write never
+    /// lands in AppConfig. Desired contract: the same
+    /// <c>direct_gpu_oc_{enabled,core,memory}_{slot}</c> keys as the direct NVAPI path.
+    /// </summary>
+    [Fact]
+    public async Task SaveDirectGpuOverclockValue_AlwaysOnGcuExtended()
+    {
+        ClearDirectGpuOcKeys();
+        var driver = new FakeOcDriver(-150, 150, -1000, 3000, 0, 0);
+        MechrevoHw? hardware = null;
+        hardware = NewPersistingGcuHardware(driver, (topic, payload) =>
+        {
+            HandleGcuOcPublish(hardware!, driver, topic, payload, resetClocksOnProfileSwitch: false);
+            return Task.CompletedTask;
+        });
+
+        using (hardware)
+        {
+            PrimeGcuExtended(hardware);
+            var service = new MechrevoService(hardware);
+
+            Assert.True(await service.SetCustomDetail(new() { ["GpuCoreClockOffsetOC"] = "200" }),
+                "前置：200 超出驱动 ±150，必须走 GCU-extended 并被驱动读回确认。");
+            Assert.Equal(200, driver.CoreOffset.Current);
+
+            Assert.True(AppConfig.Is("direct_gpu_oc_enabled_0"),
+                "GCU-extended 确认后必须把 direct_gpu_oc_enabled_{slot} 写成 1（MarkGcuGpuOverclockActive 今天不写）。");
+            Assert.Equal(200, AppConfig.Get("direct_gpu_oc_core_0"));
+        }
+    }
+
+    /// <summary>
+    /// After a custom-slot switch, GCU firmware drops the P-state. Desired:
+    /// <see cref="MechrevoService.SwitchCustomProfile"/> reapplies the persisted
+    /// offsets for the target slot. Today Restore sees no AppConfig keys because
+    /// the GCU-extended path never saved them.
+    /// </summary>
+    [Fact]
+    public async Task SwitchCustomProfile_ReappliesPersistedOffsets()
+    {
+        ClearDirectGpuOcKeys();
+        var driver = new FakeOcDriver(-150, 150, -1000, 3000, 0, 0);
+        MechrevoHw? hardware = null;
+        hardware = NewPersistingGcuHardware(driver, (topic, payload) =>
+        {
+            HandleGcuOcPublish(hardware!, driver, topic, payload, resetClocksOnProfileSwitch: true);
+            return Task.CompletedTask;
+        });
+
+        using (hardware)
+        {
+            PrimeGcuExtended(hardware);
+            var service = new MechrevoService(hardware);
+
+            Assert.True(await service.SetCustomDetail(new() { ["GpuCoreClockOffsetOC"] = "200" }));
+            Assert.Equal(200, driver.CoreOffset.Current);
+
+            Assert.True(await service.SwitchCustomProfile(1), "切到自定义 2 必须确认。");
+            Assert.Equal(0, driver.CoreOffset.Current);
+
+            Assert.True(await service.SwitchCustomProfile(0), "切回自定义 1 必须确认。");
+            Assert.Equal(200, driver.CoreOffset.Current);
+        }
+    }
+
+    static MechrevoHw NewPersistingGcuHardware(FakeOcDriver driver, Func<string, object, Task> publish) =>
+        new(publish,
+            new MechrevoDeviceCapabilities { ProfileAvailable = true, OverclockSettings = true },
+            () => driver,
+            () => false);
+
+    static void PrimeGcuExtended(MechrevoHw hardware)
+    {
+        hardware.HandleMessage("Fan/Status",
+            "{\"OperatingMode\":3,\"CustomProfileIndex\":0," +
+            "\"GPU_CoreClockOffsetMinimumHWOC\":-500,\"GPU_CoreClockOffsetMaximumHWOC\":500," +
+            "\"GPU_CoreClockOffsetOC\":0,\"OverClockingSwitch\":0}");
+        hardware.HandleMessage("LCHWOC/Status", "{\"Support\":true,\"Enable\":true}");
+    }
+
+    static void HandleGcuOcPublish(
+        MechrevoHw hardware,
+        FakeOcDriver driver,
+        string topic,
+        object payload,
+        bool resetClocksOnProfileSwitch)
+    {
+        if (topic != "Fan/Control" || payload is not IDictionary<string, object> values) return;
+        string action = values.TryGetValue("Action", out object? raw) ? raw?.ToString() ?? "" : "";
+        if (action == "SET_OPERATING_MODE_DETAIL" &&
+            values.TryGetValue("GpuCoreClockOffsetOC", out object? coreValue) &&
+            int.TryParse(coreValue.ToString(), out int core))
+        {
+            driver.ReportCoreOffset(core);
+            int slot = hardware.CustomProfileIndex is >= 0 and <= 3 ? hardware.CustomProfileIndex : 0;
+            hardware.HandleMessage("Fan/Status", $$"""
+                {"OperatingMode":3,"CustomProfileIndex":{{slot}},
+                 "GPU_CoreClockOffsetMinimumHWOC":-500,"GPU_CoreClockOffsetMaximumHWOC":500,
+                 "GPU_CoreClockOffsetOC":{{core}},"OverClockingSwitch":1}
+                """);
+            return;
+        }
+
+        if (action == "OPERATING_CUSTOM_MODE")
+        {
+            int profile = values.TryGetValue("ProfileIndex", out object? profileValue) &&
+                          int.TryParse(profileValue?.ToString(), out int parsed)
+                ? parsed
+                : 0;
+            if (resetClocksOnProfileSwitch)
+            {
+                driver.ReportCoreOffset(0);
+                driver.ReportMemoryOffset(0);
+            }
+            hardware.HandleMessage("Fan/Status", $$"""
+                {"OperatingMode":3,"CustomProfileIndex":{{profile}},
+                 "GPU_CoreClockOffsetMinimumHWOC":-500,"GPU_CoreClockOffsetMaximumHWOC":500,
+                 "GPU_CoreClockOffsetOC":{{driver.CoreOffset.Current}},
+                 "OverClockingSwitch":{{(driver.CoreOffset.Current != 0 ? 1 : 0)}}}
+                """);
+            return;
+        }
+
+        if (action == "GETSTATUS")
+        {
+            int slot = hardware.CustomProfileIndex is >= 0 and <= 3 ? hardware.CustomProfileIndex : 0;
+            hardware.HandleMessage("Fan/Status", $$"""
+                {"OperatingMode":3,"CustomProfileIndex":{{slot}},
+                 "GPU_CoreClockOffsetMinimumHWOC":-500,"GPU_CoreClockOffsetMaximumHWOC":500,
+                 "GPU_CoreClockOffsetOC":{{driver.CoreOffset.Current}},
+                 "OverClockingSwitch":{{(driver.CoreOffset.Current != 0 ? 1 : 0)}}}
+                """);
+        }
+    }
+
+    static void ClearDirectGpuOcKeys()
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            AppConfig.Remove($"direct_gpu_oc_enabled_{i}");
+            AppConfig.Remove($"direct_gpu_oc_core_{i}");
+            AppConfig.Remove($"direct_gpu_oc_memory_{i}");
+        }
     }
 }

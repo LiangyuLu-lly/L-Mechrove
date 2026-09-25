@@ -104,7 +104,7 @@ public class BatteryChargeLimitDisplayFixTests
 
     /// <summary>真实手势设置 → EC 写入 → 持久化 → 显示数值（不再显示「—」）。</summary>
     [Fact]
-    public async Task GenuineGesture_AppliesPersistsAndDisplaysTheValue()
+    public async Task GenuineGesture_ReachesTheWrite_and_DoesNotPersistAConfirmedLimit()
     {
         using var h = new Harness(TimeSpan.Zero);
         using var form = new SettingsForm();
@@ -115,13 +115,15 @@ public class BatteryChargeLimitDisplayFixTests
         await Task.Delay(250);
 
         Assert.True(BatteryControl.ApplyChargeLimitFromUserGesture(78));
-        h.WaitForStored(78);
-        Assert.Equal(new[] { 78 }, h.Writes);
-        Assert.Equal(78, AppConfig.Get("charge_limit"));                 // 已持久化
-        Assert.Equal(78, BatteryControl.ResolveDisplayLimitPercent());   // 显示真源 = EC 实际阈值
+        h.WaitForWrite();
+        Thread.Sleep(150);
 
-        form.VisualiseBatteryTitle(BatteryControl.ResolveDisplayLimitPercent());
-        Assert.Equal("78%", LimitValue(form).Text);
+        Assert.Equal(new[] { 78 }, h.Writes);
+        Assert.NotEqual(78, AppConfig.Get("charge_limit"));
+        Assert.False(BatteryControl.chargeFull);
+        form.RefreshDeviceCapabilities();
+        Assert.Equal(EcChargeLimit.UnverifiedLimitLabel, LimitValue(form).Text);
+        Assert.NotEqual("78%", LimitValue(form).Text);
     }
 
     /// <summary>连续多次刷新回显不得把刚设的值回退——EC 真值优先于（缺失/陈旧的）配置。</summary>
@@ -184,7 +186,7 @@ public class BatteryChargeLimitDisplayFixTests
     /// 写后即时回读失败（硬件其实已改）时：不应停留在未知，而应再次读 EC 确认实际阈值并持久化 + 显示。
     /// </summary>
     [Fact]
-    public void ImmediateReadbackFailure_ButEcAlreadyAtValue_IsPersistedAndDisplayed()
+    public void ImmediateReadbackFailure_EvenWhenEcMatches_IsNotPersisted()
     {
         using var h = new Harness(TimeSpan.FromSeconds(5));
         h.TrySetSucceeds = false;   // TrySet 报告失败
@@ -192,10 +194,11 @@ public class BatteryChargeLimitDisplayFixTests
 
         Assert.True(BatteryControl.SetBatteryChargeLimit(75));   // 重新应用已保存值是程序化路径，不受手势门禁
         h.WaitForWrite();
-        h.WaitForStored(75);
+        Thread.Sleep(150);
 
-        Assert.Equal(75, AppConfig.Get("charge_limit"));                 // 按成功收尾 → 已持久化
-        Assert.Equal(75, BatteryControl.ResolveDisplayLimitPercent());   // 显示真源 = EC 实际阈值
+        Assert.Equal(-1, AppConfig.Get("charge_limit"));
+        Assert.False(BatteryControl.chargeFull);
+        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
     }
 
     /// <summary>写后即时回读失败且 EC 阈值也不是请求值 → 保持原值，不伪造成功。</summary>

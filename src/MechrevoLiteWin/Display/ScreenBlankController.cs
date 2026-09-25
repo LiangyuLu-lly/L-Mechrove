@@ -135,7 +135,8 @@ internal static class ScreenBlankController
             double elapsedMs = (nowUtc - _blankStartedUtc).TotalMilliseconds;
             if (elapsedMs >= MaxBlankDuration.TotalMilliseconds)
                 reason = "watchdog";
-            else if (elapsedMs >= MinBlankBeforeRestoreMs &&
+            // Strictly after MinBlank: idle Zero at exactly 800ms is still the Dim click.
+            else if (elapsedMs > MinBlankBeforeRestoreMs &&
                      RawIdleTime() <= TimeSpan.FromMilliseconds(RestoreIdleWindowMs))
                 reason = "user input";
         }

@@ -5,8 +5,9 @@ namespace MechrevoLite.Tests;
 /// <summary>
 /// T25: running the installer twice must not produce side effects. The installed payload identity
 /// (SHA256) is recorded in the install marker; when the bundled payload is already installed and
-/// the service is healthy, the install degrades to verify-only (signatures + firewall + marker)
-/// and never re-copies or re-registers.
+/// the service is healthy, the install degrades to verify-only (signatures + firewall + marker +
+/// Wait-GcuPostInstallFacts) and never re-copies or re-registers. Service Running is not enough
+/// to skip the four post-install invariants.
 /// </summary>
 public class InstallerIdempotencyTests
 {
@@ -59,6 +60,44 @@ public class InstallerIdempotencyTests
         string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
         Assert.Contains("GcuInstallerVersion", script, StringComparison.Ordinal);
         Assert.Contains("$InstallerVersion", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VerifyOnly_WaitsForService()
+    {
+        string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
+        int verifyOnly = script.IndexOf("if ($action -eq 'VerifyOnly'", StringComparison.Ordinal);
+        Assert.True(verifyOnly >= 0, "Install-Gcu.ps1 must keep a VerifyOnly fast path");
+        int nextStep = script.IndexOf("Write-Log '[1/8]", verifyOnly, StringComparison.Ordinal);
+        Assert.True(nextStep > verifyOnly, "VerifyOnly must precede the [1/8] uninstall-first step");
+        string block = script.Substring(verifyOnly, nextStep - verifyOnly);
+
+        Assert.Contains("Wait-GcuPostInstallFacts", block, StringComparison.Ordinal);
+        Assert.Contains("Status -eq 'Running'", block, StringComparison.Ordinal);
+
+        int running = block.IndexOf("Status -eq 'Running'", StringComparison.Ordinal);
+        int wait = block.IndexOf("Wait-GcuPostInstallFacts", StringComparison.Ordinal);
+        int okExit = block.LastIndexOf("exit 0", StringComparison.Ordinal);
+        Assert.True(wait > running, "VerifyOnly must still wait for post-install facts after seeing the service Running");
+        Assert.True(okExit > wait, "do not skip Wait-GcuPostInstallFacts just because the service is Running");
+    }
+
+    [Fact]
+    public void VerificationFail_ExitsNonZero()
+    {
+        string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
+        int verifyOnly = script.IndexOf("if ($action -eq 'VerifyOnly'", StringComparison.Ordinal);
+        Assert.True(verifyOnly >= 0, "Install-Gcu.ps1 must keep a VerifyOnly fast path");
+        int nextStep = script.IndexOf("Write-Log '[1/8]", verifyOnly, StringComparison.Ordinal);
+        Assert.True(nextStep > verifyOnly, "VerifyOnly must precede the [1/8] uninstall-first step");
+        string block = script.Substring(verifyOnly, nextStep - verifyOnly);
+
+        Assert.Contains("-not $verdict.Ok", block, StringComparison.Ordinal);
+        int fail = block.IndexOf("-not $verdict.Ok", StringComparison.Ordinal);
+        int exit1 = block.IndexOf("exit 1", fail, StringComparison.Ordinal);
+        int exit0 = block.LastIndexOf("exit 0", StringComparison.Ordinal);
+        Assert.True(exit1 >= 0, "VerifyOnly verification failure must exit non-zero");
+        Assert.True(exit1 < exit0, "the failure exit must precede the VerifyOnly success exit");
     }
 
     static PsResult DotSource(string expression)

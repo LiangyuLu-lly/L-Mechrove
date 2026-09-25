@@ -9,14 +9,14 @@ public sealed class FirstRunGuideForm : RForm
 
     public FirstRunGuideForm()
     {
-        Text = "首次使用";
+        Text = Properties.Strings.FirstRunTitle;
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(580, 390);
-        MinimumSize = new Size(540, 330);
+        ClientSize = new Size(SettingsForm.CompactDashboardLogicalClientSize.Width, 390);
+        MinimumSize = new Size(320, 280);
         BackColor = UiVisualStyle.Window;
         ForeColor = UiVisualStyle.Text;
         InitTheme(true);
@@ -48,7 +48,7 @@ public sealed class FirstRunGuideForm : RForm
         };
         header.Controls.Add(new Label
         {
-            Text = "开始使用 L-Mechrevo",
+            Text = Properties.Strings.FirstRunHeadline,
             AutoSize = true,
             Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Display, FontStyle.Bold),
             ForeColor = UiVisualStyle.Text,
@@ -56,7 +56,7 @@ public sealed class FirstRunGuideForm : RForm
         }, 0, 0);
         header.Controls.Add(new Label
         {
-            Text = "完成下面三步，保留硬件服务并避免控制冲突。",
+            Text = Properties.Strings.FirstRunLead,
             AutoSize = true,
             Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body),
             ForeColor = UiVisualStyle.Muted,
@@ -89,7 +89,7 @@ public sealed class FirstRunGuideForm : RForm
         steps.Controls.Add(CreateStep("1", "无需安装任何其他控制台",
             "安装器已经装好 GCU 服务与驱动，本程序自带全部必要组件。厂商「官方控制台」已由安装器清理并替换为 L-Mechrevo，不需要再下载或安装它。"), 0, 0);
         steps.Controls.Add(CreateStep("2", "直接开始使用",
-            "打开本程序的“系统”页即可设置开机启动、性能模式、显卡模式与灯效；GCU 服务在后台运行，无需额外操作。"), 0, 1);
+            "开机启动、性能模式、显卡模式与灯效都在这个窗口里；GCU 服务在后台运行，无需额外操作。"), 0, 1);
         steps.Controls.Add(CreateStep("!", "退出其他灯效控制软件",
             "不要同时运行 BetterRGB、OpenRGB 或其他厂商灯效程序，否则多个程序抢占 HID 设备可能导致灯效失效或设备访问冲突。", warning: true), 0, 2);
         scroll.Controls.Add(steps);
@@ -113,7 +113,7 @@ public sealed class FirstRunGuideForm : RForm
         // N10: no "official download" button - the vendor console is removed by the installer.
         var later = CreateButton("稍后");
         later.DialogResult = DialogResult.Cancel;
-        var system = CreateButton("前往系统页");
+        var system = CreateButton("开始使用");
         system.DialogResult = DialogResult.OK;
         UiVisualStyle.ApplyPrimaryButton(system);
         actions.Controls.Add(later, 0, 0);

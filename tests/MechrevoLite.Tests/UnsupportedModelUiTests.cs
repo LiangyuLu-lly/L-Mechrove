@@ -10,6 +10,47 @@ namespace MechrevoLite.Tests;
 /// </summary>
 public class UnsupportedModelUiTests
 {
+    [Theory]
+    [InlineData(SupportReason.Unparsable, true, false)]
+    [InlineData(SupportReason.Unparsable, false, true)]
+    [InlineData(SupportReason.NotInSet, true, false)]
+    [InlineData(SupportReason.NotInSet, false, true)]
+    [InlineData(SupportReason.Ok, true, false)]
+    [InlineData(SupportReason.Ok, false, false)]
+    public void FirstGcuConnectDoesNotLockTheDashboardReadOnly(
+        SupportReason reason, bool connecting, bool expectedDegrade)
+    {
+        SupportDecision decision = reason switch
+        {
+            SupportReason.Ok => SupportDecision.Supported("GCU"),
+            SupportReason.NotInSet => SupportDecision.NotInSet("GK7NXXR"),
+            _ => SupportDecision.Unparsable(),
+        };
+        Assert.Equal(expectedDegrade, RuntimeModelSupport.ShouldDegradeToReadOnly(decision, connecting));
+    }
+
+    [Fact]
+    public void ShouldDegradeToReadOnly_FirstConnectNotReconnecting_DoesNotLock()
+    {
+        // First MQTT handshake: hw is present, never connected (gen 0), reconnect
+        // loop has not flipped IsReconnecting yet. EC/ItemSupport are empty → Unparsable.
+        SupportDecision decision = SupportDecision.Unparsable();
+        Assert.False(RuntimeModelSupport.ShouldDegradeToReadOnly(
+            decision, RuntimeModelSupport.IsGcuFirstConnectInProgress(false, 0)));
+    }
+
+    [Fact]
+    public void ApplyUnsupportedModelNotice_FirstConnect_NoUnparsableBanner()
+    {
+        string source = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Settings.cs");
+        int start = source.IndexOf("public void RefreshDeviceCapabilities()", StringComparison.Ordinal);
+        int end = source.IndexOf("void ApplyUnsupportedModelNotice", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        string body = source[start..end];
+        Assert.Contains("IsGcuFirstConnectInProgress", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsReconnecting: true, ConnectionGeneration: 0", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void AnUnknownInjectedCodeIsPositivelyUnsupported()
     {
@@ -77,7 +118,8 @@ public class UnsupportedModelUiTests
             AppConfig.Remove(ModelOverrideStateMachine.ModelKey);
             AppConfig.Remove(ModelOverrideStateMachine.ModeKey);
 
-            Assert.False(ModelOverrideStateMachine.TrySetManual("PH6AGxx", out SupportDecision decision));
+            // T6: PH6AGxx is ProjectIdNames 5894 and is now Supported.
+            Assert.False(ModelOverrideStateMachine.TrySetManual("NOTAMODEL", out SupportDecision decision));
             Assert.Equal(SupportReason.NotInSet, decision.Reason);
             Assert.Null(AppConfig.GetString(ModelOverrideStateMachine.ModelKey));
         }

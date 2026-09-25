@@ -72,9 +72,23 @@ public class BatteryChargeLimitTests
         Assert.Equal(expected, EcChargeLimit.IsSupportedLimit(percent));
 
     /// <summary>
-    /// 官方那条路已整体摘除：产品里不能再有调用 BatteryProtection/Control 三档的入口
-    /// （实测它只写模式位 DBAP，不限制充电）。协议方法本身留给诊断与将来复用。
+    /// 电池卡保持可见，这样未验证的上限不会被藏起来；滑条不得因为通道开着就启用。
     /// </summary>
+    [Fact]
+    public void TheBatteryPanelStaysVisibleSoAnUnverifiedLimitIsNotHidden()
+    {
+        string source = File.ReadAllText(RepoFile(Path.Combine("src", "MechrevoLiteWin", "Settings.cs")));
+        int start = source.IndexOf("void ApplyChargeLimitSliderGating", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        string body = source[start..Math.Min(source.Length, start + 1200)];
+        Assert.Contains("EcChargeLimit.IsAvailableOnThisMachine()", body, StringComparison.Ordinal);
+        Assert.Contains("EcChargeLimit.ReadbackProvesChargingStopped", body, StringComparison.Ordinal);
+        Assert.Contains("sliderBattery.Enabled = confirmed", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("sliderBattery.Enabled = available", body, StringComparison.Ordinal);
+        Assert.Contains("panelBattery.Visible = !unsupportedModel || Program.UiAuditMode", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("panelBattery.Visible = true", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheOfficialBatteryProtectionFlowIsNoLongerWiredIntoTheProduct()
     {
@@ -130,24 +144,19 @@ public class BatteryChargeLimitTests
         try
         {
             AppConfig.Remove("ec_charge_limit");
-            var profile = FeatureMatrix.FromValues(new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["KeyboardSupport"] = 1,
-            });
-            var empty = FeatureMatrix.FromValues(new Dictionary<string, object?>());
             var supported = new SupportDecision(true, SupportReason.Ok, "PH4TRX1");
             var unparsable = SupportDecision.Unparsable();
 
-            Assert.True(EcChargeLimit.IsSupportedMachine(supported, profile));
-            Assert.False(EcChargeLimit.IsSupportedMachine(unparsable, profile));
-            // N15 #15 契约变更：服务画像不再是否决项（它由厂商服务写入、可能晚于首次采样）。
-            // 支持判定本身已编码「服务服务本机」，故 Supported + 空画像现在被接受。
-            Assert.True(EcChargeLimit.IsSupportedMachine(supported, empty));
+            Assert.False(
+                EcChargeLimit.IsSupportedMachine(supported),
+                "service-served is not proof 0x7B9/0x7D0 control charging; the channel stays closed.");
+            Assert.False(EcChargeLimit.IsSupportedMachine(unparsable));
+            Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
 
             AppConfig.Set("ec_charge_limit", "1");
-            Assert.True(EcChargeLimit.IsSupportedMachine(unparsable, empty));
+            Assert.True(EcChargeLimit.IsSupportedMachine(unparsable));
             AppConfig.Set("ec_charge_limit", "0");
-            Assert.False(EcChargeLimit.IsSupportedMachine(supported, profile));
+            Assert.False(EcChargeLimit.IsSupportedMachine(supported));
         }
         finally
         {

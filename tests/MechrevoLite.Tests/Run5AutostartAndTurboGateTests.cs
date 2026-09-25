@@ -239,6 +239,28 @@ public class Run5AutostartAndTurboGateTests
         });
     }
 
+    /// <summary>
+    /// 狂暴不得因 TurboModeSupport 缺位 FailClosed 藏掉：官方有狂暴时，
+    /// MQTT Fan/Status 已到即提供入口。SwitchMode(Turbo) 本身无门禁。
+    /// </summary>
+    [Fact]
+    public void TurboButton_VisibleWhenOfficialTurbo()
+    {
+        WithReportedCapabilities(new MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            TurboMode = false,
+        }, form =>
+        {
+            form.RefreshDeviceCapabilities();
+            Assert.Null(FindButtonByText(form, "狂暴"));
+
+            Program.hw!.HandleMessage("Fan/Status", "{\"OperatingMode\":1}");
+            form.RefreshDeviceCapabilities();
+            Assert.NotNull(FindButtonByText(form, "狂暴"));
+        });
+    }
+
     /// <summary>支持的机型：入口照常出现（不能因为加了门禁把支持机型的功能删掉）。</summary>
     [Fact]
     public void SilentTurboEntry_IsRenderedWhenSupported()

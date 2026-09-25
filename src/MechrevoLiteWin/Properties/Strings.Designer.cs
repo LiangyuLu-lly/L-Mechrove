@@ -468,6 +468,24 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized string similar to Laptop Backlight.
         /// </summary>
+        internal static string Language {
+            get {
+                return ResourceManager.GetString("Language", resourceCulture);
+            }
+        }
+
+        internal static string LanguageRestartPrompt {
+            get {
+                return ResourceManager.GetString("LanguageRestartPrompt", resourceCulture);
+            }
+        }
+
+        internal static string LanguageRestartTitle {
+            get {
+                return ResourceManager.GetString("LanguageRestartTitle", resourceCulture);
+            }
+        }
+
         internal static string LaptopBacklight {
             get {
                 return ResourceManager.GetString("LaptopBacklight", resourceCulture);
@@ -762,6 +780,15 @@ namespace MechrevoLite.Properties {
             }
         }
         
+        /// <summary>
+        ///   Looks up a localized string similar to Silent Turbo.
+        /// </summary>
+        internal static string SilentTurbo {
+            get {
+                return ResourceManager.GetString("SilentTurbo", resourceCulture);
+            }
+        }
+        
         
         /// <summary>
         ///   Looks up a localized string similar to Sleep.
@@ -877,6 +904,1403 @@ namespace MechrevoLite.Properties {
         internal static string Zoom {
             get {
                 return ResourceManager.GetString("Zoom", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom.
+        /// </summary>
+        internal static string ModelInvalid {
+            get {
+                return ResourceManager.GetString("ModelInvalid", resourceCulture);
+            }
+        }
+
+        internal static string SettingsZoneAppearance {
+            get {
+                return ResourceManager.GetString("SettingsZoneAppearance", resourceCulture);
+            }
+        }
+
+        internal static string SettingsZoneDisplay {
+            get {
+                return ResourceManager.GetString("SettingsZoneDisplay", resourceCulture);
+            }
+        }
+
+        internal static string ModeCustom {
+            get {
+                return ResourceManager.GetString("ModeCustom", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to iGPU.
+        /// </summary>
+        internal static string GpuRouteIgpu {
+            get {
+                return ResourceManager.GetString("GpuRouteIgpu", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Standard.
+        /// </summary>
+        internal static string GpuRouteStandard {
+            get {
+                return ResourceManager.GetString("GpuRouteStandard", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Direct.
+        /// </summary>
+        internal static string GpuRouteDirect {
+            get {
+                return ResourceManager.GetString("GpuRouteDirect", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to iGPU mode.
+        /// </summary>
+        internal static string GpuRouteIgpuTip {
+            get {
+                return ResourceManager.GetString("GpuRouteIgpuTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Standard mode.
+        /// </summary>
+        internal static string GpuRouteStandardTip {
+            get {
+                return ResourceManager.GetString("GpuRouteStandardTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Automatic switching.
+        /// </summary>
+        internal static string GpuRouteAutoTip {
+            get {
+                return ResourceManager.GetString("GpuRouteAutoTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Discrete GPU direct.
+        /// </summary>
+        internal static string GpuRouteDirectTip {
+            get {
+                return ResourceManager.GetString("GpuRouteDirectTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to iGPU.
+        /// </summary>
+        internal static string GpuSwitchIgpu {
+            get {
+                return ResourceManager.GetString("GpuSwitchIgpu", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Settings.
+        /// </summary>
+        internal static string FooterSettings {
+            get {
+                return ResourceManager.GetString("FooterSettings", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Diagnostics.
+        /// </summary>
+        internal static string FooterDiagnostics {
+            get {
+                return ResourceManager.GetString("FooterDiagnostics", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Overlay.
+        /// </summary>
+        internal static string FooterOverlay {
+            get {
+                return ResourceManager.GetString("FooterOverlay", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Export diagnostics.
+        /// </summary>
+        internal static string ExportDiagnostics {
+            get {
+                return ResourceManager.GetString("ExportDiagnostics", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Check for updates.
+        /// </summary>
+        internal static string CheckForUpdates {
+            get {
+                return ResourceManager.GetString("CheckForUpdates", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Check for updates ●.
+        /// </summary>
+        internal static string CheckForUpdatesBadge {
+            get {
+                return ResourceManager.GetString("CheckForUpdatesBadge", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to New version {0} (click to view).
+        /// </summary>
+        internal static string UpdateAvailableTip {
+            get {
+                return ResourceManager.GetString("UpdateAvailableTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Fan boost.
+        /// </summary>
+        internal static string TrayFanBoost {
+            get {
+                return ResourceManager.GetString("TrayFanBoost", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom mode.
+        /// </summary>
+        internal static string TrayCustomMode {
+            get {
+                return ResourceManager.GetString("TrayCustomMode", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom mode (current {0}).
+        /// </summary>
+        internal static string TrayCustomModeActive {
+            get {
+                return ResourceManager.GetString("TrayCustomModeActive", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom {0}.
+        /// </summary>
+        internal static string CustomProfileN {
+            get {
+                return ResourceManager.GetString("CustomProfileN", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Keyboard lighting.
+        /// </summary>
+        internal static string TrayKeyboardLighting {
+            get {
+                return ResourceManager.GetString("TrayKeyboardLighting", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Overlay.
+        /// </summary>
+        internal static string TrayOverlayMonitor {
+            get {
+                return ResourceManager.GetString("TrayOverlayMonitor", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Open main window.
+        /// </summary>
+        internal static string TrayOpenMain {
+            get {
+                return ResourceManager.GetString("TrayOpenMain", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Tray action failed..
+        /// </summary>
+        internal static string TrayActionFailed {
+            get {
+                return ResourceManager.GetString("TrayActionFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Performance mode switch failed..
+        /// </summary>
+        internal static string PerfModeSwitchFailed {
+            get {
+                return ResourceManager.GetString("PerfModeSwitchFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom profile switched; power plan was not confirmed..
+        /// </summary>
+        internal static string CustomProfilePlanUnconfirmed {
+            get {
+                return ResourceManager.GetString("CustomProfilePlanUnconfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Quick switch failed..
+        /// </summary>
+        internal static string QuickSwitchFailed {
+            get {
+                return ResourceManager.GetString("QuickSwitchFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Startup task failed..
+        /// </summary>
+        internal static string StartupTaskFailed {
+            get {
+                return ResourceManager.GetString("StartupTaskFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to ● GCU connected.
+        /// </summary>
+        internal static string GcuConnected {
+            get {
+                return ResourceManager.GetString("GcuConnected", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GCU service is connected (GCUBridge, MQTT 127.0.0.1:13688).
+        /// </summary>
+        internal static string GcuConnectedTip {
+            get {
+                return ResourceManager.GetString("GcuConnectedTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to ● GCU connecting.
+        /// </summary>
+        internal static string GcuConnecting {
+            get {
+                return ResourceManager.GetString("GcuConnecting", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Connecting to the GCU service (127.0.0.1:13688). It is usually ready within seconds of sign-in; the app retries autom....
+        /// </summary>
+        internal static string GcuConnectingTip {
+            get {
+                return ResourceManager.GetString("GcuConnectingTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to ● GCU disconnected.
+        /// </summary>
+        internal static string GcuDisconnected {
+            get {
+                return ResourceManager.GetString("GcuDisconnected", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The GCU service is not running or the connection failed (127.0.0.1:13688). The app is reconnecting; this indicator tu....
+        /// </summary>
+        internal static string GcuDisconnectedTip {
+            get {
+                return ResourceManager.GetString("GcuDisconnectedTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to ● GCU status unknown.
+        /// </summary>
+        internal static string GcuUnknown {
+            get {
+                return ResourceManager.GetString("GcuUnknown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The hardware backend is not initialized yet..
+        /// </summary>
+        internal static string GcuUnknownTip {
+            get {
+                return ResourceManager.GetString("GcuUnknownTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Fan curve.
+        /// </summary>
+        internal static string FanCurve {
+            get {
+                return ResourceManager.GetString("FanCurve", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Fan curve (current custom profile).
+        /// </summary>
+        internal static string FanCurveTitle {
+            get {
+                return ResourceManager.GetString("FanCurveTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Drag a point up or down to change duty cycle.
+        /// </summary>
+        internal static string FanCurveDrag {
+            get {
+                return ResourceManager.GetString("FanCurveDrag", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Save.
+        /// </summary>
+        internal static string Save {
+            get {
+                return ResourceManager.GetString("Save", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Independent fan control.
+        /// </summary>
+        internal static string FanIndependent {
+            get {
+                return ResourceManager.GetString("FanIndependent", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Independent fan control was not confirmed.
+        /// </summary>
+        internal static string FanIndependentUnconfirmed {
+            get {
+                return ResourceManager.GetString("FanIndependentUnconfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Off = both fans follow the GPU curve (default). On = CPU and GPU fans are independent..
+        /// </summary>
+        internal static string FanIndependentHint {
+            get {
+                return ResourceManager.GetString("FanIndependentHint", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Table: .
+        /// </summary>
+        internal static string FanTablePrefix {
+            get {
+                return ResourceManager.GetString("FanTablePrefix", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Unknown.
+        /// </summary>
+        internal static string UnknownValue {
+            get {
+                return ResourceManager.GetString("UnknownValue", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Turning on independent fan control….
+        /// </summary>
+        internal static string FanIndependentEnabling {
+            get {
+                return ResourceManager.GetString("FanIndependentEnabling", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Independent fan control is on by default.
+        /// </summary>
+        internal static string FanIndependentOn {
+            get {
+                return ResourceManager.GetString("FanIndependentOn", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Not connected; nothing was saved.
+        /// </summary>
+        internal static string NotConnectedNotSaved {
+            get {
+                return ResourceManager.GetString("NotConnectedNotSaved", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Confirmed {0}.
+        /// </summary>
+        internal static string ConfirmedAt {
+            get {
+                return ResourceManager.GetString("ConfirmedAt", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Save was not confirmed. Try again..
+        /// </summary>
+        internal static string SaveUnconfirmedRetry {
+            get {
+                return ResourceManager.GetString("SaveUnconfirmedRetry", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Save failed.
+        /// </summary>
+        internal static string SaveFailed {
+            get {
+                return ResourceManager.GetString("SaveFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to {0} fan curve (drag points to set duty).
+        /// </summary>
+        internal static string FanCurvePaint {
+            get {
+                return ResourceManager.GetString("FanCurvePaint", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Sponsor.
+        /// </summary>
+        internal static string DonateTitle {
+            get {
+                return ResourceManager.GetString("DonateTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Thank you for supporting L-Mechrevo.
+        /// </summary>
+        internal static string DonateThanks {
+            get {
+                return ResourceManager.GetString("DonateThanks", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Scan to sponsor continued development.
+        /// </summary>
+        internal static string DonateScan {
+            get {
+                return ResourceManager.GetString("DonateScan", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to QR code resource is missing.
+        /// </summary>
+        internal static string DonateQrMissing {
+            get {
+                return ResourceManager.GetString("DonateQrMissing", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Checking for updates….
+        /// </summary>
+        internal static string UpdateChecking {
+            get {
+                return ResourceManager.GetString("UpdateChecking", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to No release notes.
+        /// </summary>
+        internal static string UpdateNotesEmpty {
+            get {
+                return ResourceManager.GetString("UpdateNotesEmpty", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Download and install.
+        /// </summary>
+        internal static string UpdateInstall {
+            get {
+                return ResourceManager.GetString("UpdateInstall", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Open download page.
+        /// </summary>
+        internal static string UpdateOpenPage {
+            get {
+                return ResourceManager.GetString("UpdateOpenPage", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Later.
+        /// </summary>
+        internal static string UpdateLater {
+            get {
+                return ResourceManager.GetString("UpdateLater", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Feedback.
+        /// </summary>
+        internal static string UpdateFeedback {
+            get {
+                return ResourceManager.GetString("UpdateFeedback", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Update required.
+        /// </summary>
+        internal static string UpdateRequired {
+            get {
+                return ResourceManager.GetString("UpdateRequired", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Update check failed.
+        /// </summary>
+        internal static string UpdateCheckFailed {
+            get {
+                return ResourceManager.GetString("UpdateCheckFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not reach the update server (network unavailable or server error)..
+        /// </summary>
+        internal static string UpdateCheckFailedDetail {
+            get {
+                return ResourceManager.GetString("UpdateCheckFailedDetail", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to You are up to date.
+        /// </summary>
+        internal static string UpdateUpToDate {
+            get {
+                return ResourceManager.GetString("UpdateUpToDate", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Current version {0}.
+        /// </summary>
+        internal static string UpdateCurrentVersion {
+            get {
+                return ResourceManager.GetString("UpdateCurrentVersion", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to , server latest {0}.
+        /// </summary>
+        internal static string UpdateServerLatest {
+            get {
+                return ResourceManager.GetString("UpdateServerLatest", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to New version {0}.
+        /// </summary>
+        internal static string UpdateFound {
+            get {
+                return ResourceManager.GetString("UpdateFound", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to  · released {0}.
+        /// </summary>
+        internal static string UpdateReleaseDate {
+            get {
+                return ResourceManager.GetString("UpdateReleaseDate", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to This release is on a cloud drive. Use Open download page to download it manually..
+        /// </summary>
+        internal static string UpdateNetdisk {
+            get {
+                return ResourceManager.GetString("UpdateNetdisk", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The download is checked against SHA-256, then the installer starts..
+        /// </summary>
+        internal static string UpdateShaPresent {
+            get {
+                return ResourceManager.GetString("UpdateShaPresent", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The server provided a SHA-256; the download is checked automatically..
+        /// </summary>
+        internal static string UpdateShaProvided {
+            get {
+                return ResourceManager.GetString("UpdateShaProvided", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Cannot install automatically.
+        /// </summary>
+        internal static string UpdateCannotAutoInstall {
+            get {
+                return ResourceManager.GetString("UpdateCannotAutoInstall", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to \n\nThe download page will open..
+        /// </summary>
+        internal static string UpdateWillOpenPage {
+            get {
+                return ResourceManager.GetString("UpdateWillOpenPage", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The package will download and the installer will start. This app will exit.\n\nContinue?.
+        /// </summary>
+        internal static string UpdateConfirmInstaller {
+            get {
+                return ResourceManager.GetString("UpdateConfirmInstaller", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Installation closes this app, replaces the current exe, and restarts it.\n\nContinue?.
+        /// </summary>
+        internal static string UpdateConfirmReplace {
+            get {
+                return ResourceManager.GetString("UpdateConfirmReplace", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Install update.
+        /// </summary>
+        internal static string UpdateInstallTitle {
+            get {
+                return ResourceManager.GetString("UpdateInstallTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Download failed. Use Open download page to download it manually..
+        /// </summary>
+        internal static string UpdateDownloadFailed {
+            get {
+                return ResourceManager.GetString("UpdateDownloadFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Package verification failed: .
+        /// </summary>
+        internal static string UpdateVerifyFailedPrefix {
+            get {
+                return ResourceManager.GetString("UpdateVerifyFailedPrefix", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not start the installer. Use Open download page to update manually..
+        /// </summary>
+        internal static string UpdateCannotStartInstaller {
+            get {
+                return ResourceManager.GetString("UpdateCannotStartInstaller", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Installer started. This app will exit….
+        /// </summary>
+        internal static string UpdateInstallerStarted {
+            get {
+                return ResourceManager.GetString("UpdateInstallerStarted", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not extract the package (no executable found)..
+        /// </summary>
+        internal static string UpdateExtractFailed {
+            get {
+                return ResourceManager.GetString("UpdateExtractFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not start the updater (the current folder may not be writable). Use Open download page to update manually..
+        /// </summary>
+        internal static string UpdateCannotStartUpdater {
+            get {
+                return ResourceManager.GetString("UpdateCannotStartUpdater", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Updater started. This app will exit….
+        /// </summary>
+        internal static string UpdateUpdaterStarted {
+            get {
+                return ResourceManager.GetString("UpdateUpdaterStarted", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Installation failed: .
+        /// </summary>
+        internal static string UpdateInstallFailedPrefix {
+            get {
+                return ResourceManager.GetString("UpdateInstallFailedPrefix", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom performance mode.
+        /// </summary>
+        internal static string CustomModeTitle {
+            get {
+                return ResourceManager.GetString("CustomModeTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Choose a custom profile.
+        /// </summary>
+        internal static string CustomModePick {
+            get {
+                return ResourceManager.GetString("CustomModePick", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Enable.
+        /// </summary>
+        internal static string EnabledLabel {
+            get {
+                return ResourceManager.GetString("EnabledLabel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Switching….
+        /// </summary>
+        internal static string SwitchPending {
+            get {
+                return ResourceManager.GetString("SwitchPending", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Switch was not confirmed.
+        /// </summary>
+        internal static string SwitchUnconfirmed {
+            get {
+                return ResourceManager.GetString("SwitchUnconfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GCU is not connected.
+        /// </summary>
+        internal static string GcuDisconnectedShort {
+            get {
+                return ResourceManager.GetString("GcuDisconnectedShort", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Fan curve is not ready.
+        /// </summary>
+        internal static string FanTableNotReady {
+            get {
+                return ResourceManager.GetString("FanTableNotReady", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Power plan was not confirmed; nothing was saved.
+        /// </summary>
+        internal static string PowerPlanUnconfirmed {
+            get {
+                return ResourceManager.GetString("PowerPlanUnconfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Power plan confirmed; boost mode was not confirmed.
+        /// </summary>
+        internal static string PowerPlanBoostUnconfirmed {
+            get {
+                return ResourceManager.GetString("PowerPlanBoostUnconfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Power plan and boost mode confirmed.
+        /// </summary>
+        internal static string PowerPlanBoostConfirmed {
+            get {
+                return ResourceManager.GetString("PowerPlanBoostConfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Boost mode confirmed.
+        /// </summary>
+        internal static string BoostConfirmed {
+            get {
+                return ResourceManager.GetString("BoostConfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Boost mode was not confirmed; nothing was saved.
+        /// </summary>
+        internal static string BoostUnconfirmed {
+            get {
+                return ResourceManager.GetString("BoostUnconfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Power plan.
+        /// </summary>
+        internal static string PowerPlan {
+            get {
+                return ResourceManager.GetString("PowerPlan", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Boost mode.
+        /// </summary>
+        internal static string BoostMode {
+            get {
+                return ResourceManager.GetString("BoostMode", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to CPU power limit PL1 (W).
+        /// </summary>
+        internal static string CpuPl1 {
+            get {
+                return ResourceManager.GetString("CpuPl1", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to CPU power limit PL2 (W).
+        /// </summary>
+        internal static string CpuPl2 {
+            get {
+                return ResourceManager.GetString("CpuPl2", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to CPU peak power limit fPPT (W).
+        /// </summary>
+        internal static string CpuFppt {
+            get {
+                return ResourceManager.GetString("CpuFppt", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to CPU instantaneous power limit PL4 (W).
+        /// </summary>
+        internal static string CpuPl4 {
+            get {
+                return ResourceManager.GetString("CpuPl4", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to CPU temperature limit.
+        /// </summary>
+        internal static string CpuTempWall {
+            get {
+                return ResourceManager.GetString("CpuTempWall", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Temperature limit (°C).
+        /// </summary>
+        internal static string TempWallValue {
+            get {
+                return ResourceManager.GetString("TempWallValue", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GPU TGP target (W).
+        /// </summary>
+        internal static string GpuTgp {
+            get {
+                return ResourceManager.GetString("GpuTgp", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GPU dynamic boost.
+        /// </summary>
+        internal static string GpuDynamicBoost {
+            get {
+                return ResourceManager.GetString("GpuDynamicBoost", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Dynamic boost.
+        /// </summary>
+        internal static string DynamicBoostValue {
+            get {
+                return ResourceManager.GetString("DynamicBoostValue", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Fan step sensitivity.
+        /// </summary>
+        internal static string FanSwitchSensitivity {
+            get {
+                return ResourceManager.GetString("FanSwitchSensitivity", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Step delay (ms).
+        /// </summary>
+        internal static string FanSwitchDelay {
+            get {
+                return ResourceManager.GetString("FanSwitchDelay", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GPU overclock.
+        /// </summary>
+        internal static string GpuOverclock {
+            get {
+                return ResourceManager.GetString("GpuOverclock", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Core clock offset (MHz).
+        /// </summary>
+        internal static string CoreOffset {
+            get {
+                return ResourceManager.GetString("CoreOffset", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Memory clock offset (MHz).
+        /// </summary>
+        internal static string MemoryOffset {
+            get {
+                return ResourceManager.GetString("MemoryOffset", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Overclocking requires administrator rights.
+        /// </summary>
+        internal static string OcNeedsAdmin {
+            get {
+                return ResourceManager.GetString("OcNeedsAdmin", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restart as administrator.
+        /// </summary>
+        internal static string RestartAsAdmin {
+            get {
+                return ResourceManager.GetString("RestartAsAdmin", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restore this profile.
+        /// </summary>
+        internal static string RestoreProfileDefault {
+            get {
+                return ResourceManager.GetString("RestoreProfileDefault", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restore this mode.
+        /// </summary>
+        internal static string RestoreModeDefault {
+            get {
+                return ResourceManager.GetString("RestoreModeDefault", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restore the current custom profile to its defaults?.
+        /// </summary>
+        internal static string RestoreCustomPrompt {
+            get {
+                return ResourceManager.GetString("RestoreCustomPrompt", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restore the running {0} mode to its defaults?.
+        /// </summary>
+        internal static string RestoreModePrompt {
+            get {
+                return ResourceManager.GetString("RestoreModePrompt", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restoring….
+        /// </summary>
+        internal static string Restoring {
+            get {
+                return ResourceManager.GetString("Restoring", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restore command sent.
+        /// </summary>
+        internal static string RestoreSent {
+            get {
+                return ResourceManager.GetString("RestoreSent", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Settings are saved to the selected custom profile..
+        /// </summary>
+        internal static string CustomModeHint {
+            get {
+                return ResourceManager.GetString("CustomModeHint", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom {0} is active.
+        /// </summary>
+        internal static string CustomProfileActive {
+            get {
+                return ResourceManager.GetString("CustomProfileActive", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Custom {0} is active; the Windows power plan was not confirmed.
+        /// </summary>
+        internal static string CustomProfileActivePlanUnconfirmed {
+            get {
+                return ResourceManager.GetString("CustomProfileActivePlanUnconfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Settings confirmed.
+        /// </summary>
+        internal static string ParamsConfirmed {
+            get {
+                return ResourceManager.GetString("ParamsConfirmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Settings were not applied; restored the read-back value.
+        /// </summary>
+        internal static string ParamsReverted {
+            get {
+                return ResourceManager.GetString("ParamsReverted", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not save settings.
+        /// </summary>
+        internal static string ParamsSaveFailed {
+            get {
+                return ResourceManager.GetString("ParamsSaveFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Customize again.
+        /// </summary>
+        internal static string EditorMenu {
+            get {
+                return ResourceManager.GetString("EditorMenu", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Unknown mode.
+        /// </summary>
+        internal static string UnknownMode {
+            get {
+                return ResourceManager.GetString("UnknownMode", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Firmware settings are written with SET_OPERATING_MODE_DETAIL only while {0} is running. If that mode is not running, ....
+        /// </summary>
+        internal static string FirmwareDetailHint {
+            get {
+                return ResourceManager.GetString("FirmwareDetailHint", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Silent Turbo and Turbo share one Turbo firmware slot and have no separate parameter store. This window does not chang....
+        /// </summary>
+        internal static string SilentTurboSharedSlot {
+            get {
+                return ResourceManager.GetString("SilentTurboSharedSlot", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Did not switch to {0}. Firmware settings were not sent, and the custom profile was not written..
+        /// </summary>
+        internal static string RefusedWrite {
+            get {
+                return ResourceManager.GetString("RefusedWrite", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Unable to read.
+        /// </summary>
+        internal static string BatteryLimitUnknown {
+            get {
+                return ResourceManager.GetString("BatteryLimitUnknown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Screen.
+        /// </summary>
+        internal static string Screen {
+            get {
+                return ResourceManager.GetString("Screen", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Response boost.
+        /// </summary>
+        internal static string ResponseBoost {
+            get {
+                return ResourceManager.GetString("ResponseBoost", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Auto refresh rate.
+        /// </summary>
+        internal static string AutoRefreshRate {
+            get {
+                return ResourceManager.GetString("AutoRefreshRate", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Charge limit.
+        /// </summary>
+        internal static string ChargeLimitShort {
+            get {
+                return ResourceManager.GetString("ChargeLimitShort", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Appearance.
+        /// </summary>
+        internal static string Appearance {
+            get {
+                return ResourceManager.GetString("Appearance", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Day.
+        /// </summary>
+        internal static string DayMode {
+            get {
+                return ResourceManager.GetString("DayMode", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Night.
+        /// </summary>
+        internal static string NightMode {
+            get {
+                return ResourceManager.GetString("NightMode", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Manual model.
+        /// </summary>
+        internal static string ManualModel {
+            get {
+                return ResourceManager.GetString("ManualModel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Pinned manually.
+        /// </summary>
+        internal static string ModelFixed {
+            get {
+                return ResourceManager.GetString("ModelFixed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restored to automatic.
+        /// </summary>
+        internal static string ModelRestoredAuto {
+            get {
+                return ResourceManager.GetString("ModelRestoredAuto", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Liquid cooling.
+        /// </summary>
+        internal static string LiquidCooling {
+            get {
+                return ResourceManager.GetString("LiquidCooling", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to More switches.
+        /// </summary>
+        internal static string MoreSwitches {
+            get {
+                return ResourceManager.GetString("MoreSwitches", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Lighting.
+        /// </summary>
+        internal static string LightingGroup {
+            get {
+                return ResourceManager.GetString("LightingGroup", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to This controller does not support software lighting; using the official channel.
+        /// </summary>
+        internal static string KeyboardControllerUnsupported {
+            get {
+                return ResourceManager.GetString("KeyboardControllerUnsupported", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The official GCU service is not running, so software lighting cannot fall back.
+        /// </summary>
+        internal static string KeyboardGcuNotRunning {
+            get {
+                return ResourceManager.GetString("KeyboardGcuNotRunning", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not identify the discrete GPU generation, so GPU mode switching is hidden..
+        /// </summary>
+        internal static string UnresolvedGenerationNotice {
+            get {
+                return ResourceManager.GetString("UnresolvedGenerationNotice", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to No discrete GPU was detected, so GPU mode switching is hidden..
+        /// </summary>
+        internal static string NoDgpuGenerationNotice {
+            get {
+                return ResourceManager.GetString("NoDgpuGenerationNotice", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Liquid cooling system.
+        /// </summary>
+        internal static string LcPanelTitle {
+            get {
+                return ResourceManager.GetString("LcPanelTitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Not connected.
+        /// </summary>
+        internal static string LcStatusDisconnected {
+            get {
+                return ResourceManager.GetString("LcStatusDisconnected", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Connected directly.
+        /// </summary>
+        internal static string LcStatusDirect {
+            get {
+                return ResourceManager.GetString("LcStatusDirect", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Connecting to the cooler....
+        /// </summary>
+        internal static string LcStatusConnecting {
+            get {
+                return ResourceManager.GetString("LcStatusConnecting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to GCU cooler connected.
+        /// </summary>
+        internal static string LcStatusGcuConnected {
+            get {
+                return ResourceManager.GetString("LcStatusGcuConnected", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to GCU is connecting the cooler. Please wait (click to refresh)..
+        /// </summary>
+        internal static string LcStatusGcuConnecting {
+            get {
+                return ResourceManager.GetString("LcStatusGcuConnecting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Connection failed (click to retry).
+        /// </summary>
+        internal static string LcStatusConnectFailed {
+            get {
+                return ResourceManager.GetString("LcStatusConnectFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Refreshing GCU cooler status....
+        /// </summary>
+        internal static string LcStatusRefreshing {
+            get {
+                return ResourceManager.GetString("LcStatusRefreshing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Cooler lights.
+        /// </summary>
+        internal static string LcLightButton {
+            get {
+                return ResourceManager.GetString("LcLightButton", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Bluetooth connected.
+        /// </summary>
+        internal static string LcStatusBluetooth {
+            get {
+                return ResourceManager.GetString("LcStatusBluetooth", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Not connected (click to connect).
+        /// </summary>
+        internal static string LcStatusClickConnect {
+            get {
+                return ResourceManager.GetString("LcStatusClickConnect", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to First run.
+        /// </summary>
+        internal static string FirstRunTitle {
+            get {
+                return ResourceManager.GetString("FirstRunTitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Get started with L-Mechrevo.
+        /// </summary>
+        internal static string FirstRunHeadline {
+            get {
+                return ResourceManager.GetString("FirstRunHeadline", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Finish these three steps to keep the hardware service and avoid control conflicts..
+        /// </summary>
+        internal static string FirstRunLead {
+            get {
+                return ResourceManager.GetString("FirstRunLead", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Hex.
+        /// </summary>
+        internal static string ColorPickerHex {
+            get {
+                return ResourceManager.GetString("ColorPickerHex", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to OK.
+        /// </summary>
+        internal static string ColorPickerOk {
+            get {
+                return ResourceManager.GetString("ColorPickerOk", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Cancel.
+        /// </summary>
+        internal static string ColorPickerCancel {
+            get {
+                return ResourceManager.GetString("ColorPickerCancel", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Edit.
+        /// </summary>
+        internal static string LightRowEdit {
+            get {
+                return ResourceManager.GetString("LightRowEdit", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Turn off all lighting on battery.
+        /// </summary>
+        internal static string LightingOffOnBattery {
+            get {
+                return ResourceManager.GetString("LightingOffOnBattery", resourceCulture);
             }
         }
     }

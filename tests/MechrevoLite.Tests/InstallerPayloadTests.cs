@@ -108,41 +108,47 @@ public class InstallerPayloadSingleTests
 }
 
 /// <summary>
-/// T22 failure surface: single-payload selection must fail loud when the GPU generation is not
-/// determinable and must never fall back to a 40-series payload. It must also reject the retired
-/// /GCUVARIANT override (user-visible contract change recorded in installer\README.md).
+/// T22: there is one shipped payload. Unknown GPU / BIOS-only still installs it.
+/// Never fall back to a 40-series tree. A retired /GCUVARIANT override must warn and
+/// continue as Auto (user-visible contract change recorded in installer\README.md).
 /// </summary>
 public class InstallerPayloadNoFallbackFailTests
 {
     const string Selector = @"installer\Select-GcuPayload.ps1";
 
     [Fact]
-    public void SingleMode_UnknownGpu_FailsWithoutFallback()
+    public void SingleMode_UnknownGpu_StillInstallsTheShippedPayload()
     {
         PsResult result = GcuInstallerHarness.RunScript(Selector,
-            "-GpuName", "Intel(R) Graphics", "-DeviceId", "DEV_7D67");
-        Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("fallback", result.Combined, StringComparison.OrdinalIgnoreCase);
+            "-GpuName", "Intel(R) Graphics", "-DeviceId", "DEV_7D67", "-AsJson");
+        Assert.Equal(0, result.ExitCode);
+        using JsonDocument doc = JsonDocument.Parse(result.StdOut.Trim());
+        Assert.Equal("50", doc.RootElement.GetProperty("Variant").GetString());
+        Assert.Equal("release\\GCU-only", doc.RootElement.GetProperty("RepoPayload").GetString());
         Assert.DoesNotContain("40-51751", result.StdOut, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void SingleMode_BiosProjectIdAloneIsNotAGenerationJudgement()
+    public void SingleMode_BiosProjectIdAloneStillInstallsTheShippedPayload()
     {
-        // Axis 1 (platform code) must not decide axis 2 (dGPU generation); a BIOS code alone
-        // cannot justify installing a GPU service.
-        PsResult result = GcuInstallerHarness.RunScript(Selector, "-BiosProjectId", "PH6TRX1");
-        Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("generation", result.Combined, StringComparison.OrdinalIgnoreCase);
+        PsResult result = GcuInstallerHarness.RunScript(Selector, "-BiosProjectId", "PH6TRX1", "-AsJson");
+        Assert.Equal(0, result.ExitCode);
+        using JsonDocument doc = JsonDocument.Parse(result.StdOut.Trim());
+        Assert.Equal("50", doc.RootElement.GetProperty("Variant").GetString());
+        Assert.Equal("release\\GCU-only", doc.RootElement.GetProperty("RepoPayload").GetString());
     }
 
     [Fact]
     public void SingleMode_VariantOverrideIsRefused()
     {
+        // Given Variant=40-51749 and RTX 4090
+        // When the selector runs
+        // Then exit 0, Combined contains Warning/retired, StdOut is still GCU-only, no 40-51749 payload path
         PsResult result = GcuInstallerHarness.RunScript(Selector,
             "-Variant", "40-51749", "-GpuName", "NVIDIA GeForce RTX 4090 Laptop GPU");
-        Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("Variant", result.Combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, result.ExitCode);
         Assert.Contains("retired", result.Combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("GCU-only", result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("GCU-40-51749", result.StdOut, StringComparison.Ordinal);
     }
 }

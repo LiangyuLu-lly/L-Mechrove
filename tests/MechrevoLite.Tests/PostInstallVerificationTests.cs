@@ -64,11 +64,20 @@ public class PostInstallVerificationTests
     public void InstallGcu_VerifiesAfterStartBeforeReportingSuccess()
     {
         string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
-        int verify = script.IndexOf("Test-GcuPostInstall", StringComparison.Ordinal);
+        int verify = script.IndexOf("Wait-GcuPostInstallFacts", StringComparison.Ordinal);
         int success = script.IndexOf("Write-Log 'GCU install OK'", StringComparison.Ordinal);
-        Assert.True(verify >= 0, "Install-Gcu.ps1 must run the post-install verification");
+        Assert.True(verify >= 0, "Install-Gcu.ps1 must wait for post-install verification");
         Assert.True(success >= 0, "Install-Gcu.ps1 must report success");
         Assert.True(verify < success, "verification must run before success is reported");
+    }
+
+    [Fact]
+    public void PostInstallVerificationRetriesInsteadOfASingleProbe()
+    {
+        string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
+        Assert.Contains("function Wait-GcuPostInstallFacts", script, StringComparison.Ordinal);
+        Assert.Contains("TimeoutSeconds = 30", script, StringComparison.Ordinal);
+        Assert.Contains("post-install not ready yet", script, StringComparison.Ordinal);
     }
 
     static PsResult DotSource(string expression)

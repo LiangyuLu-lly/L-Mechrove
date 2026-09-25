@@ -50,9 +50,9 @@ public class StartupAndDisplayStateTests
         Assert.Equal(expected, Startup.ShouldAutoRepairStartupTask(needsReschedule, isAdministrator));
 
     [Fact]
-    public void UserStartupTask_UsesLeastPrivilege()
+    public void UserStartupTask_UsesHighestPrivilegesForGpuOverclock()
     {
-        Assert.Equal(Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA,
+        Assert.Equal(Microsoft.Win32.TaskScheduler.TaskRunLevel.Highest,
             Startup.GetUserStartupTaskRunLevel());
     }
 
@@ -123,7 +123,8 @@ public class StartupAndDisplayStateTests
             MechrevoService.GpuIGpu,
             supportsHotSwap: true);
 
-        Assert.Equal("Restart", plan.Route.ToString());
+        // T1 restored vendor Resolve; mux/Dgpu still Restart.
+        Assert.Equal("HotSwitch", plan.Route.ToString());
     }
 
     // ------------------------------------------------------------ 自启动动作路径解析
@@ -191,8 +192,9 @@ public class StartupAndDisplayStateTests
     }
 
     /// <summary>
-    /// 生产装配的计划任务定义必须满足既有判据（登录触发 + 10s 延时、交互式令牌、LUA、重试），
+    /// 生产装配的计划任务定义必须满足既有判据（登录触发 + 10s 延时、交互式令牌、Highest、重试），
     /// 且动作指向持久路径并携带 startup 参数——这是「启用即建对任务」的回归锁。
+    /// Highest：开机自启以管理员运行，否则 GPU 超频每次都要手动重启软件。
     /// </summary>
     [Fact]
     public void UserStartupTaskDefinition_MatchesThePlanAndTargetsThePersistentExe()
@@ -205,7 +207,22 @@ public class StartupAndDisplayStateTests
         var action = definition.Actions.OfType<Microsoft.Win32.TaskScheduler.ExecAction>().Single();
         Assert.Equal(Startup.ScheduledExecutablePath, action.Path);
         Assert.Equal("startup", action.Arguments);
-        Assert.Equal(Microsoft.Win32.TaskScheduler.TaskRunLevel.LUA, definition.Principal.RunLevel);
+        Assert.Equal(Microsoft.Win32.TaskScheduler.TaskRunLevel.Highest, definition.Principal.RunLevel);
         Assert.Equal(Microsoft.Win32.TaskScheduler.TaskLogonType.InteractiveToken, definition.Principal.LogonType);
+    }
+
+    [Fact]
+    public void InstallerHighestLogonTask_IsTreatedAsMatchingTheUserPlan()
+    {
+        using TaskDefinition definition = TaskService.Instance.NewTask();
+        definition.Triggers.Add(new LogonTrigger { Delay = TimeSpan.FromSeconds(10) });
+        definition.Triggers.Add(new LogonTrigger { Delay = TimeSpan.FromSeconds(10) });
+        definition.Principal.LogonType = TaskLogonType.InteractiveToken;
+        definition.Principal.RunLevel = TaskRunLevel.Highest;
+        definition.Settings.RestartCount = 3;
+        definition.Settings.RestartInterval = TimeSpan.FromMinutes(1);
+        definition.Settings.StartWhenAvailable = true;
+
+        Assert.True(Startup.MatchesUserStartupPlan(definition));
     }
 }

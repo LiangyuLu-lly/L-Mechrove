@@ -1,4 +1,5 @@
 using MechrevoLite.Hardware;
+using MechrevoLite.Helpers;
 using MechrevoLite.UI;
 
 namespace MechrevoLite;
@@ -31,6 +32,12 @@ public class LightForm : RForm
     readonly System.Windows.Forms.Timer _effectUpdateTimer = new() { Interval = 180 };
     int _sendGeneration;
     int _disposed;
+
+    internal static void NotifyApplyOutcome(bool accepted, bool cancelled)
+    {
+        if (accepted || cancelled) return;
+        ToastForm.ShowFailure("灯效设置失败。");
+    }
 
     public LightForm(string topic, string title, (string Effect, string Name)[]? effects = null)
     {
@@ -89,8 +96,14 @@ public class LightForm : RForm
             row++;
         }
 
+        void SyncEffectFromDashboard()
+        {
+            _effect = LightingSettingsStore.Load(_topic, _effects[0].Effect).Effect;
+        }
+
         async Task SendAsync()
         {
+            SyncEffectFromDashboard();
             SaveSettings();
             if (Program.service is null || Program.hw is not { IsConnected: true }) return;
             int generation = Interlocked.Increment(ref _sendGeneration);
@@ -102,12 +115,13 @@ public class LightForm : RForm
                 if (Volatile.Read(ref _disposed) != 0) return;
                 if (generation != _sendGeneration) return;
                 bool accepted = await Program.service.SetLightEffect(_topic, _effect, _light, _speed, "None",
-                    _effect == "Single" ? _singleColor : null);
+                    LightingSettingsStore.ColorForEffect(_effect, _singleColor));
                 if (!accepted) Logger.WriteLine($"Light effect was not accepted: topic={_topic}, effect={_effect}");
+                NotifyApplyOutcome(accepted, cancelled: false);
             }
             catch (OperationCanceledException)
             {
-                // The window was closed while an effect update was queued.
+                NotifyApplyOutcome(accepted: false, cancelled: true);
             }
             finally
             {
@@ -117,6 +131,7 @@ public class LightForm : RForm
 
         void ScheduleEffectUpdate()
         {
+            SyncEffectFromDashboard();
             SaveSettings();
             if (!_powerOn || Volatile.Read(ref _disposed) != 0) return;
 
@@ -185,7 +200,7 @@ public class LightForm : RForm
             {
                 _singleColor = c;
                 colorBtn.SwatchColor = c;
-                if (_effect == "Single") ScheduleEffectUpdate();
+                if (LightingSettingsStore.EffectUsesSingleColor(_effect)) ScheduleEffectUpdate();
             };
             dlg.ShowDialog(this);
         };
@@ -211,7 +226,12 @@ public class LightForm : RForm
             {
                 await Program.service.RequestLightStatus(_topic);
                 bool confirmed = await Program.service.SetLightPower(_topic, _powerOn);
-                if (!confirmed || !_powerOn) return;
+                if (!confirmed)
+                {
+                    NotifyApplyOutcome(accepted: false, cancelled: false);
+                    return;
+                }
+                if (!_powerOn) return;
                 await Task.Delay(600);
                 await SendAsync();
             }
@@ -221,8 +241,16 @@ public class LightForm : RForm
         // 内容实测窗口高度（run5 二级界面收尾）：表格 Dock=Top + AutoSize 自身收口，
         // 窗口高度取表格实测高（钳制工作区由 RForm.ApplyResponsiveBounds 承担）。
         ResponsiveLayout.PerformLayoutTree(this);
-        ClientSize = new Size(420, table.Height);
         ResponsiveLayout.ScaleFrom96(this, this);
+        ResponsiveLayout.PerformLayoutTree(this);
+        ClientSize = new Size(Math.Max(420, ClientSize.Width), table.Height);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        if (Controls.OfType<TableLayoutPanel>().FirstOrDefault() is { } table)
+            ClientSize = new Size(ClientSize.Width, table.Height);
     }
 
     protected override void Dispose(bool disposing)

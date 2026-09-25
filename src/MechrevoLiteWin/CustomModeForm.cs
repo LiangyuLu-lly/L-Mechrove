@@ -1,5 +1,7 @@
 using MechrevoLite.Hardware;
 using MechrevoLite.Helpers;
+using MechrevoLite.Mode;
+using MechrevoLite.Properties;
 using MechrevoLite.UI;
 
 namespace MechrevoLite;
@@ -15,8 +17,10 @@ public class CustomModeForm : RForm
     internal const int RowLogicalHeight = 26;
 
     // 档位切换状态文案：pending 是中性进行时，只有宽限期后仍未确认才允许失败措辞。
-    internal const string SwitchPendingText = "切换中…";
-    internal const string SwitchUnconfirmedText = "切换未确认";
+    internal static string SwitchPendingText => Strings.SwitchPending;
+    internal static string SwitchUnconfirmedText => Strings.SwitchUnconfirmed;
+    internal static string GcuDisconnectedText => Strings.GcuDisconnectedShort;
+    internal static string FanTableTimeoutText => Strings.FanTableNotReady;
     internal const int SwitchGraceAttempts = 4;
     internal const int SwitchGraceDelayMs = 500;
 
@@ -63,6 +67,14 @@ public class CustomModeForm : RForm
     // 切换代次：后一次点击立即接管；被取代的旧流程不再做确认后工作（落盘/电源应用/最终文案）。
     int _switchGeneration;
     Label _status = null!;
+    Label _hint = null!;
+    Label _policyHint = null!;
+    FlowLayoutPanel _profileRow = null!;
+    TableLayoutPanel _planRow = null!;
+    TableLayoutPanel _boostRow = null!;
+    RButton _restoreButton = null!;
+    RButton _fanCurveButton = null!;
+    ModeEditorTarget _editing = ModeEditorTarget.Custom;
     Label _powerWallStatus = null!;
     // 功耗墙判定需要持续采样；这个窗口开着的时候就是用户在关心功耗墙的时候。
     readonly System.Windows.Forms.Timer _powerWallTimer = new() { Interval = 2000 };
@@ -72,7 +84,7 @@ public class CustomModeForm : RForm
     {
         BackColor = UiVisualStyle.Window;
         ForeColor = UiVisualStyle.Text;
-        Text = "自定义性能模式";
+        Text = Strings.CustomModeTitle;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         StartPosition = FormStartPosition.Manual;
@@ -106,7 +118,7 @@ public class CustomModeForm : RForm
         int rootRow = 0;
 
         var titleFlow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = UiVisualStyle.Window, Margin = new Padding(0, 0, 0, D(6)) };
-        _status = new Label { Text = "选择一个自定义档", ForeColor = UiVisualStyle.Muted, AutoSize = true, Margin = Padding.Empty };
+        _status = new Label { Name = "labelModeEditorStatus", Text = Strings.CustomModePick, ForeColor = UiVisualStyle.Muted, AutoSize = true, Margin = Padding.Empty };
         titleFlow.Controls.Add(_status);
         // 功耗墙实测结论。单独一个标签而不是复用 _status：后者要显示各种一次性提示，
         // 混在一起会互相覆盖。判不出来时文本为空，不占地方。
@@ -129,6 +141,7 @@ public class CustomModeForm : RForm
         // 按内容取宽（AutoSize），不再强制窗口宽度。
         var btnFlow = new FlowLayoutPanel
         {
+            Name = "profileRow",
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.LeftToRight,
@@ -142,7 +155,7 @@ public class CustomModeForm : RForm
             int idx = i;
             var b = new RButton
             {
-                Text = "自定义 " + (i + 1),
+                Text = string.Format(Strings.CustomProfileN, i + 1),
                 AutoSize = true,
                 Margin = new Padding(i == 0 ? 0 : D(2), 0, i == 3 ? 0 : D(2), 0),
                 Cursor = Cursors.Hand,
@@ -156,6 +169,7 @@ public class CustomModeForm : RForm
             _profileBtns[i] = b;
         }
         UiVisualStyle.ApplySegmentGroup(_profileBtns);
+        _profileRow = btnFlow;
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(btnFlow, 0, rootRow++);
 
@@ -163,7 +177,7 @@ public class CustomModeForm : RForm
         var table = new TableLayoutPanel
         {
             Name = "paramTable",
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
@@ -210,10 +224,8 @@ public class CustomModeForm : RForm
                 Margin = Padding.Empty,
             };
             if (subtitle)
-            {
                 label.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Subtitle);
-                label.Padding = new Padding(0, 0, D(8), 0);
-            }
+            label.Padding = new Padding(D(4), 0, subtitle ? D(8) : 0, 0);
             return label;
         }
 
@@ -308,7 +320,7 @@ public class CustomModeForm : RForm
         {
             var row = MakeRow();
             row.Controls.Add(MakeLabel(label, subtitle: false), 0, 0);
-            var chk = new RCheckBox { Text = "启用", Checked = on, ForeColor = UiVisualStyle.Text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding.Empty };
+            var chk = new RCheckBox { Text = Strings.EnabledLabel, Checked = on, ForeColor = UiVisualStyle.Text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = Padding.Empty };
             chk.Tag = row;
             chk.CheckedChanged += (_, _) => { if (!_syncing) onChanged(chk.Checked); };
             row.Controls.Add(chk, 1, 0);
@@ -325,6 +337,8 @@ public class CustomModeForm : RForm
             combo.Margin = Padding.Empty;
             row.Controls.Add(combo, 1, 0);
             row.SetColumnSpan(combo, 2);
+            if (ReferenceEquals(combo, _planCombo)) _planRow = row;
+            else if (ReferenceEquals(combo, _boostCombo)) _boostRow = row;
             // ComboBox 的高度由字体派生（SetBoundsCore 强制，form.Scale 缩不动它）：审计缩放视口里
             // 行被缩到 32 而下拉仍 37 → 溢出。行高只增不减地跟随下拉实际高（基线 D(32)），
             // 字体/句柄就绪后同步；宿主 DPI 下下拉 37 < 56，行保持 D(32) 节奏不变。
@@ -337,7 +351,7 @@ public class CustomModeForm : RForm
             foreach (var it in combo.Items) maxW = Math.Max(maxW, TextRenderer.MeasureText(it.ToString() ?? "", combo.Font).Width);
             combo.DropDownWidth = maxW + 30;
         }
-        _planCombo = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = "Key" };   // 只显示名称（KVP 默认 ToString 会带出 GUID）
+        _planCombo = new RComboBox { Name = "planCombo", DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = "Key" };   // 只显示名称（KVP 默认 ToString 会带出 GUID）
         foreach (var (guid, name) in WinPowerPlan.GetPlans())
             _planCombo.Items.Add(new KeyValuePair<string, string>(name, guid));
         _planCombo.SelectedIndexChanged += (_, _) =>
@@ -358,25 +372,25 @@ public class CustomModeForm : RForm
             if (!planConfirmed)
             {
                 LoadWindowsPowerSettings(_currentIdx);
-                _status.Text = "电源计划未确认，未保存";
+                _status.Text = Strings.PowerPlanUnconfirmed;
                 _status.ForeColor = UiVisualStyle.Danger;
             }
             else if (!boostConfirmed)
             {
                 LoadWindowsPowerSettings(_currentIdx);
-                _status.Text = "电源计划已确认，睿频模式未确认";
+                _status.Text = Strings.PowerPlanBoostUnconfirmed;
                 _status.ForeColor = UiVisualStyle.Warn;
             }
             else
             {
-                _status.Text = "电源计划与睿频模式已确认";
+                _status.Text = Strings.PowerPlanBoostConfirmed;
                 _status.ForeColor = UiVisualStyle.Ok;
             }
             Logger.WriteLine($"Custom profile {_currentIdx} power plan requested: {guid} planConfirmed={planConfirmed} boostConfirmed={boostConfirmed}");
         };
-        AddComboRow("电源计划", _planCombo);
+        AddComboRow(Strings.PowerPlan, _planCombo);
 
-        _boostCombo = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        _boostCombo = new RComboBox { Name = "boostCombo", DropDownStyle = ComboBoxStyle.DropDownList };
         foreach (var (name, _) in WinPowerPlan.BoostModes) _boostCombo.Items.Add(name);
         _boostCombo.SelectedIndexChanged += (_, _) =>
         {
@@ -387,55 +401,55 @@ public class CustomModeForm : RForm
             {
                 AppConfig.Set(WinPowerPlan.GetProfileBoostKey(_currentIdx), v);
                 AppConfig.Flush();
-                _status.Text = "睿频模式已确认";
+                _status.Text = Strings.BoostConfirmed;
                 _status.ForeColor = UiVisualStyle.Ok;
             }
             else
             {
                 LoadWindowsPowerSettings(_currentIdx);
-                _status.Text = "睿频模式未确认，未保存";
+                _status.Text = Strings.BoostUnconfirmed;
                 _status.ForeColor = UiVisualStyle.Danger;
             }
         };
-        AddComboRow("睿频模式", _boostCombo);
+        AddComboRow(Strings.BoostMode, _boostCombo);
 
         // CPU/TGP 范围来自 GCU；GPU 频率优先使用驱动实时范围，失败时回退 GCU。
         var pl1Range = DeviceRange(hw?.Pl1Minimum ?? -1, hw?.Pl1Maximum ?? -1, hw?.Pl1 ?? 0);
         var pl2Range = DeviceRange(hw?.Pl2Minimum ?? -1, hw?.Pl2Maximum ?? -1, hw?.Pl2 ?? 0);
-        (_pl1, _pl1Val) = AddSliderRow("CPU 功耗墙 PL1 (W)", pl1Range.Min, pl1Range.Max, pl1Range.Value, v => Queue("PL1", v.ToString()));
-        (_pl2, _pl2Val) = AddSliderRow("CPU 功耗墙 PL2 (W)", pl2Range.Min, pl2Range.Max, pl2Range.Value, v => Queue("PL2", v.ToString()));
+        (_pl1, _pl1Val) = AddSliderRow(Strings.CpuPl1, pl1Range.Min, pl1Range.Max, pl1Range.Value, v => Queue("PL1", v.ToString()));
+        (_pl2, _pl2Val) = AddSliderRow(Strings.CpuPl2, pl2Range.Min, pl2Range.Max, pl2Range.Value, v => Queue("PL2", v.ToString()));
         // PL4 是瞬时功耗墙，不是所有机型都上报；ApplyRange 会在范围无效时自动隐藏整行。
         // AMD 机型上 PL4 字段永不生效（官方 AMD 分支只发 CpuAmdFPPT），这一行映射到 fPPT，
         // 标签随之改名，免得上写了 PL4 的错觉；Intel 机型的文案与行为保持不变。
         var pl4Range = DeviceRange(hw?.Pl4Minimum ?? -1, hw?.Pl4Maximum ?? -1, hw?.Pl4 ?? 0);
-        string pl4Label = hw?.UsesAmdPowerFields == true ? "CPU 峰值功耗墙 fPPT (W)" : "CPU 瞬时功耗墙 PL4 (W)";
+        string pl4Label = hw?.UsesAmdPowerFields == true ? Strings.CpuFppt : Strings.CpuPl4;
         (_pl4, _pl4Val) = AddSliderRow(pl4Label, pl4Range.Min, pl4Range.Max, pl4Range.Value, v => Queue("PL4", v.ToString()));
         // 温度墙开关：档位默认是关的（实测），关了 EC 不应用温度值——必须单独发包切换
-        _tccChk = AddCheckRow("CPU 温度墙", hw?.TccSwitch ?? false, on =>
+        _tccChk = AddCheckRow(Strings.CpuTempWall, hw?.TccSwitch ?? false, on =>
         {
             Queue("CpuTccOffsetSwitch", on ? "1" : "0");
             _tcc.Enabled = on;
         });
         var tccRange = DeviceRange(hw?.TccMinimum ?? -1, hw?.TccMaximum ?? -1, hw?.TccTarget ?? 0);
-        (_tcc, _tccVal) = AddSliderRow("温度墙值 (°C)", tccRange.Min, tccRange.Max, tccRange.Value, v => Queue("CpuTccOffset", v.ToString()));
+        (_tcc, _tccVal) = AddSliderRow(Strings.TempWallValue, tccRange.Min, tccRange.Max, tccRange.Value, v => Queue("CpuTccOffset", v.ToString()));
         _tccChk.Enabled = tccRange.Adjustable;
         var tgpRange = DeviceRange(hw?.GpuTgpMinimum ?? -1, hw?.GpuTgpMaximum ?? -1, hw?.GpuTgp ?? 0);
-        (_tgp, _tgpVal) = AddSliderRow("GPU TGP 目标 (W)", tgpRange.Min, tgpRange.Max, tgpRange.Value, v => Queue("GpuConfigurableTGPTarget", v.ToString()));
-        _dbChk = AddCheckRow("GPU 动态加速", hw?.GpuDbSwitch ?? false, on => { Queue("GpuDynamicBoostSwitch", on ? "1" : "0"); _db.Enabled = on; });
+        (_tgp, _tgpVal) = AddSliderRow(Strings.GpuTgp, tgpRange.Min, tgpRange.Max, tgpRange.Value, v => Queue("GpuConfigurableTGPTarget", v.ToString()));
+        _dbChk = AddCheckRow(Strings.GpuDynamicBoost, hw?.GpuDbSwitch ?? false, on => { Queue("GpuDynamicBoostSwitch", on ? "1" : "0"); _db.Enabled = on; });
         var dbRange = DeviceRange(hw?.GpuDbMinimum ?? -1, hw?.GpuDbMaximum ?? -1, hw?.GpuDb ?? 0);
-        (_db, _dbVal) = AddSliderRow("动态加速值", dbRange.Min, dbRange.Max, dbRange.Value, v => Queue("GpuDynamicBoost", v.ToString()));
+        (_db, _dbVal) = AddSliderRow(Strings.DynamicBoostValue, dbRange.Min, dbRange.Max, dbRange.Value, v => Queue("GpuDynamicBoost", v.ToString()));
         _dbChk.Enabled = dbRange.Adjustable;
 
         // ---- 风扇转换灵敏度（官方"风扇转换灵敏度"，值是换挡延迟毫秒数）----
         // 关着的时候服务端会忽略数值，所以数值行跟着开关一起启停。
-        _fanSwitchSpeedChk = AddCheckRow("风扇转换灵敏度", hw?.FanSwitchSpeedEnabled ?? false, on =>
+        _fanSwitchSpeedChk = AddCheckRow(Strings.FanSwitchSensitivity, hw?.FanSwitchSpeedEnabled ?? false, on =>
         {
             Queue("FanSwitchSpeedEnabled", on ? "1" : "0");
             _fanSwitchSpeed.Enabled = _fanSwitchSpeedVal.Enabled = on;
         });
         var fanSwitchRange = DeviceRange(
             hw?.FanSwitchSpeedMinimum ?? -1, hw?.FanSwitchSpeedMaximum ?? -1, hw?.FanSwitchSpeed ?? 0);
-        (_fanSwitchSpeed, _fanSwitchSpeedVal) = AddSliderRow("换挡延迟 (ms)",
+        (_fanSwitchSpeed, _fanSwitchSpeedVal) = AddSliderRow(Strings.FanSwitchDelay,
             fanSwitchRange.Min, fanSwitchRange.Max, fanSwitchRange.Value,
             v => Queue("FanSwitchSpeed", v.ToString()));
         // EC 以 100 ms 为一档，滑块按整档走，避免用户选到会被固件截断的值。
@@ -444,7 +458,7 @@ public class CustomModeForm : RForm
         _fanSwitchSpeedChk.Enabled = hw?.SupportsFanSwitchSpeed == true;
 
         // ---- GPU 超频区（驱动直连或 LCHWOC 任一通道可用时显示）----
-        _ocChk = AddCheckRow("GPU 超频", hw?.GpuOverclockEnabled ?? false, on =>
+        _ocChk = AddCheckRow(Strings.GpuOverclock, hw?.GpuOverclockEnabled ?? false, on =>
         {
             // 用户意图先落地：零偏移的开启无法被驱动回读确认，见 _gpuOcArmed 注释。
             _gpuOcArmed = on;
@@ -454,10 +468,10 @@ public class CustomModeForm : RForm
             SyncGpuOverclockDependents();
         });
         var coreRange = DeviceRange(hw?.GpuCoreOffsetUserMinimum ?? -1, hw?.GpuCoreOffsetUserMaximum ?? -1, hw?.EffectiveGpuCoreClockOffset ?? 0, allowNegative: true);
-        (_coreOc, _coreOcVal) = AddSliderRow("核心频率偏移 (MHz)", coreRange.Min, coreRange.Max, coreRange.Value, v => Queue("GpuCoreClockOffsetOC", v.ToString()));
+        (_coreOc, _coreOcVal) = AddSliderRow(Strings.CoreOffset, coreRange.Min, coreRange.Max, coreRange.Value, v => Queue("GpuCoreClockOffsetOC", v.ToString()));
         var memoryRange = DeviceRange(hw?.GpuMemoryOffsetUserMinimum ?? -1, hw?.GpuMemoryOffsetUserMaximum ?? -1, hw?.EffectiveGpuMemoryClockOffset ?? 0, allowNegative: true);
-        (_memOc, _memOcVal) = AddSliderRow("显存频率偏移 (MHz)", memoryRange.Min, memoryRange.Max, memoryRange.Value, v => Queue("GpuMemoryClockOffsetOC", v.ToString()));
-        _ocChk.Enabled = hw?.GpuOverclockWritable == true && (coreRange.Adjustable || memoryRange.Adjustable);
+        (_memOc, _memOcVal) = AddSliderRow(Strings.MemoryOffset, memoryRange.Min, memoryRange.Max, memoryRange.Value, v => Queue("GpuMemoryClockOffsetOC", v.ToString()));
+        _ocChk.Enabled = IsOcCheckboxEnabled(hw, coreRange.Adjustable || memoryRange.Adjustable);
         _gpuOcCoreAdjustable = coreRange.Adjustable;
         _gpuOcMemoryAdjustable = memoryRange.Adjustable;
         SyncGpuOverclockDependents();   // 初值来源与回读一致：开关 OFF ⇒ 数值行不可拖动
@@ -474,7 +488,7 @@ public class CustomModeForm : RForm
         };
         _gpuOcAdminRow.Controls.Add(new Label
         {
-            Text = "超频需要管理员权限",
+            Text = Strings.OcNeedsAdmin,
             ForeColor = UiVisualStyle.Warn,
             AutoSize = true,
             Margin = new Padding(0, D(6), D(12), D(2)),
@@ -482,7 +496,7 @@ public class CustomModeForm : RForm
         var ocAdminButton = new RButton
         {
             Name = "buttonRestartAsAdmin",
-            Text = "以管理员身份重启",
+            Text = Strings.RestartAsAdmin,
             AutoSize = true,
             Cursor = Cursors.Hand,
             Margin = new Padding(0, 0, 0, 0),
@@ -504,7 +518,8 @@ public class CustomModeForm : RForm
         };
         var btnRestore = new RButton
         {
-            Text = "恢复当前档默认",
+            Name = "buttonRestoreModeDetail",
+            Text = Strings.RestoreProfileDefault,
             Width = D(120),
             Height = D(28),
             Margin = new Padding(0, 0, D(12), 0),
@@ -513,22 +528,32 @@ public class CustomModeForm : RForm
             BorderColor = UiVisualStyle.Border,
             Cursor = Cursors.Hand,
         };
+        _restoreButton = btnRestore;
         btnRestore.Click += async (_, _) =>
         {
             if (Program.service is null || Program.hw is not { IsConnected: true }) return;
-            if (MessageBox.Show("恢复当前自定义档为默认参数？", "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            _status.Text = "恢复中…";
+            if (_editing.VisualMode != MechrevoService.ModeCustom && !CanCommitFirmware(ActiveVisualMode()))
+            {
+                ShowRefusedWrite();
+                return;
+            }
+            string prompt = _editing.VisualMode == MechrevoService.ModeCustom
+            ? Strings.RestoreCustomPrompt
+            : string.Format(Strings.RestoreModePrompt, ModeSecondaryEditor.DisplayName(_editing));
+            if (MessageBox.Show(prompt, "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            _status.Text = Strings.Restoring;
             await Task.Run(async () =>
             {
                 await Program.hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "RESTORE_OPERATING_MODE_DETAIL" });
                 await Program.hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "RESTORE_FAN_SPEED_CURVE_SETTING", ["Name"] = Program.hw.TableName });
             });
-            _status.Text = "已发送恢复命令";
+            _status.Text = Strings.RestoreSent;
         };
         bottomFlow.Controls.Add(btnRestore);
         var btnFanCurve = new RButton
         {
-            Text = "风扇曲线",
+            Name = "buttonFanCurve",
+            Text = Strings.FanCurve,
             Width = D(96),
             Height = D(28),
             Margin = new Padding(0, 0, D(12), 0),
@@ -537,26 +562,47 @@ public class CustomModeForm : RForm
             BorderColor = UiVisualStyle.Border,
             Cursor = Cursors.Hand,
         };
+        _fanCurveButton = btnFanCurve;
         btnFanCurve.Click += (_, _) =>
         {
+            if (_editing.VisualMode != MechrevoService.ModeCustom && !CanCommitFirmware(ActiveVisualMode()))
+            {
+                ShowRefusedWrite();
+                return;
+            }
             // 专用曲线编辑器（原版协议：16 点 duty 上下拖动实时保存）
             var f = new FanCurveForm();
             AddOwnedForm(f);
-            f.Location = new Point(Math.Max(0, Left - f.Width - 10), Top);
-            f.Show();
+            // 只走贴边：左放不下就放到右边。构造函数不再 CenterScreen，否则 Show 会盖住主窗。
+            ResponsiveLayout.ShowAdjacentTo(f, this);
         };
         bottomFlow.Controls.Add(btnFanCurve);
         var hintLabel = new Label
         {
-            Text = "参数保存到当前选中的自定义档。",
+            Name = "labelCustomSlotHint",
+            Text = Strings.CustomModeHint,
             ForeColor = UiVisualStyle.Muted,
             AutoSize = true,
             Margin = new Padding(0, D(7), 0, 0),
             Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
         };
         bottomFlow.Controls.Add(hintLabel);
+        _hint = hintLabel;
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(bottomFlow, 0, rootRow++);
+        _policyHint = new Label
+        {
+            Name = "labelModeEditorHint",
+            Text = "",
+            Visible = false,
+            AutoSize = true,
+            MaximumSize = new Size(D(480), 0),
+            ForeColor = UiVisualStyle.Muted,
+            Margin = new Padding(0, D(4), 0, 0),
+            Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.Controls.Add(_policyHint, 0, rootRow++);
         root.RowCount = rootRow;
 
         // ---- 内容实测宽度：标签列（最长标签一行）+ 滑条最短可用轨道 + 数值列（numeric+双键）----
@@ -567,7 +613,7 @@ public class CustomModeForm : RForm
         {
             foreach (string text in _rowLabels)
                 labelMeasure = Math.Max(labelMeasure, TextRenderer.MeasureText(measureGraphics, text, subtitleFont,
-                    Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width);
+                    Size.Empty, TextFormatFlags.GlyphOverhangPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width);
         }
         int labelCol = labelMeasure + D(8) + D(12);
         int sliderCol = D(RSlider.MinTrackLogicalWidth);
@@ -632,14 +678,78 @@ public class CustomModeForm : RForm
             // 审计模式下不采样：会引入随时间变化的文本，把截图比对搅乱。
             _powerWallTimer.Enabled = Visible && !Program.UiAuditMode;
             if (!Visible || Program.UiAuditMode) return;
-            LoadWindowsPowerSettings(CurrentConfigurationProfile());
+            if (_editing.VisualMode == MechrevoService.ModeCustom)
+                LoadWindowsPowerSettings(CurrentConfigurationProfile());
+            ResizeToContent();
             await RefreshHardwareStateAsync();
         };
-        LoadWindowsPowerSettings(CurrentConfigurationProfile());
+        if (_editing.VisualMode == MechrevoService.ModeCustom)
+            LoadWindowsPowerSettings(CurrentConfigurationProfile());
         OnCustomChanged();
         UiVisualStyle.ApplyWindow(this);
         UiVisualStyle.ApplySection(table);
+        BindEditingTarget(ModeEditorTarget.Custom);
         ResizeToContent();
+    }
+
+    internal ModeEditorTarget EditingTarget => _editing;
+
+    /// <summary>
+    /// Bind this window to one performance mode. Built-in modes do not show the custom
+    /// slots or the per-slot Windows plan, so an Office edit cannot be saved as custom 1.
+    /// </summary>
+    internal void BindEditingTarget(ModeEditorTarget target)
+    {
+        _editing = target;
+        Text = ModeSecondaryEditor.Title(target);
+        bool custom = target.VisualMode == MechrevoService.ModeCustom;
+        _profileRow.Visible = custom;
+        _planRow.Visible = custom;
+        _boostRow.Visible = custom;
+        _hint.Visible = custom;
+        if (custom) _hint.Text = ModeSecondaryEditor.Hint(target);
+        _policyHint.Visible = !custom;
+        _policyHint.Text = ModeSecondaryEditor.Hint(target);
+        _fanCurveButton.Enabled = custom || CanCommitFirmware(ActiveVisualMode());
+        _restoreButton.Text = custom ? Strings.RestoreProfileDefault : Strings.RestoreModeDefault;
+        if (!custom)
+        {
+            _status.Text = ModeSecondaryEditor.DisplayName(target);
+            _status.ForeColor = UiVisualStyle.Muted;
+        }
+        if (IsHandleCreated) ResizeToContent();
+    }
+
+    int ActiveVisualMode() => Program.service?.CurrentMode ?? -1;
+
+    bool CanCommitFirmware(int activeVisualMode) =>
+        ModeSecondaryEditor.DecideFirmwareWrite(_editing, activeVisualMode) == FirmwareDetailWrite.ApplyToActiveMode;
+
+    void ShowRefusedWrite()
+    {
+        _status.Text = ModeSecondaryEditor.RefusedWriteText(_editing);
+        _status.ForeColor = UiVisualStyle.Danger;
+    }
+
+    internal async Task<DetailCommit> CommitDetailAsync(
+        IReadOnlyDictionary<string, string> fields,
+        int activeVisualMode,
+        Func<Dictionary<string, string>, Task<bool>> write)
+    {
+        if (fields.Count == 0) return DetailCommit.RejectedByDevice;
+        // 自定义档保持原路径：滑条在档位确认前就会防抖下发，测试与现有窗口都依赖这一点。
+        // 内置模式没有这个豁免——模式不对就拒绝，绝不改写自定义档。
+        if (_editing.VisualMode != MechrevoService.ModeCustom
+            && (!CanCommitFirmware(activeVisualMode)
+                || ModeSecondaryEditor.WritesCustomSlot(_editing, activeVisualMode)))
+        {
+            ShowRefusedWrite();
+            return DetailCommit.RefusedWrongMode;
+        }
+
+        var copy = new Dictionary<string, string>(fields);
+        bool ok = await write(copy).ConfigureAwait(true);
+        return ok ? DetailCommit.Applied : DetailCommit.RejectedByDevice;
     }
 
     /// <summary>
@@ -664,6 +774,12 @@ public class CustomModeForm : RForm
         int target = Math.Max(content, MinimumSize.Height - frame);
         if (ClientSize.Height != target)
             ClientSize = new Size(ClientSize.Width, target);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        ResizeToContent();
     }
 
     /// <summary>
@@ -701,9 +817,18 @@ public class CustomModeForm : RForm
         _debounce.Start();
     }
 
+    internal static bool IsOcCheckboxEnabled(MechrevoHw? hw, bool rangesAdjustable) =>
+        hw is { GpuOverclockWritable: true, Capabilities.OverclockSettings: true } && rangesAdjustable;
+
     internal async Task<bool> ActivateProfileAsync(int index)
     {
         if (index is < 0 or > 3 || Program.service is null) return false;
+        if (Program.hw is not { IsConnected: true })
+        {
+            _status.Text = GcuDisconnectedText;
+            _status.ForeColor = UiVisualStyle.Danger;
+            return false;
+        }
 
         // A pending slider value belongs to the profile that was active when it
         // was edited. Commit it before changing the GCU profile index.
@@ -760,8 +885,8 @@ public class CustomModeForm : RForm
             LoadWindowsPowerSettings(index);
             bool powerConfirmed = WinPowerPlan.ApplyProfile(index);
             _status.Text = powerConfirmed
-                ? "自定义 " + (index + 1) + " 已激活"
-                : "自定义 " + (index + 1) + " 已激活，Windows 电源设置未确认";
+                ? string.Format(Strings.CustomProfileActive, index + 1)
+                : string.Format(Strings.CustomProfileActivePlanUnconfirmed, index + 1);
             _status.ForeColor = powerConfirmed ? UiVisualStyle.Ok : UiVisualStyle.Warn;
         }
         else
@@ -792,15 +917,18 @@ public class CustomModeForm : RForm
             {
                 var fields = new Dictionary<string, string>(_pending);
                 _pending.Clear();
-                bool ok = await Program.service.SetCustomDetail(fields);
-                _status.Text = ok ? "参数已确认" : "参数未应用，已恢复回读值";
+                DetailCommit result = await CommitDetailAsync(
+                    fields, Program.service.CurrentMode, Program.service.SetCustomDetail);
+                if (result == DetailCommit.RefusedWrongMode) return;
+                bool ok = result == DetailCommit.Applied;
+                _status.Text = ok ? Strings.ParamsConfirmed : Strings.ParamsReverted;
                 _status.ForeColor = ok ? UiVisualStyle.Ok : UiVisualStyle.Danger;
             }
         }
         catch (Exception ex)
         {
             Logger.WriteLine("Custom profile update failed: " + ex.Message);
-            _status.Text = "参数保存失败";
+            _status.Text = Strings.ParamsSaveFailed;
             _status.ForeColor = UiVisualStyle.Danger;
         }
         finally
@@ -871,9 +999,15 @@ public class CustomModeForm : RForm
         finally { _syncingWinPower = false; }
     }
 
-    async Task RefreshHardwareStateAsync()
+    internal async Task<bool> RefreshHardwareStateAsync()
     {
-        if (_refreshingHardwareState || Program.hw is not { IsConnected: true } hw) return;
+        if (_refreshingHardwareState) return false;
+        if (Program.hw is not { IsConnected: true } hw)
+        {
+            _status.Text = GcuDisconnectedText;
+            _status.ForeColor = UiVisualStyle.Danger;
+            return false;
+        }
         _refreshingHardwareState = true;
         try
         {
@@ -881,10 +1015,22 @@ public class CustomModeForm : RForm
             // thread. Retry whenever the form becomes visible so late driver/GPU
             // initialization does not permanently hide the OC controls.
             await Task.Run(hw.EnsureDirectGpuOverclock);
-            await hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-            await hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+            bool tableOk = await hw.RequestCustomModePageStateAsync();
+            if (!tableOk)
+            {
+                _status.Text = FanTableTimeoutText;
+                _status.ForeColor = UiVisualStyle.Danger;
+                return false;
+            }
+            return true;
         }
-        catch (Exception ex) { Logger.WriteLine("Custom mode status refresh failed: " + ex.Message); }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("Custom mode status refresh failed: " + ex.Message);
+            _status.Text = FanTableTimeoutText;
+            _status.ForeColor = UiVisualStyle.Danger;
+            return false;
+        }
         finally
         {
             _refreshingHardwareState = false;
@@ -1022,20 +1168,24 @@ public class CustomModeForm : RForm
                 _dbChk.Enabled = dbAdjustable;
                 _db.Enabled = hw.GpuDbSwitch && dbAdjustable;
                 // Windows 电源设置：档位变化时加载该档保存值
-                int configurationProfile = CurrentConfigurationProfile();
-                if (configurationProfile != _currentIdx || _planCombo.SelectedIndex < 0)
-                    LoadWindowsPowerSettings(configurationProfile);
+                if (_editing.VisualMode == MechrevoService.ModeCustom)
+                {
+                    int configurationProfile = CurrentConfigurationProfile();
+                    if (configurationProfile != _currentIdx || _planCombo.SelectedIndex < 0)
+                        LoadWindowsPowerSettings(configurationProfile);
+                }
                 _tccChk.Checked = hw.TccSwitch;
                 _tccChk.Enabled = tccAdjustable;
                 _tcc.Enabled = hw.TccSwitch && tccAdjustable;
                 _ocChk.Checked = ocWritable && ocSwitchOn;
-                _ocChk.Enabled = ocWritable;
+                _ocChk.Enabled = ocWritable && hw.Capabilities.OverclockSettings;
                 if (_gpuOcAdminRow is not null) _gpuOcAdminRow.Visible = ocSupported && ocRequiresElevation;
                 SyncGpuOverclockDependents();
                 // 切换在途时不覆盖「切换中…」：结果由点击的那次流程落定。
-                if (hw.CustomProfileIndex >= 0 && _pendingProfileIndex < 0)
+                if (_editing.VisualMode == MechrevoService.ModeCustom
+                    && hw.CustomProfileIndex >= 0 && _pendingProfileIndex < 0)
                 {
-                    _status.Text = "自定义 " + (hw.CustomProfileIndex + 1) + " 已激活";
+                    _status.Text = string.Format(Strings.CustomProfileActive, hw.CustomProfileIndex + 1);
                     _status.ForeColor = UiVisualStyle.Ok;
                 }
                 ResizeToContent();

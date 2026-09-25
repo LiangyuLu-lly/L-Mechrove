@@ -642,4 +642,84 @@ public class AuditFixRegressionTests
             }
         }
     }
+
+    /// <summary>
+    /// 字段没出现就等于这台机器没有这项硬件。touchpad / osd / usb 与 wifi / bt / webcam 同一口径。
+    /// </summary>
+    [Theory]
+    [InlineData("touchpad")]
+    [InlineData("osd")]
+    [InlineData("usb")]
+    public void SupportsQuickSwitch_UsbTouchpadOsd_StayFalseWhenUnseen(string key)
+    {
+        var (hardware, _, _) = NewRig();
+        using (hardware)
+        {
+            Assert.False(hardware.TouchpadSeen);
+            Assert.False(hardware.OsdSeen);
+            Assert.False(hardware.UsbChargerSeen);
+            Assert.False(hardware.WifiSeen);
+            Assert.False(hardware.BluetoothSeen);
+            Assert.False(hardware.WebcamSeen);
+            Assert.False(hardware.SupportsQuickSwitch(key));
+        }
+    }
+
+    [Fact]
+    public void TouchpadOsdUsbAppearOnceTheServiceReportsTheField()
+    {
+        var (hardware, _, _) = NewRig();
+        using (hardware)
+        {
+            hardware.HandleMessage("Settings/DeviceSwitchItemStatus", """{"TochpadEnable":true}""");
+            hardware.HandleMessage("Setting/Status", """{"OSD":"OSD_HIDDEN_OFF","UsbCharger":"USB_CHARGER_STATUS_ON"}""");
+
+            Assert.True(hardware.TouchpadSeen);
+            Assert.True(hardware.OsdSeen);
+            Assert.True(hardware.UsbChargerSeen);
+            Assert.True(hardware.SupportsQuickSwitch("touchpad"));
+            Assert.True(hardware.SupportsQuickSwitch("osd"));
+            Assert.True(hardware.SupportsQuickSwitch("usb"));
+        }
+    }
+
+    [Theory]
+    [InlineData("wifi")]
+    [InlineData("bt")]
+    [InlineData("webcam")]
+    public void SupportsQuickSwitch_WifiBtWebcam_StayFalseWhenUnseen(string key)
+    {
+        var (hardware, _, _) = NewRig();
+        using (hardware)
+        {
+            Assert.False(hardware.SupportsQuickSwitch(key));
+        }
+    }
+
+    [Fact]
+    public async Task SwitchUsbCharger_WhenUnseen_PublishesNothing()
+    {
+        var (hardware, service, written) = NewRig();
+        using (hardware)
+        {
+            Assert.False(hardware.UsbChargerSeen);
+            Assert.False(await service.SwitchUsbCharger(true));
+            Assert.Empty(written);
+        }
+    }
+
+    [Theory]
+    [InlineData("touchpad")]
+    [InlineData("osd")]
+    public async Task SwitchQuick_TouchpadAndOsd_WhenUnseen_PublishNothing(string key)
+    {
+        var (hardware, service, written) = NewRig();
+        using (hardware)
+        {
+            Assert.False(hardware.TouchpadSeen);
+            Assert.False(hardware.OsdSeen);
+            Assert.False(await service.SwitchQuick(key, true));
+            Assert.Empty(written);
+        }
+    }
 }

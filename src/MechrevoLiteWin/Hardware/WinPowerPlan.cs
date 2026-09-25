@@ -25,6 +25,9 @@ public static class WinPowerPlan
     static extern uint PowerGetActiveScheme(IntPtr UserPowerKey, out IntPtr ActivePolicyGuid);
 
     [DllImport("powrprof.dll")]
+    static extern uint PowerGetEffectiveOverlayScheme(out Guid EffectiveOverlayGuid);
+
+    [DllImport("powrprof.dll")]
     static extern uint PowerWriteACValueIndex(IntPtr RootPowerKey, ref Guid SchemeGuid, ref Guid SubGroup, ref Guid SettingGuid, int AcValueIndex);
 
     [DllImport("powrprof.dll")]
@@ -96,13 +99,17 @@ public static class WinPowerPlan
         return index;
     }
 
+    internal const string UltimatePerformancePlanId = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+    internal const string BalancedOverlayId = "00000000-0000-0000-0000-000000000000";
+    static readonly Guid UltimatePerformanceGuid = new(UltimatePerformancePlanId);
+
     // 内置常用计划（Win11 上 PowerEnumerate 可能只返回当前可见计划——合并补充，去重）
     static readonly (string Guid, string Name)[] WellKnownPlans =
     {
         ("381b4222-f694-41f0-9685-ff5bb260df2e", "平衡"),
         ("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", "高性能"),
         ("a1841308-3541-4fab-bc81-f71556f20b4a", "节能"),
-        ("e9a42b02-d5df-448d-aa00-03f14749eb61", "卓越性能"),
+        (UltimatePerformancePlanId, "卓越性能"),
     };
 
     /// <summary>枚举系统全部电源计划（GUID, 名称），合并内置常用计划；名称只用中文（绝不显示 GUID/系统原始名）。</summary>
@@ -137,13 +144,39 @@ public static class WinPowerPlan
         return TryGetActivePlan(out Guid plan) ? plan.ToString() : "";
     }
 
-    internal static bool IsPlanConfirmed(string requested, string actual) =>
-        Guid.TryParse(requested, out Guid requestedGuid) &&
-        Guid.TryParse(actual, out Guid actualGuid) &&
-        requestedGuid == actualGuid;
+    internal static bool IsPlanConfirmed(string requested, string actual, string? overlay = null)
+    {
+        if (!Guid.TryParse(requested, out Guid requestedGuid) ||
+            !Guid.TryParse(actual, out Guid actualGuid) ||
+            requestedGuid != actualGuid)
+            return false;
+
+        // 25H2 overlay slider can stay Balanced while PowerGetActiveScheme still reports 卓越性能.
+        if (requestedGuid == UltimatePerformanceGuid &&
+            Guid.TryParse(overlay, out _))
+            return false;
+
+        return true;
+    }
 
     internal static bool IsBoostConfirmed(int requested, int ac, int dc) =>
         requested is >= 0 and < 7 && ac == requested && dc == requested;
+
+    static bool TryGetEffectiveOverlay(out Guid overlay, out uint status)
+    {
+        overlay = Guid.Empty;
+        status = uint.MaxValue;
+        try
+        {
+            status = PowerGetEffectiveOverlayScheme(out overlay);
+            return status == 0;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            Logger.WriteLine("WinPowerPlan overlay API unavailable");
+            return false;
+        }
+    }
 
     static bool TryGetActivePlan(out Guid plan)
     {
@@ -193,13 +226,15 @@ public static class WinPowerPlan
                 return false;
             }
 
-            if (TryGetActivePlan(out Guid current) && current == target)
-                return true;
+            uint status = 0;
+            if (!(TryGetActivePlan(out Guid current) && current == target))
+                status = PowerSetActiveScheme(IntPtr.Zero, ref target);
 
-            uint status = PowerSetActiveScheme(IntPtr.Zero, ref target);
             bool readBack = TryGetActivePlan(out Guid actual);
-            bool confirmed = status == 0 && readBack && actual == target;
-            Logger.WriteLine($"WinPowerPlan SetActivePlan {guid} -> status={status} actual={(readBack ? actual : "unavailable")} confirmed={confirmed}");
+            bool overlayRead = TryGetEffectiveOverlay(out Guid overlay, out uint overlayStatus);
+            bool confirmed = status == 0 && readBack &&
+                IsPlanConfirmed(target.ToString(), actual.ToString(), overlayRead ? overlay.ToString() : null);
+            Logger.WriteLine($"WinPowerPlan SetActivePlan FIELD-LOG requested={guid} status={status} actual={(readBack ? actual.ToString() : "unavailable")} overlay={(overlayRead ? overlay.ToString() : "unavailable")} overlayStatus={overlayStatus} confirmed={confirmed}");
             return confirmed;
         }
         catch (Exception ex)

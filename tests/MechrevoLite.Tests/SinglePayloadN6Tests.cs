@@ -94,20 +94,38 @@ public class SinglePayloadN6Tests
     }
 
     [Fact]
-    public void AnUndeterminableGenerationFailsWithoutFallingBack()
+    public void AnUndeterminableGenerationStillInstallsTheShippedPayload()
     {
         PsResult result = GcuInstallerHarness.RunScript(Selector,
-            "-GpuName", "Intel(R) Graphics", "-DeviceId", "PCI\\VEN_8086&DEV_7D67");
-        Assert.NotEqual(0, result.ExitCode);
+            "-GpuName", "Intel(R) Graphics", "-DeviceId", "PCI\\VEN_8086&DEV_7D67", "-AsJson");
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("release\\\\GCU-only", result.StdOut, StringComparison.Ordinal);
         Assert.DoesNotContain("GCU-40", result.StdOut, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Iss_GcuStatusDoesNotMentionGenerationSelection()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        Assert.Contains("正在安装 GCU...", iss, StringComparison.Ordinal);
+        Assert.Contains("Installing GCU...", iss, StringComparison.Ordinal);
+        Assert.DoesNotContain("按显卡代际自动选择", iss, StringComparison.Ordinal);
+        Assert.DoesNotContain("payload selected by GPU generation", iss, StringComparison.Ordinal);
+        Assert.Contains("function NeedRestart", iss, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TheRetiredVariantOverrideIsRefused()
     {
+        // Given Variant=40-51749 and RTX 4090
+        // When the selector runs
+        // Then exit 0, Combined contains Warning/retired, StdOut is still GCU-only, no 40-51749 payload path
         PsResult result = GcuInstallerHarness.RunScript(Selector,
             "-Variant", "40-51749", "-GpuName", "NVIDIA GeForce RTX 4090 Laptop GPU");
-        Assert.NotEqual(0, result.ExitCode);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("retired", result.Combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("GCU-only", result.StdOut, StringComparison.Ordinal);
+        Assert.DoesNotContain("GCU-40-51749", result.StdOut, StringComparison.Ordinal);
     }
 
     [Fact]

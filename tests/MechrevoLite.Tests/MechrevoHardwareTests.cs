@@ -523,7 +523,7 @@ public class MechrevoHardwareTests
     }
 
     [Fact]
-    public async Task StaticLogoCapability_AllowsLogoEffectBeforeRuntimeStatusArrives()
+    public async Task StaticLogoCapability_OffersTheEntryAndAcceptsCommands()
     {
         string? publishedTopic = null;
         using var hardware = new MechrevoHw((topic, _) =>

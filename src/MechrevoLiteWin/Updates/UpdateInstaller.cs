@@ -12,18 +12,17 @@ internal sealed record PackageVerification(bool Ok, string Reason);
 /// <summary>一次下载尝试的结果：成功时 <see cref="Path"/> 非空；失败时 <see cref="Reason"/> 是给用户看的原因。</summary>
 internal sealed record DownloadResult(string? Path, string? Reason);
 
-/// <summary>
-/// 更新包的下载、校验、解压与替换安装。
-///
-/// 安全边界（静态 OSS 后端，fail-closed）：
-/// <list type="bullet">
-/// <item>下载前必须通过 <see cref="UpdatePolicy"/>：https（回环例外）、host 白名单、sha256 合法；</item>
-/// <item>下载后必须与 sha256（以及 size，若提供）严格匹配，再校验 zip 与包内 exe —— 全部通过才允许安装；</item>
-/// <item>校验失败会删除临时包并中止，运行中的程序与用户配置保持不变；</item>
-/// <item>安装只发生在用户明确点击"下载并安装"之后，绝不静默执行；</item>
-/// <item>替换前先备份旧 exe，失败自动回滚；更新器只复制 exe，不碰同目录的 config.json（用户配置）。</item>
-/// </list>
-/// </summary>
+    /// <summary>
+    /// 更新包的下载、校验、解压与安装。
+    ///
+    /// 安全边界（粉丝站，fail-closed）：
+    /// <list type="bullet">
+    /// <item>下载前必须通过 <see cref="UpdatePolicy"/>：https（回环例外）、host 白名单、sha256 合法；</item>
+    /// <item>下载后必须与 sha256 和 size 严格匹配；Inno setup.exe 认 PE 魔数，zip 再校验包内 exe；</item>
+    /// <item>校验失败会删除临时包并中止，运行中的程序与用户配置保持不变；</item>
+    /// <item>安装只发生在用户明确点击"下载并安装"之后，绝不静默执行。</item>
+    /// </list>
+    /// </summary>
 internal static class UpdateInstaller
 {
     internal const string ExpectedExePrefix = "L-Mechrevo";
@@ -39,9 +38,35 @@ internal static class UpdateInstaller
         // 服务端给的 filename 不可信（可能是 ..\..\ 之类），只取它最后一个路径段做提示。
         string? name = info.FileName is { Length: > 0 } ? Path.GetFileName(info.FileName) : null;
         if (string.IsNullOrWhiteSpace(name))
-            name = $"L-Mechrevo-{info.LatestVersion ?? "update"}.zip";
+            name = $"L-Mechrevo-{info.LatestVersion ?? "update"}.exe";
         string safe = string.Join('_', name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
-        return safe.Length > 0 ? safe : "L-Mechrevo-update.zip";
+        return safe.Length > 0 ? safe : "L-Mechrevo-update.exe";
+    }
+
+    /// <summary>服务端文件名或 URL 以 .exe 结尾时按 Inno 安装包处理，不走 zip 自替换。</summary>
+    internal static bool LooksLikeInstallerPackage(UpdateInfo info)
+    {
+        string? name = info.FileName is { Length: > 0 } ? Path.GetFileName(info.FileName) : null;
+        if (!string.IsNullOrWhiteSpace(name)
+            && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (Uri.TryCreate(info.DownloadUrl, UriKind.Absolute, out Uri? uri)
+            && uri.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    internal static bool IsPeExecutable(string path)
+    {
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            return stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -67,6 +92,12 @@ internal static class UpdateInstaller
             Logger.WriteLine("更新包下载被拒：服务端未提供有效的 SHA-256 校验值");
             return new DownloadResult(null, "服务端未提供有效的 SHA-256 校验值，拒绝下载");
         }
+        if (!UpdatePolicy.IsAcceptablePackageSize(info.Size))
+        {
+            Logger.WriteLine("更新包下载被拒：服务端未提供有效的体积声明");
+            return new DownloadResult(null, "服务端未提供有效的体积声明，拒绝下载");
+        }
+        long expectedSize = info.Size!.Value;
 
         string attemptDirectory = Path.Combine(
             TempRoot, info.LatestVersion ?? "unknown", "attempt-" + Guid.NewGuid().ToString("N"));
@@ -81,12 +112,26 @@ internal static class UpdateInstaller
 
             using var response = await UpdateHttp.Download
                 .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            if (UpdateHttp.IsRedirect(response.StatusCode))
+            {
+                string reason = UpdateHttp.RedirectRefusedReason(response.StatusCode);
+                Logger.WriteLine("更新包下载被拒：" + reason);
+                return new DownloadResult(null, reason);
+            }
             response.EnsureSuccessStatusCode();
             long? contentLength = response.Content.Headers.ContentLength;
-            if (contentLength is long declared && declared > UpdateChecker.MaxPackageBytes)
+            if (contentLength is long declared)
             {
-                Logger.WriteLine($"更新包过大（声明 {declared} 字节），已放弃");
-                return new DownloadResult(null, $"更新包超过体积上限（声明 {declared} 字节）");
+                if (declared != expectedSize)
+                {
+                    Logger.WriteLine($"更新包 Content-Length 与 JSON size 不符（{declared} ≠ {expectedSize}）");
+                    return new DownloadResult(null, $"文件大小与服务器声明不符（{declared} ≠ {expectedSize}）");
+                }
+                if (!UpdatePolicy.IsAcceptablePackageSize(declared))
+                {
+                    Logger.WriteLine($"更新包过大（声明 {declared} 字节），已放弃");
+                    return new DownloadResult(null, $"更新包超过体积上限（声明 {declared} 字节）");
+                }
             }
 
             await using Stream source = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
@@ -100,7 +145,7 @@ internal static class UpdateInstaller
                 while ((read = await source.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
                 {
                     total += read;
-                    if (total > UpdateChecker.MaxPackageBytes)
+                    if (total > expectedSize || total > UpdateChecker.MaxPackageBytes)
                     {
                         tooLarge = true;
                         break;
@@ -111,11 +156,11 @@ internal static class UpdateInstaller
                 }
             }
 
-            if (tooLarge)
+            if (tooLarge || total != expectedSize)
             {
-                Logger.WriteLine("更新包超过体积上限，已中止下载");
+                Logger.WriteLine($"更新包体积与 JSON 声明不符（{total} ≠ {expectedSize}），已中止下载");
                 DeleteFileLogged(filePath);
-                return new DownloadResult(null, "更新包超过体积上限，已中止下载");
+                return new DownloadResult(null, $"文件大小与服务器声明不符（{total} ≠ {expectedSize}）");
             }
 
             progress?.Report(100);
@@ -137,8 +182,9 @@ internal static class UpdateInstaller
     }
 
     /// <summary>
-    /// 强校验：sha256 必备且必须匹配（缺失/非法直接拒绝），大小声明必须一致，
-    /// 且必须是含预期 exe 的合法 zip。解析/提取之前调用；失败一律不允许继续安装。
+    /// 强校验：sha256 必备且必须匹配，JSON size 必须存在且与落盘长度一致，
+    /// 包内 exe 必须通过 Authenticode（WinVerifyTrust + GetCert），且必须是含预期 exe 的合法 zip。
+    /// 解析/提取之前调用；失败一律不允许继续安装。
     /// </summary>
     internal static PackageVerification Verify(string filePath, UpdateInfo info)
     {
@@ -149,8 +195,12 @@ internal static class UpdateInstaller
 
         long size = new FileInfo(filePath).Length;
         if (size <= 0) return new PackageVerification(false, "下载文件为空");
-        if (info.Size is long declaredSize && declaredSize > 0 && declaredSize != size)
-            return new PackageVerification(false, $"文件大小与服务器声明不符（{size} ≠ {declaredSize}）");
+        if (!UpdatePolicy.MatchesDeclaredSize(size, info.Size))
+        {
+            if (!UpdatePolicy.IsAcceptablePackageSize(info.Size))
+                return new PackageVerification(false, "服务端未提供有效的文件大小声明，拒绝安装");
+            return new PackageVerification(false, $"文件大小与服务器声明不符（{size} ≠ {info.Size}）");
+        }
 
         string actual = ComputeSha256(filePath);
         if (!string.Equals(actual, info.Sha256!.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -159,12 +209,31 @@ internal static class UpdateInstaller
             return new PackageVerification(false, "更新包校验失败（SHA-256 不匹配）");
         }
 
+        if (IsPeExecutable(filePath))
+            return new PackageVerification(true, "SHA-256 校验通过");
+
         try
         {
             using ZipArchive archive = ZipFile.OpenRead(filePath);
             if (archive.Entries.Count == 0) return new PackageVerification(false, "更新包是空的");
-            if (FindPackageExe(archive) is null)
+            ZipArchiveEntry? exe = FindPackageExe(archive);
+            if (exe is null)
                 return new PackageVerification(false, $"更新包里没有找到 {ExpectedExePrefix}*.exe");
+
+            string tempExe = Path.Combine(
+                Path.GetTempPath(), "lmechrevo-auth-" + Guid.NewGuid().ToString("N")[..8] + ".exe");
+            try
+            {
+                using (Stream source = exe.Open())
+                using (FileStream target = File.Create(tempExe))
+                    source.CopyTo(target);
+                if (!UpdatePolicy.TryAcceptAuthenticode(tempExe, out string authReason))
+                    return new PackageVerification(false, authReason);
+            }
+            finally
+            {
+                try { if (File.Exists(tempExe)) File.Delete(tempExe); } catch { }
+            }
         }
         catch (Exception ex)
         {
@@ -240,6 +309,27 @@ internal static class UpdateInstaller
         }
         reason = "";
         return true;
+    }
+
+    /// <summary>拉起已校验的 Inno 安装包（UAC 由安装器自己弹）。</summary>
+    internal static bool StartInstaller(string setupPath)
+    {
+        try
+        {
+            Process? process = Process.Start(new ProcessStartInfo
+            {
+                FileName = setupPath,
+                UseShellExecute = true,
+            });
+            if (process is null) return false;
+            Logger.WriteLine($"安装包已启动（pid {process.Id}）：{setupPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("安装包启动失败：" + ex.Message);
+            return false;
+        }
     }
 
     /// <summary>

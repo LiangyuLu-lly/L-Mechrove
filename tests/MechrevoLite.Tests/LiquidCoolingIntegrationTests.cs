@@ -235,6 +235,32 @@ public class LiquidCoolingIntegrationTests
     }
 
     [Theory]
+    [InlineData("Scanning")]
+    [InlineData("Connecting")]
+    [InlineData("IsConnectable")]
+    public void DirectFallback_DoesNotStealTheRadioWhileGcuIsBusy(string gcuState) =>
+        Assert.True(LiquidCoolingConnectionPolicy.ShouldSkipDirectFallbackBecauseGcuHoldsRadio(gcuState));
+
+    [Theory]
+    [InlineData("Disconnected")]
+    [InlineData("DeviceNotReady")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void DirectFallback_RunsWhenGcuIsIdle(string? gcuState) =>
+        Assert.False(LiquidCoolingConnectionPolicy.ShouldSkipDirectFallbackBecauseGcuHoldsRadio(gcuState));
+
+    [Theory]
+    [InlineData("LCT21001", true)]
+    [InlineData("LCT22002", true)]
+    [InlineData("Oasis AIO", true)]
+    [InlineData("水冷箱", true)]
+    [InlineData("XMG Oasis", true)]
+    [InlineData("Headphones", false)]
+    [InlineData("", false)]
+    public void AdvertisementName_RecognizesWaterCoolers(string name, bool expected) =>
+        Assert.Equal(expected, WaterCoolerBle.IsLikelyWaterCoolerName(name));
+
+    [Theory]
     [InlineData(true, true, LiquidCoolingControlRoute.None, false, true, 0, 8000)]
     [InlineData(true, true, LiquidCoolingControlRoute.BluetoothObserved, false, true, 0, 8000)]
     [InlineData(true, true, LiquidCoolingControlRoute.Gcu, false, true, 0, 8000)]

@@ -1,4 +1,5 @@
 using MechrevoLite.Helpers;
+using MechrevoLite.Properties;
 using MechrevoLite.UI;
 using System.Diagnostics;
 
@@ -32,6 +33,9 @@ internal sealed class UpdateForm : RForm
     UpdateInfo? _info;
     bool _busy;
 
+    bool _force;
+    bool _closingForInstall;
+
     internal UpdateForm(bool autoCheck)
     {
         Initialize();
@@ -49,25 +53,27 @@ internal sealed class UpdateForm : RForm
     {
         BackColor = UiVisualStyle.Window;
         ForeColor = UiVisualStyle.Text;
-        Text = "检查更新";
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        Text = Strings.CheckForUpdates;
+        FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(520, 380);
+        ClientSize = new Size(SettingsForm.CompactDashboardLogicalClientSize.Width, 380);
+        MinimumSize = new Size(360, 200);
         InitTheme(true);
 
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            Padding = new Padding(20, 16, 20, 16),
+            // 四键 96+96+88+88 加间距 24 = 392。水平 padding 用 Sm(8) 才能在 420 主窗里一行放下。
+            Padding = new Padding(UiVisualStyle.Space.Sm, UiVisualStyle.Space.Lg, UiVisualStyle.Space.Sm, UiVisualStyle.Space.Lg),
             BackColor = UiVisualStyle.Surface,
         };
         _root = root;
         Controls.Add(root);
 
-        _headline.Text = "正在检查更新…";
+        _headline.Text = Strings.UpdateChecking;
         _headline.Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Title, FontStyle.Bold);
         _headline.ForeColor = UiVisualStyle.Text;
         _headline.AutoSize = true;
@@ -95,7 +101,7 @@ internal sealed class UpdateForm : RForm
 
         // 空态（检查失败/已是最新）：不留空只读框，整行换成 Muted 文案并收口高度
         //（Empty States；行样式与窗口高度由 ApplyNotesState 切换）。
-        _notesEmpty.Text = "暂无更新说明";
+        _notesEmpty.Text = Strings.UpdateNotesEmpty;
         _notesEmpty.ForeColor = UiVisualStyle.Muted;
         _notesEmpty.AutoSize = true;
         _notesEmpty.Margin = new Padding(0, 4, 0, 4);
@@ -125,28 +131,33 @@ internal sealed class UpdateForm : RForm
             BackColor = UiVisualStyle.Surface,
         };
         // 按钮宽度两档（run5 二级界面收尾）：主操作 96、次操作 88，间距统一 Space.Sm。
-        _install.Text = "下载并安装";
+        _install.Text = Strings.UpdateInstall;
         _install.AutoSize = false;
         _install.Size = new Size(96, 32);
         _install.Margin = new Padding(0, 0, UiVisualStyle.Space.Sm, 0);
         _install.Cursor = Cursors.Hand;
         _install.Click += async (_, _) => await StartInstallAsync();
 
-        _downloadPage.Text = "打开下载页";
+        _downloadPage.Text = Strings.UpdateOpenPage;
         _downloadPage.AutoSize = false;
         _downloadPage.Size = new Size(96, 32);
         _downloadPage.Margin = new Padding(0, 0, UiVisualStyle.Space.Sm, 0);
         _downloadPage.Cursor = Cursors.Hand;
         _downloadPage.Click += (_, _) => OpenDownloadPage();
 
-        _later.Text = "稍后";
+        _later.Text = Strings.UpdateLater;
         _later.AutoSize = false;
         _later.Size = new Size(88, 32);
         _later.Margin = new Padding(0, 0, UiVisualStyle.Space.Sm, 0);
         _later.Cursor = Cursors.Hand;
-        _later.Click += (_, _) => Close();
+        _later.Click += (_, _) => { if (!_force) Close(); };
+        FormClosing += (_, e) =>
+        {
+            if (_force && !_closingForInstall && e.CloseReason == CloseReason.UserClosing)
+                e.Cancel = true;
+        };
 
-        _feedback.Text = "反馈";
+        _feedback.Text = Strings.UpdateFeedback;
         _feedback.AutoSize = false;
         _feedback.Size = new Size(88, 32);
         _feedback.Margin = Padding.Empty;
@@ -163,6 +174,11 @@ internal sealed class UpdateForm : RForm
         UiVisualStyle.ApplyWindow(this);
         UiVisualStyle.ApplySection(root);
         UiVisualStyle.ApplyTitle(_headline, UiVisualStyle.TypeScale.Title);
+        int wrap = SettingsForm.CompactDashboardLogicalClientSize.Width - UiVisualStyle.Space.Sm * 2;
+        _headline.MaximumSize = new Size(wrap, 0);
+        _detail.MaximumSize = new Size(wrap, 0);
+        _status.MaximumSize = new Size(wrap, 0);
+        _notesEmpty.MaximumSize = new Size(wrap, 0);
         ResponsiveLayout.ScaleFrom96(this, this);
         _designClientWidth = ClientSize.Width;
         _designClientHeight = ClientSize.Height;
@@ -177,6 +193,28 @@ internal sealed class UpdateForm : RForm
         // 先按空态收口，再交给基类钳制工作区（顺序反了会把收口后的窗口再放大钳回）。
         ApplyNotesState();
         base.OnShown(e);
+        // 钳制后再按 _root 内容高度收口（Shown 后布局才稳定）。
+        if (IsHandleCreated && !IsDisposed)
+        {
+            ResponsiveLayout.PerformLayoutTree(this);
+            var preferred = _root.GetPreferredSize(new Size(_root.Width, 0));
+            bool hasNotes = !string.IsNullOrWhiteSpace(_notes.Text);
+            int targetHeight = hasNotes ? _designClientHeight : Math.Min(_designClientHeight, preferred.Height);
+            ClientSize = new Size(_designClientWidth, targetHeight);
+        }
+        if (_force && _install.Enabled && !_busy)
+            _ = StartInstallAsync();
+    }
+
+    void ApplyForceChrome()
+    {
+        _later.Visible = !_force;
+        ControlBox = !_force;
+        if (_force)
+        {
+            Text = Strings.UpdateRequired;
+            TopMost = true;
+        }
     }
 
     /// <summary>
@@ -199,7 +237,7 @@ internal sealed class UpdateForm : RForm
             // 内容高度用；GetPreferredSize 返回的是内容需求（隐藏控件不计入）。
             ResponsiveLayout.PerformLayoutTree(this);
             var preferred = _root.GetPreferredSize(new Size(_root.Width, 0));
-            int contentHeight = preferred.Height + _root.Padding.Vertical;
+            int contentHeight = preferred.Height;
             int targetHeight = hasNotes ? _designClientHeight : Math.Min(_designClientHeight, contentHeight);
             ClientSize = new Size(_designClientWidth, targetHeight);
         }
@@ -222,10 +260,12 @@ internal sealed class UpdateForm : RForm
     void Apply(UpdateInfo? info, bool autoCheck)
     {
         _info = info;
+        _force = info is { Force: true, UpdateAvailable: true };
+        ApplyForceChrome();
         if (info is null)
         {
-            _headline.Text = "检查更新失败";
-            _detail.Text = "无法连接到更新服务器（网络不可用或服务端异常）。";
+            _headline.Text = Strings.UpdateCheckFailed;
+            _detail.Text = Strings.UpdateCheckFailedDetail;
             _notes.Text = "";
             ApplyNotesState();
             _status.Text = "";
@@ -241,31 +281,22 @@ internal sealed class UpdateForm : RForm
 
         if (!info.UpdateAvailable)
         {
-            _headline.Text = "已是最新版本";
-            _detail.Text = $"当前版本 {info.CurrentVersion}"
-                + (string.IsNullOrWhiteSpace(info.LatestVersion) ? "" : $"，服务端最新 {info.LatestVersion}");
+            _headline.Text = Strings.UpdateUpToDate;
+            _detail.Text = string.Format(Strings.UpdateCurrentVersion, info.CurrentVersion)
+                + (string.IsNullOrWhiteSpace(info.LatestVersion) ? "" : string.Format(Strings.UpdateServerLatest, info.LatestVersion));
             _status.Text = "";
             return;
         }
 
-        _headline.Text = $"发现新版本 {info.LatestVersion}";
-        _detail.Text = $"当前版本 {info.CurrentVersion}"
-            + (string.IsNullOrWhiteSpace(info.ReleaseDate) ? "" : $" · 发布于 {info.ReleaseDate}");
+        _headline.Text = string.Format(Strings.UpdateFound, info.LatestVersion);
+        _detail.Text = string.Format(Strings.UpdateCurrentVersion, info.CurrentVersion)
+            + (string.IsNullOrWhiteSpace(info.ReleaseDate) ? "" : string.Format(Strings.UpdateReleaseDate, info.ReleaseDate));
 
         if (string.IsNullOrWhiteSpace(info.DownloadUrl))
         {
-            _status.Text = "该版本在网盘发布，请点『打开下载页』手动下载。";
+            _status.Text = Strings.UpdateNetdisk;
             _status.ForeColor = UiVisualStyle.Warn;
             _install.Enabled = false;
-            return;
-        }
-
-        if (!UpdateInstaller.CanSelfInstall(out string selfInstallReason))
-        {
-            // 例如框架依赖构建：能下载但不能自替换，直接引导到下载页，别让用户点了报错。
-            _install.Enabled = false;
-            _status.Text = selfInstallReason;
-            _status.ForeColor = UiVisualStyle.Warn;
             return;
         }
 
@@ -279,8 +310,20 @@ internal sealed class UpdateForm : RForm
             return;
         }
 
+        bool installer = UpdateInstaller.LooksLikeInstallerPackage(info);
+        if (!installer && !UpdateInstaller.CanSelfInstall(out string selfInstallReason))
+        {
+            // zip 自替换不适用于框架依赖构建；Inno setup.exe 走安装包路径。
+            _install.Enabled = false;
+            _status.Text = selfInstallReason;
+            _status.ForeColor = UiVisualStyle.Warn;
+            return;
+        }
+
         _install.Enabled = true;
-        _status.Text = "服务端提供了 SHA-256，下载后会自动校验。";
+        _status.Text = installer
+            ? Strings.UpdateShaPresent
+            : Strings.UpdateShaProvided;
         _status.ForeColor = UiVisualStyle.Ok;
     }
 
@@ -297,18 +340,25 @@ internal sealed class UpdateForm : RForm
             return;
         }
 
-        if (!UpdateInstaller.CanSelfInstall(out string why))
+        bool installer = UpdateInstaller.LooksLikeInstallerPackage(info);
+        if (!installer && !UpdateInstaller.CanSelfInstall(out string why))
         {
-            MessageBox.Show(why + "\n\n将为你打开下载页。", "无法自动安装",
+            MessageBox.Show(why + Strings.UpdateWillOpenPage, Strings.UpdateCannotAutoInstall,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             OpenDownloadPage();
             return;
         }
 
-        DialogResult confirm = MessageBox.Show(
-            "安装会关闭本程序，替换当前 exe 后自动重启。\n\n继续吗？",
-            "安装更新", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
-        if (confirm != DialogResult.OK) return;
+        if (!_force)
+        {
+            DialogResult confirm = MessageBox.Show(
+                installer
+                    ? Strings.UpdateConfirmInstaller
+                    : Strings.UpdateConfirmReplace,
+                Strings.UpdateInstallTitle, MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+            if (confirm != DialogResult.OK) return;
+        }
+        _closingForInstall = true;
 
         SetBusy(true);
         try
@@ -317,7 +367,8 @@ internal sealed class UpdateForm : RForm
             DownloadResult download = await UpdateInstaller.DownloadAsync(info, progress);
             if (download.Path is not { } package)
             {
-                _status.Text = download.Reason ?? "下载失败。可以点『打开下载页』手动下载。";
+                _closingForInstall = false;
+                _status.Text = download.Reason ?? Strings.UpdateDownloadFailed;
                 _status.ForeColor = UiVisualStyle.Danger;
                 return;
             }
@@ -325,39 +376,56 @@ internal sealed class UpdateForm : RForm
             PackageVerification verification = UpdateInstaller.Verify(package, info);
             if (!verification.Ok)
             {
+                _closingForInstall = false;
                 UpdateInstaller.DiscardPackage(package);
-                _status.Text = "更新包未通过校验：" + verification.Reason;
+                _status.Text = Strings.UpdateVerifyFailedPrefix + verification.Reason;
                 _status.ForeColor = UiVisualStyle.Danger;
                 Logger.WriteLine("更新包校验失败：" + verification.Reason);
                 return;
             }
 
-            string? newExe = UpdateInstaller.ExtractPackage(package, info);
-            if (newExe is null)
+            if (installer || UpdateInstaller.IsPeExecutable(package))
             {
-                _status.Text = "更新包解压失败（没找到可执行文件）。";
-                _status.ForeColor = UiVisualStyle.Danger;
-                return;
-            }
+                if (!UpdateInstaller.StartInstaller(package))
+                {
+                    _status.Text = Strings.UpdateCannotStartInstaller;
+                    _status.ForeColor = UiVisualStyle.Danger;
+                    return;
+                }
 
-            string target = UpdateInstaller.CurrentExePath;
-            if (!UpdateInstaller.StartUpdater(newExe, target))
+                _status.Text = Strings.UpdateInstallerStarted;
+                _status.ForeColor = UiVisualStyle.Ok;
+                Logger.WriteLine($"更新安装包已启动：{package}（{verification.Reason}）");
+            }
+            else
             {
-                _status.Text = "无法启动更新器（可能是当前目录不可写），请用『打开下载页』手动更新。";
-                _status.ForeColor = UiVisualStyle.Danger;
-                return;
-            }
+                string? newExe = UpdateInstaller.ExtractPackage(package, info);
+                if (newExe is null)
+                {
+                    _status.Text = Strings.UpdateExtractFailed;
+                    _status.ForeColor = UiVisualStyle.Danger;
+                    return;
+                }
 
-            _status.Text = "更新器已启动，程序即将退出…";
-            _status.ForeColor = UiVisualStyle.Ok;
-            Logger.WriteLine($"更新安装流程已启动：{newExe} -> {target}（{verification.Reason}）");
+                string target = UpdateInstaller.CurrentExePath;
+                if (!UpdateInstaller.StartUpdater(newExe, target))
+                {
+                    _status.Text = Strings.UpdateCannotStartUpdater;
+                    _status.ForeColor = UiVisualStyle.Danger;
+                    return;
+                }
+
+                _status.Text = Strings.UpdateUpdaterStarted;
+                _status.ForeColor = UiVisualStyle.Ok;
+                Logger.WriteLine($"更新安装流程已启动：{newExe} -> {target}（{verification.Reason}）");
+            }
             await Task.Delay(600);
             Program.RequestShutdownForUpdate();
         }
         catch (Exception ex)
         {
             Logger.WriteLine("更新安装流程失败：" + ex.Message);
-            _status.Text = "安装失败：" + ex.Message;
+            _status.Text = Strings.UpdateInstallFailedPrefix + ex.Message;
             _status.ForeColor = UiVisualStyle.Danger;
         }
         finally
@@ -373,7 +441,7 @@ internal sealed class UpdateForm : RForm
         _progress.Value = 0;
         _install.Enabled = !busy;
         _downloadPage.Enabled = !busy && !string.IsNullOrWhiteSpace(_info?.DownloadPage);
-        _later.Enabled = !busy;
+        _later.Enabled = !busy && !_force;
         _feedback.Enabled = !busy;   // run5 收尾：下载互斥此前漏了反馈按钮
     }
 

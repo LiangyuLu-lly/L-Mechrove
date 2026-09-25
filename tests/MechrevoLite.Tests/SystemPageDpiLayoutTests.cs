@@ -49,7 +49,6 @@ public class SystemPageDpiLayoutTests
     /// </summary>
     [Theory]
     [InlineData("panelVersion")]
-    [InlineData("panelOfficialConsole")]
     [InlineData("panelBattery")]
     [InlineData("panelHz")]
     [InlineData("panelBrightness")]

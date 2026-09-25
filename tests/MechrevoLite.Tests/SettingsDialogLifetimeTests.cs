@@ -14,7 +14,7 @@ public class SettingsDialogLifetimeTests
     public void UserCloseHidesSoTheDialogCanReopen()
     {
         // 用户 2026-09-13：弹窗移除局部调光/悬浮窗/自动刷新率开关；2026-09-14 校色按钮也移除（3 参数）。
-        var dialog = new SettingsDialog(new Panel(), new Panel(), null, displayGroupAvailable: false);
+        var dialog = new SettingsDialog(new Panel(), null, displayGroupAvailable: false);
         try
         {
             dialog.Show();
@@ -39,10 +39,9 @@ public class SettingsDialogLifetimeTests
     }
 
     /// <summary>
-    /// 主窗把 界面外观/官方控制台 面板以 Visible=false「延迟托管」进设置弹窗
+    /// 主窗把界面外观面板以 Visible=false「延迟托管」进设置弹窗
     /// （Settings.cs 构建尾部：deferred.Visible = false）。弹窗接管后必须重新显示，
-    /// 否则弹窗里 界面外观（日间/夜间切换）与 官方控制台 两节永远空白——
-    /// 用户既切不了日间模式，也看不到官方控制台状态（2026-09-13 真机实测）。
+    /// 否则弹窗里界面外观（日间/夜间切换）永远空白。
     /// </summary>
     [Fact]
     public void HostedDeferredPanels_BecomeVisibleInsideTheDialog()
@@ -50,11 +49,9 @@ public class SettingsDialogLifetimeTests
         var themePanel = new Panel { Height = 50 };
         var dayButton = new Button { Name = "buttonDayMode", Text = "日间", Dock = DockStyle.Fill, Height = 30 };
         themePanel.Controls.Add(dayButton);
-        var officialPanel = new Panel { Height = 40 };
         // 复刻主窗的延迟托管：面板先 Visible=false，再交给弹窗（Settings.cs 构建尾部）。
         themePanel.Visible = false;
-        officialPanel.Visible = false;
-        var dialog = new SettingsDialog(themePanel, officialPanel, null, displayGroupAvailable: false);
+        var dialog = new SettingsDialog(themePanel, null, displayGroupAvailable: false);
         try
         {
             dialog.Show();
@@ -62,7 +59,7 @@ public class SettingsDialogLifetimeTests
 
             Assert.True(themePanel.Visible, "界面外观面板（日间/夜间切换）在弹窗内必须可见。");
             Assert.True(dayButton.Visible, "日间按钮在弹窗内必须可见可点。");
-            Assert.True(officialPanel.Visible, "官方控制台面板在弹窗内必须可见。");
+            Assert.DoesNotContain("隔离官方", dialog.Text, StringComparison.Ordinal);
         }
         finally
         {

@@ -81,6 +81,11 @@ public class WaveBSecondaryUiTests
             int logicalHeight = form.ClientSize.Height * 96 / Math.Max(1, form.DeviceDpi);
             Assert.True(logicalHeight <= 700,
                 $"CustomModeForm 初始高度 {logicalHeight} 逻辑 px 超过规格目标 700。");
+
+            TableLayoutPanel? paramTable = Descendants(form).OfType<TableLayoutPanel>()
+                .FirstOrDefault(table => table.Name == "paramTable");
+            Assert.NotNull(paramTable);
+            Assert.Equal(DockStyle.Top, paramTable.Dock);
         }
         finally
         {
@@ -100,9 +105,13 @@ public class WaveBSecondaryUiTests
         using var form = new RgbForm(new MechrevoLite.Hardware.KeyboardRgb());
         form.CreateControl();
 
-        var rawCombos = Descendants(form).OfType<ComboBox>().Where(c => c is not RComboBox).ToList();
-        Assert.True(rawCombos.Count == 0,
-            "RgbForm 不得再有原生 ComboBox（应使用 RComboBox）：\n  " + string.Join("\n  ", rawCombos));
+            var rawCombos = Descendants(form).OfType<ComboBox>().Where(c => c is not RComboBox).ToList();
+            Assert.True(rawCombos.Count == 0,
+                "RgbForm 不得再有原生 ComboBox（应使用 RComboBox）：\n  " + string.Join("\n  ", rawCombos));
+
+            var hidPanel = GetField<Panel>(form, "_hidPanel");
+            Assert.NotNull(hidPanel);
+            Assert.Equal(DockStyle.Top, hidPanel.Dock);
     }
 
     [Fact]
@@ -273,23 +282,25 @@ public class WaveBSecondaryUiTests
     public void SettingsDialog_HasNoStaleRows()
     {
         string source = File.ReadAllText(RepoRootPath("src", "MechrevoLiteWin", "SettingsDialog.cs"));
-        foreach (string stale in new[] { "悬浮窗", "局部调光", "局部背光", "自动刷新率" })
+        foreach (string stale in new[] { "悬浮窗", "局部调光", "局部背光", "自动刷新率", "官方控制台", "隔离官方" })
             Assert.True(!source.Contains(stale),
                 $"SettingsDialog 不得再包含已移除功能的行「{stale}」（该功能已从弹窗移除/移入屏幕行头）。");
 
         using var _ = UseAuditMode();
         var themePanel = new Panel { Height = 50 };
-        var officialPanel = new Panel { Height = 40 };
         var overdrive = new RCheckBox { Text = "响应加速", Height = 30 };
-        // 2026-09-14：校色按钮删除（改为屏幕行头内联下拉），弹窗只收 overdrive。
-        var dialog = new SettingsDialog(themePanel, officialPanel, overdrive, displayGroupAvailable: true);
+        var dialog = new SettingsDialog(themePanel, overdrive, displayGroupAvailable: true);
         try
         {
             dialog.Show();
             Application.DoEvents();
 
             // 高度按内容收紧：不得保留 420 的旧固定高度（内容少时底部大片留白）
+            int logicalWidth = dialog.ClientSize.Width * 96 / Math.Max(1, dialog.DeviceDpi);
             int logicalHeight = dialog.ClientSize.Height * 96 / Math.Max(1, dialog.DeviceDpi);
+            int parentW = SettingsForm.CompactDashboardLogicalClientSize.Width;
+            Assert.True(logicalWidth <= parentW,
+                $"SettingsDialog 宽 {logicalWidth} 逻辑 px 超出主窗 {parentW}。");
             Assert.True(logicalHeight <= 340,
                 $"SettingsDialog 高度 {logicalHeight} 逻辑 px 未按内容收紧（旧固定 420）。");
         }

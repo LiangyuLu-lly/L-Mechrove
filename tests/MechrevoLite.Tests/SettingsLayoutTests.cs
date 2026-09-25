@@ -9,25 +9,46 @@ namespace MechrevoLite.Tests;
 public class SettingsLayoutTests
 {
     [Fact]
-    public void ModeButtons_FormSegmentedControlsAfterConstruction()
+    public void DashboardSections_DockTopAfterConstruct()
     {
         using var form = new SettingsForm();
-        RButton silent = form.Controls.Find("buttonSilent", true).OfType<RButton>().Single();
-        RButton balanced = form.Controls.Find("buttonBalanced", true).OfType<RButton>().Single();
-        RButton turbo = form.Controls.Find("buttonTurbo", true).OfType<RButton>().Single();
-        RButton eco = form.Controls.Find("buttonEco", true).OfType<RButton>().Single();
-        RButton standard = form.Controls.Find("buttonStandard", true).OfType<RButton>().Single();
-        RButton ultimate = form.Controls.Find("buttonUltimate", true).OfType<RButton>().Single();
+        var sections = (Control[])typeof(SettingsForm)
+            .GetField("_dashboardSections", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(form)!;
 
-        // 深潜座舱：性能组（5 段）与显卡组（3 段）是两段连续的分段控件（首/中/尾 + 零间距）。
-        Assert.Equal(RSegmentPosition.First, silent.SegmentPosition);
-        Assert.Equal(RSegmentPosition.Middle, balanced.SegmentPosition);
-        Assert.Equal(RSegmentPosition.Middle, turbo.SegmentPosition);
-        Assert.Equal(RSegmentPosition.First, eco.SegmentPosition);
-        Assert.Equal(RSegmentPosition.Middle, standard.SegmentPosition);
-        Assert.Equal(RSegmentPosition.Last, ultimate.SegmentPosition);
-        Assert.Equal(Padding.Empty, balanced.Margin);
-        Assert.Equal(Padding.Empty, standard.Margin);
+        Assert.NotEmpty(sections);
+        Assert.All(sections, section => Assert.Equal(DockStyle.Top, section.Dock));
+    }
+
+    [Fact]
+    public void ModeButtons_FormSegmentedControlsAfterConstruction()
+    {
+        bool previousAuditMode = Program.UiAuditMode;
+        Program.UiAuditMode = true;
+        try
+        {
+            using var form = new SettingsForm();
+            RButton silent = form.Controls.Find("buttonSilent", true).OfType<RButton>().Single();
+            RButton balanced = form.Controls.Find("buttonBalanced", true).OfType<RButton>().Single();
+            RButton turbo = form.Controls.Find("buttonTurbo", true).OfType<RButton>().Single();
+            RButton eco = form.Controls.Find("buttonEco", true).OfType<RButton>().Single();
+            RButton standard = form.Controls.Find("buttonStandard", true).OfType<RButton>().Single();
+            RButton ultimate = form.Controls.Find("buttonUltimate", true).OfType<RButton>().Single();
+
+            // 深潜座舱：性能组（5 段）与显卡组（3 段）是两段连续的分段控件（首/中/尾 + 零间距）。
+            Assert.Equal(RSegmentPosition.First, silent.SegmentPosition);
+            Assert.Equal(RSegmentPosition.Middle, balanced.SegmentPosition);
+            Assert.Equal(RSegmentPosition.Middle, turbo.SegmentPosition);
+            Assert.Equal(RSegmentPosition.First, eco.SegmentPosition);
+            Assert.Equal(RSegmentPosition.Middle, standard.SegmentPosition);
+            Assert.Equal(RSegmentPosition.Last, ultimate.SegmentPosition);
+            Assert.Equal(Padding.Empty, balanced.Margin);
+            Assert.Equal(Padding.Empty, standard.Margin);
+        }
+        finally
+        {
+            Program.UiAuditMode = previousAuditMode;
+        }
     }
 
     [Fact]
@@ -162,12 +183,12 @@ public class SettingsLayoutTests
 
         Control themePanel = (Control)typeof(SettingsForm).GetField("_themeModePanel",
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
-        Control officialPanel = (Control)typeof(SettingsForm).GetField("_officialConsolePanel",
-            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
+        Assert.Null(typeof(SettingsForm).GetField("_officialConsolePanel",
+            BindingFlags.Instance | BindingFlags.NonPublic));
+        Assert.Empty(form.Controls.Find("panelOfficialConsole", true));
         Control overdrive = (Control)typeof(SettingsForm).GetField("_overdriveChk",
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
-        // 2026-09-14：校色按钮删除（改为屏幕行头内联下拉），弹窗只收 overdrive。
-        using var dialog = new SettingsDialog(themePanel, officialPanel, overdrive, displayGroupAvailable: true);
+        using var dialog = new SettingsDialog(themePanel, overdrive, displayGroupAvailable: true);
 
         Assert.Empty(dialog.Controls.Find("checkOverlayToggle", true));
         Assert.Empty(dialog.Controls.Find("checkLocalDimming", true));
@@ -310,19 +331,39 @@ public class SettingsLayoutTests
     [Fact]
     public void MuxOnlyGpuLayout_ShowsPureIgpuButHidesAutomaticMode()
     {
-        using var form = new SettingsForm();
-        Button eco = form.Controls.Find("buttonEco", true).OfType<Button>().Single();
-        Button standard = form.Controls.Find("buttonStandard", true).OfType<Button>().Single();
-        Button ultimate = form.Controls.Find("buttonUltimate", true).OfType<Button>().Single();
-        TableLayoutPanel table = form.Controls.Find("tableGPU", true).OfType<TableLayoutPanel>().Single();
+        bool previousAuditMode = Program.UiAuditMode;
+        MechrevoLite.Hardware.MechrevoHw? previousHardware = Program.hw;
+        Program.UiAuditMode = false;
+        using var hardware = new MechrevoLite.Hardware.MechrevoHw(null, new MechrevoLite.Hardware.MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            DgpuDirect = true,
+            IgpuOnly = false,
+        });
+        Program.hw = hardware;
+        try
+        {
+            using var form = new SettingsForm();
+            form.CreateControl();
+            form.RefreshDeviceCapabilities();
+            Button eco = form.Controls.Find("buttonEco", true).OfType<Button>().Single();
+            Button standard = form.Controls.Find("buttonStandard", true).OfType<Button>().Single();
+            Button ultimate = form.Controls.Find("buttonUltimate", true).OfType<Button>().Single();
+            TableLayoutPanel table = form.Controls.Find("tableGPU", true).OfType<TableLayoutPanel>().Single();
 
-        form.VisualiseGPUButtons(eco: true, ultimate: true, auto: false);
+            form.VisualiseGPUButtons(eco: true, ultimate: true, auto: false);
 
-        Assert.Contains(eco, table.Controls.Cast<Control>());
-        Assert.Contains(standard, table.Controls.Cast<Control>());
-        Assert.Contains(ultimate, table.Controls.Cast<Control>());
-        // 自动模式按钮已整体移除：不再出现在窗体控件树里（不只是移出布局）。
-        Assert.Empty(form.Controls.Find("buttonOptimized", true));
+            Assert.Contains(eco, table.Controls.Cast<Control>());
+            Assert.Contains(standard, table.Controls.Cast<Control>());
+            Assert.Contains(ultimate, table.Controls.Cast<Control>());
+            // 自动模式按钮已整体移除：不再出现在窗体控件树里（不只是移出布局）。
+            Assert.Empty(form.Controls.Find("buttonOptimized", true));
+        }
+        finally
+        {
+            Program.hw = previousHardware!;
+            Program.UiAuditMode = previousAuditMode;
+        }
     }
 
     [Theory]

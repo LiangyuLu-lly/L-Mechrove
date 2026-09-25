@@ -61,15 +61,19 @@ public class UngatedFeatureTests
         Assert.True(MechrevoHw.ShouldApplyBuiltInCurveDefaults(new MechrevoDeviceCapabilities()));
     }
 
+    /// <summary>
+    /// T1 D4 契约变更：恒 Restart 是被推翻的产品决策。厂商 Resolve 已恢复
+    /// （Standard→iGPU+hotswap → HotSwitch）。E8 从 KEPT_WITH_REASON 翻到 MATRIX_GATED。
+    /// 旧断言（supportsHotSwap 仍 Restart）编码的是被移除的契约。
+    /// </summary>
     [Fact]
-    public void E8TheAlwaysRestartPolicyIsRecordedAsVerifiedIntentional()
+    public void E8TheVendorResolvePolicyIsMatrixGated()
     {
         T8Evidence.Entry item = T8Evidence.Load().Single(entry => entry.Item == "E8");
 
         Assert.Equal("CONFIRMED", item.Outcome);
-        Assert.Equal("KEPT_WITH_REASON", item.Action);
-        // 取证事实：显式 supportsHotSwap=true 时策略层仍返回 Restart。
-        Assert.Equal("Restart", GpuSwitchPolicy.Resolve(
+        Assert.Equal("MATRIX_GATED", item.Action);
+        Assert.Equal("HotSwitch", GpuSwitchPolicy.Resolve(
             MechrevoService.GpuStandard, automaticRuntime: 1, MechrevoService.GpuIGpu,
             supportsHotSwap: true).Route.ToString());
     }

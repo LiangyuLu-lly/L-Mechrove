@@ -80,6 +80,15 @@ public class WaterCoolerBle : IDisposable
         (deviceName?.Contains("LCT22002", StringComparison.OrdinalIgnoreCase) == true) ||
         (firmwareVersion?.Contains("LCT22002", StringComparison.OrdinalIgnoreCase) == true);
 
+    internal static bool IsLikelyWaterCoolerName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        return name.Contains("LCT", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Oasis", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("水冷", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("AIO", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Checks Windows' connected-device inventory without opening a GATT session. This is only
     /// evidence that the water cooler is connected to Windows; it does not imply this process can control it.
@@ -192,23 +201,36 @@ public class WaterCoolerBle : IDisposable
     /// </summary>
     public async Task<bool> AutoConnectAsync()
     {
-        if (TryGetSavedDevice(out ulong savedAddress, out string savedName))
+        ulong savedAddress = 0;
+        string savedName = "";
+        if (TryGetSavedDevice(out savedAddress, out savedName))
         {
             Logger.WriteLine($"BLE 自动连接：先尝试上次设备 {savedName} ({savedAddress:X12})");
             if (await ConnectAsync(savedAddress, savedName)) return true;
         }
 
+        SystemBluetoothConnectionObservation observed = await ProbeSystemConnectionAsync(force: true);
+        if (observed.IsConnected &&
+            ulong.TryParse(NormalizeBluetoothAddress(observed.Address), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong observedAddress) &&
+            observedAddress != 0)
+        {
+            Logger.WriteLine($"BLE 自动连接：Windows 已连接 {observed.Name} ({observedAddress:X12})");
+            if (await ConnectAsync(observedAddress, string.IsNullOrWhiteSpace(observed.Name) ? savedName : observed.Name))
+                return true;
+        }
+
         StartScan();
         try
         {
-            var deadline = DateTime.UtcNow.AddSeconds(12);
+            var deadline = DateTime.UtcNow.AddSeconds(20);
             (string Name, ulong Address, short Rssi)? best = null;
             while (DateTime.UtcNow < deadline)
             {
                 lock (_lock)
                 {
                     best = Devices
-                        .Where(d => d.Name.Contains("LCT", StringComparison.OrdinalIgnoreCase))
+                        .Where(d => IsLikelyWaterCoolerName(d.Name)
+                            || (savedAddress != 0 && d.Address == savedAddress))
                         .OrderByDescending(d => d.Rssi)
                         .Select(d => ((string, ulong, short)?)(d.Name, d.Address, d.Rssi))
                         .FirstOrDefault();
@@ -218,7 +240,7 @@ public class WaterCoolerBle : IDisposable
             }
             if (best is null)
             {
-                Logger.WriteLine("BLE 自动连接：12s 内未发现名称含 LCT 的设备");
+                Logger.WriteLine("BLE 自动连接：20s 内未发现水冷箱广播");
                 return false;
             }
             var (name, addr, rssi) = best.Value;

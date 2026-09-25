@@ -61,4 +61,17 @@ public class DisplayRouteTierN11Tests
         Assert.DoesNotContain("版本演进", source, StringComparison.Ordinal);
         Assert.Contains("双显三模", source, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void FortyWithoutThreeModeCannotAllowIgpuOnlyActions()
+    {
+        Assert.False(DisplayRoutePolicy.AllowsAction(
+            DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOn, threeMode: false));
+        Assert.False(DisplayRoutePolicy.AllowsAction(
+            DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOff, threeMode: false));
+        Assert.True(DisplayRoutePolicy.AllowsAction(
+            DgpuGenerationKind.Gen40, DisplayRouteMatrix.ToggleOn, threeMode: false));
+        Assert.True(DisplayRoutePolicy.AllowsAction(
+            DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOn, threeMode: true));
+    }
 }

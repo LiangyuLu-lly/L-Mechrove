@@ -12,6 +12,7 @@ using MechrevoLite.Mode;
 using MechrevoLite.Overlay;
 using MechrevoLite.UI;
 using MechrevoLite.Update;
+using MechrevoLite.Usage;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Globalization;
@@ -54,8 +55,7 @@ namespace MechrevoLite
         private static readonly SemaphoreSlim _keyboardRestoreLock = new(1, 1);
         private static readonly SemaphoreSlim _lightingStateLock = new(1, 1);
         private static readonly LightingRestoreCoordinator _lightingRestoreCoordinator = new();
-        private static readonly SemaphoreSlim _officialUiSettleLock = new(1, 1);
-        private static int _officialUiSettled;
+        private static readonly UiRefreshCoalescer _capabilitiesUiRefresh = new();
         private static readonly SemaphoreSlim _telemetryRecoveryLock = new(1, 1);
         private static int _keyboardStatusRecoveryPending;
         private static long _keyboardStatusBaselineVersion;
@@ -211,21 +211,17 @@ namespace MechrevoLite
                 return;
             }
 
-            if (action is "--official-isolate" or "--official-restore")
+            if (action == Startup.RegisterAutostartArgument)
             {
                 if (!ProcessHelper.IsUserAdministrator())
                 {
-                    Logger.WriteLine("Official console action requires administrator rights.");
+                    Logger.WriteLine("Autostart registration requires administrator rights.");
                     Environment.ExitCode = 5;
                     Logger.Close();
                     return;
                 }
 
-                OfficialConsoleIsolation.OperationResult result = action == "--official-isolate"
-                    ? OfficialConsoleIsolation.Enable()
-                    : OfficialConsoleIsolation.Restore();
-                Logger.WriteLine(result.Message);
-                Environment.ExitCode = result.Success ? 0 : 1;
+                Environment.ExitCode = Startup.ScheduleUserTaskOnly() ? 0 : 1;
                 Logger.Close();
                 return;
             }
@@ -300,7 +296,6 @@ namespace MechrevoLite
             Application.ApplicationExit += OnExit;   // 退出时释放灯效等资源
 
             ProcessHelper.SetPriority();
-            OfficialConsoleIsolation.StartGuardIfNeeded();
 
             CleanupLegacyFiles();
 
@@ -317,7 +312,9 @@ namespace MechrevoLite
                 try
                 {
                     if (settingsForm is not null && !settingsForm.IsDisposed)
-                        settingsForm.BeginInvoke(settingsForm.RefreshDeviceCapabilities);
+                        _capabilitiesUiRefresh.Request(
+                            action => settingsForm.BeginInvoke(action),
+                            settingsForm.RefreshDeviceCapabilities);
                 }
                 catch (Exception ex) { Logger.WriteLine("Capability UI refresh failed: " + ex.Message); }
             };
@@ -332,7 +329,10 @@ namespace MechrevoLite
                 try
                 {
                     if (settingsForm is not null && !settingsForm.IsDisposed)
+                    {
                         settingsForm.RefreshGcuStatus();
+                        settingsForm.RefreshDeviceCapabilities();
+                    }
                 }
                 catch (Exception ex) { Logger.WriteLine("GCU status refresh failed: " + ex.Message); }
             };
@@ -413,8 +413,18 @@ namespace MechrevoLite
                     settingsForm.BeginInvoke(() => trayIcon.ShowBalloonTip(5000, "L-Mechrevo", message, ToolTipIcon.Warning));
             };
 
-
-            
+            // 外来 GCU / 13688 占用者：只提示用户自行卸官方控制台，绝不静默删除。
+            _ = Task.Run(() => GcuCoexistence.WarnAtStartup(prompt =>
+            {
+                try
+                {
+                    trayIcon.ShowBalloonTip(8000, "L-Mechrevo", prompt, ToolTipIcon.Warning);
+                }
+                catch (Exception ex)
+                {
+                    Logger.WriteLine("GCU coexistence balloon failed: " + ex.Message);
+                }
+            }));
 
             powerSettleTimer.Elapsed += (s, e) => OnSystemEvent(() => OnPowerSettled(s, e));
 
@@ -479,6 +489,11 @@ namespace MechrevoLite
             _ = Task.Run(() => RestoreLightingWithRetryAsync());
 
             StartSilentUpdateCheck();
+            UsageTelemetry.Start();
+            Application.ApplicationExit += (_, _) =>
+            {
+                try { UsageTelemetry.Stop(); } catch { /* 退出路径 */ }
+            };
 
             Application.Run();
         }
@@ -488,7 +503,7 @@ namespace MechrevoLite
 
         /// <summary>
         /// 启动后延迟静默检测一次更新：失败/无新版都什么都不做，有新版只给按钮加个角标，
-        /// **绝不自动下载或安装**。这是我们唯一的出站请求，<c>check_updates=0</c> 可关闭，
+        /// **绝不自动下载或安装**。出站请求还有匿名使用心跳（<c>usage_telemetry=0</c> 可关）。<c>check_updates=0</c> 可关闭更新检测，
         /// 跨会话按 UpdateChecker.AutoCheckInterval 节流。
         /// </summary>
         static void StartSilentUpdateCheck()
@@ -503,7 +518,13 @@ namespace MechrevoLite
                     if (info is not { UpdateAvailable: true }) return;
                     SettingsForm? form = settingsForm;
                     if (form is null || form.IsDisposed) return;
-                    form.BeginInvoke(() => form.MarkUpdateAvailable(info));
+                    form.BeginInvoke(() =>
+                    {
+                        form.MarkUpdateAvailable(info);
+                        if (!info.Force) return;
+                        using var dialog = new UpdateForm(info);
+                        dialog.ShowDialog(form);
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -517,6 +538,7 @@ namespace MechrevoLite
         {
             try
             {
+                UsageTelemetry.Stop();
                 AsusLampArray.Release();
                 settingsForm?.Close();
                 if (trayIcon is not null) trayIcon.Visible = false;
@@ -687,8 +709,6 @@ namespace MechrevoLite
                 bool success = false;
                 try
                 {
-                    if (!force && Volatile.Read(ref _officialUiSettled) == 0)
-                        await EnsureOfficialUiSettledAsync().ConfigureAwait(false);
                     success = await ReconcileLightingPowerAsync(force).ConfigureAwait(false);
                     return success;
                 }
@@ -700,34 +720,6 @@ namespace MechrevoLite
 
             Logger.WriteLine($"灯效恢复协调器等待超时: generation={generation}, force={force}");
             return false;
-        }
-
-        static async Task EnsureOfficialUiSettledAsync()
-        {
-            if (Volatile.Read(ref _officialUiSettled) != 0) return;
-            await _officialUiSettleLock.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                if (Volatile.Read(ref _officialUiSettled) != 0) return;
-                bool settled;
-                try
-                {
-                    settled = await OfficialConsoleIsolation.WaitForUiSettledAsync(
-                        TimeSpan.FromSeconds(4)).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    settled = false;
-                    Logger.WriteLine("官方 UI 安静窗口检查失败: " + ex.Message);
-                }
-
-                Volatile.Write(ref _officialUiSettled, 1);
-                Logger.WriteLine($"官方 UI 安静窗口完成: settled={settled}");
-            }
-            finally
-            {
-                _officialUiSettleLock.Release();
-            }
         }
 
         static void StartLightingIdleMonitor()
@@ -1082,7 +1074,7 @@ namespace MechrevoLite
             if (shouldApply is not null && !shouldApply()) return false;
             if (service is null) return false;
             return await service.SetLightEffect(topic, settings.Effect, settings.Light, settings.Speed,
-                "None", settings.Effect == "Single" ? Color.FromArgb(settings.ColorArgb) : null, save: false)
+                "None", LightingSettingsStore.ColorForEffect(settings.Effect, settings.ColorArgb), save: false)
                 .ConfigureAwait(false);
         }
 
@@ -1215,17 +1207,23 @@ namespace MechrevoLite
                     return true;
                 }
 
-                // 唯一接缝（防双发）：确定性「不支持」→ 本机没有接受软件灯效的 HID 控制器，
-                // 跳过连接/重进自定义模式/启动效果（电源已由上面的官方通道下发，发布即视为已应用）。
-                // 判定只读缓存、绝不在此重探：唤醒路径不新增任何 await/延迟/命令。
-                // N9-2：唤醒路径只知道缓存判定，不知道新的写入结果，故传 hidBrightnessTookEffect: true
-                // ——回退决策由滑条处理器（真实效果帧结果）负责，唤醒路径绝不重探、绝不改路由。
+                // 唯一接缝（防双发）：确定性「不支持」，或已连接的 Supported 控制器亮度写入被拒。
+                // 判定只读缓存、绝不在此重探。亮度标志只在已连接且 Supported 时采信真实写入；
+                // Unknown / 未尝试保持 true，避免把未探测的机器送进 GCU。
                 if (KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
                         rgb.ControllerAvailability, rgb.IsConnected, service is not null && hw is { IsConnected: true },
-                        hidBrightnessTookEffect: true))
+                        rgb.BrightnessWriteTookEffectForRouting()))
                 {
                     Interlocked.Exchange(ref _keyboardPowerTemporarilySuspended, 0);
-                    Logger.WriteLine("RGB 自动恢复：控制器不支持软件灯效，HID 分支跳过（官方通道已下发电源）");
+                    bool restored = await RestoreKeyboardEffectViaGcuAsync().ConfigureAwait(false);
+                    if (!restored)
+                    {
+                        Logger.WriteLine("RGB 自动恢复：官方通道灯效未能下发");
+                        return false;
+                    }
+                    // 不记 applied：官方通道没有 HID 的「效果线程已在跑」可观察量。
+                    // 记下会让同一熄灯周期的下一次恢复跳过电源和计时关闭。
+                    Logger.WriteLine("RGB 自动恢复：官方通道已重放键盘灯效");
                     return true;
                 }
 
@@ -1255,6 +1253,21 @@ namespace MechrevoLite
                 return false;
             }
             finally { _keyboardRestoreLock.Release(); }
+        }
+
+        /// <summary>
+        /// 唤醒/恢复的官方通道重放。协议没有独立的「恢复灯效」命令，只能调用已有的 SetKeyboardEffect。
+        /// 效果名取已保存的固件效果，缺省时用目录第一项，绝不把 HID 中文显示名送上 MQTT。
+        /// </summary>
+        internal static async Task<bool> RestoreKeyboardEffectViaGcuAsync()
+        {
+            if (service is null || hw is not { IsConnected: true }) return false;
+            var catalog = KeyboardFirmwareEffects.Visible(hw.Capabilities.KeyboardType);
+            LightChannelSettings settings = LightingSettingsStore.Load(MqttTopics.KeyboardCtrl, catalog[0].Id);
+            string effect = KeyboardFirmwareEffects.Contains(settings.Effect) ? settings.Effect : catalog[0].Id;
+            Color? color = LightingSettingsStore.ColorForEffect(effect, settings.ColorArgb);
+            return await service.SetKeyboardEffect(
+                effect, settings.Light, settings.Speed, "None", color, save: false).ConfigureAwait(false);
         }
 
 
@@ -1594,7 +1607,6 @@ namespace MechrevoLite
             if (hw is not null) hw.StateChanged -= OnHardwareStateChanged;
             hw?.Dispose();
             modeControl?.Dispose();
-            OfficialConsoleIsolation.StopGuard();
 
             if (trayIcon is not null)
             {

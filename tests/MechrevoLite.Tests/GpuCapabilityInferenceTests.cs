@@ -129,6 +129,30 @@ public class GpuCapabilityInferenceTests
     }
 
     /// <summary>
+    /// 离开纯集显时官方会再发 <c>DGPU_DIRECT_CONNECT_TOGGLE_OFF</c> 重开独显通路。
+    /// TOGGLE_OFF 的语义是「不是独显直连」，不是「已经是混合」。RB 仍为 ON 时机器还在集显；
+    /// 若 TOGGLE_OFF 一律映射成 GpuStandard，GpuSwitchPolicy 会把离开集显判成 NoChange。
+    /// </summary>
+    [Fact]
+    public void ResolveGpuModeStatus_ToggleOff_DoesNotMaskIgpuLeave()
+    {
+        int resolved = MechrevoHw.ResolveGpuModeStatus(
+            MechrevoService.GpuIGpu,
+            "DGPU_DIRECT_CONNECT_TOGGLE_OFF",
+            "IGPU_ONLY_CONNECT_RB_ON");
+
+        Assert.NotEqual(MechrevoService.GpuStandard, resolved);
+        Assert.Equal(MechrevoService.GpuIGpu, resolved);
+
+        GpuSwitchPlan plan = GpuSwitchPolicy.Resolve(
+            resolved,
+            automaticRuntime: 2,
+            MechrevoService.GpuStandard,
+            supportsHotSwap: true);
+        Assert.NotEqual(GpuSwitchRoute.NoChange, plan.Route);
+    }
+
+    /// <summary>
     /// 显式上报为不支持时，后续可识别的状态不得把它翻回支持。
     /// </summary>
     [Fact]

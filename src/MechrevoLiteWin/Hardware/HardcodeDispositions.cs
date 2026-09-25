@@ -29,8 +29,8 @@ public static class HardcodeDispositions
     public static readonly IReadOnlyList<HardcodeEntry> Items = new HardcodeEntry[]
     {
         new("C1", "YAOSHI 机型串是限充的唯一 allowlist",
-            HardcodeDisposition.MatrixGated, new[] { 91, 96, 100 },
-            "T7：改由 FeatureMatrix（服务画像）+ F3 判定；强制开关语义保留。"),
+            HardcodeDisposition.KeptWithReason, new[] { 91, 96, 100 },
+            "FeatureMatrix 没有充电上限位（厂商 BatteryProtection2 也没有 ItemSupport 位），不能假装矩阵门控。地址对 0x7B9/0x7D0 只在一台机器上验证过；回读一致不是充电已受控的证明。ec_charge_limit 强制开关保留。"),
         new("C2", "ITE 键盘 VID 0x048D / PID 0x600B 加分",
             HardcodeDisposition.KeptWithReason, new[] { 12, 13 },
             "外设身份，不是笔记本机型；命中是软加分（usage-page 评分兜底），换 PID 仍可匹配。"),

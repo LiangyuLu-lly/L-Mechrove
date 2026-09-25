@@ -38,7 +38,8 @@ public class UnsupportedModelUiHappyTests
     [Fact]
     public void AnOutOfSetInjectedModelShowsTheNoticeAndDisablesEveryWriteEntry()
     {
-        using var model = Model("PH6AGxx");
+        // T6: PH6AGxx is ProjectIdNames 5894 and is now Supported.
+        using var model = Model("NOTAMODEL");
         bool previousAudit = Program.UiAuditMode;
         MechrevoHw? previousHardware = Program.hw;
         Program.UiAuditMode = true;
@@ -52,7 +53,7 @@ public class UnsupportedModelUiHappyTests
             Control banner = form.Controls.Find("panelUnsupportedModelNotice", true).Single();
             Assert.True(banner.Visible, "不支持机型必须出现顶部横幅。");
             Label notice = form.Controls.Find("labelUnsupportedModelNotice", true).OfType<Label>().Single();
-            Assert.Contains("PH6AGxx", notice.Text);
+            Assert.Contains("NOTAMODEL", notice.Text);
 
             foreach (string name in SettingsFormWriteEntries.Names)
             {
@@ -89,7 +90,8 @@ public class UnsupportedModelUiHappyTests
                 "集合内机型不得出现横幅。");
 
             Control slider = form.Controls.Find("sliderBattery", true).Single();
-            Assert.True(slider.Enabled, "集合内机型电池写入入口必须可用。");
+            Assert.False(slider.Enabled, "充电上限没有能力证明，滑条不得作为可用写入入口。");
+            Assert.Equal(EcChargeLimit.UnverifiedWriteNotice, form.ChargeLimitSliderReason);
             Assert.True(form.Controls.Find("buttonEco", true).Single().Enabled);
         }
         finally
@@ -104,7 +106,8 @@ public class UnsupportedModelUiHappyTests
     {
         using var model = Model("PH4TRX1");
         Assert.True(RuntimeModelSupport.Current().IsSupported);
-        using var outOfSet = Model("PH6AGxx");
+        // T6: PH6AGxx is ProjectIdNames 5894 and is now Supported.
+        using var outOfSet = Model("NOTAMODEL");
         Assert.Equal(SupportReason.NotInSet, RuntimeModelSupport.Current().Reason);
     }
 }

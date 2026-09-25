@@ -53,8 +53,11 @@ public class SupportDecisionTests
         {
             [1856] = 23,
             [1110] = 0x80,
-            [1905] = 1,
+            [2002] = 0,
             [2003] = 0x30,
+            [1905] = 1,
+            [1906] = 0,
+            [1183] = 0,
         }));
         Assert.Equal("PH6AGxx", identity.ProjectId);
 

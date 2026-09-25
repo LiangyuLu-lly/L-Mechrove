@@ -63,7 +63,11 @@ public class MechrevoService
     readonly SemaphoreSlim _settingLock = new(1, 1);
     readonly SemaphoreSlim _colorCalibrationLock = new(1, 1);
     readonly SemaphoreSlim _liquidCoolingLock = new(1, 1);
+    // 三套独立 CTS：同槽后一次仍取消前一次（档位连点 T5），跨槽互不 previous.Cancel。
+    // 滑条防抖的 SetCustomDetail 不得取消在飞的 SwitchCustomProfile。
     CancellationTokenSource? _modeSwitchCts;
+    CancellationTokenSource? _customProfileSwitchCts;
+    CancellationTokenSource? _customDetailCts;
     CancellationTokenSource? _gpuSwitchCts;
 
     /// <summary>
@@ -201,6 +205,11 @@ public class MechrevoService
             {
                 MechrevoLite.Mode.ModeControl.SyncExternalModeStatic(mode);
                 ModeChanged?.Invoke(mode);
+                if (mode == ModeTurbo)
+                    await _hw.RepairPathologicalTurboFanCurveAsync().ConfigureAwait(false);
+                if (ShouldApplyTurboGpuOverclockDefaultsOnModeSwitch(
+                    mode, _hw.Capabilities.SilentTurboAvailability == FeatureAvailability.Supported))
+                    await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
                 return true;
             }
 
@@ -279,6 +288,11 @@ public class MechrevoService
             MechrevoLite.Mode.ModeControl.SyncExternalModeStatic(mode);
             ModeChanged?.Invoke(mode);
             await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" }).ConfigureAwait(false);
+            if (mode == ModeTurbo)
+                await _hw.RepairPathologicalTurboFanCurveAsync().ConfigureAwait(false);
+            if (ShouldApplyTurboGpuOverclockDefaultsOnModeSwitch(
+                mode, _hw.Capabilities.SilentTurboAvailability == FeatureAvailability.Supported))
+                await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)
@@ -302,16 +316,29 @@ public class MechrevoService
     /// <summary>切换自定义性能档（原版序列：OPERATING_CUSTOM_MODE + LCHWOC IsCustomRun + 刷新曲线设置 + 回读）。</summary>
     public async Task<bool> SwitchCustomProfile(int index)
     {
+        var requestCts = new CancellationTokenSource();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref _customProfileSwitchCts, requestCts);
+        previous?.Cancel();
+        bool lockTaken = false;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            if (!await AcquireSwitchLockAsync($"SwitchCustomProfile({index})", CancellationToken.None))
-                return false;
-            try
-            {
+            lockTaken = await AcquireSwitchLockAsync($"SwitchCustomProfile({index})", requestCts.Token).ConfigureAwait(false);
+            if (!lockTaken) return false;
+            requestCts.Token.ThrowIfCancellationRequested();
             if (index is < 0 or > 3) return false;
-            if (_hw is not { IsConnected: true }) return false;
+            if (_hw is not { IsConnected: true })
+            {
+                Logger.WriteLine("SwitchCustomProfile: GCU 未连接");
+                return false;
+            }
             _hw.SuspendDirectGpuOverclock();
             _hw.MarkModeSwitchPending(3);
+            // 先订再发：回读若在 Publish 返回后、WaitForStateAsync 订阅前到达会丢。
+            Task<bool> modeWait = _hw.WaitForStateAsync(
+                () => _hw.OperatingMode == 3 && _hw.CustomProfileIndex == index,
+                TimeSpan.FromMilliseconds(250),
+                requestCts.Token);
             // 与 SwitchMode 同理：发布失败要解除过期包过滤窗口。
             try
             {
@@ -326,15 +353,15 @@ public class MechrevoService
                 _hw.ClearModeSwitchPending();
                 throw;
             }
-            bool confirmed = await _hw.WaitForStateAsync(
-                () => _hw.OperatingMode == 3 && _hw.CustomProfileIndex == index,
-                TimeSpan.FromMilliseconds(250));
+            bool confirmed = await modeWait;
+            requestCts.Token.ThrowIfCancellationRequested();
             if (!confirmed)
             {
                 await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 confirmed = await _hw.WaitForStateAsync(
                     () => _hw.OperatingMode == 3 && _hw.CustomProfileIndex == index,
-                    TimeSpan.FromMilliseconds(900));
+                    TimeSpan.FromMilliseconds(900),
+                    requestCts.Token);
             }
             Logger.WriteLine($"SwitchCustomProfile({index}) confirmed={confirmed} actualMode={_hw.OperatingMode} actualProfile={_hw.CustomProfileIndex}");
             if (confirmed)
@@ -343,7 +370,8 @@ public class MechrevoService
                 await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 await _hw.WaitForStateAsync(
                     () => _hw.CustomProfileIndex == index && _hw.FanStatusVersion > initialFanStatus,
-                    TimeSpan.FromMilliseconds(900));
+                    TimeSpan.FromMilliseconds(900),
+                    requestCts.Token);
                 _hw.NotifyCustomModeChanged();
                 _hw.RestoreDirectGpuOverclockProfile(index);
                 AppConfig.Set("custom_last_profile", index);
@@ -352,22 +380,35 @@ public class MechrevoService
                 ModeChanged?.Invoke(ModeCustom);
             }
             return confirmed;
-            }
-            finally { _switchLock.Release(); }
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.WriteLine($"SwitchCustomProfile({index}) superseded after {elapsed.ElapsedMilliseconds}ms");
+            return false;
         }
         catch (Exception ex) { Logger.WriteLine("SwitchCustomProfile fail: " + ex.Message); return false; }
+        finally
+        {
+            if (lockTaken) _switchLock.Release();
+            Interlocked.CompareExchange(ref _customProfileSwitchCts, null, requestCts);
+            requestCts.Dispose();
+        }
     }
 
     /// <summary>设置当前自定义档参数（SET_OPERATING_MODE_DETAIL，服务端保存到当前档）。
     /// 实测：同包多字段时服务端只应用部分字段——必须逐字段单独发包（与原版 UI 每命令单字段一致）。</summary>
     public async Task<bool> SetCustomDetail(Dictionary<string, string> fields)
     {
+        var requestCts = new CancellationTokenSource();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref _customDetailCts, requestCts);
+        previous?.Cancel();
+        bool lockTaken = false;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            if (!await AcquireSwitchLockAsync("SetCustomDetail", CancellationToken.None))
-                return false;
-            try
-            {
+            lockTaken = await AcquireSwitchLockAsync("SetCustomDetail", requestCts.Token).ConfigureAwait(false);
+            if (!lockTaken) return false;
+            requestCts.Token.ThrowIfCancellationRequested();
             if (fields.Count == 0) return false;
             bool hasGpuOverclockFields = fields.Keys.Any(IsGpuOverclockField);
             if (hasGpuOverclockFields) _hw.EnsureDirectGpuOverclock();
@@ -460,13 +501,15 @@ public class MechrevoService
             if (!confirmed)
                 confirmed = await _hw.WaitForStateAsync(
                     () => gcuConfirmationEntries.All(field => GcuCustomFieldMatches(field.Key, field.Value)),
-                    TimeSpan.FromMilliseconds(400));
+                    TimeSpan.FromMilliseconds(400),
+                    requestCts.Token);
             if (!confirmed)
             {
                 await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                 confirmed = await _hw.WaitForStateAsync(
                     () => gcuConfirmationEntries.All(field => GcuCustomFieldMatches(field.Key, field.Value)),
-                    TimeSpan.FromMilliseconds(2200));
+                    TimeSpan.FromMilliseconds(2200),
+                    requestCts.Token);
             }
 
             bool nonGpuFieldsConfirmed = gcuConfirmationEntries
@@ -490,7 +533,8 @@ public class MechrevoService
                         await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
                         gcuConfirmed = await _hw.WaitForStateAsync(
                             DriverConfirm,
-                            TimeSpan.FromMilliseconds(6000));
+                            TimeSpan.FromMilliseconds(6000),
+                            requestCts.Token);
                     }
                     confirmed = gcuConfirmed;
                     Logger.WriteLine($"SetCustomDetail extended GPU offsets confirmed via driver readback: {confirmed}");
@@ -513,10 +557,19 @@ public class MechrevoService
             Logger.WriteLine($"SetCustomDetail source={source} confirmed={confirmed}: " +
                 string.Join(", ", fields.Select(kv => kv.Key + "=" + kv.Value)));
             return confirmed;
-            }
-            finally { _switchLock.Release(); }
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.WriteLine($"SetCustomDetail superseded after {elapsed.ElapsedMilliseconds}ms");
+            return false;
         }
         catch (Exception ex) { Logger.WriteLine("SetCustomDetail fail: " + ex.Message); return false; }
+        finally
+        {
+            if (lockTaken) _switchLock.Release();
+            Interlocked.CompareExchange(ref _customDetailCts, null, requestCts);
+            requestCts.Dispose();
+        }
     }
 
     bool ValidateCustomField(string key, string text)
@@ -584,6 +637,55 @@ public class MechrevoService
 
     static bool IsGpuOverclockField(string key) => key is
         "GpuCoreClockOffsetOC" or "GpuMemoryClockOffsetOC" or "OverClockingSwitch";
+
+    /// <summary>
+    /// Turbo with no silent/extreme split is the vendor 狂暴 button: apply official GPU OC.
+    /// When sub-modes exist, wait for <see cref="SwitchTurboSubMode"/> so 静音狂暴 does not get +105/+500.
+    /// </summary>
+    internal static bool ShouldApplyTurboGpuOverclockDefaultsOnModeSwitch(int mode, bool turboSubModeSupported) =>
+        mode == ModeTurbo && !turboSubModeSupported;
+
+    /// <summary>Extreme turbo (silent=false) gets the vendor auto-OC; silent turbo does not.</summary>
+    internal static bool ShouldApplyTurboGpuOverclockDefaultsOnSubMode(bool silent) => !silent;
+
+    /// <summary>
+    /// Official HomePage turbo GPU OC: <c>SET_OPERATING_MODE_DETAIL</c> one field per packet
+    /// (FEATURES.md). NvAPI is suspended outside custom mode, so this path must go through GCU.
+    /// </summary>
+    internal static readonly (string Key, string Value)[] TurboGpuOverclockDefaultFields =
+    {
+        ("OverClockingSwitch", "1"),
+        ("GpuCoreClockOffsetOC", MechrevoHw.TurboGpuCoreOffsetMhz.ToString()),
+        ("GpuMemoryClockOffsetOC", MechrevoHw.TurboGpuMemoryOffsetMhz.ToString()),
+    };
+
+    internal async Task<bool> ApplyTurboGpuOverclockDefaults()
+    {
+        if (_hw is not { IsConnected: true }) return false;
+        if (!_hw.SupportsGpuOverclock && !_hw.Capabilities.OverclockSettings) return false;
+        try
+        {
+            for (int i = 0; i < TurboGpuOverclockDefaultFields.Length; i++)
+            {
+                (string key, string value) = TurboGpuOverclockDefaultFields[i];
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
+                {
+                    ["Action"] = "SET_OPERATING_MODE_DETAIL",
+                    [key] = value,
+                }).ConfigureAwait(false);
+                if (i + 1 < TurboGpuOverclockDefaultFields.Length)
+                    await Task.Delay(120).ConfigureAwait(false);
+            }
+            Logger.WriteLine(
+                $"ApplyTurboGpuOverclockDefaults sent core={MechrevoHw.TurboGpuCoreOffsetMhz} memory={MechrevoHw.TurboGpuMemoryOffsetMhz}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("ApplyTurboGpuOverclockDefaults fail: " + ex.Message);
+            return false;
+        }
+    }
 
     /// <summary>
     /// 总闸类字段：必须在同批的数值字段之前下发，否则服务端会丢掉被关着的那一项的值。
@@ -943,8 +1045,10 @@ public class MechrevoService
         bool lockTaken = false;
         try
         {
-            if (_hw is not { IsConnected: true } || mode is < GpuIGpu or > GpuAuto || !_hw.CanSwitchGpuMode(mode))
+            if (_hw is not { IsConnected: true } || mode is < GpuIGpu or > GpuAuto)
                 return GpuRestartRequestOutcome.Failed;
+            if (!_hw.CanSwitchGpuMode(mode))
+                return GpuRestartRequestOutcome.Unsupported;
 
             lockTaken = await AcquireSwitchLockAsync(
                 $"RequestGpuModeRestartAsync({mode})", requestCts.Token).ConfigureAwait(false);
@@ -1050,15 +1154,9 @@ public class MechrevoService
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
 
-        // 逐动作再收窄一次：该代际动作词汇里没有的动作一律不发（未知代际不受限）。
-        return IsGenerationRestricted(generation)
-            ? route.Where(payload => DisplayRoutePolicy.AllowsAction(generation, ActionOf(payload))).ToArray()
-            : route;
+        // 逐动作再收窄一次：事实表里没有的动作一律不发。Unknown/NoDgpu 没有行，结果为空。
+        return route.Where(payload => DisplayRoutePolicy.AllowsAction(generation, ActionOf(payload))).ToArray();
     }
-
-    /// <summary>30/40/50 才是"已知代际"；Unknown/NoDgpu 不套用代际限制。</summary>
-    static bool IsGenerationRestricted(DgpuGenerationKind generation) =>
-        generation is DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50;
 
     static string ActionOf(Dictionary<string, object> payload) =>
         payload.TryGetValue("Action", out object? value) ? value?.ToString() ?? "" : "";
@@ -1380,7 +1478,7 @@ public class MechrevoService
     {
         try
         {
-            if (!_hw.UsbChargerSeen) return false;
+            if (!_hw.SupportsQuickSwitch("usb")) return false;
             await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = on ? "USB_CHARGER_ON" : "USB_CHARGER_OFF" });
             bool confirmed = await ConfirmSettingAsync(() => _hw.UsbCharger == on);
             Logger.WriteLine($"SwitchUsbCharger({on}) confirmed={confirmed}");
@@ -2088,8 +2186,19 @@ public class MechrevoService
     /// </summary>
     public Task<bool> SetKeyboardBrightnessPreservingEffect(int level0to4)
     {
-        string effect = string.IsNullOrWhiteSpace(_hw.KeyboardEffect) ? "Single" : _hw.KeyboardEffect;
-        return SetLightEffect(MqttTopics.KeyboardCtrl, effect, light: level0to4);
+        string effect;
+        int speed = 1;
+        Color? singleColor = null;
+        if (LightingSettingsStore.TryLoad(MqttTopics.KeyboardCtrl, out LightChannelSettings settings)
+            && KeyboardFirmwareEffects.Contains(settings.Effect))
+        {
+            effect = settings.Effect;
+            speed = settings.Speed;
+            singleColor = LightingSettingsStore.ColorForEffect(effect, settings.ColorArgb);
+        }
+        else
+            effect = string.IsNullOrWhiteSpace(_hw.KeyboardEffect) ? "Single" : _hw.KeyboardEffect;
+        return SetLightEffect(MqttTopics.KeyboardCtrl, effect, light: level0to4, speed, "None", singleColor);
     }
 
     /// <summary>通用灯效命令（键盘/灯条/Logo 灯共用 MyKeyBoard 载荷结构，仅 topic 不同）。
@@ -2255,7 +2364,12 @@ public class MechrevoService
         try
         {
             if (_hw is not { IsConnected: true } || _hw.Capabilities.SilentTurboAvailability != FeatureAvailability.Supported) return false;
-            if (IsSilentTurboActive == silent) return true;
+            if (IsSilentTurboActive == silent)
+            {
+                if (ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
+                    await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
+                return true;
+            }
             var action = silent ? "SET_CPU_CORE_OFFSET_SILENT" : "SET_CPU_CORE_OFFSET_EXTREME";
             await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
             {
@@ -2268,6 +2382,8 @@ public class MechrevoService
                 if (IsSilentTurboActive == silent)
                 {
                     Logger.WriteLine($"SwitchTurboSubMode(silent={silent}) confirmed");
+                    if (ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
+                        await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
                     return true;
                 }
             }

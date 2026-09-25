@@ -101,3 +101,17 @@
   对 `?acl` / `?bucketInfo` 返回 `The bucket you access does not belong to you`。
   即：该 AK 能通过签名校验，但**没有被授权写这个 Bucket**（疑为其所属账号与本 Bucket 归属账号不一致，或尚未绑定含 `oss:PutObject` 的 RAM 策略）。
   解决需在阿里云控制台为对应 RAM 用户绑定 `tools\oss-writer-policy.json`（或确认 AK 与 Bucket 是否同一账号）。在此之前，脚本无法完成真实上传。
+
+## 6. Tauri host — local credentials (not in repo)
+
+The in-app check does **not** call the vendor production URL until these are supplied.
+Put them in one of the gitignored files (`app/.env.local`, `app/src-tauri/.env`, `.local/update.env`)
+or the process environment. Do not commit values.
+
+| Key | Purpose |
+| --- | --- |
+| `LMECHREVO_UPDATE_CHECK_URL` | Absolute check URL (HTTPS, or HTTP only on loopback) |
+| `LMECHREVO_UPDATE_USERNAME` | Optional basic-auth user |
+| `LMECHREVO_UPDATE_PASSWORD` | Optional basic-auth password |
+
+Authenticode is **not** implemented on the Tauri host. Integrity is sha256 + size only.

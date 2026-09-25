@@ -38,6 +38,8 @@ public class UiStyleDisciplineTests
         (Path.Combine("src", "MechrevoLiteWin", "Settings.Designer.cs"), "BorderColor = Color.Transparent", "RButton 的「不画描边」语义，不是 BackColor 透明"),
         (Path.Combine("src", "MechrevoLiteWin", "LightForm.cs"), "settings.ColorArgb", "灯色读回值：设备色彩数据，不是饰面"),
         (Path.Combine("src", "MechrevoLiteWin", "LightForm.cs"), "_singleColor = Color.White", "单色灯效的出厂默认色：设备色彩数据，不是饰面"),
+        (Path.Combine("src", "MechrevoLiteWin", "RgbForm.cs"), "settings.ColorArgb", "GCU 键盘固件单色读回值：设备色彩数据，不是饰面"),
+        (Path.Combine("src", "MechrevoLiteWin", "RgbForm.cs"), "GcuSettings().ColorArgb", "GCU 键盘固件单色读回值：设备色彩数据，不是饰面"),
     };
 
     /// <summary>允许保留的字号字面量，逐条给出理由。</summary>

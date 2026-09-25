@@ -23,25 +23,34 @@ public class HeaderAlignmentTests
     [Fact]
     public void AllZoneHeaders_UseCanonicalIconColumnAndMargin()
     {
-        using var form = BuildForm();
-
-        var headers = new[]
+        bool previousAuditMode = Program.UiAuditMode;
+        Program.UiAuditMode = true;
+        try
         {
-            form.Controls.Find("labelPerf", true).OfType<Label>().Single().Parent!,
-            form.Controls.Find("labelGPU", true).OfType<Label>().Single().Parent!,
-            form.Controls.Find("labelBatteryTitle", true).OfType<Label>().Single().Parent!,
-            form.Controls.Find("labelScreenRow", true).OfType<Label>().Single().Parent!,
-        };
+            using var form = BuildForm();
 
-        foreach (Control header in headers)
+            var headers = new[]
+            {
+                form.Controls.Find("labelPerf", true).OfType<Label>().Single().Parent!,
+                form.Controls.Find("labelGPU", true).OfType<Label>().Single().Parent!,
+                form.Controls.Find("labelBatteryTitle", true).OfType<Label>().Single().Parent!,
+                form.Controls.Find("labelScreenRow", true).OfType<Label>().Single().Parent!,
+            };
+
+            foreach (Control header in headers)
+            {
+                var table = Assert.IsType<BufferedTableLayoutPanel>(header);
+                Assert.Equal(SizeType.Absolute, table.ColumnStyles[0].SizeType);
+                Assert.Equal(ResponsiveLayout.LogicalToDevice(form, 26), table.ColumnStyles[0].Width);
+
+                Control icon = GetHeaderIcon(header);
+                Assert.Equal(DockStyle.Fill, icon.Dock);
+                Assert.Equal(Padding.Empty, icon.Margin);
+            }
+        }
+        finally
         {
-            var table = Assert.IsType<BufferedTableLayoutPanel>(header);
-            Assert.Equal(SizeType.Absolute, table.ColumnStyles[0].SizeType);
-            Assert.Equal(ResponsiveLayout.LogicalToDevice(form, 26), table.ColumnStyles[0].Width);
-
-            Control icon = GetHeaderIcon(header);
-            Assert.Equal(DockStyle.Fill, icon.Dock);
-            Assert.Equal(Padding.Empty, icon.Margin);
+            Program.UiAuditMode = previousAuditMode;
         }
     }
 

@@ -1,13 +1,13 @@
 #Requires -Version 5.1
 # ASCII-only by design (Windows PowerShell 5.1 reads .ps1 as ANSI without a BOM).
 # This is the GCU payload installer the Inno Setup package runs AFTER copying files.
-# It selects the vendor payload matching the local GPU generation, copies it under
+# It installs the one shipped GCU payload, copies it under
 # %ProgramFiles%\L-Mechrevo\GCU, verifies Authenticode, installs the UWACPI driver,
 # registers + starts the GCUBridge service and adds the MQTT blocking firewall rule.
 # The whole step is idempotent: re-running repairs instead of failing.
 <#
 .SYNOPSIS
-    Install the generation-matched GCU vendor payload bundled by L-Mechrevo.
+    Install the shipped GCU vendor payload bundled by L-Mechrevo.
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File Install-Gcu.ps1 `
@@ -18,7 +18,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$StagingRoot,
     [Parameter(Mandatory = $true)][string]$TargetDir,
-    [ValidateSet('Auto', '50', '40-51749', '40-51751')][string]$Variant = 'Auto',
+    [ValidateSet('Auto')][string]$Variant = 'Auto',
     [string]$LogDir,
     [string]$UninstallScriptPath,
     [string]$InstallerVersion,
@@ -293,14 +293,20 @@ $script:VendorProcessNames = @(
 )
 # ASCII-only file: the Chinese display names are built from code points, never typed literally.
 $script:VendorUninstallMarkers = @(
-    'GamingCenter', 'ControlCenter', 'Mechrevo Gaming', 'AISTONE', 'Uniwill',
+    'GamingCenter', 'ControlCenter', 'Mechrevo Gaming', 'Mechrevo', 'AISTONE', 'Uniwill', 'CCU.WinUI', 'CCUWinUI',
     (-join @([char]0x7535, [char]0x7ADE, [char]0x63A7, [char]0x5236, [char]0x53F0)),   # dian jing kong zhi tai
-    (-join @([char]0x63A7, [char]0x5236, [char]0x53F0))                                # kong zhi tai
+    (-join @([char]0x673A, [char]0x68B0, [char]0x9769, [char]0x547D))                  # ji xie ge ming
 )
-# Only these exact directories may be removed. Never a parent, never a wildcard.
+# Product folders under Program Files. Never L-Mechrevo\GCU (our payload).
 $script:VendorDirectoryAllowList = @(
-    'L-Mechrevo\GCU', 'L-Mechrevo\GCU\AiStoneService', 'L-Mechrevo\GCU\UniwillService',
-    'L-Mechrevo\GCU\UWACPIDriver', 'L-Mechrevo\GCU\payload'
+    'OEM\ControlCenter',
+    'OEM\CCUWinUI',
+    'OEM\GamingCenter',
+    'ControlCenter',
+    'CCUWinUI',
+    'GamingCenter',
+    'GamingCenter3',
+    'AISTONE'
 )
 
 function Test-VendorArtefactRemovable {
@@ -347,8 +353,8 @@ function Test-VendorArtefactRemovable {
             return 'KEEP'
         }
         'directory' {
-            # Allow-list only: the value must END with one of the exact vendor GCU paths.
             $normalized = $Value.TrimEnd('\')
+            if ($normalized -like '*\L-Mechrevo\GCU*') { return 'KEEP' }
             foreach ($allowed in $script:VendorDirectoryAllowList) {
                 if ($normalized -like ('*' + $allowed)) { return 'REMOVABLE' }
             }
@@ -358,37 +364,46 @@ function Test-VendorArtefactRemovable {
     }
 }
 
-function Remove-VendorConsole {
+function Get-NotePropertyString {
+    # StrictMode forbids $obj.DisplayName when the registry value is missing.
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return '' }
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($null -eq $prop -or $null -eq $prop.Value) { return '' }
+    return [string]$prop.Value
+}
+
+function Invoke-VendorUninstallCommand {
+    param([string]$DisplayName, [string]$Quiet, [string]$Normal)
+    $line = $Quiet
+    if ([string]::IsNullOrWhiteSpace($line)) { $line = $Normal }
+    if ([string]::IsNullOrWhiteSpace($line)) { return $false }
+    if ($line -match '(?i)msiexec' -and $line -notmatch '(?i)/qn') {
+        $line = $line.Trim() + ' /qn /norestart'
+    }
+    Write-Log ('  running uninstall for {0}: {1}' -f $DisplayName, $line)
+    try {
+        $process = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $line) -PassThru -WindowStyle Hidden
+        if ($null -eq $process) { return $false }
+        if (-not $process.WaitForExit(180000)) {
+            try { $process.Kill() } catch { Write-Log ('  kill timed-out uninstall failed for {0}' -f $DisplayName) }
+            Write-Log ('  uninstall timed out for {0}' -f $DisplayName)
+            return $false
+        }
+        Write-Log ('  uninstall exit code {0} for {1}' -f $process.ExitCode, $DisplayName)
+        return ($process.ExitCode -eq 0)
+    }
+    catch {
+        Write-Log ('  uninstall command failed for {0}: {1}' -f $DisplayName, $_.Exception.Message)
+        return $false
+    }
+}
+
+function Remove-VendorConsoleCore {
     # Idempotent, logged, non-fatal. Reports what was found, removed and skipped.
     $removed = New-Object System.Collections.Generic.List[string]
     $skipped = New-Object System.Collections.Generic.List[string]
 
-    # 1. UWP/MSIX package form.
-    $packages = @()
-    try {
-        $packages = @(Get-AppxPackage -ErrorAction Stop | Where-Object {
-            (Test-VendorArtefactRemovable -Kind 'package' -Value $_.Name) -eq 'REMOVABLE'
-        })
-    }
-    catch { Write-Log ('  could not enumerate Appx packages: ' + $_.Exception.Message) }
-
-    if ($packages.Count -eq 0) {
-        Write-Log '  no official console package found'
-    }
-    foreach ($package in $packages) {
-        Write-Log ('  found official console package: {0}' -f $package.PackageFullName)
-        try {
-            Remove-AppxPackage -Package $package.PackageFullName -ErrorAction Stop
-            $removed.Add($package.PackageFullName)
-            Write-Log ('  removed official console package: {0}' -f $package.PackageFullName)
-        }
-        catch {
-            $skipped.Add($package.PackageFullName)
-            Write-Log ('  official console package could not be removed ({0}); continuing: {1}' -f $package.PackageFullName, $_.Exception.Message)
-        }
-    }
-
-    # 2. Desktop-exe form: stop the UI processes, then remove the allow-listed dirs.
     foreach ($name in $script:VendorProcessNames) {
         foreach ($process in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
             Write-Log ('  stopping official console process: {0} (pid {1})' -f $name, $process.Id)
@@ -396,6 +411,94 @@ function Remove-VendorConsole {
         }
     }
 
+    # 1. Add/Remove Programs uninstall (Win32 / MSI). This is the real "uninstall official console".
+    $uninstallRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+    )
+    $uninstallFound = 0
+    foreach ($root in $uninstallRoots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        foreach ($item in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $props = $null
+            try { $props = Get-ItemProperty -LiteralPath $item.PSPath -ErrorAction Stop } catch { continue }
+            $display = Get-NotePropertyString -Object $props -Name 'DisplayName'
+            if ((Test-VendorArtefactRemovable -Kind 'uninstall' -Value $display) -ne 'REMOVABLE') { continue }
+            $uninstallFound++
+            Write-Log ('  found official console uninstall entry: {0}' -f $display)
+            if (Invoke-VendorUninstallCommand -DisplayName $display -Quiet (Get-NotePropertyString -Object $props -Name 'QuietUninstallString') -Normal (Get-NotePropertyString -Object $props -Name 'UninstallString')) {
+                $removed.Add($display)
+                Write-Log ('  removed official console via uninstall: {0}' -f $display)
+            }
+            else {
+                $skipped.Add($display)
+                Write-Log ('  official console uninstall could not be removed ({0}); continuing' -f $display)
+            }
+        }
+    }
+    if ($uninstallFound -eq 0) {
+        Write-Log '  no official console uninstall entry found'
+    }
+
+    # 2. UWP/MSIX: current user, all users, and provisioned image.
+    $packages = @()
+    try {
+        $packages = @(Get-AppxPackage -AllUsers -ErrorAction Stop | Where-Object {
+            (Test-VendorArtefactRemovable -Kind 'package' -Value $_.Name) -eq 'REMOVABLE'
+        })
+    }
+    catch {
+        Write-Log ('  Get-AppxPackage -AllUsers failed, falling back to current user: ' + $_.Exception.Message)
+        try {
+            $packages = @(Get-AppxPackage -ErrorAction Stop | Where-Object {
+                (Test-VendorArtefactRemovable -Kind 'package' -Value $_.Name) -eq 'REMOVABLE'
+            })
+        }
+        catch { Write-Log ('  could not enumerate Appx packages: ' + $_.Exception.Message) }
+    }
+
+    if ($packages.Count -eq 0) {
+        Write-Log '  no official console package found'
+    }
+    foreach ($package in $packages) {
+        Write-Log ('  found official console package: {0}' -f $package.PackageFullName)
+        try {
+            Remove-AppxPackage -Package $package.PackageFullName -AllUsers -ErrorAction Stop
+            $removed.Add($package.PackageFullName)
+            Write-Log ('  removed official console package: {0}' -f $package.PackageFullName)
+        }
+        catch {
+            try {
+                Remove-AppxPackage -Package $package.PackageFullName -ErrorAction Stop
+                $removed.Add($package.PackageFullName)
+                Write-Log ('  removed official console package (current user): {0}' -f $package.PackageFullName)
+            }
+            catch {
+                $skipped.Add($package.PackageFullName)
+                Write-Log ('  official console package could not be removed ({0}); continuing: {1}' -f $package.PackageFullName, $_.Exception.Message)
+            }
+        }
+    }
+
+    try {
+        foreach ($prov in @(Get-AppxProvisionedPackage -Online -ErrorAction Stop)) {
+            if ((Test-VendorArtefactRemovable -Kind 'package' -Value $prov.DisplayName) -ne 'REMOVABLE') { continue }
+            Write-Log ('  found official console provisioned package: {0}' -f $prov.PackageName)
+            try {
+                Remove-AppxProvisionedPackage -Online -PackageName $prov.PackageName -ErrorAction Stop | Out-Null
+                $removed.Add($prov.PackageName)
+                Write-Log ('  removed official console provisioned package: {0}' -f $prov.PackageName)
+            }
+            catch {
+                $skipped.Add($prov.PackageName)
+                Write-Log ('  official console provisioned package could not be removed ({0}); continuing: {1}' -f $prov.PackageName, $_.Exception.Message)
+            }
+        }
+    }
+    catch { Write-Log ('  could not enumerate provisioned Appx packages: ' + $_.Exception.Message) }
+
+    # 3. Desktop-exe folders on the allow-list.
     $programRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }
     foreach ($root in $programRoots) {
         foreach ($allowed in $script:VendorDirectoryAllowList) {
@@ -418,7 +521,7 @@ function Remove-VendorConsole {
         }
     }
 
-    # 3. Autostart entries pointing at a vendor console executable.
+    # 4. Autostart entries pointing at a vendor console executable.
     foreach ($hive in @('HKCU:', 'HKLM:')) {
         foreach ($sub in @('SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce')) {
             $key = Join-Path $hive $sub
@@ -439,7 +542,43 @@ function Remove-VendorConsole {
         }
     }
 
+    # 5. Start Menu / desktop shortcuts.
+    $shortcutRoots = @(
+        (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'),
+        (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
+        (Join-Path $env:PUBLIC 'Desktop'),
+        (Join-Path $env:USERPROFILE 'Desktop')
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    foreach ($root in $shortcutRoots) {
+        foreach ($lnk in @(Get-ChildItem -LiteralPath $root -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue)) {
+            if ((Test-VendorArtefactRemovable -Kind 'shortcut' -Value $lnk.FullName) -ne 'REMOVABLE') { continue }
+            Write-Log ('  found official console shortcut: {0}' -f $lnk.FullName)
+            try {
+                Remove-Item -LiteralPath $lnk.FullName -Force -ErrorAction Stop
+                $removed.Add($lnk.FullName)
+                Write-Log ('  removed official console shortcut: {0}' -f $lnk.FullName)
+            }
+            catch {
+                $skipped.Add($lnk.FullName)
+                Write-Log ('  official console shortcut could not be removed ({0}); continuing: {1}' -f $lnk.FullName, $_.Exception.Message)
+            }
+        }
+    }
+
     return [pscustomobject]@{ Removed = $removed; Skipped = $skipped }
+    }
+
+function Remove-VendorConsole {
+    try {
+        return Remove-VendorConsoleCore
+    }
+    catch {
+        Write-Log ('  vendor-console removal failed (non-fatal): ' + $_.Exception.Message)
+        return [pscustomobject]@{
+            Removed = New-Object System.Collections.Generic.List[string]
+            Skipped = New-Object System.Collections.Generic.List[string]
+        }
+    }
 }
 
 function Get-GcuFallbackGuidance {
@@ -495,6 +634,27 @@ function Get-GcuPostInstallFacts {
         ItemSupportPresent = $itemSupportPresent
         ServiceReady = $serviceReady
     }
+}
+
+function Wait-GcuPostInstallFacts {
+    # GCUBridge writes ItemSupport / ServiceReady and binds 13688 after Start-Service returns.
+    # A single immediate probe is a field false-fail: setup then exits 1 while the service is
+    # still coming up, and the app sits on "GCU connecting" forever.
+    param([int]$TimeoutSeconds = 30)
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $facts = Get-GcuPostInstallFacts
+    $verdict = Test-GcuPostInstall -ServiceNames $facts.ServiceNames -ListenerPids $facts.ListenerPids `
+        -ItemSupportPresent $facts.ItemSupportPresent -ServiceReady $facts.ServiceReady
+    while (-not $verdict.Ok) {
+        if ([datetime]::UtcNow -ge $deadline) { break }
+        $reason = (@($verdict.Failed) | ForEach-Object { $_.Name }) -join ','
+        Write-Log ("  post-install not ready yet ({0}); retrying" -f $reason)
+        Start-Sleep -Seconds 1
+        $facts = Get-GcuPostInstallFacts
+        $verdict = Test-GcuPostInstall -ServiceNames $facts.ServiceNames -ListenerPids $facts.ListenerPids `
+            -ItemSupportPresent $facts.ItemSupportPresent -ServiceReady $facts.ServiceReady
+    }
+    return [pscustomobject]@{ Facts = $facts; Verdict = $verdict }
 }
 
 function Write-GcuInstallStatus {
@@ -614,7 +774,8 @@ function Get-AutostartTaskName {
 function Register-AutostartTask {
     param([Parameter(Mandatory = $true)][string]$AppExe)
     if (-not (Test-Path -LiteralPath $AppExe)) {
-        throw ("autostart task target not found: {0}" -f $AppExe)
+        Write-Log ("  skipping autostart task: app exe not found ({0})" -f $AppExe)
+        return $null
     }
     $taskName = Get-AutostartTaskName
     $userName = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).Name
@@ -637,7 +798,7 @@ function Register-AutostartTask {
     # can never leave the machine without an autostart entry.
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger @($logonTrigger, $consoleTrigger) `
         -Principal $principal -Settings $settings -Force | Out-Null
-    Write-Log ("  autostart task registered: {0} (RunLevel=Highest, action='{1}' with no arguments)" -f $taskName, $AppExe)
+    Write-Log ("  autostart task registered: {0} (RunLevel=Highest, action='{1}' Argument=startup)" -f $taskName, $AppExe)
     return $taskName
 }
 
@@ -766,13 +927,28 @@ try {
     if ($action -eq 'VerifyOnly' -and -not $DryRun) {
         $service = Get-Service -Name $script:ServiceName -ErrorAction SilentlyContinue
         if ($service -and $service.Status -eq 'Running') {
-            Write-Log 'already installed with the same payload identity and RUNNING; verifying signatures and firewall only'
+            Write-Log 'already installed with the same payload identity and RUNNING; verifying signatures, firewall, and post-install facts'
             Assert-SignedFile -Path $serviceExe -Label 'GCUBridge'
             Assert-SignedFile -Path $gcuServiceExe -Label 'GCUService'
             Assert-SignedFile -Path $driverSys -Label 'UWACPIDriver'
             Ensure-FirewallRule
             Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion
-            Write-Log 'GCU install OK (no changes needed)'
+            # Service Running is not enough: ItemSupport / ServiceReady / 13688 can still be missing.
+            Write-Log 'post-install verification (single service / 13688 owner / ItemSupport / ServiceReady)'
+            $waited = Wait-GcuPostInstallFacts -TimeoutSeconds 30
+            $verdict = $waited.Verdict
+            $resolvedStatusDir = if (-not [string]::IsNullOrWhiteSpace($StatusDir)) { $StatusDir } else { $LogDir }
+            $verdictReason = (@($verdict.Checks) | ForEach-Object { ('{0}={1}' -f $_.Name, $_.Ok) }) -join ' '
+            $statusPath = Write-GcuInstallStatus -StatusDir $resolvedStatusDir -Status $(if ($verdict.Ok) { 'ready' } else { 'failed' }) -Reason $verdictReason -Checks $verdict.Checks
+            if (-not $verdict.Ok) {
+                $reasons = (@($verdict.Failed) | ForEach-Object { ('{0}: {1}' -f $_.Name, $_.Detail) }) -join '; '
+                Write-Log ('FATAL: post-install verification failed: ' + $reasons)
+                Write-Log ('FATAL: see ' + $script:LogFile + ' (gcu-install-*.log)')
+                $guidance = Get-GcuFallbackGuidance
+                foreach ($line in $guidance.Lines) { Write-Log ('FALLBACK: ' + $line) }
+                exit 1
+            }
+            Write-Log ('GCU install OK (no changes needed); status file: ' + $statusPath)
             exit 0
         }
     }
@@ -831,30 +1007,12 @@ try {
     }
     else {
         Start-GcuService
-
-        # Post-install verification: the vendor service is the source of truth for ItemSupport and
-        # ServiceReady; a failure is surfaced explicitly (Inno [Run] has no ignoreerrors).
-        Write-Log 'post-install verification (single service / 13688 owner / ItemSupport / ServiceReady)'
-        $facts = Get-GcuPostInstallFacts
-        $verdict = Test-GcuPostInstall -ServiceNames $facts.ServiceNames -ListenerPids $facts.ListenerPids -ItemSupportPresent $facts.ItemSupportPresent -ServiceReady $facts.ServiceReady
-        $resolvedStatusDir = if (-not [string]::IsNullOrWhiteSpace($StatusDir)) { $StatusDir } else { $LogDir }
-        $verdictReason = (@($verdict.Checks) | ForEach-Object { ('{0}={1}' -f $_.Name, $_.Ok) }) -join ' '
-        $statusPath = Write-GcuInstallStatus -StatusDir $resolvedStatusDir -Status $(if ($verdict.Ok) { 'ready' } else { 'failed' }) -Reason $verdictReason -Checks $verdict.Checks
-        if (-not $verdict.Ok) {
-            $reasons = (@($verdict.Failed) | ForEach-Object { ('{0}: {1}' -f $_.Name, $_.Detail) }) -join '; '
-            Write-Log ('FATAL: post-install verification failed: ' + $reasons)
-            Write-Log ('FATAL: see ' + $script:LogFile + ' (gcu-install-*.log)')
-            # N6: the visible fallback. Never silent, never a fake cloud download.
-            $guidance = Get-GcuFallbackGuidance
-            foreach ($line in $guidance.Lines) { Write-Log ('FALLBACK: ' + $line) }
-            exit 1
-        }
-        Write-Log ('post-install verification OK; status file: ' + $statusPath)
     }
 
     Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion
 
-    # N5: acquire every privilege the app needs, once, while we are elevated.
+    # Autostart must be registered even if GCU verification later fails. Previously this
+    # ran after `exit 1`, so a ServiceReady miss left the machine with no boot task.
     Write-Log '[8/8] privileges: autostart task (highest), directory ACLs, device access'
     if ([string]::IsNullOrWhiteSpace($AppExe)) {
         $AppExe = Join-Path (Split-Path -Parent $TargetDir) 'L-Mechrevo.exe'
@@ -862,15 +1020,31 @@ try {
     Register-AutostartTask -AppExe $AppExe | Out-Null
     Grant-AppDirectoryAcl -Path (Split-Path -Parent $TargetDir)
     Grant-AppDirectoryAcl -Path $TargetDir
-    # The app's config/log dir is %AppData%\MechrevoLite (Logger.ResolveAppPath). Resolve it here
-    # rather than passing {userappdata} through Inno: under admin install mode that constant is the
-    # elevating account's profile, not the invoking user's, and Inno warns about exactly that.
     if ([string]::IsNullOrWhiteSpace($ConfigDir)) {
         $ConfigDir = Join-Path $env:APPDATA 'MechrevoLite'
     }
     Grant-AppDirectoryAcl -Path $ConfigDir
     Grant-AppDirectoryAcl -Path $LogDir
     Grant-AcpiDriverAccess
+
+    if (-not $NoStart) {
+        Write-Log 'post-install verification (single service / 13688 owner / ItemSupport / ServiceReady)'
+        $waited = Wait-GcuPostInstallFacts -TimeoutSeconds 30
+        $facts = $waited.Facts
+        $verdict = $waited.Verdict
+        $resolvedStatusDir = if (-not [string]::IsNullOrWhiteSpace($StatusDir)) { $StatusDir } else { $LogDir }
+        $verdictReason = (@($verdict.Checks) | ForEach-Object { ('{0}={1}' -f $_.Name, $_.Ok) }) -join ' '
+        $statusPath = Write-GcuInstallStatus -StatusDir $resolvedStatusDir -Status $(if ($verdict.Ok) { 'ready' } else { 'failed' }) -Reason $verdictReason -Checks $verdict.Checks
+        if (-not $verdict.Ok) {
+            $reasons = (@($verdict.Failed) | ForEach-Object { ('{0}: {1}' -f $_.Name, $_.Detail) }) -join '; '
+            Write-Log ('FATAL: post-install verification failed: ' + $reasons)
+            Write-Log ('FATAL: see ' + $script:LogFile + ' (gcu-install-*.log)')
+            $guidance = Get-GcuFallbackGuidance
+            foreach ($line in $guidance.Lines) { Write-Log ('FALLBACK: ' + $line) }
+            exit 1
+        }
+        Write-Log ('post-install verification OK; status file: ' + $statusPath)
+    }
 
     Write-Log 'GCU install OK'
     exit 0

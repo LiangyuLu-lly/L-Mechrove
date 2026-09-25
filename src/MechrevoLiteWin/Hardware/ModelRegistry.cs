@@ -147,18 +147,27 @@ public static class ModelRegistry
     /// <summary>
     /// 厂商 <c>GetProject2ExID</c> 的等价实现。非 23/24 的项目代号原样返回；
     /// 两个族各自按 1110/2002/2003/1905/1906/1183 的位组合展开。
+    /// 辅助字节读不到时按厂商语义填 0（与官方控制台一致）。现场 40 系大量机型
+    /// 辅助读失败；不填 0 会停在 PHxAxxx，界面变成「机型无法识别」。
     /// </summary>
     static int ExpandProjectId(int projectId, IEcReadTransport transport)
     {
         if (projectId != 23 && projectId != 24) return projectId;
 
-        int systemId = ReadByte(transport, SystemIdAddress) & 0x80;
-        int gpuModule = ReadByte(transport, GpuModuleIdAddress) & 0x1F;
-        int moduleId = ReadByte(transport, ModuleIdAddress) & 0x01;
-        int module2 = ReadByte(transport, ModuleIdAddress) & 0xF0;
-        int romId = ReadByte(transport, RomIdAddress) & 0x01;
-        int romId2 = ReadByte(transport, RomId2Address) & 0xFF;
-        int adapterWatt = AdapterWattFor(ReadByte(transport, AdapterWattAddress));
+        int systemRaw = ReadByte(transport, SystemIdAddress);
+        int gpuRaw = ReadByte(transport, GpuModuleIdAddress);
+        int moduleRaw = ReadByte(transport, ModuleIdAddress);
+        int romRaw = ReadByte(transport, RomIdAddress);
+        int rom2Raw = ReadByte(transport, RomId2Address);
+        int wattRaw = ReadByte(transport, AdapterWattAddress);
+
+        int systemId = systemRaw & 0x80;
+        int gpuModule = gpuRaw & 0x1F;
+        int moduleId = moduleRaw & 0x01;
+        int module2 = moduleRaw & 0xF0;
+        int romId = romRaw & 0x01;
+        int romId2 = rom2Raw;
+        int adapterWatt = AdapterWattFor(wattRaw);
 
         if (projectId == 23)
         {

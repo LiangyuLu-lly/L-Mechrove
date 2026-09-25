@@ -47,11 +47,11 @@ namespace MechrevoLite
             buttonUpdates = new RButton();
             checkStartup = new UI.RCheckBox();
             panelPerformance = new BufferedPanel();
-            tablePerf = new TableLayoutPanel();
+            tablePerf = new BufferedTableLayoutPanel();
             buttonSilent = new RButton();
             buttonBalanced = new RButton();
             buttonTurbo = new RButton();
-            panelCPUTitle = new Panel();
+            panelCPUTitle = new BufferedPanel();
             picturePerf = new PictureBox();
             labelPerf = new Label();
             labelCPUFan = new Label();
@@ -59,7 +59,7 @@ namespace MechrevoLite
             labelTipGPU = new Label();
             tableAMD = new TableLayoutPanel();
             buttonOverlay = new RButton();
-            tableGPU = new TableLayoutPanel();
+            tableGPU = new BufferedTableLayoutPanel();
             buttonStopGPU = new RButton();
             buttonEco = new RButton();
             buttonStandard = new RButton();
@@ -71,7 +71,7 @@ namespace MechrevoLite
             labelGPUFan = new Label();
             panelScreen = new BufferedPanel();
             labelTipScreen = new Label();
-            tableScreen = new TableLayoutPanel();
+            tableScreen = new BufferedTableLayoutPanel();
             buttonScreenAuto = new RButton();
             button60Hz = new RButton();
             button120Hz = new RButton();

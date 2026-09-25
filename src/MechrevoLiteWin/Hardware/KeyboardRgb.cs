@@ -217,6 +217,7 @@ public class KeyboardRgb : IDisposable
             {
                 _stream?.Dispose();
                 _stream = null;
+                ForgetBrightnessObservation();
                 LastError = "连接异常: " + ex.Message;
                 Logger.WriteLine($"RGB connect FAIL: {LastError}");
                 return false;
@@ -232,6 +233,7 @@ public class KeyboardRgb : IDisposable
     {
         _stream?.Dispose();
         _stream = null;
+        ForgetBrightnessObservation();
         var dev = ResolveDevice();
         if (dev is null) { LastError = "未找到兼容的 ITE8291/BetterRGB 接口（VID 048D，FF03/MI_01）"; return ConnectOutcome.NoDevice; }
         if (!dev.Open()) { LastError = "打开 HID 失败（设备被占用或权限不足）"; return ConnectOutcome.Failed; }
@@ -243,6 +245,7 @@ public class KeyboardRgb : IDisposable
         {
             _stream.Dispose();
             _stream = null;
+            ForgetBrightnessObservation();
             LastError = "初始化 RGB 模式失败（feature report 被拒）";
             Logger.WriteLine($"RGB connect FAIL: {LastError}");
             return ConnectOutcome.Failed;
@@ -301,7 +304,12 @@ public class KeyboardRgb : IDisposable
 
         if (verdict != FeatureAvailability.Supported)
         {
-            lock (_lock) { _stream?.Dispose(); _stream = null; }
+            lock (_lock)
+            {
+                _stream?.Dispose();
+                _stream = null;
+                ForgetBrightnessObservation();
+            }
         }
         if (verdict != FeatureAvailability.Unknown)
             ControllerAvailability = verdict;   // 只缓存确定性结论；Unknown 保持今天的行为
@@ -341,7 +349,12 @@ public class KeyboardRgb : IDisposable
     bool Reconnect()
     {
         if (ReconnectProbe is not null) return ReconnectProbe();   // 测试 seam
-        lock (_lock) { _stream?.Dispose(); _stream = null; }
+        lock (_lock)
+        {
+            _stream?.Dispose();
+            _stream = null;
+            ForgetBrightnessObservation();
+        }
         Thread.Sleep(100);
         var dev = ResolveDevice();
         if (dev is null || !dev.Open()) return false;
@@ -414,7 +427,15 @@ public class KeyboardRgb : IDisposable
             scaled = _scaledFrame;
             for (int i = 0; i < BufSize; i++) scaled[i] = (byte)((int)buf[i] * bright / 100);
         }
-        if (!_stream.SetFeature(Step3)) { LogSendFail("step3"); return false; }
+        if (!_stream.SetFeature(Step3))
+        {
+            // 效果帧的 step3 拒绝和显式亮度探测是同一次写入。只记失败：
+            // 随后一帧成功不能把已观察到的拒绝藏到断线为止。无流的提前返回不是尝试。
+            _hidBrightnessTookEffect = false;
+            _brightnessWriteObserved = true;
+            LogSendFail("step3");
+            return false;
+        }
         for (int i = 0; i < 8; i++)
         {
             byte[] chunk = _frameChunks[i];
@@ -510,6 +531,28 @@ public class KeyboardRgb : IDisposable
         StartMode(mode);
     }
 
+    bool _brightnessWriteObserved;
+    bool _hidBrightnessTookEffect = true;
+
+    /// <summary>断流后清掉上一次连接的写入观察。未连接不是失败，默认回到 true。</summary>
+    void ForgetBrightnessObservation()
+    {
+        _brightnessWriteObserved = false;
+        _hidBrightnessTookEffect = true;
+    }
+
+    /// <summary>
+    /// 路由用的亮度写入结果。只有设备已连接、判定为 Supported、且这次写入真的失败时才返回 false。
+    /// Unknown 与未尝试（未连接）保持 true，避免把未探测的机器永久送进 GCU 并跳过探测。
+    /// </summary>
+    internal bool BrightnessWriteTookEffectForRouting()
+    {
+        if (!IsConnected || ControllerAvailability != FeatureAvailability.Supported)
+            return true;
+        if (_brightnessWriteObserved) return _hidBrightnessTookEffect;
+        return ApplyBrightnessToDevice();
+    }
+
     /// <summary>
     /// N9-2：把当前 <see cref="Brightness"/> 经 HID 下发到设备，并报告这次写入是否真的生效。
     /// 设备在但亮度字段不被接受时返回 <c>false</c>，调用方据此回退官方（GCU）通道，而不是静默无操作。
@@ -522,7 +565,10 @@ public class KeyboardRgb : IDisposable
         {
             if (_stream is null) return false;
             // 亮度随效果帧的 step3 feature report 下发；写入被拒即是「该控制器不接受亮度字段」的信号。
-            return _stream.SetFeature(Step3);
+            bool tookEffect = _stream.SetFeature(Step3);
+            _hidBrightnessTookEffect = tookEffect;
+            _brightnessWriteObserved = true;
+            return tookEffect;
         }
     }
 
@@ -1267,6 +1313,7 @@ public class KeyboardRgb : IDisposable
         {
             _stream?.Dispose();
             _stream = null;
+            ForgetBrightnessObservation();
         }
     }
 }

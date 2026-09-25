@@ -159,6 +159,24 @@ namespace MechrevoLite.Mode
             Program.toast.RunToast(Modes.GetCurrentName(), SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Online ? ToastIcon.Charger : ToastIcon.Battery);
         }
 
+        internal static void NotifySwitchOutcome(bool success, bool cancelled)
+        {
+            if (success || cancelled) return;
+            ToastForm.ShowFailure("性能模式切换失败。");
+        }
+
+        internal static void ReportApplyFault(Exception ex, int mode)
+        {
+            if (ex is OperationCanceledException)
+            {
+                Logger.WriteLine($"SetPerformanceMode cancelled (mode {mode})");
+                NotifySwitchOutcome(success: false, cancelled: true);
+                return;
+            }
+            Logger.WriteLine($"SetPerformanceMode failed (mode {mode}): {ex.Message}");
+            NotifySwitchOutcome(success: false, cancelled: false);
+        }
+
         public void SetPerformanceMode(int mode = -1, bool notify = false)
         {
 
@@ -208,13 +226,13 @@ namespace MechrevoLite.Mode
                         RestrictedProcessHelper.RunAsRestrictedUser(command);
                     }
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException ex)
                 {
-                    Logger.WriteLine($"SetPerformanceMode cancelled (mode {mode})");
+                    ReportApplyFault(ex, mode);
                 }
                 catch (Exception ex)
                 {
-                    Logger.WriteLine($"SetPerformanceMode failed (mode {mode}): {ex.Message}");
+                    ReportApplyFault(ex, mode);
                 }
                 finally
                 {

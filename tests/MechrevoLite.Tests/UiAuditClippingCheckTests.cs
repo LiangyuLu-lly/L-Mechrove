@@ -87,4 +87,88 @@ public class UiAuditClippingCheckTests
             form.Hide();
         }
     }
+
+    [Fact]
+    public void CjkLabelInSlightlyTooNarrowColumn_IsFlagged()
+    {
+        using var form = new Form { Name = "CjkClipProbe", ClientSize = new Size(400, 80) };
+        try
+        {
+            const string text = "功耗墙";
+            Font font = SystemFonts.MessageBoxFont ?? Control.DefaultFont;
+            Size noPad = TextRenderer.MeasureText(text, font, new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.WordBreak);
+            Size overhang = TextRenderer.MeasureText(text, font, new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.NoPrefix | TextFormatFlags.GlyphOverhangPadding | TextFormatFlags.WordBreak);
+            Assert.True(overhang.Width > noPad.Width,
+                $"CJK overhang fixture: NoPadding={noPad.Width}, GlyphOverhangPadding={overhang.Width}.");
+
+            // availableWidth = column − 8px reserve. Size so NoPadding still fits the +2 slack
+            // and GlyphOverhangPadding does not — the YAOSHI miss.
+            int columnWidth = noPad.Width + 8;
+            var column = new Panel
+            {
+                Name = "cjkColumn",
+                Size = new Size(columnWidth, 30),
+                Location = Point.Empty,
+                Padding = Padding.Empty,
+                Margin = Padding.Empty,
+            };
+            var label = new Label
+            {
+                Name = "powerWallLabel",
+                Text = text,
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                Font = font,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+            column.Controls.Add(label);
+            form.Controls.Add(column);
+            form.Show();
+            Application.DoEvents();
+
+            string? clipping = UiAuditRunner.GetTextClipping(label);
+
+            Assert.NotNull(clipping);
+            Assert.Contains(text, clipping, StringComparison.Ordinal);
+        }
+        finally
+        {
+            form.Hide();
+        }
+    }
+
+    [Fact]
+    public void ComboBoxItemTextWiderThanBounds_IsFlagged()
+    {
+        using var form = new Form { Name = "ComboClipProbe", ClientSize = new Size(200, 80) };
+        try
+        {
+            var combo = new ComboBox
+            {
+                Name = "yaoshiCombo",
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Width = 36,
+                Height = 28,
+                Location = new Point(8, 8),
+            };
+            combo.Items.Add("功耗墙");
+            combo.SelectedIndex = 0;
+            form.Controls.Add(combo);
+            form.Show();
+            Application.DoEvents();
+
+            string? clipping = UiAuditRunner.GetTextClipping(combo);
+
+            Assert.NotNull(clipping);
+            Assert.Contains("功耗墙", clipping, StringComparison.Ordinal);
+        }
+        finally
+        {
+            form.Hide();
+        }
+    }
 }

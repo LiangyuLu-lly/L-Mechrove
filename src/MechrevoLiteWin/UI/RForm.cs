@@ -13,8 +13,19 @@ namespace MechrevoLite.UI
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScaleDimensions = new SizeF(96F, 96F);
             Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body);
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
             DoubleBuffered = true;
-            ResizeRedraw = true;
+            ResizeRedraw = false;
+        }
+
+        Size _lastClientSize;
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (ClientSize == _lastClientSize) return;
+            _lastClientSize = ClientSize;
+            Invalidate();
         }
 
         public static Color colorEco = Color.FromArgb(255, 6, 180, 138);

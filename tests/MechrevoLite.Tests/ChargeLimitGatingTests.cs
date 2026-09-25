@@ -35,24 +35,27 @@ public class ChargeLimitGatingTests
     }
 
     [Fact]
-    public void ASupportedModelWithAServiceProfileIsAllowed()
+    public void ASupportedModelWithAServiceProfileDoesNotOpenTheChargeChannel()
     {
         using var _ = Force(null);
-        Assert.True(EcChargeLimit.IsSupportedMachine(Supported, ServiceProfile));
+        Assert.False(
+            EcChargeLimit.IsSupportedMachine(Supported),
+            "service-served is not a charge-limit capability bit.");
+        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
     }
 
     [Fact]
     public void AForceOnSwitchEnablesTheChannelRegardlessOfMatrixAndIdentity()
     {
         using var _ = Force("1");
-        Assert.True(EcChargeLimit.IsSupportedMachine(Unparsable, EmptyProfile));
+        Assert.True(EcChargeLimit.IsSupportedMachine(Unparsable));
     }
 
     [Fact]
     public void AForceOffSwitchDisablesTheChannelRegardlessOfMatrixAndIdentity()
     {
         using var _ = Force("0");
-        Assert.False(EcChargeLimit.IsSupportedMachine(Supported, ServiceProfile));
+        Assert.False(EcChargeLimit.IsSupportedMachine(Supported));
     }
 
     [Fact]

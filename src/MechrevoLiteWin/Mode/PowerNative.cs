@@ -206,11 +206,25 @@ namespace MechrevoLite.Mode
             SetPowerMode(GetDefaultPowerMode(mode));
         }
 
+        internal static bool WouldSilentlyUndo(Guid activePlan, Guid requestedPlan)
+        {
+            Guid ultimate = new(MechrevoLite.Hardware.WinPowerPlan.UltimatePerformancePlanId);
+            Guid balanced = new(PLAN_BALANCED);
+            return activePlan == ultimate && requestedPlan == balanced;
+        }
+
         internal static bool ApplyMechrevoPowerModeAutomation(bool enabled, int operatingMode)
         {
             try
             {
                 Guid balancedPlan = new(PLAN_BALANCED);
+                Guid activeBefore = GetActiveScheme();
+                if (WouldSilentlyUndo(activeBefore, balancedPlan))
+                {
+                    Logger.WriteLine($"High performance power automation FIELD-LOG skip silent undo plan={activeBefore} enabled={enabled} opMode={operatingMode}");
+                    return false;
+                }
+
                 Guid targetOverlay = new(enabled
                     ? operatingMode switch
                     {
@@ -229,6 +243,11 @@ namespace MechrevoLite.Mode
                 for (int attempt = 0; attempt < 3 && !confirmed; attempt++)
                 {
                     Guid activePlan = GetActiveScheme();
+                    if (WouldSilentlyUndo(activePlan, balancedPlan))
+                    {
+                        Logger.WriteLine($"High performance power automation FIELD-LOG skip silent undo plan={activePlan} enabled={enabled} opMode={operatingMode}");
+                        return false;
+                    }
                     planStatus = activePlan == balancedPlan
                         ? 0
                         : PowerSetActiveScheme(IntPtr.Zero, balancedPlan);

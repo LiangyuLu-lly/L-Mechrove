@@ -97,7 +97,7 @@ public class AuditScaledPipelineTests
     public void ScaledViewport_SystemRowChildrenFitTheirPanels(float ratio) =>
         WithAuditScaledForm(ratio, form =>
         {
-            foreach (string panelName in new[] { "panelVersion", "panelOfficialConsole" })
+            foreach (string panelName in new[] { "panelVersion" })
             {
                 Panel? panel = form.Controls.Find(panelName, true).OfType<Panel>().FirstOrDefault();
                 if (panel is null) continue;

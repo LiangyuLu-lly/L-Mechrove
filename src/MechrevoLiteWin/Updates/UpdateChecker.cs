@@ -17,7 +17,8 @@ internal sealed record UpdateInfo(
     string? Sha256,
     string? DownloadUrl,
     string? DownloadPage,
-    string? ServerCurrentVersion = null)
+    string? ServerCurrentVersion = null,
+    bool Force = false)
 {
     /// <summary>
     /// 直链 + **合法**的 64 位十六进制缓存哈希都在，才谈得上"下载后校验"。
@@ -28,28 +29,26 @@ internal sealed record UpdateInfo(
 }
 
 /// <summary>
-/// 更新检测（业主自建的静态 OSS 对象 <c>/api/update_check.php</c>）。
+    /// 更新检测（<c>https://stats.l-mechrevo.cn/api/update_check.php</c>）。
 ///
 /// 纪律：
 /// <list type="bullet">
-/// <item>version 参数传 <see cref="Program.ReleaseVersion"/>（"0.289.0-beta15"）——静态对象忽略查询串，
-/// 但客户端仍按契约上报自己的完整点分版本；</item>
-/// <item>只走 HTTPS（回环地址例外，供本地联调）；基址不合法时**记录日志**后回退到业主 OSS 默认基址，
-/// 绝不静默改打第三方域名；</item>
-/// <item>版本比较一律用客户端自己的版本（上报值），不用静态 JSON 里冻结的 <c>current_version</c>。</item>
+/// <item>version 参数传 <see cref="Program.ReleaseVersion"/>（"0.289.0-beta15"）；</item>
+    /// <item>只走 HTTPS（回环地址例外，供本地联调）；基址不合法时**记录日志**后回退到默认基址；</item>
+/// <item>版本比较一律用客户端自己的版本（上报值），不用 JSON 里冻结的 <c>current_version</c>。</item>
 /// </list>
 /// </summary>
 internal static class UpdateChecker
 {
-    /// <summary>业主自建的静态 OSS 基址（对象键 lmechrevo-oss/api/update_check.php，匿名只读）。</summary>
-    internal const string DefaultBaseUrl = "https://lmechrevo.oss-cn-hangzhou.aliyuncs.com/lmechrevo-oss";
+    /// <summary>自有统计站更新基址（<c>/api/update_check.php</c>）。</summary>
+    internal const string DefaultBaseUrl = "https://stats.l-mechrevo.cn";
     internal const string BetaChannel = "beta";
 
     internal static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(6);
     internal static readonly TimeSpan AutoCheckInterval = TimeSpan.FromHours(6);
 
-    /// <summary>下载包体上限：远超正常体积的响应一律拒绝（防止把磁盘写满或拿到垃圾文件）。</summary>
-    internal const long MaxPackageBytes = 400L * 1024 * 1024;
+    /// <summary>下载包体上限：与 <see cref="UpdatePolicy.MaxPackageBytes"/> 同一条允许范围。</summary>
+    internal const long MaxPackageBytes = UpdatePolicy.MaxPackageBytes;
 
     static readonly SemaphoreSlim Gate = new(1, 1);
     static UpdateInfo? cached;
@@ -63,7 +62,7 @@ internal static class UpdateChecker
     internal static string BaseUrl =>
         NormalizeBaseUrl(BaseUrlOverride ?? AppConfig.GetString("update_base_url") ?? DefaultBaseUrl);
 
-    /// <summary>自动检测开关（默认开）。这是我们客户端唯一的出站请求，用户必须能关掉。</summary>
+    /// <summary>自动检测开关（默认开）。<c>check_updates=0</c> 可关。</summary>
     internal static bool AutoCheckEnabled => AppConfig.Get("check_updates", 1) != 0;
 
     /// <summary>本次会话已拿到的结果（不触发网络）。</summary>
@@ -101,7 +100,7 @@ internal static class UpdateChecker
             {
                 json = HttpGetOverride is not null
                     ? await HttpGetOverride(url).ConfigureAwait(false)
-                    : await UpdateHttp.Check.GetStringAsync(url).ConfigureAwait(false);
+                    : await GetCheckJsonAsync(url).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -143,9 +142,19 @@ internal static class UpdateChecker
         }
     }
 
+    static async Task<string> GetCheckJsonAsync(string url)
+    {
+        using var response = await UpdateHttp.Check
+            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        if (UpdateHttp.IsRedirect(response.StatusCode))
+            throw new HttpRequestException(UpdateHttp.RedirectRefusedReason(response.StatusCode));
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+    }
+
     /// <summary>
     /// 只认 https；http 仅放行回环地址（本地联调桩服务器用）。
-    /// 不合法时**记录日志**后回退到业主 OSS 默认基址——不再静默改打第三方域名。
+    /// 不合法时**记录日志**后回退到粉丝站默认基址。
     /// </summary>
     internal static string NormalizeBaseUrl(string? raw)
     {
@@ -198,6 +207,13 @@ internal static class UpdateChecker
         // 服务端从未发过版本时 latest_version 为 null 且 is_latest=true —— 不提示更新。
         if (latest is null) available = false;
 
+        long? size = data.Value<long?>("size");
+        if (size is long parsedSize && !UpdatePolicy.IsAcceptablePackageSize(parsedSize))
+        {
+            Logger.WriteLine($"更新检测：size 不在允许范围（{parsedSize}），拒绝该响应");
+            return null;
+        }
+
         return new UpdateInfo(
             CurrentVersion: serverCurrent ?? "",
             LatestVersion: latest,
@@ -207,11 +223,12 @@ internal static class UpdateChecker
             ReleaseDate: Clean(data.Value<string>("release_date")),
             Notes: Clean(data.Value<string>("notes")),
             FileName: Clean(data.Value<string>("filename")),
-            Size: data.Value<long?>("size"),
+            Size: size,
             Sha256: Clean(data.Value<string>("sha256")),
             DownloadUrl: downloadUrl,
             DownloadPage: Clean(data.Value<string>("download_page")),
-            ServerCurrentVersion: serverCurrent);
+            ServerCurrentVersion: serverCurrent,
+            Force: data.Value<bool?>("force") ?? data.Value<bool?>("required") ?? false);
     }
 
     static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

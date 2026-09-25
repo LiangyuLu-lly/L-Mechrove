@@ -65,10 +65,11 @@ namespace MechrevoLite.Battery
 
         public static void SetBatteryLimitFull()
         {
-            chargeFull = true;
+            // Echo is not confirmation. Do not persist or paint 100% on before a write that cannot be confirmed.
+            if (chargeFull) chargeFull = false;
+            PaintBatteryFull();
             if (EcChargeLimit.IsAvailableOnThisMachine())
-                SetBatteryChargeLimit(EcChargeLimit.MaximumPercent);   // 100% = 固件的无上限值
-            Program.settingsForm.VisualiseBatteryFull();
+                SetBatteryChargeLimit(EcChargeLimit.MaximumPercent);
         }
 
         public static void AutoBattery(bool init = false)
@@ -78,7 +79,7 @@ namespace MechrevoLite.Battery
         }
 
         /// <summary>
-        /// 设置充电上限：直写 EC 的充电阈值寄存器对（上限 0x7B9 + 复充下限 0x7D0），任意百分比都生效。
+        /// 设置充电上限：尝试写 EC 寄存器对（上限 0x7B9 + 复充下限 0x7D0）。回读一致不落成已生效上限。
         ///
         /// 官方那条路（BatteryProtection 三档命令）已按用户决定整体摘除：它只往 EC 的模式位
         /// DBAP(0x7A6) 写 0x08/0x18/0x28，不碰阈值寄存器，而且该模式位的含义随机型而变
@@ -109,41 +110,67 @@ namespace MechrevoLite.Battery
             // EC 写是驱动调用（毫秒级，但可能被 EC 总线拖住），放后台，别卡住 UI 线程。
             _ = Task.Run(() =>
             {
-                if (EcChargeLimit.TrySet(limit, out int confirmedPercent))
-                {
-                    Logger.WriteLine(
-                        $"EC 充电阈值已确认：上限 {confirmedPercent}%、复充下限 {EcChargeLimit.LowerValueFor(confirmedPercent)}%" +
-                        $"（0x{EcChargeLimit.UpperRegister:X3}/0x{EcChargeLimit.LowerRegister:X3}）");
-                    CommitChargeLimit(confirmedPercent);
-                }
+                if (EcChargeLimit.TrySet(limit, out int echoedPercent))
+                    FinishEcho(echoedPercent, delayed: false);
                 else
                 {
-                    // 写入当刻的回读可能撞上 EC 总线时序：驱动器调用返回失败，但硬件其实已经改了。
-                    // 再读一次实际阈值，若已是请求值就按成功收尾（持久化 + 显示），不再显示未知。
+                    // 写入当刻的回读可能撞上 EC 总线时序。值相等只说明寄存器回读一致。
                     int actual = EcChargeLimit.ReadPercent();
                     if (actual == limit)
-                    {
-                        Logger.WriteLine($"EC 充电上限回读确认延迟：请求 {limit}%，实际阈值已是 {actual}%，按成功收尾");
-                        CommitChargeLimit(actual);
-                    }
+                        FinishEcho(actual, delayed: true);
                     else
                     {
                         Logger.WriteLine($"EC 充电上限写入未确认：请求 {limit}%，保持原值");
-                        RestoreChargeLimitDisplay();
+                        LeaveChargeLimitUnconfirmed();
+                        ToastForm.ShowFailure("充电上限设置失败，已恢复原值。");
                     }
                 }
             });
             return true;
         }
 
-        static void CommitChargeLimit(int limit)
+        static void FinishEcho(int percent, bool delayed)
         {
-            AppConfig.Set("charge_limit", limit);
-            chargeFull = limit >= EcChargeLimit.MaximumPercent;
+            NoteRegisterEcho(percent, delayed);
+            LeaveChargeLimitUnconfirmed();
+        }
+
+        static void LeaveChargeLimitUnconfirmed()
+        {
+            if (chargeFull) chargeFull = false;
+            RunOnSettingsForm(static form => form.VisualiseBatteryUnverified());
+        }
+
+        static void PaintBatteryFull() =>
+            RunOnSettingsForm(static form => form.VisualiseBatteryFull());
+
+        static void RunOnSettingsForm(Action<SettingsForm> apply)
+        {
             var form = Program.settingsForm;
-            if (form is null || form.IsDisposed) return;
-            if (form.InvokeRequired) form.Invoke(() => form.VisualiseBattery(limit));
-            else form.VisualiseBattery(limit);
+            if (form is null || form.IsDisposed || !form.IsHandleCreated) return;
+            try
+            {
+                if (form.InvokeRequired) form.Invoke(() => apply(form));
+                else apply(form);
+            }
+            catch (ObjectDisposedException ex)
+            {
+                Logger.WriteLine("充电上限界面已关闭: " + ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Logger.WriteLine("充电上限界面已关闭: " + ex.Message);
+            }
+        }
+
+        static void NoteRegisterEcho(int percent, bool delayed)
+        {
+            string timing = delayed ? "延迟后" : "写入后";
+            Logger.WriteLine(
+                $"EC 寄存器{timing}回读一致：上限 {percent}%、复充下限 {EcChargeLimit.LowerValueFor(percent)}%" +
+                $"（0x{EcChargeLimit.UpperRegister:X3}/0x{EcChargeLimit.LowerRegister:X3}）。" +
+                EcChargeLimit.UnverifiedWriteNotice);
+            ToastForm.ShowNotice(EcChargeLimit.UnverifiedWriteNotice);
         }
 
         /// <summary>
@@ -168,16 +195,7 @@ namespace MechrevoLite.Battery
         /// 把界面回显成当前上限（EC 实际阈值优先，其次已持久化的值）；两者都不可信时
         /// 如实显示「未知」，绝不拿 100% 或 -1% 冒充一个并不存在的上限。
         /// </summary>
-        static void RestoreChargeLimitDisplay()
-        {
-            int resolved = ResolveDisplayLimitPercent();
-            bool known = EcChargeLimit.IsSupportedLimit(resolved);
-            var form = Program.settingsForm;
-            if (form is null || form.IsDisposed) return;
-            Action apply = known ? () => form.VisualiseBattery(resolved) : form.VisualiseBatteryUnknown;
-            if (form.InvokeRequired) form.Invoke(apply);
-            else apply();
-        }
+        static void RestoreChargeLimitDisplay() => LeaveChargeLimitUnconfirmed();
 
         public static void BatteryReport()
         {

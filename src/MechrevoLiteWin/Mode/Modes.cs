@@ -69,6 +69,9 @@
             }
         }
 
+        // 没有调用方，保持死代码。固件 OperatingMode 只有 0-3（办公/游戏/狂暴/自定义）。
+        // 这里的 3-19 是 G-Helper 额外档，没有对应的 OPERATING_* 指令；索引 3 还和
+        // ModeCustom 撞车。接上就会假装固件能接受更多模式。
         public static int Add()
         {
             int currentMode = GetCurrent();

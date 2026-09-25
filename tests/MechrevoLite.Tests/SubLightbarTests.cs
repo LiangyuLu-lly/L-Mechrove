@@ -81,8 +81,27 @@ public class LightbarChannelTests
     }
 
     /// <summary>
-    /// 没有任何灯带证据时入口全部关闭——机型不该凭空多出灯效入口。
+    /// ItemSupport / 注册表画像与键盘同一口径：出厂位置位就必须出入口。
+    /// 空 MQTT 载荷仍然不能把 *Seen 置位。
     /// </summary>
+    [Fact]
+    public void RegistryLightbarBitsEstablishSupportLikeKeyboard()
+    {
+        using var hardware = new MechrevoHw(null, new MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            Lightbar = true,
+            LogoLight = true,
+        });
+
+        Assert.True(hardware.SupportsLightbar);
+        Assert.True(hardware.SupportsLogoLight);
+        Assert.True(hardware.SupportsQuickSwitch("lightbar"));
+        Assert.True(hardware.SupportsQuickSwitch("logolight"));
+        Assert.False(hardware.LightbarStatusSeen);
+        Assert.False(hardware.LogoLightStatusSeen);
+    }
+
     [Fact]
     public void NoLightbarEvidenceMeansNoLightbarSupport()
     {
@@ -183,22 +202,20 @@ public class EmptyLightbarStatusRegressionTests
     }
 
     /// <summary>
-    /// 能力位**存在**不构成证据，因为 GCU 用同一个状态 DTO 发全部灯带主题——
-    /// 开发机实测那条不存在的灯带载荷里也带着设备级能力位。
-    /// 但能力位取值为 true 是另一回事，那条通路仍然有效。
+    /// 能力位存在或取值为 true 都不构成这条灯带存在的证据：GCU 用同一个状态 DTO
+    /// 发全部灯带主题，不存在的灯带载荷里也带着设备级 LogoSupport。
     /// </summary>
     [Fact]
-    public void CapabilityFlagsBeingPresentIsNotEvidenceButBeingTrueStillIs()
+    public void CapabilityFlagsAreNotEvidenceEvenWhenTrue()
     {
         using var hardware = NewHardware();
 
-        // 只有能力位、没有 type / powerStatus：不算这条灯带的状态到过。
         hardware.HandleMessage("HidLightbar/Status", "{\"MBlogoSupport\":true}");
         Assert.False(hardware.LightbarStatusSeen);
 
-        // 但 LogoSupport 取值为 true 依然能确立 Logo 灯带的支持。
         hardware.HandleMessage("HidLightbar/Status", "{\"LogoSupport\":true}");
-        Assert.True(hardware.SupportsLogoLight);
+        Assert.False(hardware.SupportsLogoLight);
+        Assert.False(hardware.LogoLightStatusSeen);
     }
 
     /// <summary>

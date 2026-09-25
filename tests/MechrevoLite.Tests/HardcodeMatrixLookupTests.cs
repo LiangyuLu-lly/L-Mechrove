@@ -34,10 +34,11 @@ public class HardcodeMatrixLookupTests
     {
         using var force = ChargeLimitGatingTests.Force(null);
 
-        Assert.True(EcChargeLimit.IsSupportedMachine(new SupportDecision(true, SupportReason.Ok, "PH4TRX1"),
-            Matrix(("KeyboardSupport", 1))));
-        Assert.False(EcChargeLimit.IsSupportedMachine(SupportDecision.NotInSet("PH6AGxx"),
-            Matrix(("KeyboardSupport", 1))));
+        Assert.False(
+            EcChargeLimit.IsSupportedMachine(new SupportDecision(true, SupportReason.Ok, "PH4TRX1")),
+            "service-served is not a charge-limit capability bit; the channel stays closed.");
+        Assert.False(EcChargeLimit.IsSupportedMachine(SupportDecision.NotInSet("PH6AGxx")));
+        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
     }
 
     [Fact]

@@ -2,8 +2,8 @@
 ;  L-Mechrevo installer (Inno Setup 6.7.x)
 ;
 ;  Per-machine install into {autopf}\L-Mechrevo, Simplified Chinese + English,
-;  Start Menu + optional desktop shortcuts, uninstall entry, and generation-matched
-;  silent GCU vendor-payload installation (see installer\README.md).
+;  Start Menu + optional desktop shortcuts, uninstall entry, and silent GCU
+;  vendor-payload installation (see installer\README.md).
 ;
 ;  Build with installer\Build-Installer.ps1, which reads the version from
 ;  src\MechrevoLiteWin\MechrevoLite.csproj and passes /DAppVersion, /DAppLabel,
@@ -18,19 +18,19 @@
   #define AppPublisher "L-Mechrevo contributors"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.289.0-beta18"
+  #define AppVersion "0.289.0-beta19"
 #endif
 #ifndef AppVersionNumeric
   #define AppVersionNumeric "0.289.0.0"
 #endif
 #ifndef AppLabel
-  #define AppLabel "beta18"
+  #define AppLabel "beta19"
 #endif
 #ifndef RepoRoot
   #define RepoRoot AddBackslash(SourcePath) + ".."
 #endif
 #ifndef AppSourceDir
-  #define AppSourceDir RepoRoot + "\dist\beta18"
+  #define AppSourceDir RepoRoot + "\dist\beta19"
 #endif
 #ifndef OutputDir
   #define OutputDir "output"
@@ -65,7 +65,10 @@ WizardStyle=modern
 WizardSizePercent=120
 DisableWelcomePage=no
 SetupLogging=yes
-CloseApplications=yes
+; Restart Manager's "close applications" dialog cannot stop a tray L-Mechrevo or a
+; Highest autostart task that relaunches it, so Retry never unblocks. We stop the
+; task and the process in PrepareToInstall instead, and skip the dialog.
+CloseApplications=no
 RestartApplications=no
 LicenseFile={#RepoRoot}\LICENSE
 SetupIconFile={#RepoRoot}\src\MechrevoLiteWin\favicon.ico
@@ -84,8 +87,8 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.i
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-chinesesimplified.GcuStatus=正在安装 GCU 硬件服务（按显卡代际自动选择组件）...
-english.GcuStatus=Installing the GCU hardware service (payload selected by GPU generation)...
+chinesesimplified.GcuStatus=正在安装 GCU...
+english.GcuStatus=Installing GCU...
 chinesesimplified.LaunchApp=运行 {#AppName}
 english.LaunchApp=Launch {#AppName}
 chinesesimplified.RuntimeRequired=本程序需要 .NET 桌面运行时 10（x64），当前未安装。{break}{break}是否现在从 Microsoft 官方地址自动下载并安装？
@@ -94,6 +97,12 @@ chinesesimplified.RuntimeFailed=自动下载或安装 .NET 桌面运行时失败
 english.RuntimeFailed=Automatic download/install of the .NET Desktop Runtime failed.{break}{break}The official download page will open; install it manually and run setup again.
 chinesesimplified.RuntimeDeclined=缺少 .NET 桌面运行时 10（x64），安装无法继续。{break}{break}将打开官方下载页面。
 english.RuntimeDeclined=.NET Desktop Runtime 10 (x64) is missing; setup cannot continue.{break}{break}The official download page will open.
+chinesesimplified.UninstallingOld=检测到已安装的 L-Mechrevo，将先卸载旧版本再安装新版本。
+english.UninstallingOld=An existing L-Mechrevo install was found. Setup will uninstall it first, then install this version.
+chinesesimplified.OldVersionUninstallMissing=找不到已安装 L-Mechrevo 的卸载程序，安装已中止。请先手动卸载旧版本后再试。
+english.OldVersionUninstallMissing=The existing L-Mechrevo uninstaller was not found. Setup aborted. Uninstall the old version manually and try again.
+chinesesimplified.OldVersionUninstallFailed=无法卸载已安装的 L-Mechrevo，安装已中止。请先手动卸载旧版本后再试。
+english.OldVersionUninstallFailed=Could not uninstall the existing L-Mechrevo. Setup aborted. Uninstall the old version manually and try again.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -130,13 +139,12 @@ Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-; GCU payload install: runs AFTER files are copied, selects the payload by GPU generation
-; (50-series -> payload\50; otherwise -> payload\40-51751 by default). Override the
-; 40-series variant with /GCUVARIANT=40-51749 (multi-payload only; retired once G0 enables single-payload). Silent: no UI, log under ProgramData.
+; GCU payload install: runs AFTER files are copied. One shipped payload; no generation picker.
+; /GCUVARIANT is retired and ignored. Silent: no UI, log under ProgramData.
 ; N5: the installer is the single place elevation is obtained. Install-Gcu.ps1 creates the
 ; highest-privileges autostart task, grants the app's directory ACLs and the ACPIDriver access
 ; while this process is already elevated, so the app never needs to elevate at runtime.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant ""{param:GCUVARIANT|Auto}"" -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"" -AppExe ""{app}\{#AppExeName}"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant Auto -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"" -AppExe ""{app}\{#AppExeName}"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
@@ -176,47 +184,89 @@ const
 
 function MajorVersionOf(const Value: String): Integer;
 var
+  Text: String;
   Separator: Integer;
 begin
-  Separator := Pos('.', Value);
+  Text := Value;
+  if (Length(Text) > 0) and ((Text[1] = 'v') or (Text[1] = 'V')) then
+    Delete(Text, 1, 1);
+  Separator := Pos('.', Text);
   if Separator > 0 then
-    Result := StrToIntDef(Copy(Value, 1, Separator - 1), 0)
+    Result := StrToIntDef(Copy(Text, 1, Separator - 1), 0)
   else
-    Result := StrToIntDef(Value, 0);
+    Result := StrToIntDef(Text, 0);
+end;
+
+function NamesIncludeDesktopRuntime10(const Names: TArrayOfString): Boolean;
+var
+  Index: Integer;
+begin
+  Result := False;
+  for Index := 0 to GetArrayLength(Names) - 1 do
+    if MajorVersionOf(Names[Index]) = 10 then
+    begin
+      Result := True;
+      Exit;
+    end;
 end;
 
 function HasDesktopRuntime10InView(const RootKey: Integer): Boolean;
 var
   Names: TArrayOfString;
-  Index: Integer;
 begin
   Result := False;
-  // RegGetValueNames, not the subkey-name variant: the .NET installer records installed versions
-  // as VALUE names (e.g. a value named "10.0.8"), and the key has no subkeys at all. Reading
-  // subkey names made this loop never execute, so detection always returned False - the field bug
-  // where a machine that HAD .NET 10 was still told to install it.
+  // Value names are the common layout (e.g. a DWORD named "10.0.8"). Some host/SDK layouts
+  // instead write version SUBKEYS. Older 10.x builds also prefix "v". Accept any of those.
   if RegGetValueNames(RootKey, DotNetDesktopSharedFxKey, Names) then
-    for Index := 0 to GetArrayLength(Names) - 1 do
-      if MajorVersionOf(Names[Index]) = 10 then
-      begin
-        Result := True;
-        Exit;
-      end;
+    if NamesIncludeDesktopRuntime10(Names) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  if RegGetSubkeyNames(RootKey, DotNetDesktopSharedFxKey, Names) then
+    Result := NamesIncludeDesktopRuntime10(Names);
+end;
+
+function SharedFrameworkRootHasV10(const Root: String): Boolean;
+var
+  FindRec: TFindRec;
+begin
+  Result := False;
+  if not DirExists(Root) then
+    Exit;
+  if FindFirst(AddBackslash(Root) + '*', FindRec) then
+  begin
+    try
+      repeat
+        if ((FindRec.Attributes and 16) <> 0) and
+           (FindRec.Name <> '.') and (FindRec.Name <> '..') and
+           (MajorVersionOf(FindRec.Name) = 10) then
+          Result := True;
+      until (not FindNext(FindRec)) or Result;
+    finally
+      FindClose(FindRec);
+    end;
+  end;
 end;
 
 function HasDesktopRuntime10OnDisk: Boolean;
 var
-  FindRec: TFindRec;
+  DotnetRoot: String;
 begin
-  // Independent corroboration: the shared framework on disk. The installer must not rely on
-  // `dotnet` being on PATH, but a wildcard directory probe is a fine fallback. FindFirst matches
-  // directories too, so '10.*' matches the versioned framework folders.
-  Result := False;
-  if FindFirst(ExpandConstant('{commonpf}\dotnet\shared\Microsoft.WindowsDesktop.App\10.*'), FindRec) then
-  begin
-    Result := True;
-    FindClose(FindRec);
-  end;
+  Result :=
+    SharedFrameworkRootHasV10(ExpandConstant('{pf}\dotnet\shared\Microsoft.WindowsDesktop.App')) or
+    SharedFrameworkRootHasV10(ExpandConstant('{pf32}\dotnet\shared\Microsoft.WindowsDesktop.App')) or
+    SharedFrameworkRootHasV10(ExpandConstant('{commonpf}\dotnet\shared\Microsoft.WindowsDesktop.App'));
+  if Result then
+    Exit;
+  DotnetRoot := GetEnv('DOTNET_ROOT');
+  if DotnetRoot <> '' then
+    Result := SharedFrameworkRootHasV10(AddBackslash(DotnetRoot) + 'shared\Microsoft.WindowsDesktop.App');
+  if Result then
+    Exit;
+  DotnetRoot := GetEnv('ProgramW6432');
+  if DotnetRoot <> '' then
+    Result := SharedFrameworkRootHasV10(DotnetRoot + '\dotnet\shared\Microsoft.WindowsDesktop.App');
 end;
 
 function IsDesktopRuntime10Installed: Boolean;
@@ -268,10 +318,71 @@ begin
   Result := ShellExec('open', DotNetDownloadPage, '', '', SW_SHOWNORMAL, ewNoWait, ExitCode);
 end;
 
+function GetUninstallString: String;
+var
+  UninstallKey: String;
+begin
+  UninstallKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#emit SetupSetting("AppId")}_is1';
+  Result := '';
+  if not RegQueryStringValue(HKLM64, UninstallKey, 'UninstallString', Result) then
+    if not RegQueryStringValue(HKLM32, UninstallKey, 'UninstallString', Result) then
+      RegQueryStringValue(HKCU, UninstallKey, 'UninstallString', Result);
+end;
+
+function UnInstallOldVersion: String;
+var
+  Uninstaller: String;
+  ExitCode: Integer;
+  KillCode: Integer;
+begin
+  Result := '';
+  Uninstaller := RemoveQuotes(GetUninstallString);
+  if Uninstaller = '' then
+    Exit;
+
+  if not FileExists(Uninstaller) then
+  begin
+    Result := ExpandConstant('{cm:OldVersionUninstallMissing}');
+    Exit;
+  end;
+
+  if not WizardSilent then
+    MsgBox(ExpandConstant('{cm:UninstallingOld}'), mbInformation, MB_OK);
+
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM L-Mechrevo.exe /F /T', '', SW_HIDE, ewWaitUntilTerminated, KillCode);
+
+  if not Exec(Uninstaller, '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES', '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+  begin
+    Result := ExpandConstant('{cm:OldVersionUninstallFailed}');
+    Exit;
+  end;
+
+  if (ExitCode <> 0) and (ExitCode <> 3010) then
+    Result := ExpandConstant('{cm:OldVersionUninstallFailed}');
+end;
+
+procedure StopLockedAppProcesses;
+var
+  ResultCode: Integer;
+begin
+  // Highest autostart (LMechrevo / LMechrevo_<SID>) restarts the exe after taskkill
+  // (RestartCount=3). Disable first, then kill, then wait so file locks drop.
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like ''LMechrevo*'' } | ForEach-Object { Stop-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue; Disable-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue }"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM L-Mechrevo.exe /F /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(800);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Answer: Integer;
 begin
+  StopLockedAppProcesses;
+  Result := UnInstallOldVersion;
+  if Result <> '' then
+    Exit;
+
   Result := '';
   if IsDesktopRuntime10Installed then
     Exit;
@@ -301,4 +412,11 @@ begin
     OpenRuntimeDownloadPage;
     Result := ExpandConstant('{cm:RuntimeFailed}');
   end;
+end;
+
+function NeedRestart(): Boolean;
+begin
+  // Suggest a reboot after GCU/driver install. The finished page lets the user postpone
+  // (Yes now / No later). Silent installs still honor /NORESTART.
+  Result := True;
 end;

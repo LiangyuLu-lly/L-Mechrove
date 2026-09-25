@@ -101,7 +101,7 @@ namespace MechrevoLite.UI
             // 1px token 描边不一致；Swatch 未选中态即 1px Border 描边，见文件末尾 Swatch.OnPaint）。
             preview = new Swatch { Location = new Point(S(rightX), S(pad)), Size = new Size(S(rightW), S(110)), UiScale = scale };
 
-            var hexLabel = new Label { Text = "十六进制", Location = new Point(S(rightX), S(pad + 118)), AutoSize = true };
+            var hexLabel = new Label { Text = Properties.Strings.ColorPickerHex, Location = new Point(S(rightX), S(pad + 118)), AutoSize = true };
             hexBox = new RTextBox { Location = new Point(S(rightX), S(pad + 145)), Size = new Size(S(rightW), S(23)), MaxLength = 7 };
             hexBox.TextChanged += (s, e) => { if (!suppressHex) ApplyHex(false); };
             hexBox.Leave += (s, e) => ApplyHex(true);
@@ -132,8 +132,8 @@ namespace MechrevoLite.UI
             int formW = rightX + rightW + pad;
             int buttonsY = customY + sw + 14;
 
-            var ok = new RButton { Text = "确定", Size = new Size(S(84), S(28)), DialogResult = DialogResult.OK };
-            var cancel = new RButton { Text = "取消", Size = new Size(S(84), S(28)), DialogResult = DialogResult.Cancel };
+            var ok = new RButton { Text = Properties.Strings.ColorPickerOk, Size = new Size(S(84), S(28)), DialogResult = DialogResult.OK };
+            var cancel = new RButton { Text = Properties.Strings.ColorPickerCancel, Size = new Size(S(84), S(28)), DialogResult = DialogResult.Cancel };
             cancel.Location = new Point(S(formW - pad - 84), S(buttonsY));
             ok.Location = new Point(S(formW - pad - 84 - 8 - 84), S(buttonsY));
 

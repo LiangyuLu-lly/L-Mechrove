@@ -38,9 +38,8 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 function Get-InstalledMajorVersions {
-    # Reads the VALUE names of the key in BOTH registry views. The .NET installer writes the
-    # versions as value names (REG_DWORD 1), not as subkeys, and which view is populated differs
-    # per machine - so neither the API nor the view may be assumed.
+    # Reads VALUE names and SUBKEY names in BOTH registry views. Host/SDK layouts disagree
+    # (values vs subkeys) and some 10.x names are prefixed with "v".
     param([string]$Path)
     $found = New-Object System.Collections.Generic.List[string]
     foreach ($view in @('Registry64', 'Registry32')) {
@@ -50,6 +49,9 @@ function Get-InstalledMajorVersions {
             $key = $base.OpenSubKey($Path)
             if ($null -eq $key) { continue }
             foreach ($name in $key.GetValueNames()) {
+                if (-not [string]::IsNullOrWhiteSpace($name)) { $found.Add($name) }
+            }
+            foreach ($name in $key.GetSubKeyNames()) {
                 if (-not [string]::IsNullOrWhiteSpace($name)) { $found.Add($name) }
             }
             $key.Dispose()
@@ -71,13 +73,18 @@ function Get-InstalledSharedFrameworkVersions {
         Select-Object -ExpandProperty Name)
 }
 
+function Test-IsRequestedMajor {
+    param([string]$Name, [int]$Major)
+    return $Name -match ('^v?{0}(\.|$)' -f $Major)
+}
+
 $versions = @(Get-InstalledMajorVersions -Path $KeyPath)
-$match = $versions | Where-Object { $_ -match ('^{0}\.' -f $MajorVersion) } | Sort-Object -Descending | Select-Object -First 1
+$match = $versions | Where-Object { Test-IsRequestedMajor -Name $_ -Major $MajorVersion } | Sort-Object -Descending | Select-Object -First 1
 
 if (-not $match) {
     $onDisk = if ($NoDirectoryFallback) { @() } else {
         @(Get-InstalledSharedFrameworkVersions -Root $SharedFrameworkRoot) |
-            Where-Object { $_ -match ('^{0}\.' -f $MajorVersion) } | Sort-Object -Descending | Select-Object -First 1
+            Where-Object { Test-IsRequestedMajor -Name $_ -Major $MajorVersion } | Sort-Object -Descending | Select-Object -First 1
     }
     if ($onDisk) {
         Write-Output ("DETECTED {0} {1} (from the shared framework directory; registry key '{2}' had no {3}.x value)" -f `

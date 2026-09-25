@@ -10,10 +10,10 @@
     carries its own UWACPIDriver, and serves every supported generation (30/40/50) with it.
 
     The retired 40-series trees are no longer bundled. The broken platform-code -> generation
-    heuristic is gone: axis 1 (platform code) must not decide axis 2 (dGPU generation). Detection
-    is GPU-name / NVIDIA PCI device-id only; an undeterminable generation exits non-zero with a
-    readable reason and NEVER falls back to a 40-series payload. -Variant / /GCUVARIANT is refused
-    because no second payload exists.
+    heuristic is gone: axis 1 (platform code) must not decide axis 2 (dGPU generation).
+    Detection is GPU-name / NVIDIA PCI device-id only and is logged, not a gate: there is only
+    one shipped payload, so an undeterminable generation still installs it. There is no
+    40-series fallback. -Variant / /GCUVARIANT is refused because no second payload exists.
 
     The old G0 gate is superseded (owner): the newest GCU is backward compatible to 30-series, the
     vendor ships one GCU/console for all 24 platform codes, and release\GCU-only\...\UserFanTables
@@ -200,7 +200,8 @@ function Select-GcuPayload {
     )
 
     if ($Variant -ne 'Auto') {
-        throw ("-Variant '{0}' is retired: only the newest GCU payload (release\GCU-only) is shipped, so there is no second payload to select. /GCUVARIANT no longer has any effect." -f $Variant)
+        Write-Warning ("-Variant '{0}' is retired: only the newest GCU payload (release\GCU-only) is shipped. /GCUVARIANT no longer has any effect; continuing as Auto." -f $Variant)
+        $Variant = 'Auto'
     }
 
     # Auto-probe only when the caller supplied no hardware data at all. A BIOS project id alone
@@ -212,30 +213,30 @@ function Select-GcuPayload {
     }
 
     $detected = Get-GpuGeneration -Ids $DeviceId -Names $GpuName
-    if (@('30', '40', '50') -notcontains $detected.Generation) {
-        $observedNames = New-Object System.Collections.Generic.List[string]
-        foreach ($name in @($GpuName)) {
-            if (-not [string]::IsNullOrWhiteSpace($name)) { $observedNames.Add([string]$name) }
-        }
-        $observed = if ($observedNames.Count -gt 0) { ($observedNames -join ', ') } else { '(none)' }
-        throw ("cannot determine the NVIDIA dGPU generation (30/40/50) from the GPU name or PCI device id (observed: {0}); refusing to install the GCU payload - no fallback. The newest payload is the superset, but an undeterminable generation is not a supported machine." -f $observed)
+    $entry = $script:PayloadEntry
+    $known = @('30', '40', '50') -contains $detected.Generation
+    $generation = if ($known) { $detected.Generation } else { $entry.Generation }
+    $reason = if ($known) {
+        ("{0}-series detected; installing the shipped GCU payload {1}" -f $generation, $entry.RepoPayload)
+    }
+    else {
+        'installing the shipped GCU payload (no generation selection)'
     }
 
-    $entry = $script:PayloadEntry
     return [pscustomobject]@{
-        Generation  = $detected.Generation
+        Generation  = $generation
         Variant     = $entry.Variant
         ServiceDir  = $entry.ServiceDir
         RepoPayload = $entry.RepoPayload
         StagedDir   = $entry.StagedDir
-        Reason      = ("{0}-series detected -> {1} (single payload; newest GCU is the superset)" -f $detected.Generation, $entry.RepoPayload)
+        Reason      = $reason
         Evidence    = $detected.Evidence
     }
 }
 
 function Invoke-SelfTest {
-    # Every supported generation resolves to the one shipped payload; an undeterminable
-    # generation and the retired override both THROW (no fallback).
+    # Every input, including undeterminable generation and the retired override, installs
+    # the one shipped payload. There is no second tree to fall back to.
     $cases = @(
         @{ Name = 'RTX 5080 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2C19&SUBSYS_60411D05&REV_A1'); GpuName = @('NVIDIA GeForce RTX 5080 Laptop GPU') }; Expect = '50' },
         @{ Name = 'RTX 5090 desktop -> GCU-only';      Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2B85'); GpuName = @('NVIDIA GeForce RTX 5090') }; Expect = '50' },
@@ -243,8 +244,8 @@ function Invoke-SelfTest {
         @{ Name = 'RTX 4070 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2820'); GpuName = @('NVIDIA GeForce RTX 4070 Laptop GPU') }; Expect = '50' },
         @{ Name = 'RTX 3080 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2206'); GpuName = @('NVIDIA GeForce RTX 3080 Laptop GPU') }; Expect = '50' },
         @{ Name = 'PCIE 2C19 -> GCU-only';             Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2C19') }; Expect = '50' },
-        @{ Name = 'Intel-only must not fall back';     Args = @{ DeviceId = @('PCI\VEN_8086&DEV_7D67'); GpuName = @('Intel(R) Graphics') }; Expect = 'THROW' },
-        @{ Name = 'retired 40-51749 override';         Args = @{ Variant = '40-51749' }; Expect = 'THROW' }
+        @{ Name = 'Intel-only still ships GCU-only';   Args = @{ DeviceId = @('PCI\VEN_8086&DEV_7D67'); GpuName = @('Intel(R) Graphics') }; Expect = '50' },
+        @{ Name = 'retired 40-51749 override';         Args = @{ Variant = '40-51749'; DeviceId = @('PCI\VEN_10DE&DEV_2717'); GpuName = @('NVIDIA GeForce RTX 4090 Laptop GPU') }; Expect = '50' }
     )
 
     $failed = 0

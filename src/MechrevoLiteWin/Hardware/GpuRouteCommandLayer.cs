@@ -14,7 +14,7 @@ public sealed record GpuRouteCommand(
 
 /// <summary>
 /// 显卡切换命令层（MQTT-only）。动作集按 <see cref="DisplayRouteMatrix"/> 的逐代事实表收窄：
-/// 30 系不出现 iGPU-only / RESTART；代际判不出（Unknown/NoDgpu）时不套用具体代际的限制。
+/// 30 系不出现 iGPU-only / RESTART；代际判不出（Unknown/NoDgpu）时没有事实行，一条代际动作都不发。
 ///
 /// <para>本层只构造与判据，不做任何 EC/固件写；发布由调用方经 <c>MechrevoHw.Publish</c> 完成。</para>
 /// </summary>
@@ -57,7 +57,7 @@ public static class GpuRouteCommandLayer
         Dictionary<string, object> payload =
             MechrevoService.CreateGpuSwitchPayload(mode, supportsDgpuDirect, supportsIgpuOnly, useHotSwitch);
         string action = ActionOf(payload);
-        return IsAllowedByGeneration(generation, action)
+        return IsAllowedByGeneration(generation, action, supportsIgpuOnly)
             ? new GpuRouteCommand(MqttTopics.SettingControl, action, payload, 0)
             : null;
     }
@@ -65,6 +65,10 @@ public static class GpuRouteCommandLayer
     /// <summary>该动作在该代际是否允许（转发 <see cref="DisplayRoutePolicy"/>）。</summary>
     public static bool IsAllowedByGeneration(DgpuGenerationKind generation, string action) =>
         DisplayRoutePolicy.AllowsAction(generation, action);
+
+    /// <summary>Tier-aware gate: <paramref name="threeMode"/> is MQTT iGPU-only support, never defaulted true.</summary>
+    public static bool IsAllowedByGeneration(DgpuGenerationKind generation, string action, bool threeMode) =>
+        DisplayRoutePolicy.AllowsAction(generation, action, threeMode);
 
     static string ActionOf(Dictionary<string, object> payload) =>
         payload.TryGetValue("Action", out object? value) ? value?.ToString() ?? "" : "";

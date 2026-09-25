@@ -151,6 +151,8 @@ public class KeyboardPathStabilityAcrossResumeTests
                 }
                 return Task.CompletedTask;
             }, new MechrevoDeviceCapabilities { Lightbar = true, LogoLight = true, Keyboard = true });
+            hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\"}");
+            hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\"}");
             Hardware = hardware;
 
             Device = new SpyKeyboardHid(op => { lock (_gate) Events.Add(op); });
@@ -225,7 +227,7 @@ public class KeyboardPathStabilityAcrossResumeTests
     /// <summary>
     /// Unsupported：显式用户探测取得判定后，睡眠→唤醒的两次协调器调用——
     /// 判定不变、不重探（不枚举/不打开 HID）、HID 分支一步不进，
-    /// 且两次的键盘发布序列都等于第 0 步基线（电源 → 计时关闭）。
+    /// 电源 → 计时关闭仍等于第 0 步基线，并且每次恢复重放一次 SetKeyboardEffect。
     /// </summary>
     [Fact]
     public async Task Unsupported_ResumeTwice_KeepsTheVerdictAndTheBaselineGcuSequence()
@@ -256,8 +258,8 @@ public class KeyboardPathStabilityAcrossResumeTests
             "唤醒路径重新枚举了 HID 设备（判定缓存后不得再枚举/打开）。");
         Assert.True(harness.CountHidOps() == 0,
             "判定 Unsupported 的机型在唤醒后进入了 HID 分支（HID 分支必须天然惰性）。");
-        Assert.True(harness.CountEffectAll(KeyboardTopic) == 0,
-            "唤醒路径新增了亮度重发命令：SetEffectALL 只允许来自用户显式调亮度（设计 §6）。");
+        Assert.True(harness.CountEffectAll(KeyboardTopic) == 1,
+            "唤醒回退必须重放一次 SetKeyboardEffect；只下发电源灯不会亮。");
         AssertBaselineSequence(firstResume, "第一次唤醒");
         AssertBaselineSequence(secondResume, "第二次唤醒");
     }

@@ -1,12 +1,13 @@
+using MechrevoLite;
 using MechrevoLite.Gpu;
 using MechrevoLite.Hardware;
+
 
 namespace MechrevoLite.Tests;
 
 /// <summary>
-/// 能力级门控（轴 1 机型支持 × 轴 2 代际事实）happy 路径：代际允许的动作照常提供，
-/// 未判出代际（Unknown/NoDgpu）时不套用任何已知代际的限制。
-/// ProvenAbsent 的拒绝断言见 <see cref="GpuCapabilityGatingFailTests"/>。
+/// 能力级门控（轴 1 机型支持 × 轴 2 代际事实）happy 路径：代际允许的动作照常提供。
+/// 未判出代际不得借此放行，见 <see cref="GpuCapabilityGatingFailTests"/>。
 /// </summary>
 [Collection(nameof(SerialGpuSwitchCollection))]
 public class GpuCapabilityGatingTests
@@ -21,6 +22,8 @@ public class GpuCapabilityGatingTests
             IgpuOnly = true,
             DgpuDirect = true,
         });
+        // D1: iGPU offer is MQTT IgpuOnlyStatusSupport == true only; the registry profile is not an offer bit.
+        hardware.SetIgpuOnlyStatusSupportForTests(true);
 
         Assert.True(hardware.SupportsIgpuOnly);
         Assert.True(hardware.SupportsDgpuDirect);
@@ -38,6 +41,7 @@ public class GpuCapabilityGatingTests
             IgpuOnly = true,
             GpuHotSwap = true,
         });
+        hardware.SetIgpuOnlyStatusSupportForTests(true);
 
         Assert.True(hardware.SupportsIgpuOnly);
         Assert.True(hardware.CanOfferIgpuOnly);
@@ -46,7 +50,7 @@ public class GpuCapabilityGatingTests
     }
 
     [Fact]
-    public void AnUnknownGenerationIsNotRestrictedByAGuess()
+    public void AnUnknownGenerationIsNotOfferedAsIfItWereAResolvedConsole()
     {
         using var generation = GpuCapabilityGatingHarness.Generation(DgpuIdentity.Unknown);
         using MechrevoHw hardware = GpuCapabilityGatingHarness.Hardware(new MechrevoDeviceCapabilities
@@ -56,9 +60,26 @@ public class GpuCapabilityGatingTests
             DgpuDirect = true,
             GpuHotSwap = true,
         });
+        hardware.SetIgpuOnlyStatusSupportForTests(true);
 
+        Assert.False(hardware.CanOfferIgpuOnly);
+        Assert.False(hardware.CanOfferGpuHotSwap);
+        Assert.False(hardware.CanOfferGpuModeSwitch);
+    }
+
+    [Fact]
+    public void ARegistryIgpuOnlyBitWithoutMqttStatusOffersIgpuOnly()
+    {
+        using var generation = GpuCapabilityGatingHarness.Generation(GpuCapabilityGatingHarness.Gen40);
+        using MechrevoHw hardware = GpuCapabilityGatingHarness.Hardware(new MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            IgpuOnly = true,
+            DgpuDirect = true,
+        });
+
+        Assert.True(hardware.SupportsIgpuOnly);
         Assert.True(hardware.CanOfferIgpuOnly);
-        Assert.True(hardware.CanOfferGpuHotSwap);
         Assert.True(hardware.CanOfferGpuModeSwitch);
     }
 }

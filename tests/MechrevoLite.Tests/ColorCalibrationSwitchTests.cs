@@ -79,6 +79,41 @@ public class ColorCalibrationSwitchTests
         }
     }
 
+    /// <summary>
+    /// 真机 2026-09-11：切 sRGB 后档位回读 2、屏幕变色，GCU/注册表开关位仍为 False。
+    /// 确认不得要求开关位，否则每次成功切换都判失败。
+    /// </summary>
+    [Fact]
+    public async Task ConfirmColorCalibration_Srgb_Mode2WithoutSwitchBit_Succeeds()
+    {
+        var written = new List<(string Topic, Dictionary<string, object> Payload)>();
+        MechrevoHw hw = null!;
+        hw = new MechrevoHw((topic, payload) =>
+        {
+            var dict = (Dictionary<string, object>)payload;
+            written.Add((topic, dict));
+            string action = dict.TryGetValue("Action", out object? value) ? value?.ToString() ?? "" : "";
+            if (topic == "Setting/Control" && action == "COLOR_CALIBRATION_ON_SRGB")
+            {
+                hw.HandleMessage("Setting/Status",
+                    """{"ColorCalibrationSwitch":"ColorCalibrationSwitch_OFF","ColorCalibrationMode":"2","ColorCalibrationResultCode":"0"}""");
+            }
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { ColorCalibration = true });
+
+        using (hw)
+        {
+            bool result = await NewService(hw, initialOn: false, initialMode: 1, hdr: false)
+                .SetColorCalibration(2);
+
+            Assert.True(result);
+            Assert.True(hw.ColorCalibrationSwitchSeen);
+            Assert.False(hw.ColorCalibrationSwitch);
+            Assert.Equal(2, hw.ColorCalibrationMode);
+            Assert.Contains(written, entry => entry.Payload["Action"] as string == "COLOR_CALIBRATION_ON_SRGB");
+        }
+    }
+
     [Fact]
     public async Task AnAlreadyAppliedProfileIsANoOp()
     {

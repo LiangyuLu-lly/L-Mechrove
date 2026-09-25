@@ -1,5 +1,6 @@
 using MechrevoLite.Diagnostics;
 using MechrevoLite.Hardware;
+using MechrevoLite.Properties;
 using MechrevoLite.UI;
 
 namespace MechrevoLite;
@@ -47,10 +48,16 @@ public partial class SettingsForm
         })
         {
             // 尺寸一变就重排：位置是手算的，字体度量随 DPI/审计缩放变化后不重排会重叠
-            //（审计 100pct 视口 sibling-overlap 实证）。
+            //（审计 100pct 视口 sibling-overlap 实证）。ResumeLayout(true) 会再打 SizeChanged，
+            // 同宽高必须跳过，否则每段 Label 宽度抖动会把整行打成布局风暴。
+            int lastW = int.MinValue, lastH = int.MinValue;
             piece.SizeChanged += (_, _) =>
             {
                 if (_telemetryLayingOut) return;
+                int w = piece.Width, h = piece.Height;
+                if (w == lastW && h == lastH) return;
+                lastW = w;
+                lastH = h;
                 LayoutTelemetryPieces();
             };
             _telemetryPanel.Controls.Add(piece);
@@ -84,16 +91,19 @@ public partial class SettingsForm
         var hw = Program.hw;
         (string _, string cpuTemp, string cpuRest) = TelemetryParts(hw, isCpu: true);
         (string _, string gpuTemp, string gpuRest) = TelemetryParts(hw, isCpu: false);
-        SetTelemetryPiece(_telemetryCpuTemp, cpuTemp);
-        SetTelemetryPiece(_telemetryCpuRest, cpuRest);
-        SetTelemetryPiece(_telemetryGpuTemp, gpuTemp);
-        SetTelemetryPiece(_telemetryGpuRest, gpuRest);
-        LayoutTelemetryPieces();
+        bool changed = false;
+        changed |= SetTelemetryPiece(_telemetryCpuTemp, cpuTemp);
+        changed |= SetTelemetryPiece(_telemetryCpuRest, cpuRest);
+        changed |= SetTelemetryPiece(_telemetryGpuTemp, gpuTemp);
+        changed |= SetTelemetryPiece(_telemetryGpuRest, gpuRest);
+        if (changed) LayoutTelemetryPieces();
     }
 
-    static void SetTelemetryPiece(Label? piece, string text)
+    static bool SetTelemetryPiece(Label? piece, string text)
     {
-        if (piece is not null && piece.Text != text) piece.Text = text;
+        if (piece is null || piece.Text == text) return false;
+        piece.Text = text;
+        return true;
     }
 
     /// <summary>各段按序排在一行并整体居中：词间距一个空格宽，· 两侧两个空格（预览 2100rpm&nbsp;&nbsp;·&nbsp;&nbsp;GPU）。
@@ -162,9 +172,6 @@ public partial class SettingsForm
         void SyncHzButtons()
         {
             if (_hzSegTable is null || _hzSegTable.IsDisposed) return;
-            // Hz 分段行是固定行高（34 字面量）：没有可显示的频率按钮时整行收为 0，
-            // 否则「支持刷新率但列表未上报」的机型会留一条空带（run5 门禁审计）。
-            SetScreenRowControls(1, _hzButtons.Count > 0, _hzSegTable);
             var list = Program.hw?.HzList ?? new List<int>();
         int current = Program.hw?.CurrentHz ?? 0;
         string signature = string.Join('|', list) + "#" + current;
@@ -294,7 +301,7 @@ public partial class SettingsForm
             };
             var editBtn = new Button
             {
-                Text = "编辑", FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
+                Text = Strings.LightRowEdit, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand,
                 ForeColor = UiVisualStyle.Text, BackColor = UiVisualStyle.Window,
                 FlatAppearance = { BorderColor = UiVisualStyle.Border, BorderSize = 1 },
                 AutoSize = false, Dock = DockStyle.Fill,
@@ -312,16 +319,37 @@ public partial class SettingsForm
             var row = MakeRow("rowKeyboard");
             FillRow(row, "键盘", out var sw, out var effectCombo, () => OpenRgbForm());
             _kbPowerSw = sw; _kbEffectCombo = effectCombo;
-            foreach (var (_, fxName) in RgbForm.HidEffects)
-                effectCombo.Items.Add(new KeyValuePair<string, int>(fxName, 0));
-            effectCombo.SelectedIndex = 0;   // 无运行时模式可回显时取目录第一项
+            FillKeyboardEffectCombo(effectCombo);
             effectCombo.SelectedIndexChanged += async (_, _) =>
             {
                 if (_syncingEffectCombos || Program.UiAuditMode) return;
                 int idx = effectCombo.SelectedIndex;
-                if (idx < 0 || idx >= RgbForm.HidEffects.Length) return;
-                var hid = RgbForm.HidEffects[idx];
+                if (idx < 0) return;
                 if (Program.rgb is null) return;
+                if (ShouldUseGcuKeyboardFallback(Program.rgb))
+                {
+                    var gcuCatalog = KeyboardFirmwareEffects.Visible(CurrentKeyboardType());
+                    if (idx >= gcuCatalog.Length) return;
+                    string id = gcuCatalog[idx].Id;
+                    LightChannelSettings settings = LightingSettingsStore.Load(
+                        MqttTopics.KeyboardCtrl, gcuCatalog[0].Id);
+                    if (!sw.Checked)
+                    {
+                        LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, settings with { Effect = id });
+                        return;
+                    }
+                    if (Program.service is null || Program.hw is not { IsConnected: true }) return;
+                    Color? color = LightingSettingsStore.ColorForEffect(id, settings.ColorArgb);
+                    sw.Enabled = false;
+                    bool ok = await Program.service.SetKeyboardEffect(
+                        id, settings.Light, settings.Speed, "None", color, save: true);
+                    sw.Enabled = true;
+                    if (ok) LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, settings with { Effect = id });
+                    return;
+                }
+                var hidCatalog = RgbForm.VisibleHidEffects(CurrentKeyboardType());
+                if (idx >= hidCatalog.Length) return;
+                var hid = hidCatalog[idx];
                 // 键盘行关态时只记住选择（KbHidMode 持久化在 KeyboardRgb 配置里），
                 // 不点亮、不下发：与灯带/Logo 行的 persist-only 规则一致。开关打开时
                 // 开关路径会 StartMode(rgb.KbHidMode)，选择照样生效。
@@ -343,15 +371,20 @@ public partial class SettingsForm
                 }
                 if (Program.service is not null && Program.hw is { IsConnected: true })
                 {
-                    // HID 未连（或确定性不支持）时退回固件通道（同 RgbForm 的电源补开路径）。
-                    // 回退通道不承载任意 HID 效果，中文显示名也不是协议合法效果名：改用亮度载体——
-                    // 重发 GCU 当前回报的效果 + 当前 UI 亮度档（设计 §4），效果保留、线上不再出现无效中文名。
+                    // HID 未连时退回固件电源补开；效果名绝不用 HID 中文显示名。
                     sw.Enabled = false;
                     bool ok = await Program.service.SetKeyboardPower(true);
-                    sw.Enabled = true;
                     if (ok)
-                        _ = Task.Run(() => Program.service.SetKeyboardBrightnessPreservingEffect(
-                            KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(Program.rgb.Brightness)));
+                        ok = await Program.service.SetKeyboardBrightnessPreservingEffect(
+                            KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(Program.rgb.Brightness));
+                    sw.Enabled = true;
+                    if (!ok)
+                    {
+                        _syncingSwitches = true;
+                        sw.Checked = false;
+                        _syncingSwitches = false;
+                        Program.rgb.KbPowerOn = false;
+                    }
                 }
             };
             sw.CheckedChanged += async (_, _) =>
@@ -396,6 +429,11 @@ public partial class SettingsForm
                     if (!rgbToConnect.IsConnected && rgbToConnect.ControllerAvailability != FeatureAvailability.Unsupported)
                         await Task.Run(() => rgbToConnect.Connect());
                 }
+
+                // 探测和 RefreshDeviceCapabilities 可能刚刚记下真实的亮度写入拒绝。
+                // 用探测前的快照会把这次点击仍送进 HID。
+                if (requested)
+                    gcuFallback = ShouldUseGcuKeyboardFallback(Program.rgb);
 
                 if (requested && !gcuFallback && Program.rgb is { IsConnected: true })
                 {
@@ -443,8 +481,8 @@ public partial class SettingsForm
                     // 重发 GCU 当前回报的效果 + 当前 UI 亮度档（设计 §4），效果保留、线上不再出现无效中文名。
                     ok = await service.SetKeyboardPower(true);
                     if (ok)
-                        _ = Task.Run(() => service.SetKeyboardBrightnessPreservingEffect(
-                            KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(Program.rgb?.Brightness ?? 100)));
+                        ok = await service.SetKeyboardBrightnessPreservingEffect(
+                            KeyboardRgb.MapSoftwareBrightnessToHardwareLevel(Program.rgb?.Brightness ?? 100));
                 }
                 sw.Enabled = true;
                 if (!ok)
@@ -505,7 +543,7 @@ public partial class SettingsForm
                 sw.Enabled = false;
                 bool ok = await Program.service.SetLightEffect(topic, effectId,
                     settings.Light, settings.Speed, "None",
-                    effectId == "Single" ? Color.FromArgb(settings.ColorArgb) : null, save: true);
+                    LightingSettingsStore.ColorForEffect(effectId, settings.ColorArgb), save: true);
                 sw.Enabled = true;
                 if (ok) LightingSettingsStore.Save(topic, settings with { Effect = effectId });
             };
@@ -553,7 +591,7 @@ public partial class SettingsForm
         var offOnBatteryChk = new RCheckBox
         {
             Name = "checkLightingOffOnBattery",
-            Text = "离电自动关闭全部灯效",
+            Text = Strings.LightingOffOnBattery,
             ForeColor = UiVisualStyle.Text,
             AutoSize = true,
             Checked = AppConfig.Is("lighting_off_on_battery"),
@@ -668,8 +706,17 @@ public partial class SettingsForm
         body.Controls.Add(_lblKeyboardControllerStatus, 0, keyboardRowIndex + 1);
     }
 
-    /// <summary>判定为「不支持」时的状态文案（设计 §5，UI 语言 = 中文）。</summary>
-    internal const string KeyboardControllerUnsupportedText = "本机控制器不支持软件灯效控制，已改用官方通道（仅电源与亮度）";
+    /// <summary>判定为「不支持」且官方服务在线时的状态文案（设计 §5，UI 语言 = 中文）。</summary>
+        internal static string KeyboardControllerUnsupportedText => Strings.KeyboardControllerUnsupported;
+
+    /// <summary>
+    /// 官方 GCU 服务未运行时的状态文案。本进程不请求管理员权限，也不能替安装器启动 GCUBridge，
+    /// 所以这里只说明服务没在跑，不假装已经切到官方通道。
+    /// </summary>
+        internal static string KeyboardGcuServiceNotRunningText => Strings.KeyboardGcuNotRunning;
+
+    internal static string KeyboardControllerStatusText(bool serviceConnected) =>
+        serviceConnected ? KeyboardControllerUnsupportedText : KeyboardGcuServiceNotRunningText;
 
     /// <summary>睡眠时间选项（label / 设备侧分钟 / 应用侧空闲秒）：自 RgbForm.cs 迁来（2026-09-13）。
     /// 设备侧计时恒为 0——睡眠由应用内空闲检测实现（RgbForm.SyncDeviceCloseTimerAsync 同一纪律）。</summary>
@@ -721,13 +768,60 @@ public partial class SettingsForm
     /// <summary>
     /// 唯一接缝（防双发）：当前运行态下键盘可见光是否只能走官方（GCU）通道。
     /// 纯策略吃 (判定, HID 连接态, GCU 可用, HID 亮度写入是否生效)；调用方一律独占提前返回，绝不穿透。
-    /// 本处是仪表盘键盘行（电源开关），没有亮度写入结果，故传 true——未观测到失败前 HID 是主路径。
+    /// 亮度标志只采信已连接且判定为 Supported 的真实写入；未连接或 Unknown 保持 true，不跳过探测。
     /// </summary>
     static bool ShouldUseGcuKeyboardFallback(KeyboardRgb? rgb) =>
         rgb is not null && KeyboardLightPathPolicy.ShouldUseGcuKeyboardFallback(
             rgb.ControllerAvailability, rgb.IsConnected,
             Program.service is not null && Program.hw is { IsConnected: true },
-            hidBrightnessTookEffect: true);
+            rgb.BrightnessWriteTookEffectForRouting());
+
+    static int CurrentKeyboardType() => Program.hw?.Capabilities.KeyboardType ?? 0;
+
+    void FillKeyboardEffectCombo(ComboBox combo)
+    {
+        bool gcu = ShouldUseGcuKeyboardFallback(Program.rgb);
+        int keyboardType = CurrentKeyboardType();
+        var gcuCatalog = KeyboardFirmwareEffects.Visible(keyboardType);
+        var hidCatalog = RgbForm.VisibleHidEffects(keyboardType);
+        string[] labels = gcu
+            ? gcuCatalog.Select(e => e.Label).ToArray()
+            : hidCatalog.Select(e => e.Name).ToArray();
+        int idx;
+        if (gcu)
+        {
+            LightChannelSettings settings = LightingSettingsStore.Load(
+                MqttTopics.KeyboardCtrl, gcuCatalog[0].Id);
+            idx = Array.FindIndex(gcuCatalog, e => e.Id == settings.Effect);
+        }
+        else
+        {
+            int mode = Program.rgb?.KbHidMode ?? -1;
+            idx = mode >= 0 ? Array.FindIndex(hidCatalog, e => e.Mode == mode) : -1;
+        }
+        if (idx < 0) idx = 0;
+
+        bool sameCatalog = combo.Items.Count == labels.Length;
+        if (sameCatalog)
+        {
+            for (int i = 0; i < labels.Length; i++)
+            {
+                if (combo.GetItemText(combo.Items[i]) != labels[i]) { sameCatalog = false; break; }
+            }
+        }
+        if (sameCatalog && combo.SelectedIndex == idx) return;
+
+        _syncingEffectCombos = true;
+        if (!sameCatalog)
+        {
+            combo.Items.Clear();
+            foreach (string label in labels)
+                combo.Items.Add(new KeyValuePair<string, int>(label, 0));
+        }
+        if (combo.Items.Count > 0)
+            combo.SelectedIndex = Math.Clamp(idx, 0, combo.Items.Count - 1);
+        _syncingEffectCombos = false;
+    }
 
     void SyncLightRows()
     {
@@ -741,17 +835,8 @@ public partial class SettingsForm
             bool state = LightingState.IsLightSwitchOn(
                 Program.rgb?.KbPowerOn ?? (hw?.KeyboardPower ?? true), temporarilySuspended);
             if (_kbPowerSw.Checked != state) { _syncingSwitches = true; _kbPowerSw.Checked = state; _syncingSwitches = false; }
-            int mode = Program.rgb?.KbHidMode ?? -1;
-            if (_kbEffectCombo is not null && mode >= 0)
-            {
-                int idx = Array.FindIndex(RgbForm.HidEffects, e => e.Mode == mode);
-                if (idx >= 0 && _kbEffectCombo.SelectedIndex != idx)
-                {
-                    _syncingEffectCombos = true;   // 回显同步：不触发下发命令
-                    _kbEffectCombo.SelectedIndex = idx;
-                    _syncingEffectCombos = false;
-                }
-            }
+            if (_kbEffectCombo is not null)
+                FillKeyboardEffectCombo(_kbEffectCombo);
         }
         if (_lbPowerSw is not null && hw is not null && hw.QuickSwitches.TryGetValue("lightbar", out bool lb))
         {
@@ -762,6 +847,13 @@ public partial class SettingsForm
         {
             bool state = LightingState.IsLightSwitchOn(logo, temporarilySuspended);
             if (_logoPowerSw.Checked != state) { _syncingSwitches = true; _logoPowerSw.Checked = state; _syncingSwitches = false; }
+        }
+        if (_lblKeyboardControllerStatus is not null && !IsDisposed)
+        {
+            bool serviceConnected = Program.service is not null && hw is { IsConnected: true };
+            string statusText = KeyboardControllerStatusText(serviceConnected);
+            if (_lblKeyboardControllerStatus.Text != statusText)
+                _lblKeyboardControllerStatus.Text = statusText;
         }
         if (_lightOffOnBatteryChk is not null && !IsDisposed)
         {
@@ -903,12 +995,12 @@ public partial class SettingsForm
     /// <summary>footer ⚙：懒建设置弹窗并贴边显示（模式同 CustomModeForm）。</summary>
     void OpenSettingsDialog()
     {
-        if ((_settingsDialog is null || _settingsDialog.IsDisposed) && _themeModePanel is not null && _officialConsolePanel is not null)
+        if ((_settingsDialog is null || _settingsDialog.IsDisposed) && _themeModePanel is not null)
         {
             // 用户 2026-09-13：弹窗里的「悬浮窗」开关与 footer 键重复，整体移除（footer 路径不动）。
+            // 隔离官方控制台已移除：首次引导已要求彻底卸载官方控制台，不再提供隔离/恢复。
             _settingsDialog = new SettingsDialog(
-                _themeModePanel, _officialConsolePanel,
-                _overdriveChk, _overdriveAvailable);
+                _themeModePanel, _overdriveChk, _overdriveAvailable);
             AddOwnedForm(_settingsDialog);
         }
         if (_settingsDialog is not null)
@@ -964,10 +1056,10 @@ public partial class SettingsForm
         // 退出按钮复用既有 handler（ButtonQuit_Click 关闭到托盘还是退出由其内部处理）；
         // 更新/赞助/悬浮窗各自有既有 Click 绑定的原按钮，为保接线，原按钮改造成图标形态后保留。
         // 图标按预览 footer 逐一对应：✕退出 ❤赞助 ↻更新 ⊙悬浮窗（旧映射 Console/Battery/Gauge 皆非预览图形）。
-        ResetLegacyFooterButton(buttonQuit, "退出", UiGlyph.Kind.Close, scale);
-        ResetLegacyFooterButton(buttonDonate, "赞助", UiGlyph.Kind.Heart, scale);
-        ResetLegacyFooterButton(buttonUpdates, "更新", UiGlyph.Kind.Refresh, scale);
-        ResetLegacyFooterButton(buttonOverlay, "悬浮窗", UiGlyph.Kind.Overlay, scale);
+        ResetLegacyFooterButton(buttonQuit, Strings.Quit, UiGlyph.Kind.Close, scale);
+        ResetLegacyFooterButton(buttonDonate, Strings.Donate, UiGlyph.Kind.Heart, scale);
+        ResetLegacyFooterButton(buttonUpdates, Strings.Updates, UiGlyph.Kind.Refresh, scale);
+        ResetLegacyFooterButton(buttonOverlay, Strings.FooterOverlay, UiGlyph.Kind.Overlay, scale);
         // 更新键的 Click 已在构造函数（Settings.cs）绑定；此处再绑一次会让一次点击先后弹出两个
         // 模态更新窗口（关掉第一个后第二个才出现）——用户报告的「更新窗口要关两次」。不要在此重复接线。
 
@@ -975,7 +1067,7 @@ public partial class SettingsForm
         // FlatAppearance 底/圆角与旧键各自漂移。
         var settingsButton = new RButton
         {
-            Text = "设置",
+            Text = Strings.FooterSettings,
             Cursor = Cursors.Hand,
             AutoSize = false,
             Size = new Size(scale(46), scale(36)),
@@ -991,13 +1083,13 @@ public partial class SettingsForm
         // 因此不会被固定底栏遮挡，真实点击必有可点中中心点。
         var diagnosticButton = new RButton
         {
-            Text = "诊断",
+            Text = Strings.FooterDiagnostics,
             Cursor = Cursors.Hand,
             AutoSize = false,
             Size = new Size(scale(46), scale(36)),
             Anchor = AnchorStyles.None,
             BackColor = panelFooter.BackColor,
-            AccessibleName = "导出诊断包",
+            AccessibleName = Strings.ExportDiagnostics,
         };
         UiVisualStyle.StyleFooterGhostButton(diagnosticButton);
         UiVisualStyle.ApplyFooterGlyph(diagnosticButton, UiGlyph.Kind.Package, scale(16));

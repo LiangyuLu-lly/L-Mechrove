@@ -1,3 +1,5 @@
+using MechrevoLite.Properties;
+
 namespace MechrevoLite.UI
 {
     /// <summary>GCU 连接状态指示条的离散状态。</summary>
@@ -22,12 +24,17 @@ namespace MechrevoLite.UI
         /// 曾连上后断线（即使重连循环在飞）一律报「未连接」——服务停了就是停了，
         /// 不能让用户误以为马上会好；只有首连尚未成功（服务开机晚于登录）才报「连接中」。
         /// </summary>
+        internal const long FirstConnectGiveUpMs = 20_000;
+
         internal static GcuConnectionState Resolve(
-            bool hardwarePresent, bool connected, bool reconnecting, bool everConnected)
+            bool hardwarePresent, bool connected, bool reconnecting, bool everConnected,
+            long reconnectAgeMs = 0)
         {
             if (!hardwarePresent) return GcuConnectionState.Unknown;
             if (connected) return GcuConnectionState.Connected;
-            if (reconnecting && !everConnected) return GcuConnectionState.Connecting;
+            // Gen0 retry stays Connecting even past FirstConnectGiveUpMs; that age is not Unparsable.
+            if (reconnecting && !everConnected)
+                return GcuConnectionState.Connecting;
             return GcuConnectionState.Disconnected;
         }
 
@@ -36,20 +43,20 @@ namespace MechrevoLite.UI
         {
             GcuConnectionState.Connected => (
                 UiVisualStyle.Ok,
-                "● GCU 已连接",
-                "GCU 服务连接正常（GCUBridge，MQTT 127.0.0.1:13688）"),
+                Strings.GcuConnected,
+                Strings.GcuConnectedTip),
             GcuConnectionState.Connecting => (
                 UiVisualStyle.Warn,
-                "● GCU 连接中",
-                "正在连接 GCU 服务（127.0.0.1:13688）——服务通常在登录后数秒内就绪，应用会自动重试"),
+                Strings.GcuConnecting,
+                Strings.GcuConnectingTip),
             GcuConnectionState.Disconnected => (
                 UiVisualStyle.Danger,
-                "● GCU 未连接",
-                "GCU 服务未运行或连接失败（127.0.0.1:13688）；应用正在自动重连，恢复后此指示会变绿"),
+                Strings.GcuDisconnected,
+                Strings.GcuDisconnectedTip),
             _ => (
                 UiVisualStyle.Muted,
-                "● GCU 状态未知",
-                "硬件后端尚未初始化"),
+                Strings.GcuUnknown,
+                Strings.GcuUnknownTip),
         };
     }
 }

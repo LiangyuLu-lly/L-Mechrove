@@ -43,6 +43,15 @@ public class ModelRegistryTests
     }
 
     [Fact]
+    public void ExpandProjectIdStillExpandsReadableZerosToTheVendorSku()
+    {
+        Assert.Equal(5889, ModelRegistry.ExpandProjectIdForTest(23, _ => 0));
+        Assert.Equal(6145, ModelRegistry.ExpandProjectIdForTest(24, _ => 0));
+        Assert.Equal("PH4ARxx", ModelRegistry.ProjectIdNameFor(5889));
+        Assert.Equal("PH4PRxx", ModelRegistry.ProjectIdNameFor(6145));
+    }
+
+    [Fact]
     public void ThePhxAxxxFamilyExpandsThroughTheVendorSwitch()
     {
         // 23 = PHxAxxx; 展开只看 1110(bit7) / 2003(bit0|high nibble) / 1905(bit0) / 1906。
@@ -118,11 +127,15 @@ public class ModelRegistryTests
             Assert.Contains(address, ec.Reads);
     }
 
+    static readonly int[] ExpansionHelperAddresses = { 1110, 2002, 2003, 1905, 1906, 1183 };
+
     static ModelIdentity ReadIdentity(params int[] addressValuePairs)
     {
         var values = new Dictionary<int, int>();
         for (int i = 0; i < addressValuePairs.Length; i += 2)
             values[addressValuePairs[i]] = addressValuePairs[i + 1];
+        foreach (int address in ExpansionHelperAddresses)
+            values.TryAdd(address, 0);
         return ModelRegistry.Read(new FakeEc(values));
     }
 }

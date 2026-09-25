@@ -14,6 +14,48 @@ public class InstallerSequenceTests
     const string Iss = @"installer\L-Mechrevo.iss";
 
     [Fact]
+    public void Iss_PrepareToInstall_UninstallsOldVersionBeforeRuntimeCheck()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        Assert.Contains("GetUninstallString", iss, StringComparison.Ordinal);
+        Assert.Contains("UnInstallOldVersion", iss, StringComparison.Ordinal);
+        Assert.Contains("/VERYSILENT", iss, StringComparison.Ordinal);
+        Assert.Contains("/NORESTART", iss, StringComparison.Ordinal);
+        Assert.Contains("/SUPPRESSMSGBOXES", iss, StringComparison.Ordinal);
+
+        int prepare = iss.IndexOf("function PrepareToInstall", StringComparison.Ordinal);
+        Assert.True(prepare >= 0, "PrepareToInstall is missing");
+        string body = iss.Substring(prepare);
+        int nextFunc = body.IndexOf("\nfunction ", 1, StringComparison.Ordinal);
+        if (nextFunc >= 0)
+            body = body.Substring(0, nextFunc);
+
+        int stopLocked = body.IndexOf("StopLockedAppProcesses", StringComparison.Ordinal);
+        int uninstall = body.IndexOf("UnInstallOldVersion", StringComparison.Ordinal);
+        int runtime = body.IndexOf("IsDesktopRuntime10Installed", StringComparison.Ordinal);
+        Assert.True(stopLocked >= 0, "StopLockedAppProcesses must be invoked inside PrepareToInstall");
+        Assert.True(uninstall >= 0, "UnInstallOldVersion must be invoked inside PrepareToInstall");
+        Assert.True(runtime >= 0, "IsDesktopRuntime10Installed must remain in PrepareToInstall");
+        Assert.True(stopLocked < uninstall, "StopLockedAppProcesses must run BEFORE UnInstallOldVersion");
+        Assert.True(uninstall < runtime, "UnInstallOldVersion must run BEFORE IsDesktopRuntime10Installed");
+        Assert.Contains("UninstallingOld", iss, StringComparison.Ordinal);
+        Assert.Contains("MsgBox", iss, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Iss_PrepareToInstall_StopsRunningAppBeforeFileCopy()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        Assert.Contains("CloseApplications=no", iss, StringComparison.Ordinal);
+        Assert.DoesNotContain("CloseApplications=yes", iss, StringComparison.Ordinal);
+        Assert.Contains("procedure StopLockedAppProcesses", iss, StringComparison.Ordinal);
+        Assert.Contains("/IM L-Mechrevo.exe /F /T", iss, StringComparison.Ordinal);
+        Assert.Contains("LMechrevo*", iss, StringComparison.Ordinal);
+        Assert.Contains("Disable-ScheduledTask", iss, StringComparison.Ordinal);
+        Assert.Contains("Stop-ScheduledTask", iss, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Iss_UninstallDelete_CoversRuntimeCopiedDirs()
     {
         string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
@@ -59,6 +101,21 @@ public class InstallerSequenceTests
         // Generation-blind: still removes the fixed firewall rule and the staged driver inf.
         Assert.Contains("L-Mechrevo - Block remote GCU MQTT", script, StringComparison.Ordinal);
         Assert.Contains("uwacpidriver", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void UninstallGcu_UnregistersLMechrevoAutostartTaskBeforeOtherTeardown()
+    {
+        string script = GcuInstallerHarness.Read("installer", "Uninstall-Gcu.ps1");
+        Assert.Contains("Unregister-ScheduledTask", script, StringComparison.Ordinal);
+        Assert.Contains("LMechrevo_", script, StringComparison.Ordinal);
+
+        int removeTask = script.IndexOf("\n    Remove-AutostartTask", StringComparison.Ordinal);
+        int removeService = script.IndexOf("\n    Remove-GcuService", StringComparison.Ordinal);
+        Assert.True(removeTask >= 0, "Uninstall-Gcu.ps1 must call Remove-AutostartTask");
+        Assert.True(removeService >= 0, "Uninstall-Gcu.ps1 must call Remove-GcuService");
+        Assert.True(removeTask < removeService,
+            "Unregister-ScheduledTask / LMechrevo_ must run BEFORE other teardown");
     }
 
     [Fact]

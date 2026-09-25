@@ -73,13 +73,15 @@ public class ModelSupportN8Tests
     }
 
     [Fact]
-    public void AnUnparsableIdentityStaysReadOnlyEvenWhenTheServiceIsUp()
+    public void AnUnparsableIdentityIsAcceptedWhenTheServiceIsServing()
     {
+        // yilong15 Pro GM5HG0A: GCU 已连接、EC 身份失败 → 不得只读。
         SupportDecision decision = ModelSupport.Determine(
             ModelIdentity.Unknown, TwentyFourCodes, serviceServed: true);
 
-        Assert.False(decision.IsSupported);
-        Assert.Equal(SupportReason.Unparsable, decision.Reason);
+        Assert.True(decision.IsSupported);
+        Assert.Equal(SupportReason.Ok, decision.Reason);
+        Assert.Equal("GCU", decision.ProjectId);
     }
 
     // ---- the generic flat-table fallback ------------------------------------

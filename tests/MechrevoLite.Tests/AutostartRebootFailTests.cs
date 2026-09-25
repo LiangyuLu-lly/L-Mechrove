@@ -108,6 +108,18 @@ public class AutostartRebootFailTests
     }
 
     [Fact]
+    public void AutostartPreferenceDefaultsOnWhenTheKeyIsMissing()
+    {
+        AppConfig.Remove("startup_enabled");
+        Assert.True(Startup.IsAutostartPreferred());
+        AppConfig.Set("startup_enabled", 0);
+        Assert.False(Startup.IsAutostartPreferred());
+        AppConfig.Set("startup_enabled", 1);
+        Assert.True(Startup.IsAutostartPreferred());
+        AppConfig.Remove("startup_enabled");
+    }
+
+    [Fact]
     public void AFailedRegistrationIsNotReportedWhenTheUserNeverEnabledAutostart()
     {
         bool report = Startup.RunStartupTaskCheck(

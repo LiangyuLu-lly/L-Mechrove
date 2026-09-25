@@ -70,7 +70,17 @@ public static class ModelSupport
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(supportedCodes);
 
-        if (!identity.IsParsed) return SupportDecision.Unparsable();
+        if (!identity.IsParsed)
+        {
+            // 现场 yilong15 Pro GM5HG0A：GCU 已连接但 EC 1856 读不到 → 旧逻辑 Unparsable 只读。
+            // 北极星：官方在服务这台机，EC 身份失败不得把整机锁死。
+            if (!serviceServed) return SupportDecision.Unparsable();
+            string fallback = identity.BiosProjectId is { Length: > 0 } bios
+                && bios != ModelIdentity.UnknownName
+                ? bios
+                : "GCU";
+            return SupportDecision.Supported(fallback);
+        }
         return serviceServed
             ? SupportDecision.Supported(identity.ProjectId)
             : SupportDecision.NotInSet(identity.ProjectId);

@@ -47,7 +47,8 @@ public class UpdateClientEndToEndTests
         using (ZipArchive archive = ZipFile.Open(sourcePackage, ZipArchiveMode.Create))
         {
             using (Stream exe = archive.CreateEntry("L-Mechrevo-test.exe").Open())
-                exe.Write(Encoding.ASCII.GetBytes("MZ-dummy-mechrevo-update-payload"));
+            using (FileStream signed = File.OpenRead(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe")))
+                signed.CopyTo(exe);
             using (Stream notes = archive.CreateEntry("更新日志.txt").Open())
                 notes.Write(Encoding.UTF8.GetBytes($"测试更新包：{serverLatest}"));
         }

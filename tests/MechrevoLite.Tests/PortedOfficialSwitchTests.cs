@@ -65,6 +65,8 @@ public class PortedOfficialSwitchTests
 
         Assert.True(hardware.SupportsQuickSwitch("touchpadtoggle"));
         Assert.False(hardware.SupportsQuickSwitch("touchpad"));
+        Assert.False(hardware.TouchpadSeen);
+        Assert.False(hardware.QuickSwitches.ContainsKey("touchpad"));
     }
 
     [Fact]
@@ -236,7 +238,7 @@ public class PortedOfficialSwitchTests
              "UniSwitch":"Uni_OFF","PowerLightSwitch":1,"PowerLightBrightness":50}
             """);
 
-        foreach (string unrelated in new[] { "wifi", "bt", "webcam", "numpad", "copilot", "usb" })
+        foreach (string unrelated in new[] { "wifi", "bt", "webcam", "numpad", "copilot" })
             Assert.False(hardware.SupportsQuickSwitch(unrelated), $"{unrelated} 不应因为其他字段而变成可用。");
     }
 

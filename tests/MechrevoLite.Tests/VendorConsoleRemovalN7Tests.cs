@@ -24,11 +24,11 @@ public class VendorConsoleRemovalN7Tests
     [InlineData("package", "GamingCenter3_Cross.UWP")]
     [InlineData("package", "ControlCenterU")]
     [InlineData("package", "GamingCenterU")]
-    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU")]
-    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU\AiStoneService")]
-    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU\UniwillService")]
     [InlineData("uninstall", "机械革命电竞控制台")]
     [InlineData("uninstall", "Mechrevo Gaming Center")]
+    [InlineData("directory", @"C:\Program Files\OEM\ControlCenter")]
+    [InlineData("directory", @"C:\Program Files\CCUWinUI")]
+    [InlineData("directory", @"C:\Program Files (x86)\GamingCenter")]
     [InlineData("shortcut", @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\GamingCenter\GamingCenter.lnk")]
     [InlineData("autostart", "CCUWinUI.exe")]
     [InlineData("autostart", "SystrayComponent.exe")]
@@ -51,6 +51,11 @@ public class VendorConsoleRemovalN7Tests
     [InlineData("directory", @"C:\Program Files\Realtek")]
     [InlineData("directory", @"C:\Program Files\Autodesk")]
     [InlineData("directory", @"C:\Program Files\Mechrevo\MRAfterSaleService")]
+    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU")]
+    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU\payload")]
+    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU\AiStoneService")]
+    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU\UniwillService")]
+    [InlineData("directory", @"C:\Program Files\L-Mechrevo\GCU\UWACPIDriver")]
     [InlineData("uninstall", "NVIDIA Platform Controllers and Framework")]
     [InlineData("uninstall", "Realtek Ethernet Controller Driver")]
     [InlineData("uninstall", "360 Wargaming Game Center")]
@@ -73,6 +78,9 @@ public class VendorConsoleRemovalN7Tests
         string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
         Assert.Contains("Remove-VendorConsole", script, StringComparison.Ordinal);
         Assert.Contains("Remove-AppxPackage", script, StringComparison.Ordinal);
+        Assert.Contains("Get-AppxPackage -AllUsers", script, StringComparison.Ordinal);
+        Assert.Contains("QuietUninstallString", script, StringComparison.Ordinal);
+        Assert.Contains("UninstallString", script, StringComparison.Ordinal);
         // Every step must be announced, not silent.
         Assert.Contains("found existing GCU service", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("found official console", script, StringComparison.OrdinalIgnoreCase);
@@ -85,6 +93,9 @@ public class VendorConsoleRemovalN7Tests
         // A locked/reboot-pending vendor component must be reported and skipped, never fatal.
         Assert.Contains("could not be removed", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("continuing", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("vendor-console removal failed (non-fatal)", script, StringComparison.Ordinal);
+        Assert.Contains("Get-NotePropertyString", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("$props.DisplayName", script, StringComparison.Ordinal);
     }
 
     [Fact]

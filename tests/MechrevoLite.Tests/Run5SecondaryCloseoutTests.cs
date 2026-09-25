@@ -7,7 +7,7 @@ namespace MechrevoLite.Tests;
 
 /// <summary>
 /// run5 二级界面收尾护栏（docs/run5-secondary-ui-redesign.md §0 剩余项）：
-/// LightForm 填充行/高度/色块、FanCurveForm 横排双图+RButton+状态提示拆分、
+/// LightForm 填充行/高度/色块、FanCurveForm 纵排双图+RButton+状态提示拆分、
 /// UpdateForm 空态+SetBusy 互斥+按钮两档宽、RColorPicker 随机语义/描边/等宽读数、
 /// DonateForm 高度、FirstRunGuideForm 自适应描述+等宽底列、RgbForm 色块控件代差。
 /// </summary>
@@ -69,6 +69,23 @@ public class Run5SecondaryCloseoutTests
         Assert.Equal(36, Logical(colorButton, colorButton.Width));
     }
 
+    [Fact]
+    public void LightForm_OnShown_ClientHeightMatchesTable_NotDesign240()
+    {
+        using var _ = UseAuditMode();
+        using var form = new LightForm("HidLightbar/Ctrl", "灯条灯效", LightForm.LightbarEffects);
+        form.CreateControl();
+        int designH = 240 * Math.Max(1, form.DeviceDpi) / 96;
+        form.ClientSize = new Size(form.ClientSize.Width, designH);
+        form.Show();
+        Application.DoEvents();
+
+        var table = Assert.IsType<TableLayoutPanel>(form.Controls[0]);
+        Assert.Equal(table.Height, form.ClientSize.Height);
+        int logicalH = Logical(form, form.ClientSize.Height);
+        Assert.True(logicalH < 240, $"LightForm 首帧高度 {logicalH} 仍是 240 设计残留。");
+    }
+
     // ---------- FanCurveForm ----------
 
     [Fact]
@@ -92,9 +109,13 @@ public class Run5SecondaryCloseoutTests
             Assert.Same(gpu.Parent, charts);
             var cpuPos = ((TableLayoutPanel)charts).GetPositionFromControl(cpu);
             var gpuPos = ((TableLayoutPanel)charts).GetPositionFromControl(gpu);
-            Assert.Equal(0, cpuPos.Column);   // CPU 左
-            Assert.Equal(1, gpuPos.Column);   // GPU 右
-            Assert.Equal(cpuPos.Row, gpuPos.Row);
+            // 纵排（G-Helper tableFanCharts：CPU 上、GPU 下）。横排把窗口撑到 728，盖过 420 主窗。
+            Assert.Equal(0, cpuPos.Row);
+            Assert.Equal(1, gpuPos.Row);
+            Assert.Equal(cpuPos.Column, gpuPos.Column);
+            int logicalW = Logical(form, form.ClientSize.Width);
+            Assert.True(logicalW <= SettingsForm.CompactDashboardLogicalClientSize.Width,
+                $"FanCurveForm 宽 {logicalW} 逻辑 px 超出主窗。");
 
             // 状态/常驻提示拆分：拖动提示是独立常驻 Label，_status 初始为空（不再被提示占用）。
             var status = GetField<Label>(form, "_status")!;
@@ -102,6 +123,14 @@ public class Run5SecondaryCloseoutTests
                 .First(l => l.Text == "拖动曲线点上下调整占空比");
             Assert.NotSame(status, hint);
             Assert.Equal(string.Empty, status.Text);
+
+            // AutoSize 内容根不得 Dock=Fill：Fill 在句柄/ClientSize 之前会把空带撑进首帧。
+            var autoSizeFill = Descendants(form).OfType<TableLayoutPanel>()
+                .Where(table => table.AutoSize && table.Dock == DockStyle.Fill)
+                .Select(table => table.Name)
+                .ToList();
+            Assert.True(autoSizeFill.Count == 0,
+                "FanCurveForm AutoSize TableLayoutPanel 不得 Dock=Fill：\n  " + string.Join("\n  ", autoSizeFill));
         }
         finally
         {
@@ -133,7 +162,10 @@ public class Run5SecondaryCloseoutTests
         Assert.Equal("暂无更新说明", notesEmpty.Text);
         var root = GetField<TableLayoutPanel>(form, "_root")!;
         Assert.Equal(SizeType.AutoSize, root.RowStyles[2].SizeType);
+        int logicalW = Logical(form, form.ClientSize.Width);
         int logicalH = Logical(form, form.ClientSize.Height);
+        int parentW = SettingsForm.CompactDashboardLogicalClientSize.Width;
+        Assert.True(logicalW <= parentW, $"UpdateForm 宽 {logicalW} 逻辑 px 超出主窗 {parentW}。");
         Assert.True(logicalH < 380, $"空态高度 {logicalH} 逻辑 px 未收口（设计高 380）。");
 
         // 按钮宽度两档：96/96/88/88（逻辑 px）。
@@ -193,8 +225,30 @@ public class Run5SecondaryCloseoutTests
         using var _ = UseAuditMode();
         using var form = new DonateForm();
         form.CreateControl();
+        int logicalW = Logical(form, form.ClientSize.Width);
         int logicalH = Logical(form, form.ClientSize.Height);
+        int parentW = SettingsForm.CompactDashboardLogicalClientSize.Width;
+        Assert.True(logicalW <= parentW, $"DonateForm 宽 {logicalW} 逻辑 px 超出主窗 {parentW}。");
         Assert.True(logicalH <= 500, $"DonateForm 高度 {logicalH} 逻辑 px 超过 500。");
+        int logicalMinW = Logical(form, form.MinimumSize.Width);
+        Assert.True(logicalMinW <= parentW, $"DonateForm 最小宽 {logicalMinW} 把窗口撑过主窗。");
+
+        var root = Assert.IsType<TableLayoutPanel>(form.Controls[0]);
+        Assert.True(root.AutoSize, "内容根必须 AutoSize，否则 Dock=Fill 子项在首帧撑出空带。");
+        Assert.DoesNotContain(root.RowStyles.Cast<RowStyle>(),
+            style => style.SizeType == SizeType.Percent && style.Height > 0);
+        AssertAutoSizeChildrenDockTop(root);
+        Assert.Equal(root.Height, form.ClientSize.Height);
+    }
+
+    static void AssertAutoSizeChildrenDockTop(Control container)
+    {
+        foreach (Control child in container.Controls)
+        {
+            if (container.AutoSize)
+                Assert.Equal(DockStyle.Top, child.Dock);
+            AssertAutoSizeChildrenDockTop(child);
+        }
     }
 
     // ---------- FirstRunGuideForm ----------

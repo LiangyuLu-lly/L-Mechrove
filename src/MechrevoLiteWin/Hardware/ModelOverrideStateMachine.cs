@@ -48,12 +48,13 @@ public static class ModelOverrideStateMachine
     static readonly Lazy<IReadOnlySet<string>> SupportedCodes =
         new(() => ModelRegistryData.Load().PlatformCodeSet);
 
-    /// <summary>手动值是否落在 24 机型集合内。空白即 <see cref="SupportReason.Unparsable"/>。</summary>
+    /// <summary>手动值是否可解析为厂商 ProjectID 名或落在 24 机型集合内。空白即 <see cref="SupportReason.Unparsable"/>。</summary>
     public static SupportDecision ValidateManual(string? model)
     {
         if (string.IsNullOrWhiteSpace(model)) return SupportDecision.Unparsable();
         string code = model.Trim();
-        return SupportedCodes.Value.Contains(code)
+        // Auto ModelSupport already accepts parseable service-served names; PH6AGxx is enum member 5894.
+        return SupportedCodes.Value.Contains(code) || ModelRegistry.IsKnownProjectName(code)
             ? SupportDecision.Supported(code)
             : SupportDecision.NotInSet(code);
     }

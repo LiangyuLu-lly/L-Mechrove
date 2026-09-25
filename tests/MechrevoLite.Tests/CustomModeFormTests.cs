@@ -181,11 +181,13 @@ public class CustomModeFormTests
 
             int logicalW = form.ClientSize.Width * 96 / Math.Max(1, form.DeviceDpi);
             int logicalH = form.ClientSize.Height * 96 / Math.Max(1, form.DeviceDpi);
-            // 2026-09-14, run5 二级界面收尾（docs/run5-secondary-ui-redesign.md §3）：双图由纵排
-            // 改横排（CPU 左/GPU 右）——宽度上限从 520 放宽到双图最小宽 2×340+48=728；
-            // 高度只剩单行曲线，从 560 收紧到 400。
-            Assert.True(logicalW <= 760, $"风扇曲线窗口宽 {logicalW} 逻辑 px 超出紧凑上限 760。");
-            Assert.True(logicalH <= 400, $"风扇曲线窗口高 {logicalH} 逻辑 px 超出紧凑上限 400。");
+            // 横排双图（2×340+48=728）比 420 主窗宽 1.73 倍。改回 G-Helper 的纵排后，
+            // 宽不得超过主窗，高不得超过主窗，曲线本身仍要能放下 16 个点。
+            int parentW = SettingsForm.CompactDashboardLogicalClientSize.Width;
+            int parentH = SettingsForm.CompactDashboardLogicalClientSize.Height;
+            Assert.True(logicalW <= parentW, $"风扇曲线窗口宽 {logicalW} 逻辑 px 超出主窗 {parentW}。");
+            Assert.True(logicalH <= parentH, $"风扇曲线窗口高 {logicalH} 逻辑 px 超出主窗 {parentH}。");
+            Assert.True(logicalH > 400, $"纵排双图高度 {logicalH} 仍是横排单行的收口，曲线会被挤扁。");
 
             var cpu = typeof(FanCurveForm).GetField("_cpuPanel", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(form)!;

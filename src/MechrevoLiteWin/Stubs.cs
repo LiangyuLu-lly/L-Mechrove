@@ -62,10 +62,31 @@ public static class NumberPad
 // HasLightbar / HasLogo。
 public static class Aura
 {
-    public static void ApplyAura() { }
-    public static void ApplyBrightness() { }
-    public static void ApplyBrightness(int brightness, string log = "Backlight") { }
-    public static void SleepBrightness() { }
+    /// <summary>机械革命已连接时灯效走 KeyboardRgb/LightForm，禁止落到 ASUS Aura/ACPI。</summary>
+    internal static bool IsMechrevoConnected => Program.hw is { IsConnected: true };
+
+    public static void ApplyAura()
+    {
+        if (IsMechrevoConnected) return;
+    }
+
+    internal static void NotifyApplyOutcome(bool success)
+    {
+        if (success) return;
+        Helpers.ToastForm.ShowFailure("灯效设置失败。");
+    }
+    public static void ApplyBrightness()
+    {
+        if (IsMechrevoConnected) return;
+    }
+    public static void ApplyBrightness(int brightness, string log = "Backlight")
+    {
+        if (IsMechrevoConnected) return;
+    }
+    public static void SleepBrightness()
+    {
+        if (IsMechrevoConnected) return;
+    }
     public static Color Color1 { get; set; } = Color.White;
     public static Color Color2 { get; set; } = Color.Black;
     public static AuraMode Mode { get; set; }
@@ -75,7 +96,10 @@ public static class Aura
 
     public static class CustomRGB
     {
-        public static void ApplyGPUColor(int gpuMode = -1) { }
+        public static void ApplyGPUColor(int gpuMode = -1)
+        {
+            if (IsMechrevoConnected) return;
+        }
     }
 }
 

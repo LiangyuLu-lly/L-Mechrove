@@ -48,6 +48,7 @@ public class GpuHotSwitchRollbackTests
         MechrevoHw hw = NewHardware(published,
             new MechrevoDeviceCapabilities { IgpuOnly = true },
             preMode == MechrevoService.GpuAuto ? AutoEcho : StandardEcho);
+        hw.SetIgpuOnlyStatusSupportForTests(true);
         var service = new MechrevoService(hw);
 
         await service.RollbackFailedHotSwitchAsync(preMode, CancellationToken.None);
@@ -64,6 +65,7 @@ public class GpuHotSwitchRollbackTests
         MechrevoHw hw = NewHardware(published,
             new MechrevoDeviceCapabilities { NvidiaGpu = true, GpuHotSwap = true, IgpuOnly = true, DgpuDirect = true },
             StandardEcho);
+        hw.SetIgpuOnlyStatusSupportForTests(true);
         var service = new MechrevoService(hw);
 
         hw.HandleMessage("Setting/Status", StandardEcho);
@@ -98,6 +100,7 @@ public class GpuHotSwitchRollbackTests
         MechrevoHw hw = NewHardware(published,
             new MechrevoDeviceCapabilities { NvidiaGpu = true, GpuHotSwap = true, IgpuOnly = true, DgpuDirect = true },
             StandardEcho);
+        hw.SetIgpuOnlyStatusSupportForTests(true);
         var service = new MechrevoService(hw);
 
         hw.HandleMessage("Setting/Status", StandardEcho);

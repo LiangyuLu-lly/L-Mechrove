@@ -35,6 +35,12 @@ internal static class LiquidCoolingConnectionPolicy
     /// </summary>
     internal static bool ShouldUseAutomaticDirectFallback(bool directBleConnected) => !directBleConnected;
 
+    /// <summary>
+    /// GCU 正在扫/连水冷时占着蓝牙外设。这时直连必失败，必须等 GCU 结束，不能抢无线电。
+    /// </summary>
+    internal static bool ShouldSkipDirectFallbackBecauseGcuHoldsRadio(string? gcuConnectString) =>
+        gcuConnectString is "Scanning" or "Connecting" or "IsConnectable";
+
     internal static bool ShouldRetryGcuConnection(
         bool hardwareConnected,
         bool serviceAvailable,

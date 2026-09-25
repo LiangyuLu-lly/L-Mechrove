@@ -1,7 +1,15 @@
+## 0.289.0-beta19 — 2026-09-24
+
+### 变更
+
+- 版本号从 0.289.0-beta18 提升到 0.289.0-beta19。已安装 beta18 的客户端在广告版本不比本机新时会把更新检测强制视为无更新，因此必须递增后应用内更新才会出现。
+
 ## 0.289.0-beta18 — 2026-09-18
 
 ### 修复
 
+- 键盘灯 GCU 兜底：恢复官方固件 11 种效果（Single/Breathing/Wave/Reactive/Rainbow/Ripple/Raindrop/Marquee/Spark/Aurora/Gaming）。旧文「16 种」是口误——厂商剩余列表不含 Impact/Flash/Mix 等已剔除项。HID 路径仍是 BetterRGB 10 效果，中文显示名不上 MQTT。
+- 机型识别：EC 1856 为 PHxAxxx/PHxPxxx 族时，任一辅助字节读不到不再按 0 展开成 PH4ARxx/PH4PRxx，保留族名。
 - 开机自启动在真机上「重启后不启动」——根因是权限：自启动自检走 `UnSchedule(); Schedule();`，删除总成功、重建在权限不足或任务被占用时会失败，用户因此永久失去自启动项，而失败只写进默认关闭的日志（静默失败）。改为就地覆盖注册（决策接口上不再有删除动作），`ReScheduleAdmin` 同样不再先删，并新增托盘气泡把「自启动没装上」对用户可见。
 
 ### 变更

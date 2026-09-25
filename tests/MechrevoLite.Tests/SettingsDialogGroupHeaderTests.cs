@@ -10,7 +10,8 @@ namespace MechrevoLite.Tests;
 ///
 /// 规则：AddHeader 只在组内有可见行时保留；隐藏时标题与行同属 AutoSize 行，
 /// 高度一起收为 0，不留下间距。全仓库分组审计：
-/// - 本弹窗 3 组：界面(themePanel，恒有)、显示(overdriveChk，可选)、系统(officialPanel，恒有)。
+/// - 本弹窗 2 组：界面(themePanel，恒有)、显示(overdriveChk，可选)。
+///   系统组（隔离官方控制台）已移除。
 /// - 仪表盘「更多开关」3 组（输入设备/键盘与热键/电源与系统）：已由
 ///   SettingsForm.SyncQuickSwitchVisibility 按 QuickSwitchGroups 抑制空标题（本次未改）。
 /// </summary>
@@ -33,21 +34,21 @@ public class SettingsDialogGroupHeaderTests
     public void DisplayHeader_IsHiddenWhenTheOnlyRowIsUnavailable()
     {
         var overdrive = new RCheckBox { Text = "响应加速" };
-        using var dialog = new SettingsDialog(new Panel(), new Panel(), overdrive, displayGroupAvailable: false);
+        using var dialog = new SettingsDialog(new Panel(), overdrive, displayGroupAvailable: false);
         dialog.Show();
         Application.DoEvents();
 
         Assert.False(Header(dialog, "显示").Visible, "没有可见行的「显示」组不得保留标题。");
         Assert.False(overdrive.Visible, "不可用的响应加速行必须隐藏。");
         Assert.True(Header(dialog, "界面").Visible);
-        Assert.True(Header(dialog, "系统").Visible);
+        Assert.DoesNotContain(Descendants(dialog).OfType<Label>(), label => label.Text == "系统");
     }
 
     [Fact]
     public void DisplayHeader_RendersWhenTheRowIsAvailable()
     {
         var overdrive = new RCheckBox { Text = "响应加速" };
-        using var dialog = new SettingsDialog(new Panel(), new Panel(), overdrive, displayGroupAvailable: true);
+        using var dialog = new SettingsDialog(new Panel(), overdrive, displayGroupAvailable: true);
         dialog.Show();
         Application.DoEvents();
 
@@ -59,30 +60,30 @@ public class SettingsDialogGroupHeaderTests
     public void EmptyDisplayGroup_LeavesNoVerticalGap()
     {
         var overdrive = new RCheckBox { Text = "响应加速" };
-        using var dialog = new SettingsDialog(new Panel(), new Panel(), overdrive, displayGroupAvailable: true);
+        using var dialog = new SettingsDialog(new Panel(), overdrive, displayGroupAvailable: true);
         dialog.Show();
         Application.DoEvents();
-        int systemTopWithGroup = Header(dialog, "系统").Top;
+        Control content = dialog.Controls.OfType<TableLayoutPanel>().Single();
+        int tall = content.Height;
 
         dialog.SetDisplayGroupAvailable(false);
         dialog.PerformLayout();
         Application.DoEvents();
 
         Assert.False(Header(dialog, "显示").Visible);
-        Assert.True(Header(dialog, "系统").Top < systemTopWithGroup,
-            "收掉空组后「系统」标题必须上移，说明空组没有留下占位间距。");
+        Assert.True(content.Height < tall, "收掉空组后内容必须变矮，说明空组没有留下占位间距。");
     }
 
     [Fact]
     public void MissingOverdriveControl_StillRendersTheOtherGroups()
     {
-        // 接线兼容：即使响应加速控件整体缺失（null），界面/系统两组仍照常渲染，且不建「显示」标题。
-        using var dialog = new SettingsDialog(new Panel(), new Panel(), null, displayGroupAvailable: false);
+        // 接线兼容：即使响应加速控件整体缺失（null），界面组仍照常渲染，且不建「显示」标题。
+        using var dialog = new SettingsDialog(new Panel(), null, displayGroupAvailable: false);
         dialog.Show();
         Application.DoEvents();
 
         Assert.True(Header(dialog, "界面").Visible);
-        Assert.True(Header(dialog, "系统").Visible);
+        Assert.DoesNotContain(Descendants(dialog).OfType<Label>(), label => label.Text == "系统");
         Assert.DoesNotContain(Descendants(dialog).OfType<Label>(), label => label.Text == "显示");
     }
 }

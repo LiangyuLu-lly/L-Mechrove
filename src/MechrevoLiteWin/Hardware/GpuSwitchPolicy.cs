@@ -31,8 +31,15 @@ internal static class GpuSwitchPolicy
         if (currentMode == targetMode && currentStateFresh)
             return new(GpuSwitchRoute.NoChange, false);
 
-        // 所有GPU模式切换都强制要求重启，确保100%切换成功
-        return new(GpuSwitchRoute.Restart, false);
+        if (currentMode == MechrevoService.GpuDgpu || targetMode == MechrevoService.GpuDgpu)
+            return new(GpuSwitchRoute.Restart, false);
+
+        if (currentMode == MechrevoService.GpuStandard &&
+            targetMode == MechrevoService.GpuIGpu &&
+            supportsHotSwap)
+            return new(GpuSwitchRoute.HotSwitch, false);
+
+        return new(GpuSwitchRoute.Direct, false);
     }
 
     static int ResolveCurrentMode(int reportedMode, int automaticRuntime) =>

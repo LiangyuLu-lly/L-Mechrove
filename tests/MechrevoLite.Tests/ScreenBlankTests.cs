@@ -76,6 +76,73 @@ public class ScreenBlankTests
         finally { Reset(); }
     }
 
+    /// <summary>
+    /// 触发 Dim 的那次点击仍是 GetLastInputInfo 的「刚发生」输入。
+    /// 800ms 轮询不得把它当成唤醒；否则黑屏会在第一轮 poll 被自己点亮。
+    /// </summary>
+    [Fact]
+    public void Dim_DoesNotRestoreOnOriginatingClick()
+    {
+        var writes = new List<int>();
+        DateTime start = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        try
+        {
+            ScreenBrightness.ReadOverride = () => 40;
+            ScreenBrightness.WriteOverride = writes.Add;
+            ScreenBlankController.ExecutionStateOverride = _ => { };
+            ScreenBlankController.ClockOverride = () => start;
+            ScreenBlankController.AutoPollEnabled = false;
+            NativeMethods.IdleTimeProvider = () => TimeSpan.Zero;
+
+            Assert.Equal(800, ScreenBlankController.MinBlankBeforeRestoreMs);
+            Assert.Equal(ScreenBlankOutcome.Dimmed, ScreenBlankController.Dim());
+            Assert.True(ScreenBlankController.IsDimmed);
+
+            ScreenBlankController.Poll(start.AddMilliseconds(ScreenBlankController.PollIntervalMs));
+            Assert.True(ScreenBlankController.IsDimmed);
+
+            ScreenBlankController.Poll(start.AddMilliseconds(ScreenBlankController.MinBlankBeforeRestoreMs));
+
+            Assert.True(ScreenBlankController.IsDimmed,
+                "800ms poll must not treat the click that triggered Dim as user-input restore.");
+            Assert.Equal(new[] { ScreenBlankController.BlankLevel }, writes);
+        }
+        finally { Reset(); }
+    }
+
+    /// <summary>
+    /// 真机事故锁：Dim 不得再走 HWND_BROADCAST / SC_MONITORPOWER，只压亮度 + 顶住执行状态。
+    /// </summary>
+    [Fact]
+    public void Dim_NeverUsesMonitorPower()
+    {
+        var writes = new List<int>();
+        var flags = new List<uint>();
+        try
+        {
+            ScreenBrightness.ReadOverride = () => 40;
+            ScreenBrightness.WriteOverride = writes.Add;
+            ScreenBlankController.ExecutionStateOverride = flags.Add;
+            ScreenBlankController.AutoPollEnabled = false;
+
+            Assert.Equal(ScreenBlankOutcome.Dimmed, ScreenBlankController.Dim());
+
+            Assert.Equal(new[] { ScreenBlankController.BlankLevel }, writes);
+            Assert.Equal(new[] { ScreenBlankController.BlankExecutionState }, flags);
+
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "MechrevoLite.slnx")))
+                dir = dir.Parent;
+            Assert.NotNull(dir);
+            string source = File.ReadAllText(Path.Combine(
+                dir!.FullName, "src", "MechrevoLiteWin", "Display", "ScreenBlankController.cs"));
+            Assert.DoesNotMatch(@"\bSendMessage\s*\(", source);
+            Assert.DoesNotMatch(@"\bPostMessage\s*\(", source);
+            Assert.DoesNotMatch(@"\bTurnOffScreen\b", source);
+        }
+        finally { Reset(); }
+    }
+
     [Fact]
     public void TheWatchdogRestoresAfterTheMaximumBlankDuration()
     {

@@ -67,13 +67,54 @@ public class ModelRegistryFailTests
     }
 
     [Fact]
-    public void AFamilyCodeWithNoAuxiliaryReadsStaysTheFamilyMemberAndDoesNotThrow()
+    public void AFamilyCodeWithNoAuxiliaryReadsExpandsLikeVendorToPh4ARxx()
     {
-        // 23（PHxAxxx）在辅助字节全读不到时，厂商路径全部走 sys=0/rom=0/module=0 -> PH4ARxx。
+        // 厂商 GetProject2ExID：辅助字节读不到按 0。族 23 全 0 → 5889 PH4ARxx。
         ModelIdentity identity = ModelRegistry.Read(new ModelRegistryTests.FakeEc(new() { [1856] = 23 }));
 
         Assert.Equal("PH4ARxx", identity.ProjectId);
+        Assert.Equal(23, identity.RawProjectByte);
         Assert.Equal(ModelSource.Ec, identity.Source);
+        Assert.True(identity.IsParsed);
+    }
+
+    [Fact]
+    public void UnreadableFamily24HelpersExpandLikeVendorToPh4PRxx()
+    {
+        ModelIdentity identity = ModelRegistry.Read(new ModelRegistryTests.FakeEc(new() { [1856] = 24 }));
+
+        Assert.Equal("PH4PRxx", identity.ProjectId);
+        Assert.Equal(24, identity.RawProjectByte);
+        Assert.Equal(ModelSource.Ec, identity.Source);
+        Assert.True(identity.IsParsed);
+    }
+
+    [Fact]
+    public void ExpandProjectIdZeroFillsUnreadHelpersIntoPh4ARxx()
+    {
+        Assert.Equal(5889, ModelRegistry.ExpandProjectIdForTest(23, _ => -1));
+    }
+
+    [Fact]
+    public void ExpandProjectIdZeroFillsUnreadHelpersIntoPh4PRxx()
+    {
+        Assert.Equal(6145, ModelRegistry.ExpandProjectIdForTest(24, _ => -1));
+    }
+
+    [Fact]
+    public void ASingleUnreadHelperStillZeroFillsFamily23LikeVendor()
+    {
+        ModelIdentity identity = ModelRegistry.Read(new ModelRegistryTests.FakeEc(new()
+        {
+            [1856] = 23,
+            [1110] = 0,
+            [2003] = 0,
+            [1905] = 0,
+            [1906] = 0,
+            [1183] = 0,
+        }));
+
+        Assert.Equal("PH4ARxx", identity.ProjectId);
     }
 
     [Fact]

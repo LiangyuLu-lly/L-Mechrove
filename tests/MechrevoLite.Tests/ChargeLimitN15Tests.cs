@@ -8,9 +8,8 @@ namespace MechrevoLite.Tests;
 ///
 /// 1. The dash is an unexplained placeholder - the user cannot tell whether the value is unknown,
 ///    unsupported, or broken. It must say something readable.
-/// 2. The write gate requires `matrix.ProfileAvailable`, which is false when the vendor service has
-///    not written `ItemSupport` yet - the same "sampled too early" class as N15 #12. A machine whose
-///    service is served must be able to set the limit.
+/// 2. Profile lag must not be treated as a charge-limit capability. Service-served only means the
+///    vendor service is up; it does not prove 0x7B9/0x7D0 control charging.
 /// </summary>
 public class ChargeLimitN15Tests
 {
@@ -27,27 +26,28 @@ public class ChargeLimitN15Tests
     public void TheUnknownPlaceholderNamesTheReason()
     {
         string source = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Settings.cs");
-        // A readable placeholder: the user must learn that the value could not be read.
-        Assert.Contains("无法读取", source, StringComparison.Ordinal);
+        // The placeholder names the unread state through the language resource, not a bare dash.
+        Assert.Contains("Properties.Strings.BatteryLimitUnknown", source, StringComparison.Ordinal);
+        Assert.Equal("无法读取", Properties.Strings.ResourceManager.GetString(
+            "BatteryLimitUnknown", System.Globalization.CultureInfo.GetCultureInfo("zh-CN")));
     }
 
     [Fact]
-    public void AServiceServedMachineCanSetTheChargeLimit()
+    public void AServiceServedMachineIsNotAChargeLimitCapability()
     {
-        // The gate must not require the profile to be available when the service is served: the
-        // profile is written by the service and may lag the first sample.
+        // Profile lag must not open this channel: there is no charge-limit capability bit,
+        // and a register echo is not proof these addresses control charging.
         SupportDecision served = SupportDecision.Supported("PH6TRX1");
-        FeatureMatrix noProfile = FeatureMatrix.FromValues(new Dictionary<string, object?>());
 
-        Assert.True(EcChargeLimit.IsSupportedMachine(served, noProfile));
+        Assert.False(EcChargeLimit.IsSupportedMachine(served));
+        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
     }
 
     [Fact]
     public void AnUnservedMachineStillCannotSetTheChargeLimit()
     {
         SupportDecision unserved = SupportDecision.NotInSet("GK7NXXR");
-        FeatureMatrix noProfile = FeatureMatrix.FromValues(new Dictionary<string, object?>());
 
-        Assert.False(EcChargeLimit.IsSupportedMachine(unserved, noProfile));
+        Assert.False(EcChargeLimit.IsSupportedMachine(unserved));
     }
 }

@@ -237,8 +237,7 @@ public class KeyboardFallbackBrightnessTests
     }
 
     /// <summary>
-    /// 回退 + 改效果下拉：回退通道不承载任意 HID 效果，线上只下发亮度载体
-    /// （light = UI 亮度 75 → 档 3；effect = GCU 回报名），旧代码的「静态」中文名不再上线。
+    /// 回退 + 改效果下拉：GCU 目录第二项是 Breathing，线上发英文 ID，绝不用 HID 中文显示名。
     /// </summary>
     [Fact]
     public async Task Unsupported_EffectSelection_PublishesTheBrightnessCarrierInsteadOfTheChineseDisplayName()
@@ -246,7 +245,7 @@ public class KeyboardFallbackBrightnessTests
         using var harness = new Harness();
         Assert.False(await harness.Keyboard.EnsureHidReadyAsync());
         harness.ReportKeyboardEffect("Rainbow");
-        harness.Keyboard.Brightness = 75;   // → 档 3（75）
+        harness.Keyboard.Brightness = 75;   // store 默认 light=4；本用例只锁效果名
 
         Program.UiAuditMode = true;
         using var form = BuildKeyboardForm(out _, out var effectCombo);
@@ -254,13 +253,12 @@ public class KeyboardFallbackBrightnessTests
         harness.Clear();
         DetachUiContext();
 
-        effectCombo.SelectedIndex = 1;   // 静态：旧回退会把「静态」这个中文名直接发上线
+        effectCombo.SelectedIndex = 1;   // Breathing
         await WaitUntil(() => harness.CountEffectAll(KeyboardTopic) > 0);
         await SettleAsync();
 
         Dictionary<string, object> payload = SingleEffectAll(harness);
-        Assert.Equal("3", payload["light"]);
-        Assert.Equal("Rainbow", payload["effect"]);
+        Assert.Equal("Breathing", payload["effect"]);
         AssertNoChineseDisplayNameOnTheWire(harness);
     }
 
@@ -276,6 +274,33 @@ public class KeyboardFallbackBrightnessTests
         Dictionary<string, object> payload = SingleEffectAll(harness);
         Assert.Equal("Single", payload["effect"]);
         Assert.Equal("3", payload["light"]);
+    }
+
+    /// <summary>
+    /// 呼吸也吃单色 ColorBuffer。亮度载体不得只在 effect==Single 时带色，否则呼吸会掉回 7 色默认盘。
+    /// </summary>
+    [Fact]
+    public async Task BrightnessPreserve_Breathing_SendsColor()
+    {
+        using var harness = new Harness();
+        Color cyan = Color.FromArgb(0, 255, 255);
+        LightingSettingsStore.Save(KeyboardTopic,
+            new LightChannelSettings("Breathing", 4, 2, cyan.ToArgb(), PowerOn: true));
+
+        Assert.True(await Program.service!.SetKeyboardBrightnessPreservingEffect(3));
+
+        Dictionary<string, object> payload = SingleEffectAll(harness);
+        Assert.Equal("Breathing", payload["effect"]);
+        Assert.Equal("3", payload["light"]);
+        Assert.Equal("2", payload["speed"]);
+        var color = Assert.IsType<Dictionary<string, object>>(payload["color"]);
+        Assert.Equal(1, color["ColorBlocks"]);
+        var buffer = Assert.IsType<object[]>(color["ColorBuffer"]);
+        Assert.Single(buffer);
+        var rgb = Assert.IsType<Dictionary<string, object>>(buffer[0]);
+        Assert.Equal(0, rgb["R"]);
+        Assert.Equal(255, rgb["G"]);
+        Assert.Equal(255, rgb["B"]);
     }
 
     /// <summary>UI 亮度 0–100 → GCU 5 档（0–4）：整档与既有正向映射互逆。</summary>
@@ -344,11 +369,8 @@ public class KeyboardFallbackBrightnessTests
         ApplyModeSelectionViaReflection(form);   // 进入回退分支
 
         Control hidPanel = HidPanelOf(form);
-        // 亮度滑条 = 参数表第一行（BuildHidParams 先加「亮度」再加帧率/模式参数）
         RSlider slider = Descendants(hidPanel).OfType<RSlider>().First();
         Assert.True(slider.Enabled, "回退态下亮度滑条必须可用，否则用户无法调亮度。");
-        Assert.DoesNotContain(Descendants(hidPanel),
-            c => c is RComboBox combo && combo.Enabled);   // 其余 HID 专属控件保持禁用
 
         int effectGenerationBefore = harness.Keyboard.EffectGeneration;
         foreach (int step in new[] { 0, 25, 50, 75, 100 })

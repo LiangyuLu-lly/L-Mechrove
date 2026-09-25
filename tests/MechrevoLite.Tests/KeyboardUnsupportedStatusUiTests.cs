@@ -49,7 +49,8 @@ public class KeyboardUnsupportedStatusUiTests
             _directory = TempConfigDirectory();
             Environment.SetEnvironmentVariable(LightingSettingsStore.ConfigDirectoryOverrideVariable, _directory);
 
-            Hardware = new MechrevoHw(null, new MechrevoDeviceCapabilities { Keyboard = true });
+            // 服务在线（publish 接缝使 IsConnected 为真）时，不支持文案仍是「已改用官方通道」。
+            Hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities { Keyboard = true });
             Keyboard = new KeyboardRgb(Path.Combine(_directory, "rgb.cfg"));
 
             _previousHardware = Program.hw;
@@ -112,7 +113,7 @@ public class KeyboardUnsupportedStatusUiTests
         var keyboardRow = form.Controls.Find("rowKeyboard", true).OfType<TableLayoutPanel>().Single();
 
         Assert.Equal(SettingsForm.KeyboardControllerUnsupportedText, status.Text);
-        Assert.Equal("本机控制器不支持软件灯效控制，已改用官方通道（仅电源与亮度）", status.Text);
+        Assert.Equal("本机控制器不支持软件灯效控制，已改用官方通道", status.Text);
         Assert.True(status.Visible, "确定性「不支持」时状态行必须可见。");
         Assert.True(keyboardRow.Visible, "不支持时机型仍保留键盘行可见（定案 4）。");
 

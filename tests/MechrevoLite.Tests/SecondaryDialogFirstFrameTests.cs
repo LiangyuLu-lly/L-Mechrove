@@ -110,7 +110,7 @@ public class SecondaryDialogFirstFrameTests
         using var _ = UseAuditMode();
         using var owner = NewOwner();
         var overdrive = new RCheckBox { Text = "响应加速" };
-        using var dialog = new SettingsDialog(new Panel(), new Panel(), overdrive, displayGroupAvailable: true);
+        using var dialog = new SettingsDialog(new Panel(), overdrive, displayGroupAvailable: true);
 
         AssertFirstFrameIsFinal(dialog, () => dialog.ShowAdjacentTo(owner));
         AssertAdjacentTo(dialog, owner);

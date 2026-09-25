@@ -44,7 +44,7 @@ public class ModelOverrideStateMachineFailTests
         {
             AppConfig.Set(ModelOverrideStateMachine.ModelKey, "PH4TRX1");
 
-            Assert.False(ModelOverrideStateMachine.TrySetManual("PH6TQxx", out SupportDecision decision));
+            Assert.False(ModelOverrideStateMachine.TrySetManual("NOTAMODEL", out SupportDecision decision));
             Assert.False(decision.IsSupported);
             Assert.Equal("PH4TRX1", AppConfig.GetString(ModelOverrideStateMachine.ModelKey));
         });
@@ -53,7 +53,7 @@ public class ModelOverrideStateMachineFailTests
     [Fact]
     public void AnIllegalEnvironmentOverrideDoesNotTakeEffect()
     {
-        ModelOverrideStateMachineTests.WithEnvironment("PH6AGxx", () =>
+        ModelOverrideStateMachineTests.WithEnvironment("NOTAMODEL", () =>
         {
             ModelOverrideDecision decision =
                 ModelOverrideStateMachine.Evaluate(SupportDecision.Supported("PH4TRX1"));

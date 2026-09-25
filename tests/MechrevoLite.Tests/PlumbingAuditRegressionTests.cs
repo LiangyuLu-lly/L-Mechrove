@@ -34,7 +34,6 @@ public class PlumbingAuditRegressionTests
     /// 确认逻辑也永远等不到回读变化。这与 LcdOverdriveSeen 修掉的是同一个形状。
     /// </summary>
     [Theory]
-    [InlineData("TochpadEnable", "touchpad")]
     [InlineData("WIFIEnable", "wifi")]
     [InlineData("BTEnable", "bt")]
     [InlineData("WebCamEnable", "webcam")]

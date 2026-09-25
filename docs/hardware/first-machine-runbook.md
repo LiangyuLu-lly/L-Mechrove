@@ -1096,6 +1096,13 @@ per-action and already matches the vendor (`IGPU_ONLY_CONNECT_RB_ON/OFF` carry `
 **BLOCKED-HW**: the real-machine end-to-end (does the route actually change on that specific
 machine) needs that machine; the parse and payload logic are fake-tested.
 
+**Step 10.6.4 — one-pass BLOCKED-HW overlay check (do not claim hardware success).** On a machine
+whose **official** console can switch iGPU, record MQTT `IGpuOnlyConnectionSwitch_Support` and
+whether our overlay offers iGPU-only. They must match whether the official UI offers iGPU-only.
+A match is overlay/capability agreement only. It is **not** proof that the switch lands on
+hardware. Record BLOCKED-HW in `.omo\evidence\f3-generation-status.json` (`probe` + `raw` +
+`hash`) until a later section actually observes a route change.
+
 ---
 
 ## Section 11 — Recording the run

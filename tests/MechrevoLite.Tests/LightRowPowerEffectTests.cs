@@ -47,6 +47,8 @@ public class LightRowPowerEffectTests
             }
             return Task.CompletedTask;
         }, new MechrevoDeviceCapabilities { Lightbar = true, LogoLight = true });
+        hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\"}");
+        hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\"}");
         return (hardware, written);
     }
 

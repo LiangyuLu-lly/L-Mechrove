@@ -246,7 +246,7 @@ public class CustomProfileSwitchFeedbackTests
                 Assert.True(await second.WaitAsync(TimeSpan.FromSeconds(12)));
 
                 Assert.Equal(1, applies);
-                Assert.Equal(2, AppConfig.FlushCount - flushesBefore);   // 两次真实服务确认各一次，没有第三次
+                Assert.Equal(1, AppConfig.FlushCount - flushesBefore);   // T5 superseded switch does not flush.
                 Assert.True(buttons[2].Activated);
                 Assert.Equal("自定义 3 已激活", status.Text);
                 lock (seenStatus)

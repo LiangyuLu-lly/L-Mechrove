@@ -24,6 +24,13 @@ public class MechrevoHw : IDisposable
         .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
 
     public const int GpuCoreOffsetUserLimit = 500;
+    /// <summary>
+    /// Official turbo (extreme) GPU OC offsets. The vendor HomePage toggle writes these through
+    /// <c>SET_OPERATING_MODE_DETAIL</c> (FEATURES.md). Field machines (Yilong 15 Pro) report
+    /// +105 core / +500 memory on 狂暴; we never sent them, so turbo had no auto-OC.
+    /// </summary>
+    public const int TurboGpuCoreOffsetMhz = 105;
+    public const int TurboGpuMemoryOffsetMhz = 500;
     // GCU 硬边界的实测值（2026-09-10 本机 Probe 逐点验证，GCU 自己上报的范围不可信）：
     // 核心 250 生效/300 被静默丢弃；显存 2000 生效/2200 被丢、-1000 生效/-1200 被丢。
     // GCU 上报显存 Maximum=1000/HWOC=1800，实测都能到 2000——上报字段只配当参考。
@@ -79,7 +86,10 @@ public class MechrevoHw : IDisposable
     /// <summary>Dispose 的原子闸门。<see cref="_disposed"/> 供各处快速读，这个只用于 CAS。</summary>
     int _disposedFlag;
     int _reconnecting;
+    long _reconnectStartedTick;
     int _connectionGeneration;
+    readonly MqttReconnectCoordinator _reconnect = new();
+    volatile bool _subscriptionsReady;
     long _lastTelemetryTick;
     readonly SemaphoreSlim _connectLock = new(1, 1);
     readonly SemaphoreSlim _controlLock = new(1, 1);
@@ -89,6 +99,7 @@ public class MechrevoHw : IDisposable
     long _gpuModeStatusVersion;
     long _gpuSwitchResultVersion;
     long _fanStatusVersion;
+    long _fanTableVersion;
     long _keyboardStatusVersion;
     long _lcStatusVersion;
     long _lcStatusReceivedAt;
@@ -218,8 +229,9 @@ public class MechrevoHw : IDisposable
     }
 
     // ---- 快照缓存（MQTT 消息更新，UI getter 读取）----
-    public int CpuTemp { get; private set; }
-    public int GpuTemp { get; private set; }
+    // -1 = unseen: overlay treats <=0 as "--", so a default 0 would display as a real 0°C.
+    public int CpuTemp { get; private set; } = -1;
+    public int GpuTemp { get; private set; } = -1;
     public int CpuUsage { get; private set; }
     public int GpuUsage { get; private set; }
     public int CpuFrequency { get; private set; }   // MHz
@@ -351,6 +363,23 @@ public class MechrevoHw : IDisposable
             $"hz={Yn(SupportsDisplayRefresh)} calib={Yn(SupportsColorCalibration)}";
     }
 
+    /// <summary>
+    /// 仪表盘可见性依赖的能力位。HandleMessage 解析前后比对，没变就不 Raise CapabilitiesChanged。
+    /// </summary>
+    string SnapshotCapabilityFlags() =>
+        DescribeResolvedCapabilities()
+        + $"|set={SettingStatusSeen} bright={ScreenBrightnessSeen} gpuDev={GpuDeviceStatusSeen}"
+        + $"|dgpu={SupportsDgpuDirect} igpu={SupportsIgpuOnly}"
+        + $"|dim={SupportsLocalDimming} od={SupportsLcdOverdrive}"
+        + $"|ocMenu={SupportsOverclockMenu} hwoc={LchwocSupportReported}"
+        + $"|wifi={WifiSeen} bt={BluetoothSeen} webcam={WebcamSeen} winkey={WinKeySeen}"
+        + $"|fn={FnKeySeen} numpad={NumpadSeen} deepsleep={DeepSleepSeen} copilot={CopilotSeen}"
+        + $"|ac={AcRecoverySeen} highperf={HighPerformanceSeen} fanboost={FanBoostSeen}"
+        + $"|tpt={TouchpadToggleSeen} sckb={SingleColorKbSeen} uni={UniOmniSeen}"
+        + $"|pl={PowerLightSeen} blogo={BatteryLogoSeen} gw={GameWhitelistSeen}"
+        + $"|cpuadv={CpuAdvancedPerformanceSeen} calibSeen={ColorCalibrationSeen}"
+        + $"|ldSeen={LocalDimmingSeen} odSeen={LcdOverdriveSeen} dchz={DcHzSeen}";
+
     internal static bool HasLightbarContent(JObject o)
     {
         // 只认这两个字段，开发机实测逼出来的结论：
@@ -437,6 +466,16 @@ public class MechrevoHw : IDisposable
     internal int ConnectionGeneration => Volatile.Read(ref _connectionGeneration);
     /// <summary>重连循环是否在飞（断线后自动重试中）。GCU 状态指示条据此区分「连接中/未连接」。</summary>
     internal bool IsReconnecting => Volatile.Read(ref _reconnecting) != 0;
+    /// <summary>本轮首连/重连已持续多久。未在重试时为 0。</summary>
+    internal long ReconnectAgeMs
+    {
+        get
+        {
+            long started = Volatile.Read(ref _reconnectStartedTick);
+            if (started == 0) return 0;
+            return Environment.TickCount64 - started;
+        }
+    }
 
     // 能力判定分两类，务必区分：
     // 1) 显卡切换（下面三行）是**破坏性**操作，误报会让用户点到本机不具备的入口。
@@ -447,8 +486,13 @@ public class MechrevoHw : IDisposable
     //    例如液冷的实际控制还要过 MechrevoService.CanControlLiquidCooling
     //    （LcActionSupported / LcGcuControllable）。
     public bool SupportsDgpuDirect => DgpuDirectStatusSupport ?? Capabilities.DgpuDirect;
+    /// <summary>MQTT 位优先；冷启动尚未上报时用注册表 <c>iGPUModeOnlySupport</c>。</summary>
     public bool SupportsIgpuOnly => IgpuOnlyStatusSupport ?? Capabilities.IgpuOnly;
     public bool SupportsGpuHotSwap => Capabilities.GpuHotSwap && SupportsIgpuOnly;
+
+    internal void SetIgpuOnlyStatusSupportForTests(bool? value) => IgpuOnlyStatusSupport = value;
+
+    bool ThreeModeCapability => SupportsIgpuOnly;
 
     /// <summary>
     /// **轴 2** dGPU 代际（运行时探测，见 <see cref="GpuGenerationProvider"/>）。
@@ -456,9 +500,9 @@ public class MechrevoHw : IDisposable
     /// </summary>
     public DgpuGenerationKind DgpuGeneration => GpuGenerationProvider.Current().Generation;
 
-    /// <summary>该显示路由动作是否被代际事实表允许；<c>Unknown</c>/<c>NoDgpu</c> 不套用具体代际的限制。</summary>
+    /// <summary>该显示路由动作是否被代际事实表允许。<c>Unknown</c>/<c>NoDgpu</c> 没有事实行，一律不允许。</summary>
     public bool IsGpuActionAllowedByGeneration(string action) =>
-        DisplayRoutePolicy.AllowsAction(DgpuGeneration, action);
+        DisplayRoutePolicy.AllowsAction(DgpuGeneration, action, ThreeModeCapability);
 
     // 能力级供货判据（UI 可见性）：机型/服务说支持 **且** 本代际控制台确实有这个动作。
     // Supports* 保留"命令族是否存在"的语义（服务层据此选载荷）；本组谓词叠上轴 2 事实表，
@@ -473,17 +517,27 @@ public class MechrevoHw : IDisposable
         SupportsGpuHotSwap && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.HotSwapOn);
 
     /// <summary>
-    /// 手动显卡模式切换是否可提供给用户。产品的手动切换一律走"应用目标 + 重启"
-    /// （<see cref="GpuSwitchPolicy.Resolve"/> 对一切模式变更返回 <c>Restart</c>），
-    /// 所以没有 <c>RESTART</c> 动作的代际（30 系 = <c>ProvenAbsent</c>）没有任何可用路由：
-    /// UI 必须整段隐藏，不能给出点了只会失败的按钮。
+    /// 手动显卡模式切换是否可提供给用户。有 TOGGLE_ON / TOGGLE_OFF / RESTART 任一即可。
+    /// 30 系官方控制台没有切卡入口，Toggle 点了也不生效，整段不得提供。
+    /// <c>Unknown</c>/<c>NoDgpu</c> 没有事实行，同样不得提供——否则画像位会放出 40/50 系按钮。
     /// </summary>
     public bool CanOfferGpuModeSwitch =>
-        (SupportsDgpuDirect || SupportsIgpuOnly) && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart);
+        DgpuGeneration is DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50 &&
+        (SupportsDgpuDirect || SupportsIgpuOnly) &&
+        (IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOn) ||
+         IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOff) ||
+         IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart));
 
     public bool SupportsKeyboard => Capabilities.Keyboard || KeyboardStatusSeen;
-    public bool SupportsLightbar => Capabilities.Lightbar || LightbarStatusSeen;
-    public bool SupportsLogoLight => Capabilities.LogoLight || LogoLightStatusSeen || LightbarLogoSupport == true;
+    /// <summary>
+    /// 灯带/Logo 与键盘同一口径：ItemSupport / 注册表画像 或 MQTT 实据。
+    /// 空 MQTT 载荷仍不能把 *Seen 置位（<see cref="HasLightbarContent"/>）；
+    /// 但出厂画像（LightbarSupport / LogoLightSupport / RGBKeyboard 下的 logo 键）
+    /// 是官方控制台用来画入口的依据，丢掉就会在有硬件的机器上藏行。
+    /// MQTT 主题里的设备级 LogoSupport 仍然不算入口——那会串到不存在的灯带上。
+    /// </summary>
+    public bool SupportsLightbar => LightbarStatusSeen || Capabilities.Lightbar || Capabilities.RgbLightbar;
+    public bool SupportsLogoLight => LogoLightStatusSeen || Capabilities.LogoLight;
     public bool SupportsLiquidCooling => Capabilities.LiquidCooling || LcStatusSeen;
     public bool SupportsDisplayRefresh => Capabilities.DisplayRefresh || (GpuDeviceStatusSeen && HzList.Count > 0);
     public bool SupportsColorCalibration => Capabilities.ColorCalibration || ColorCalibrationSeen;
@@ -624,14 +678,48 @@ public class MechrevoHw : IDisposable
 
     public int ColorCalibrationMode { get; private set; }
     public long FanStatusVersion => Interlocked.Read(ref _fanStatusVersion);
+    public long FanTableVersion => Interlocked.Read(ref _fanTableVersion);
+
+    /// <summary>
+    /// 自定义模式页进入：先订阅 Fan/Table，再发 GETSTATUS / GET_FAN_SPEED_CURVE_SETTING。
+    /// 厂商轮询是秒级；30/40/50 服务不 retain 该主题，先发后订会丢帧。
+    /// </summary>
+    internal const int CustomModeFanTableWaitMs = 4000;
+
+    internal async Task<bool> RequestCustomModePageStateAsync(TimeSpan? timeout = null)
+    {
+        long before = Interlocked.Read(ref _fanTableVersion);
+        TimeSpan wait = timeout ?? TimeSpan.FromMilliseconds(CustomModeFanTableWaitMs);
+        using var cts = new CancellationTokenSource();
+        Task<bool> arrived = WaitForStateAsync(() => FanTableVersion > before, wait, cts.Token);
+        try
+        {
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" }).ConfigureAwait(false);
+            await Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            return await arrived.ConfigureAwait(false);
+        }
+        catch
+        {
+            cts.Cancel();
+            throw;
+        }
+    }
 
     public bool CanSwitchGpuMode(int mode) => mode switch
     {
-        // 40 系常规机型只暴露 MUX 直连能力，原厂仍支持纯核显目标。
-        MechrevoService.GpuIGpu => SupportsDgpuDirect || SupportsIgpuOnly,
-        MechrevoService.GpuStandard => SupportsDgpuDirect || SupportsIgpuOnly,
-        MechrevoService.GpuDgpu => SupportsDgpuDirect,
-        MechrevoService.GpuAuto => SupportsIgpuOnly,
+        // 40 系常规机型只暴露 MUX 直连能力，原厂仍支持纯核显目标（TOGGLE_IGPU）。
+        // 30 系事实表无 IGPU_ONLY_* / TOGGLE_IGPU：iGPU↔hybrid 不得因画像位打开。
+        MechrevoService.GpuIGpu =>
+            (SupportsDgpuDirect && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleIgpu)) ||
+            CanOfferIgpuOnly,
+        MechrevoService.GpuStandard =>
+            (SupportsDgpuDirect && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleIgpu)) ||
+            CanOfferIgpuOnly,
+        MechrevoService.GpuDgpu =>
+            SupportsDgpuDirect && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOn),
+        MechrevoService.GpuAuto =>
+            SupportsIgpuOnly && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyAuto),
         _ => false,
     };
 
@@ -697,13 +785,18 @@ public class MechrevoHw : IDisposable
                 : igpu.Contains("IGPU_ONLY_CONNECT_RB_OFF") || igpu.Contains("IGPU_ONLY_OFF")
                     ? MechrevoService.GpuStandard
                     : -1;
-        // 模式显示以独显通路（TOGGLE_*）为唯一权威，与官方三模式卡片一致。
-        // RB 寄存器曾被热切换残留污染（TOGGLE_OFF + RB_ON 但硬件仍是混合），
-        // 若让 RB 压过 TOGGLE_OFF，图标会一直谎报「集显」；切换策略同样以
-        // 这里的结果为准，脏寄存器会导致点集显被判成 NoChange 而毫无动作。
+        // TOGGLE_OFF means "not dGPU direct", not "already hybrid". Official re-sends
+        // it when leaving iGPU to reopen the dGPU path; RB still ON means the machine
+        // has not left iGPU yet. Mapping that to GpuStandard makes GpuSwitchPolicy
+        // treat the leave as NoChange.
+        // Dirty TOGGLE_OFF + RB_ON on any other current mode must not lie as 集显.
         if (direct is "DGPU_DIRECT_CONNECT_TOGGLE_OFF" ||
             direct.Contains("DIRECT_CONNECT_OFF") || direct.Contains("DIRECT_CONNECTION_OFF"))
+        {
+            if (currentMode == MechrevoService.GpuIGpu && igpuMode == MechrevoService.GpuIGpu)
+                return MechrevoService.GpuIGpu;
             return MechrevoService.GpuStandard;
+        }
         return igpuMode >= 0 ? igpuMode : currentMode;
     }
 
@@ -975,7 +1068,8 @@ public class MechrevoHw : IDisposable
     readonly byte[][] _defaultCpuUpT = new byte[3][];
     readonly byte[][] _defaultGpuUpT = new byte[3][];
 
-    public bool IsConnected => _publishOverride is not null || _client?.IsConnected == true;
+    public bool IsConnected =>
+        _publishOverride is not null || (_subscriptionsReady && _client?.IsConnected == true);
 
     public event Action? DataChanged;   // UI 刷新信号（对应 G-Helper 的 Timer 轮询，改为事件触发）
     public event Action<int>? ConnectionReady;   // 首连/重连完成订阅与初始请求后触发
@@ -1001,7 +1095,8 @@ public class MechrevoHw : IDisposable
         try
         {
         if (_disposed) return false;
-        if (IsConnected) return true;
+        if (_publishOverride is not null) return true;
+        if (_subscriptionsReady && _client?.IsConnected == true) return true;
         if (_client is null)
         {
             _client = _factory.CreateMqttClient();
@@ -1013,7 +1108,12 @@ public class MechrevoHw : IDisposable
             };
             _client.DisconnectedAsync += disconnectedArgs =>
             {
-                if (!_disposed) _ = ReconnectLoopAsync();   // 服务重启/断线自动重连，不占用 MQTT 回调线程
+                _subscriptionsReady = false;
+                if (!_disposed)
+                {
+                    _reconnect.MarkDisconnectRequested();
+                    _ = ReconnectLoopAsync();
+                }
                 return Task.CompletedTask;
             };
         }
@@ -1067,13 +1167,21 @@ public class MechrevoHw : IDisposable
                 .ToArray();
             if (rejected.Length > 0)
                 throw new InvalidOperationException("broker 拒绝订阅: " + string.Join(", ", rejected));
+            _subscriptionsReady = true;
         }
         catch (Exception ex)
         {
-            // 订阅失败不能静默存活（IsConnected=true 但零订阅的"死态"）：断开触发重连
+            // 订阅失败不能静默存活（TCP 已连但零订阅的"死态"）：断开触发重连
             Logger.WriteLine("MechrevoHw 订阅失败: " + ex.Message);
+            _subscriptionsReady = false;
+            _reconnect.MarkDisconnectRequested();
             try { await _client.DisconnectAsync(); }
             catch (Exception disconnectEx) { Logger.WriteLine("MQTT disconnect after subscribe failure: " + disconnectEx.Message); }
+            if (_client?.IsConnected == true)
+            {
+                try { _client.Dispose(); } catch { /* best-effort */ }
+                _client = null;
+            }
             if (!_disposed) _ = ReconnectLoopAsync();
             return false;
         }
@@ -1091,6 +1199,8 @@ public class MechrevoHw : IDisposable
         catch (Exception ex)
         {
             Logger.WriteLine("MechrevoHw 初始状态请求失败: " + ex.Message);
+            _subscriptionsReady = false;
+            _reconnect.MarkDisconnectRequested();
             try { await _client.DisconnectAsync(); }
             catch (Exception disconnectEx) { Logger.WriteLine("MQTT disconnect after initialization failure: " + disconnectEx.Message); }
             if (!_disposed) _ = ReconnectLoopAsync();
@@ -1170,6 +1280,7 @@ public class MechrevoHw : IDisposable
         // 不能越过这次配置变更继续被消费。
         OnServiceProfileMayHaveChanged();
         int generation = Interlocked.Increment(ref _connectionGeneration);
+        Volatile.Write(ref _reconnectStartedTick, 0);
         Logger.WriteLine($"MechrevoHw connection ready: generation={generation}");
         // 新连接要重新记录一遍基线状态，否则「变化才记录」会因为内容与断连前相同而
         // 整段跳过，日志里就看不出这一代连接到底读到了什么。
@@ -1197,11 +1308,17 @@ public class MechrevoHw : IDisposable
 
     async Task ReconnectLoopAsync()
     {
-        if (Interlocked.CompareExchange(ref _reconnecting, 1, 0) != 0) return;
+        _reconnect.MarkDisconnectRequested();
+        if (!_reconnect.TryEnterLoop()) return;
+        Interlocked.Exchange(ref _reconnecting, 1);
+        if (Volatile.Read(ref _reconnectStartedTick) == 0)
+            Volatile.Write(ref _reconnectStartedTick, Environment.TickCount64);
         try
         {
             int retryDelayMs = 250;
-            while (!IsConnected && !_disposed)
+            while (_reconnect.ShouldContinue(
+                       _subscriptionsReady && _client?.IsConnected == true,
+                       _disposed))
             {
                 await Task.Delay(retryDelayMs).ConfigureAwait(false);
                 try
@@ -1210,11 +1327,14 @@ public class MechrevoHw : IDisposable
                     if (await ConnectAsync()) return;
                 }
                 catch (Exception ex) { Logger.WriteLine("MQTT reconnect attempt failed: " + ex.Message); }
-                // 本地 GCU 通常在登录后的数秒内出现；2 秒上限兼顾响应速度与低开销。
                 retryDelayMs = Math.Min(retryDelayMs * 2, 2000);
             }
         }
-        finally { Volatile.Write(ref _reconnecting, 0); }
+        finally
+        {
+            Volatile.Write(ref _reconnecting, 0);
+            if (_reconnect.ExitLoop() && !_disposed) _ = ReconnectLoopAsync();
+        }
     }
 
     /// <summary>
@@ -1287,6 +1407,7 @@ public class MechrevoHw : IDisposable
         try
         {
             var o = JObject.Parse(payload);
+            string? capsBefore = IsCapabilityStatusTopic(topic) ? SnapshotCapabilityFlags() : null;
             switch (topic)
             {
                 case MqttTopics.SystemCpuInfo:
@@ -1350,15 +1471,15 @@ public class MechrevoHw : IDisposable
             // 订阅者抛异常，StateChanged 就永远不会触发 → 所有 WaitForStateAsync 只能超时、
             // UI 停更，异常还会被上面那个 catch 吞掉。NotifyConnectionReady 早就是这么写的，
             // 这里只是把同样的纪律补齐。
-            if (topic is MqttTopics.LightbarStatus or MqttTopics.LogoLightStatus or MqttTopics.KeyboardStatus or
-                MqttTopics.BtLcStatus or MqttTopics.FanTable or MqttTopics.GpuDeviceStatus or MqttTopics.SettingsDeviceSwitchItemStatus or
-                MqttTopics.SettingStatus or MqttTopics.FanStatus or MqttTopics.LchwocStatus)
+            if (capsBefore is not null)
             {
                 // 能力判定变化时记一行。日志里原本只有静态画像，而界面显示什么取决于
                 // 「静态位 + 服务端报过的字段」合并后的结论——缺这一行，排查
                 // 「为什么这台机器上没有某个入口」只能靠猜。变化才记录，不会刷屏。
+                string capsAfter = SnapshotCapabilityFlags();
                 Logger.WriteLineIfChanged("resolved-caps", DescribeResolvedCapabilities());
-                RaiseIsolated(CapabilitiesChanged, nameof(CapabilitiesChanged));
+                if (!string.Equals(capsBefore, capsAfter, StringComparison.Ordinal))
+                    RaiseIsolated(CapabilitiesChanged, nameof(CapabilitiesChanged));
             }
             RaiseIsolated(StateChanged, nameof(StateChanged), topic);
             if (IsTelemetryTopic(topic))
@@ -1692,6 +1813,9 @@ public class MechrevoHw : IDisposable
             RaiseIsolated(CurveUpdated, nameof(CurveUpdated));
         }
         if (respectiveChanged) RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
+        Interlocked.Increment(ref _fanTableVersion);
+        if (OperatingMode == 2 && TurboFanCurveIsPathological)
+            _ = RepairPathologicalTurboFanCurveAsync();
     }
 
     private void OnGpuDeviceStatus(JObject o)
@@ -2738,6 +2862,56 @@ public class MechrevoHw : IDisposable
     /// <summary>全 0 表表示 GCU 尚未创建用户曲线；其他形状均视为用户的有效设置。</summary>
     static bool IsUninitializedCurve(byte[] duty) => duty.Take(8).All(value => value == 0);
 
+    /// <summary>
+    /// GCU-only <c>M3T1</c> ships GPU duty 100 from 0 °C (and ~98% CPU by 56 °C) with
+    /// <c>FanControlRespective=false</c>, so turbo pins the GPU fan at 100%. Official 40-series
+    /// <c>M3T1</c> ramps from 0. Treat low-temp ≥90% as garbage, not a user curve.
+    /// </summary>
+    internal static bool IsPathologicalTurboFanCurve(IReadOnlyList<byte> upT, IReadOnlyList<byte> duty)
+    {
+        int n = Math.Min(upT.Count, duty.Count);
+        for (int i = 0; i < n; i++)
+        {
+            if (upT[i] == 255) break;
+            if (upT[i] <= 50 && duty[i] >= 90) return true;
+        }
+        return false;
+    }
+
+    internal bool TurboFanCurveIsPathological =>
+        IsPathologicalTurboFanCurve(GpuCurveUpT, GpuCurveDuty)
+        || IsPathologicalTurboFanCurve(CpuCurveUpT, CpuCurveDuty);
+
+    internal bool TryGetBuiltInTurboFanDuties(out int[] cpu, out int[] gpu)
+    {
+        cpu = gpu = [];
+        if (_defaultCpuDuty[2] is not { } cpuDuty || _defaultGpuDuty[2] is not { } gpuDuty)
+            return false;
+        cpu = cpuDuty.Select(value => (int)value).ToArray();
+        gpu = gpuDuty.Select(value => (int)value).ToArray();
+        return true;
+    }
+
+    int _turboFanRepair;
+
+    internal async Task<bool> RepairPathologicalTurboFanCurveAsync()
+    {
+        if (!TurboFanCurveIsPathological) return false;
+        if (!TryGetBuiltInTurboFanDuties(out int[] cpu, out int[] gpu)) return false;
+        if (Interlocked.CompareExchange(ref _turboFanRepair, 1, 0) != 0) return false;
+        try
+        {
+            Logger.WriteLine($"Repairing pathological turbo fan curve [{CurveName}] with built-in DefaultCurve_Turbo");
+            await SetFanCurve(0, cpu);
+            await SetFanCurve(1, gpu);
+            return true;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _turboFanRepair, 0);
+        }
+    }
+
     static (byte[] upT, byte[] duty) ParseCurve(JArray? arr)
     {
         var upT = new byte[16];
@@ -3074,6 +3248,8 @@ public class MechrevoHw : IDisposable
             _directGpuOverclockEnabled = null;
             _elevatedGpuCoreReadback = null;
             _elevatedGpuMemoryReadback = null;
+            SaveDirectGpuOverclockValue("GpuCoreClockOffsetOC", GpuCoreClockOffset);
+            SaveDirectGpuOverclockValue("GpuMemoryClockOffsetOC", GpuMemClockOffset);
         }
         CustomModeChanged?.Invoke();
     }
@@ -3168,15 +3344,6 @@ public class MechrevoHw : IDisposable
             return false;
         if (!EnsureDirectGpuOverclock()) return false;
 
-        if (GpuOverclockRequiresElevation)
-        {
-            // 启动恢复档位走的是直连 NVAPI；非提权进程写入会被拒。跳过并给出诚实原因，
-            // 不再写出 NVAPI_INVALID_USER_PRIVILEGE 后静默禁用后端。
-            Logger.WriteLine($"Restore direct GPU OC profile {profileIndex + 1} skipped: " +
-                "the NVIDIA direct write requires an elevated process (restart as administrator).");
-            return false;
-        }
-
         int core = AppConfig.Get(DirectGpuProfileKey("core", profileIndex), 0);
         int memory = AppConfig.Get(DirectGpuProfileKey("memory", profileIndex), 0);
         bool coreAdjustable = GpuCoreOffsetAdjustable;
@@ -3186,6 +3353,20 @@ public class MechrevoHw : IDisposable
         if (!coreValid || !memoryValid)
         {
             Logger.WriteLine($"Restore direct GPU OC profile {profileIndex + 1} rejected: core={core}, memory={memory}");
+            return false;
+        }
+
+        bool coreNeedsGcu = coreAdjustable && !CanSetGpuOverclockThroughDriver("GpuCoreClockOffsetOC", core);
+        bool memoryNeedsGcu = memoryAdjustable && !CanSetGpuOverclockThroughDriver("GpuMemoryClockOffsetOC", memory);
+        if (coreNeedsGcu || memoryNeedsGcu)
+            return RestoreGcuPersistedOffsets(profileIndex, core, memory, coreNeedsGcu, memoryNeedsGcu);
+
+        if (GpuOverclockRequiresElevation)
+        {
+            // 启动恢复档位走的是直连 NVAPI；非提权进程写入会被拒。跳过并给出诚实原因，
+            // 不再写出 NVAPI_INVALID_USER_PRIVILEGE 后静默禁用后端。
+            Logger.WriteLine($"Restore direct GPU OC profile {profileIndex + 1} skipped: " +
+                "the NVIDIA direct write requires an elevated process (restart as administrator).");
             return false;
         }
 
@@ -3203,6 +3384,41 @@ public class MechrevoHw : IDisposable
         Logger.WriteLine($"Restore direct GPU OC profile {profileIndex + 1}: core={core}/{coreOk}, memory={memory}/{memoryOk}");
         if (_directGpuOverclockEnabled == true) CustomModeChanged?.Invoke();
         return _directGpuOverclockEnabled == true;
+    }
+
+    bool RestoreGcuPersistedOffsets(
+        int profileIndex, int core, int memory, bool coreNeedsGcu, bool memoryNeedsGcu)
+    {
+        if (coreNeedsGcu && !CanSetGpuOverclockThroughGcu("GpuCoreClockOffsetOC", core)) return false;
+        if (memoryNeedsGcu && !CanSetGpuOverclockThroughGcu("GpuMemoryClockOffsetOC", memory)) return false;
+
+        var payload = new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL" };
+        if (coreNeedsGcu) payload["GpuCoreClockOffsetOC"] = core.ToString();
+        if (memoryNeedsGcu) payload["GpuMemoryClockOffsetOC"] = memory.ToString();
+        try
+        {
+            Publish(MqttTopics.FanControl, payload).ConfigureAwait(false).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"Restore GCU GPU OC profile {profileIndex + 1} failed: {ex.Message}");
+            return false;
+        }
+
+        lock (_gpuOverclockLock)
+        {
+            _directGpuOverclockEnabled = null;
+            _elevatedGpuCoreReadback = null;
+            _elevatedGpuMemoryReadback = null;
+        }
+
+        bool coreOk = !coreNeedsGcu || GpuCoreClockOffset == core ||
+            (TryGetDirectGpuOverclockReadback(out int readCore, out _) && readCore == core);
+        bool memoryOk = !memoryNeedsGcu || GpuMemClockOffset == memory ||
+            (TryGetDirectGpuOverclockReadback(out _, out int readMemory) && readMemory == memory);
+        Logger.WriteLine($"Restore GCU GPU OC profile {profileIndex + 1}: core={core}/{coreOk}, memory={memory}/{memoryOk}");
+        if (coreOk && memoryOk) CustomModeChanged?.Invoke();
+        return coreOk && memoryOk;
     }
 
     public void SuspendDirectGpuOverclock()
@@ -3269,6 +3485,7 @@ public class MechrevoHw : IDisposable
         // 但 UI 审计那条路径会反复创建/销毁实例，没有那层保护）。
         if (Interlocked.Exchange(ref _disposedFlag, 1) != 0) return;
         _disposed = true;
+        _subscriptionsReady = false;
 
         // 先把 ConnectAsync 请下来再动 _client。
         //
@@ -3564,4 +3781,16 @@ public class MechrevoHw : IDisposable
         MqttTopics.SystemMemoryInfo or
         MqttTopics.SystemFanInfo or
         MqttTopics.SystemBatteryInfo;
+
+    static bool IsCapabilityStatusTopic(string topic) => topic is
+        MqttTopics.LightbarStatus or
+        MqttTopics.LogoLightStatus or
+        MqttTopics.KeyboardStatus or
+        MqttTopics.BtLcStatus or
+        MqttTopics.FanTable or
+        MqttTopics.GpuDeviceStatus or
+        MqttTopics.SettingsDeviceSwitchItemStatus or
+        MqttTopics.SettingStatus or
+        MqttTopics.FanStatus or
+        MqttTopics.LchwocStatus;
 }

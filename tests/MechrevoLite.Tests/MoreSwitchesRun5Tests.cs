@@ -261,18 +261,6 @@ public class MoreSwitchesRun5Tests
         Assert.DoesNotMatch(@"\bSendMessage\(", source);
     }
 
-    /// <summary>
-    /// 通知区工具栏刷新必须走非阻塞 PostMessage：旧实现用阻塞 SendMessage 逐格同步等待
-    /// explorer，explorer 一卡，UI 线程就冻在消息循环外（本次「恢复后界面打不开」的同类路径）。
-    /// </summary>
-    [Fact]
-    public void ShellTrayRefresh_UsesNonBlockingPostMessage()
-    {
-        string source = File.ReadAllText(MainProjectFile(Path.Combine("Helpers", "OfficialConsoleIsolation.cs")));
-        Assert.Contains("PostMessage(", source, StringComparison.Ordinal);
-        Assert.DoesNotMatch(@"\bSendMessage\(", source);
-    }
-
     // ------------------------------------------------------------ 息屏测试脚手架
 
     /// <summary>

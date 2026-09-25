@@ -27,15 +27,57 @@ public class GpuGenerationMatrixFailTests
     }
 
     [Fact]
-    public void GpuRoutePolicyDoesNotBorrowAnotherGenerationsRestrictionsForUnknown()
+    public void AResolvedGen30StaysClosedForActionsTheFactTableMarksAbsent()
     {
-        // Unknown/NoDgpu 不套用 30 系的"无 iGPU-only / 无重启"限制——
-        // 它们是"没判出来"，不是"30 系"。收紧只对已证实的代际生效。
-        Assert.True(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Unknown, DisplayRouteMatrix.Restart));
-        Assert.True(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.NoDgpu, DisplayRouteMatrix.ToggleOn));
-        // 而已判到的 30 系必须收紧。
+        // 已判到的 30 系必须收紧。Unknown/NoDgpu 的关闭断言在 UnresolvedGenerationAllowsNoConsoleAction。
         Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen30, DisplayRouteMatrix.Restart));
         Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen30, DisplayRouteMatrix.IgpuOnlyOn));
+    }
+
+    /// <summary>
+    /// 事实表没有 Unknown/NoDgpu 行。没判出代际不等于"把 30/40/50 的动作并集都放开"。
+    /// 未证实的能力不得放行（EvidenceMark 文件头）。
+    /// </summary>
+    [Theory]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.ToggleOn)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.ToggleOff)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.ToggleIgpu)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.Restart)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.IgpuOnlyOn)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.IgpuOnlyOff)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.IgpuOnlyAuto)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.HotSwapOn)]
+    [InlineData(DgpuGenerationKind.Unknown, DisplayRouteMatrix.HotSwapOff)]
+    [InlineData(DgpuGenerationKind.NoDgpu, DisplayRouteMatrix.ToggleOn)]
+    [InlineData(DgpuGenerationKind.NoDgpu, DisplayRouteMatrix.Restart)]
+    [InlineData(DgpuGenerationKind.NoDgpu, DisplayRouteMatrix.IgpuOnlyOn)]
+    [InlineData(DgpuGenerationKind.NoDgpu, DisplayRouteMatrix.HotSwapOn)]
+    public void UnresolvedGenerationAllowsNoConsoleAction(DgpuGenerationKind generation, string action)
+    {
+        Assert.False(DisplayRoutePolicy.AllowsAction(generation, action));
+        Assert.False(DisplayRoutePolicy.AllowsAction(generation, action, threeMode: true));
+        Assert.False(DisplayRoutePolicy.AllowsAction(generation, action, threeMode: false));
+        Assert.False(DisplayRoutePolicy.AllowsAction(generation, "SOMETHING_INVENTED"));
+    }
+
+    /// <summary>
+    /// 仓库没有 10/20 系的 PCI 区间或控制台事实行。不得发明编码：营销名与 device-id 都留在 Unknown，
+    /// 并且 Unknown 不解锁任何代际动作。
+    /// </summary>
+    [Fact]
+    public void TenAndTwentySeriesStayUnknownAndUnlockNoGpuAction()
+    {
+        Assert.Null(DgpuGenerationProbe.FromMarketingName("NVIDIA GeForce GTX 1080"));
+        Assert.Null(DgpuGenerationProbe.FromMarketingName("NVIDIA GeForce RTX 2060 Laptop GPU"));
+        Assert.Null(DgpuGenerationProbe.FromDeviceId("1E90"));
+        Assert.Equal(
+            DgpuGenerationKind.Unknown,
+            DgpuGenerationProbe.Resolve(
+                new[] { new GpuAdapter("NVIDIA GeForce RTX 2060 Laptop GPU", "10DE", "1E90") },
+                true).Generation);
+
+        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Unknown, DisplayRouteMatrix.ToggleOn));
+        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Unknown, DisplayRouteMatrix.Restart, true));
     }
 
     [Fact]
