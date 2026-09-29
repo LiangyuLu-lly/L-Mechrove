@@ -18,6 +18,56 @@ public class AmdPowerFieldTests
         new((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities { AmdPlatform = true });
 
     /// <summary>
+    /// 真机回归（2026-09-28，Intel Core Ultra 9 275HX / YAOSHI）：GCU 的 Fan/Status 同时带着非零的
+    /// CPU_Amd* 占位值和 IsAMDPlatform=false。过去「有可用 AMD 值」就判 AMD，自定义档显示 210/210/420
+    /// 且功耗墙改发 AMD 键。显式标志必须优先。
+    /// </summary>
+    [Fact]
+    public void AnExplicitIntelFlagWinsOverPlaceholderAmdValues()
+    {
+        using MechrevoHw hardware = NewIntelLikeHardware();
+
+        hardware.HandleMessage("Fan/Status", """
+            {"IsAMDPlatform":false,"CPU_PL1":"145","CPU_PL2":"167","CPU_PL4":"145",
+             "CPU_AmdSPL":"210","CPU_AmdSPPT":"210","CPU_AmdFPPT":"420",
+             "CPU_PL1Minimum":"10","CPU_PL1Maximum":"210","CPU_PL4Minimum":"10","CPU_PL4Maximum":"210"}
+            """);
+
+        Assert.False(hardware.UsesAmdPowerFields);
+        Assert.False(hardware.AmdPowerStatusSeen);
+        Assert.Equal(145, hardware.Pl1);
+        Assert.Equal(167, hardware.Pl2);
+        Assert.Equal("PL4", hardware.Pl4WireKey);
+    }
+
+    [Fact]
+    public void AnExplicitIntelFlagOverridesAnEarlierHeuristicGuess()
+    {
+        using MechrevoHw hardware = NewIntelLikeHardware();
+        hardware.HandleMessage("Fan/Status", "{\"CPU_AmdSPL\":90,\"CPU_AmdSPPT\":100,\"CPU_PL1\":45,\"CPU_PL2\":65}");
+        Assert.True(hardware.UsesAmdPowerFields);   // 旧固件没有显式标志：沿用推断
+
+        hardware.HandleMessage("Fan/Status", "{\"IsAMDPlatform\":false,\"CPU_AmdSPL\":90,\"CPU_AmdSPPT\":100,\"CPU_PL1\":45,\"CPU_PL2\":65}");
+
+        Assert.False(hardware.UsesAmdPowerFields);
+        Assert.Equal(45, hardware.Pl1);
+        Assert.Equal(65, hardware.Pl2);
+    }
+
+    [Fact]
+    public void AnExplicitAmdFlagSelectsTheAmdChannelEvenWithoutItemSupport()
+    {
+        using MechrevoHw hardware = NewIntelLikeHardware();
+
+        hardware.HandleMessage("Fan/Status", "{\"IsAMDPlatform\":true,\"CPU_AmdSPL\":75,\"CPU_AmdSPPT\":85,\"CPU_PL1\":45,\"CPU_PL2\":65}");
+
+        Assert.True(hardware.UsesAmdPowerFields);
+        Assert.Equal(75, hardware.Pl1);
+        Assert.Equal(85, hardware.Pl2);
+        Assert.Equal("CpuAmdFPPT", hardware.Pl4WireKey);
+    }
+
+    /// <summary>
     /// H5 主回归：Intel 机型上报了一个占位的 CPU_AmdSPL: 0。
     /// 过去这会把平台永久判成 AMD，并让 Pl1 永久锁在 0 W，真实的 CPU_PL1 被丢弃。
     /// </summary>

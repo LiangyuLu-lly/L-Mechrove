@@ -6,8 +6,12 @@
     Maps the local hardware to the GCU payload directory bundled by the L-Mechrevo installer.
 
 .DESCRIPTION
-    Single payload (N6, owner decision A): the installer ships ONLY release\GCU-only, which
-    carries its own UWACPIDriver, and serves every supported generation (30/40/50) with it.
+    Two payloads (beta21): release\GCU-only (newest AiStoneService + UWACPIDriver) serves 30/40/50
+    and every undeterminable generation; release\GCU-1020 (GamingCenterU legacy UniwillService +
+    ACPIDriver) serves GTX 10 / GTX 16 / RTX 20, the machines whose official console is GamingCenterU.
+
+    Historical note - single payload (N6, owner decision A): until beta20 the installer shipped ONLY
+    release\GCU-only, which carries its own UWACPIDriver, and served every generation with it.
 
     The retired 40-series trees are no longer bundled. The broken platform-code -> generation
     heuristic is gone: axis 1 (platform code) must not decide axis 2 (dGPU generation).
@@ -47,13 +51,25 @@ Set-StrictMode -Version 2.0
 # NOT staged: it is byte-identical to GCU-only\UWACPIDriver (verified: uwacpidriver.cat 11342,
 # UWACPIDriver.inf 2034, UWACPIDriver.sys 46352 - same sizes and hashes), so staging it would
 # duplicate the driver for no benefit.
+#
+# beta21 (owner decision): GTX 10 / GTX 16 / RTX 20 machines keep the vendor's OLD service - the one
+# the official GamingCenterU 1.1.0.49 console ships (GCUBridge 1.0.1.4 + GCUService 1.0.2.47 under
+# UniwillService, with its own ACPIDriver). The newest payload is built for 30/40/50 and is not the
+# service those machines were validated with. release\GCU-1020 is that tree, copied verbatim from
+# GamingCenterU_1.1.0.49_Mechrevo (UniwillService + ACPIDriver only; the vendor console is not shipped).
 $script:Bundle = @(
-    [pscustomobject]@{ Key = '50'; RepoPayload = 'release\GCU-only' }
+    [pscustomobject]@{ Key = '50'; RepoPayload = 'release\GCU-only' },
+    [pscustomobject]@{ Key = '1020'; RepoPayload = 'release\GCU-1020' }
 )
 
 # --- selection (which tree the installer copies) ----------------------------
 $script:PayloadEntry = [pscustomobject]@{
     Variant = '50'; Generation = '50'; ServiceDir = 'AiStoneService'; RepoPayload = 'release\GCU-only'; StagedDir = 'payload\50'
+    DriverDir = 'UWACPIDriver'; DriverInf = 'UWACPIDriver.inf'; DriverSys = 'UWACPIDriver.sys'; Legacy = $false
+}
+$script:LegacyPayloadEntry = [pscustomobject]@{
+    Variant = '1020'; Generation = '1020'; ServiceDir = 'UniwillService'; RepoPayload = 'release\GCU-1020'; StagedDir = 'payload\1020'
+    DriverDir = 'ACPIDriver'; DriverInf = 'ACPIDriver.inf'; DriverSys = 'ACPIDriver.sys'; Legacy = $true
 }
 
 function Get-GcuPayloadBundle {
@@ -89,6 +105,8 @@ function Get-GpuGeneration {
         '50' = @(0x2B00, 0x2C00, 0x2D00, 0x2E00, 0x2F00)   # Blackwell
         '40' = @(0x2600, 0x2700, 0x2800)                    # Ada
         '30' = @(0x2200, 0x2400, 0x2500)                    # Ampere (GA10x)
+        # Pascal GP10x (GTX 10 / MX 1xx) and Turing TU10x / TU11x (RTX 20 / GTX 16).
+        '1020' = @(0x1B00, 0x1C00, 0x1D00, 0x1E00, 0x1F00, 0x2100)
     }
 
     foreach ($name in @($Names)) {
@@ -101,6 +119,12 @@ function Get-GpuGeneration {
             }
         }
         if ($generation -ne 'unknown') { break }
+        # GTX 10x0 / GTX 16x0 / RTX 20x0 / MX 1x0 / MX 2x0 / MX 3x0 laptops ship with GamingCenterU.
+        if ($name -match '(?i)\b(GTX\s*1[06][5-8]0|RTX\s*20[5-8]0|MX\s*[1-3][1-5]0)\b') {
+            $generation = '1020'
+            $evidence.Add("gpu-name '$name' matches GTX 10/16, RTX 20 or MX (GamingCenterU generation)")
+            break
+        }
     }
 
     if ($generation -eq 'unknown') {
@@ -110,7 +134,7 @@ function Get-GpuGeneration {
             if (-not $match.Success) { continue }
             $dev = [Convert]::ToInt32($match.Groups[1].Value, 16)
             $high = $dev -band 0xFF00
-            foreach ($generationKey in @('50', '40', '30')) {
+            foreach ($generationKey in @('50', '40', '30', '1020')) {
                 if ($deviceClasses[$generationKey] -contains $high) {
                     $generation = $generationKey
                     $evidence.Add(("pci-device {0} is {1}-series class (0x{2:X4})" -f $id, $generationKey, $dev))
@@ -213,10 +237,16 @@ function Select-GcuPayload {
     }
 
     $detected = Get-GpuGeneration -Ids $DeviceId -Names $GpuName
-    $entry = $script:PayloadEntry
-    $known = @('30', '40', '50') -contains $detected.Generation
+    # GTX 10/16 + RTX 20 -> the GamingCenterU legacy service; everything else (30/40/50 and an
+    # undeterminable generation) -> the newest payload. Never the retired 40-series trees.
+    $legacy = $detected.Generation -eq '1020'
+    $entry = if ($legacy) { $script:LegacyPayloadEntry } else { $script:PayloadEntry }
+    $known = @('1020', '30', '40', '50') -contains $detected.Generation
     $generation = if ($known) { $detected.Generation } else { $entry.Generation }
-    $reason = if ($known) {
+    $reason = if ($legacy) {
+        ("GTX 10/16 / RTX 20 generation detected; installing the GamingCenterU legacy service {0}" -f $entry.RepoPayload)
+    }
+    elseif ($known) {
         ("{0}-series detected; installing the shipped GCU payload {1}" -f $generation, $entry.RepoPayload)
     }
     else {
@@ -229,6 +259,10 @@ function Select-GcuPayload {
         ServiceDir  = $entry.ServiceDir
         RepoPayload = $entry.RepoPayload
         StagedDir   = $entry.StagedDir
+        DriverDir   = $entry.DriverDir
+        DriverInf   = $entry.DriverInf
+        DriverSys   = $entry.DriverSys
+        Legacy      = [bool]$entry.Legacy
         Reason      = $reason
         Evidence    = $detected.Evidence
     }
@@ -245,7 +279,11 @@ function Invoke-SelfTest {
         @{ Name = 'RTX 3080 laptop -> GCU-only';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2206'); GpuName = @('NVIDIA GeForce RTX 3080 Laptop GPU') }; Expect = '50' },
         @{ Name = 'PCIE 2C19 -> GCU-only';             Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2C19') }; Expect = '50' },
         @{ Name = 'Intel-only still ships GCU-only';   Args = @{ DeviceId = @('PCI\VEN_8086&DEV_7D67'); GpuName = @('Intel(R) Graphics') }; Expect = '50' },
-        @{ Name = 'retired 40-51749 override';         Args = @{ Variant = '40-51749'; DeviceId = @('PCI\VEN_10DE&DEV_2717'); GpuName = @('NVIDIA GeForce RTX 4090 Laptop GPU') }; Expect = '50' }
+        @{ Name = 'retired 40-51749 override';         Args = @{ Variant = '40-51749'; DeviceId = @('PCI\VEN_10DE&DEV_2717'); GpuName = @('NVIDIA GeForce RTX 4090 Laptop GPU') }; Expect = '50' },
+        @{ Name = 'RTX 2060 laptop -> GCU-1020';       Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_1F15'); GpuName = @('NVIDIA GeForce RTX 2060') }; Expect = '1020' },
+        @{ Name = 'GTX 1660 Ti laptop -> GCU-1020';    Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_2191'); GpuName = @('NVIDIA GeForce GTX 1660 Ti') }; Expect = '1020' },
+        @{ Name = 'GTX 1060 by PCI id -> GCU-1020';    Args = @{ DeviceId = @('PCI\VEN_10DE&DEV_1C20') }; Expect = '1020' },
+        @{ Name = 'GTX 1650 by name -> GCU-1020';      Args = @{ GpuName = @('NVIDIA GeForce GTX 1650') }; Expect = '1020' }
     )
 
     $failed = 0

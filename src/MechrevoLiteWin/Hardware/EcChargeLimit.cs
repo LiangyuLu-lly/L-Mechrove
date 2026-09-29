@@ -26,6 +26,16 @@ namespace MechrevoLite.Hardware;
 /// 5 分钟只从 94% 漂到 95% 后持平（同一台机器限制前是 5 分钟涨约 3%）；界面上设 96% 后
 /// 充电停在 95%。
 /// </summary>
+internal enum ChargeLimitVerdict
+{
+    /// <summary>还没有观察到能判定效果的充电状态（常见：电量未到上限或未插电）。</summary>
+    Pending,
+    /// <summary>插电且电量已到上限后确实停止了充电。</summary>
+    Verified,
+    /// <summary>插电、电量高于上限仍持续充电：本机这对寄存器不控制充电。</summary>
+    Ineffective,
+}
+
 internal static class EcChargeLimit
 {
     /// <summary>充电上限：充到这个百分比就停（厂商 EC 规范 ADDR_BATTERY_CHARGE_LIMIT_UP）。</summary>
@@ -84,28 +94,40 @@ internal static class EcChargeLimit
     public static bool IsSupportedLimit(int percent) => percent is >= MinimumPercent and <= MaximumPercent;
 
     /// <summary>
-    /// Never true. <see cref="TrySet"/> returning true means <see cref="UpperRegister"/>/<see cref="LowerRegister"/>
-    /// echoed; CGLM 0x78F also echoed and did not control charging. The 0x7B9/0x7D0 pair was verified
-    /// on one machine only (2026-09-11). <see cref="FeatureMatrix"/> has no charge-limit bit — vendor
-    /// BatteryProtection2 has no ItemSupport flag — so this cannot be decided per machine.
+    /// 本机的「效果证据」判定（按机器持久化）。寄存器回读一致只证明字节写进去了，
+    /// 不证明充电受它控制（CGLM 0x78F 就是反例）——所以写入之后由
+    /// <see cref="MechrevoLite.Battery.ChargeLimitEvidence"/> 观察真实充电状态：
+    /// 插电且电量已到上限却不再充电 → <see cref="ChargeLimitVerdict.Verified"/>；
+    /// 插电、电量高于上限仍持续充电 → <see cref="ChargeLimitVerdict.Ineffective"/>，
+    /// 此时自动恢复满充并在本机关闭这一功能（不留一个假装生效的滑条）。
     /// </summary>
-    public const bool ReadbackProvesChargingStopped = false;
+    internal const string VerdictKey = "ec_charge_limit_verdict";
 
-    /// <summary>Shown instead of a success claim. A register echo is not proof charging stopped.</summary>
-    public const string UnverifiedWriteNotice =
-        "寄存器回读一致不能证明充电已受控（该地址对只在一台机器上验证过）。";
+    public static ChargeLimitVerdict Verdict => AppConfig.GetString(VerdictKey) switch
+    {
+        "verified" => ChargeLimitVerdict.Verified,
+        "ineffective" => ChargeLimitVerdict.Ineffective,
+        _ => ChargeLimitVerdict.Pending,
+    };
+
+    public static void RecordVerdict(ChargeLimitVerdict verdict)
+    {
+        AppConfig.Set(VerdictKey, verdict switch
+        {
+            ChargeLimitVerdict.Verified => "verified",
+            ChargeLimitVerdict.Ineffective => "ineffective",
+            _ => "",
+        });
+        AppConfig.Flush();
+    }
+
+    public static string PendingNotice => Properties.Strings.ChargeLimitPending;
+    public static string VerifiedNotice => Properties.Strings.ChargeLimitVerified;
+    public static string IneffectiveNotice => Properties.Strings.ChargeLimitIneffective;
 
     /// <summary>
-    /// Persistent readout. A bare percent here would look like a normal active limit.
-    /// </summary>
-    public const string UnverifiedLimitLabel = "未验证";
-
-    /// <summary>
-    /// Whether this process may attempt the EC write. There is no charge-limit capability bit.
-    /// <paramref name="support"/>.IsSupported means the vendor service serves this machine, not that
-    /// 0x7B9/0x7D0 control charging. Without <see cref="ReadbackProvesChargingStopped"/> the channel
-    /// stays closed. <c>ec_charge_limit</c> "1"/"0" still forces an attempt; an echo is still not a
-    /// confirmed limit.
+    /// 本机是否提供充电上限。判据：厂商服务在服务这台机器（身份可识别）、厂商 EC 驱动可打开、
+    /// 且本机没有被效果证据判为无效。<c>ec_charge_limit</c> "1"/"0" 仍可强制开关（诊断用）。
     /// </summary>
     public static bool IsSupportedMachine(SupportDecision support)
     {
@@ -113,12 +135,35 @@ internal static class EcChargeLimit
         string? forced = AppConfig.GetString("ec_charge_limit");
         if (forced == "1") return true;
         if (forced == "0") return false;
-        return support.IsSupported && ReadbackProvesChargingStopped;
+        return support.IsSupported && Verdict != ChargeLimitVerdict.Ineffective && IsDriverPresent();
+    }
+
+    /// <summary>测试接缝：非 null 时代替真实的驱动探测。</summary>
+    internal static Func<bool>? DriverPresentOverride { get; set; }
+
+    static int _driverPresent = -1;
+
+    /// <summary>厂商 EC 驱动（<c>\\.\ACPIDriver</c>）是否可打开。进程内缓存：驱动不会在运行中出现/消失。</summary>
+    internal static bool IsDriverPresent()
+    {
+        if (DriverPresentOverride is { } seam) return seam();
+        if (TrySetOverride is not null || ReadPercentOverride is not null) return true;
+        int cached = Volatile.Read(ref _driverPresent);
+        if (cached >= 0) return cached == 1;
+        bool present;
+        lock (Gate)
+        {
+            IntPtr handle = CreateFile(DevicePath, 0xC0000000u, 3u, IntPtr.Zero, 3u, 0u, IntPtr.Zero);
+            present = handle != new IntPtr(-1);
+            if (present) CloseHandle(handle);
+        }
+        Volatile.Write(ref _driverPresent, present ? 1 : 0);
+        return present;
     }
 
     /// <summary>
     /// 本机是否允许尝试 EC 直写。身份与覆盖判定见 <see cref="RuntimeModelSupport"/>。
-    /// 这不是「该地址对在本机控制充电」的证明，见 <see cref="ReadbackProvesChargingStopped"/>。
+    /// 这不是「该地址对在本机控制充电」的证明：效果由 <see cref="Verdict"/>（充电证据）决定。
     ///
     /// <para><b>N15 #12 订正</b>：此前这里把判定缓存在 <c>Lazy&lt;SupportDecision&gt;</c> 里，进程生命周期内
     /// 只求值一次。支持判据现在依赖"厂商服务是否在服务本机"，而服务可能在应用启动之后才连上 ——
@@ -169,7 +214,7 @@ internal static class EcChargeLimit
                 }
 
                 appliedPercent = PercentFor(Read(handle, UpperRegister));
-                // Echo match is not proof these bytes control charging. See ReadbackProvesChargingStopped.
+                // 回读一致只证明字节写进去了；是否真的控制充电由 ChargeLimitEvidence 观察决定（见 Verdict）。
                 return appliedPercent == PercentFor(wantedUpper);
             }
             finally { CloseHandle(handle); }

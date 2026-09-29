@@ -71,11 +71,10 @@ public class WaveBSecondaryUiTests
             Assert.True(rawButtons.Count == 0,
                 "CustomModeForm 不得再有原生 Button（应使用 RButton）：\n  " + string.Join("\n  ", rawButtons));
 
-            // 档位按钮 = 分段组（ApplySegmentGroup）
-            var segments = Descendants(form).OfType<RButton>()
-                .Where(b => b.SegmentPosition != RSegmentPosition.None).ToList();
-            Assert.True(segments.Count >= 4,
-                $"自定义档位按钮必须是分段组（ApplySegmentGroup），实际 {segments.Count} 枚分段按钮。");
+            // 模式选择 = 主题化下拉（G-Helper 式：所有模式同一个下拉），增删改名是主题化按钮。
+            Assert.Single(Descendants(form).OfType<RComboBox>(), c => c.Name == "modeCombo");
+            foreach (string name in new[] { "buttonModeNew", "buttonModeRename", "buttonModeDelete" })
+                Assert.Single(Descendants(form).OfType<RButton>(), b => b.Name == name);
 
             // 紧凑性：目标高度 ≤700 逻辑 px（规格 §3.2）
             int logicalHeight = form.ClientSize.Height * 96 / Math.Max(1, form.DeviceDpi);

@@ -439,10 +439,10 @@
     <value>Settings</value>
   </data>
   <data name="FooterDiagnostics" xml:space="preserve">
-    <value>Diagnostics</value>
+    <value>Diag</value>
   </data>
   <data name="FooterOverlay" xml:space="preserve">
-    <value>Overlay</value>
+    <value>HUD</value>
   </data>
   <data name="ExportDiagnostics" xml:space="preserve">
     <value>Export diagnostics</value>
@@ -917,5 +917,272 @@
   </data>
   <data name="LightingOffOnBattery" xml:space="preserve">
     <value>Turn off all lighting on battery</value>
+  </data>
+  <data name="ModeTuneFanBoost" xml:space="preserve">
+    <value>Fan boost</value>
+  </data>
+  <data name="BoostEnabled" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="ModeTuneRefresh" xml:space="preserve">
+    <value>Refresh rate</value>
+  </data>
+  <data name="BoostEfficient" xml:space="preserve">
+    <value>Efficient</value>
+  </data>
+  <data name="ModeTunePowerMode" xml:space="preserve">
+    <value>Windows power mode</value>
+  </data>
+  <data name="ModeTunePartialFailure" xml:space="preserve">
+    <value>Some mode overrides did not take effect: {0}</value>
+  </data>
+  <data name="BoostEfficientGuaranteed" xml:space="preserve">
+    <value>Efficient (guaranteed)</value>
+  </data>
+  <data name="BoostAggressiveGuaranteed" xml:space="preserve">
+    <value>Aggressive (guaranteed)</value>
+  </data>
+  <data name="ModeTuneIntro" xml:space="preserve">
+    <value>Applied whenever {0} is active (mode switch, power change, wake). Every item is read back.</value>
+  </data>
+  <data name="BoostAggressive" xml:space="preserve">
+    <value>Aggressive</value>
+  </data>
+  <data name="ModeTuneNothingToApply" xml:space="preserve">
+    <value>No overrides; the mode&apos;s defaults are used.</value>
+  </data>
+  <data name="BoostDisabled" xml:space="preserve">
+    <value>Disabled</value>
+  </data>
+  <data name="BoostEfficientAggressive" xml:space="preserve">
+    <value>Efficient aggressive</value>
+  </data>
+  <data name="ModeTuneApplyNow" xml:space="preserve">
+    <value>Apply now</value>
+  </data>
+  <data name="ModeTunePowerBalanced" xml:space="preserve">
+    <value>Balanced</value>
+  </data>
+  <data name="ModeTuneActiveHint" xml:space="preserve">
+    <value>This mode is active; changes apply immediately.</value>
+  </data>
+  <data name="ModeTuneBatterySaver" xml:space="preserve">
+    <value>battery saver on</value>
+  </data>
+  <data name="ModeTuneOff" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="ModeTuneUnchanged" xml:space="preserve">
+    <value>Unchanged</value>
+  </data>
+  <data name="ModeTunePending" xml:space="preserve">
+    <value>Saved. Applies when {0} becomes active.</value>
+  </data>
+  <data name="ModeTuneTurboOc" xml:space="preserve">
+    <value>GPU auto overclock (vendor +105/+500 MHz)</value>
+  </data>
+  <data name="ModeTuneUltimatePlan" xml:space="preserve">
+    <value>kept: Ultimate plan active</value>
+  </data>
+  <data name="ModeTunePowerPerformance" xml:space="preserve">
+    <value>Best performance</value>
+  </data>
+  <data name="ModeTuneTurboOcFailed" xml:space="preserve">
+    <value>GPU auto overclock was not confirmed.</value>
+  </data>
+  <data name="ModeTuneOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="ModeTuneHzUnavailable" xml:space="preserve">
+    <value>rate unavailable</value>
+  </data>
+  <data name="ModeTuneAutoHzOn" xml:space="preserve">
+    <value>auto refresh is on</value>
+  </data>
+  <data name="ModeTunePowerEfficiency" xml:space="preserve">
+    <value>Best efficiency</value>
+  </data>
+  <data name="ModeTuneApplying" xml:space="preserve">
+    <value>Applying…</value>
+  </data>
+  <data name="ModeTuneReset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="ModeTuneNotConfirmed" xml:space="preserve">
+    <value>not confirmed</value>
+  </data>
+  <data name="ModeTuneNoConnection" xml:space="preserve">
+    <value>GCU is not connected.</value>
+  </data>
+  <data name="ModeTuneCpuBoost" xml:space="preserve">
+    <value>CPU boost</value>
+  </data>
+  <data name="ChargeLimitWriteFailed" xml:space="preserve">
+    <value>The charge limit was not applied; the previous value is kept.</value>
+  </data>
+  <data name="ChargeLimitNoDriver" xml:space="preserve">
+    <value>The vendor EC driver is not available, so the charge limit cannot be set.</value>
+  </data>
+  <data name="ChargeLimitVerified" xml:space="preserve">
+    <value>Confirmed on this machine: charging stops at the limit while plugged in.</value>
+  </data>
+  <data name="ChargeLimitNone" xml:space="preserve">
+    <value>No limit: the battery charges to 100%.</value>
+  </data>
+  <data name="ChargeLimitPending" xml:space="preserve">
+    <value>Limit written. It is confirmed automatically once the battery reaches it while plugged in.</value>
+  </data>
+  <data name="ChargeLimitIneffective" xml:space="preserve">
+    <value>On this machine the EC charge threshold does not stop charging. Full charge was restored and the limit is turned off.</value>
+  </data>
+  <data name="DeepSleepOffRestart" xml:space="preserve">
+    <value>Deep sleep was turned off. It takes effect after a restart.</value>
+  </data>
+  <data name="ColorCalibrationFailed" xml:space="preserve">
+    <value>The color profile was not applied; the previous profile is kept.</value>
+  </data>
+  <data name="LightEffectFailed" xml:space="preserve">
+    <value>The lighting effect was not confirmed; the previous effect is kept.</value>
+  </data>
+  <data name="GpuModeSwitchFailed" xml:space="preserve">
+    <value>Switching to {0} was not confirmed by the GCU service.</value>
+  </data>
+  <data name="KeyboardHidNotReady" xml:space="preserve">
+    <value>The keyboard lighting controller is not ready yet. The effect is saved and applied once it connects.</value>
+  </data>
+  <data name="RestoreConfirmed" xml:space="preserve">
+    <value>Defaults restored and read back.</value>
+  </data>
+  <data name="GcuNotConnectedAction" xml:space="preserve">
+    <value>The GCU service is not connected, so nothing was changed.</value>
+  </data>
+  <data name="RestoreNotConfirmed" xml:space="preserve">
+    <value>The restore command was sent but no fresh status came back.</value>
+  </data>
+  <data name="DeepSleepFailed" xml:space="preserve">
+    <value>Deep sleep could not be sent to the GCU service; nothing was changed.</value>
+  </data>
+  <data name="LightPowerFailed" xml:space="preserve">
+    <value>The light did not confirm the on/off change.</value>
+  </data>
+  <data name="SettingNotApplied" xml:space="preserve">
+    <value>The device did not confirm the change; the previous state was restored.</value>
+  </data>
+  <data name="DeepSleepOnRestart" xml:space="preserve">
+    <value>Deep sleep was turned on. It takes effect after a restart.</value>
+  </data>
+  <data name="ProfileNameLabel" xml:space="preserve">
+    <value>Profile name</value>
+  </data>
+  <data name="ProfileNameSaved" xml:space="preserve">
+    <value>Profile name saved and read back.</value>
+  </data>
+  <data name="ProfileNameSave" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="ProfileNameNotConfirmed" xml:space="preserve">
+    <value>The GCU service did not confirm the new name.</value>
+  </data>
+  <data name="ProfileNameNeedsCustom" xml:space="preserve">
+    <value>Switch to this custom profile first; the name applies to the running profile.</value>
+  </data>
+  <data name="PerfEditorTitle" xml:space="preserve">
+    <value>Performance modes</value>
+  </data>
+  <data name="PerfModeLabel" xml:space="preserve">
+    <value>Mode</value>
+  </data>
+  <data name="PerfModeNew" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="PerfModeRename" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="PerfModeDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="PerfModeNameSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="PerfModeNameCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="PerfModeDeletePrompt" xml:space="preserve">
+    <value>Delete &quot;{0}&quot;? All of its settings will be removed.</value>
+  </data>
+  <data name="PerfModeKeepOneCustom" xml:space="preserve">
+    <value>At least one custom mode must remain.</value>
+  </data>
+  <data name="PerfModeLimitReached" xml:space="preserve">
+    <value>The custom mode limit ({0}) has been reached.</value>
+  </data>
+  <data name="PerfModeCustomized" xml:space="preserve">
+    <value>{0} · customized</value>
+  </data>
+  <data name="PerfModeHintVendor" xml:space="preserve">
+    <value>Vendor defaults. Changing power limits, GPU power or the fan curve moves this mode onto a firmware custom slot (the vendor OSD then shows it as custom).</value>
+  </data>
+  <data name="PerfModeHintEmulated" xml:space="preserve">
+    <value>Customized: runs on firmware custom slot {0}, which the vendor OSD shows as custom. Restore defaults to return to the vendor mode.</value>
+  </data>
+  <data name="PerfModeHintCustom" xml:space="preserve">
+    <value>Runs on firmware custom slot {0}.</value>
+  </data>
+  <data name="PerfModeHintCustomUnassigned" xml:space="preserve">
+    <value>A firmware custom slot is assigned when this mode is activated.</value>
+  </data>
+  <data name="PerfModeSwitched" xml:space="preserve">
+    <value>Switched to &quot;{0}&quot;</value>
+  </data>
+  <data name="PerfModeOutcome" xml:space="preserve">
+    <value>{0} confirmed · {1} sent (not verifiable yet) · {2} failed</value>
+  </data>
+  <data name="PerfModeOutcomeFailedItems" xml:space="preserve">
+    <value>Not applied: {0}</value>
+  </data>
+  <data name="PerfModeSavedInactive" xml:space="preserve">
+    <value>Saved; applies when this mode is activated.</value>
+  </data>
+  <data name="PerfModeRestore" xml:space="preserve">
+    <value>Restore defaults</value>
+  </data>
+  <data name="PerfModeRestorePrompt" xml:space="preserve">
+    <value>Restore &quot;{0}&quot; to its factory settings?</value>
+  </data>
+  <data name="PerfModeSwitchPartial" xml:space="preserve">
+    <value>Switched, but some settings were not applied: {0}</value>
+  </data>
+  <data name="PerfModeEditorMenu" xml:space="preserve">
+    <value>Performance mode settings…</value>
+  </data>
+  <data name="PerfModeFanCurveNeedsSlot" xml:space="preserve">
+    <value>Fan curves only take effect on a firmware custom slot; moving &quot;{0}&quot; there…</value>
+  </data>
+  <data name="PerfStepSwitch" xml:space="preserve">
+    <value>Mode switch</value>
+  </data>
+  <data name="PerfModeSegmentEmulated" xml:space="preserve">
+    <value>{0} (customized, runs on a firmware custom slot)</value>
+  </data>
+  <data name="PerfModeNameTooLong" xml:space="preserve">
+    <value>Names can be at most {0} characters.</value>
+  </data>
+  <data name="PerfModeDeleted" xml:space="preserve">
+    <value>Deleted &quot;{0}&quot;.</value>
+  </data>
+  <data name="PerfModeCreated" xml:space="preserve">
+    <value>Created &quot;{0}&quot; from &quot;{1}&quot;.</value>
+  </data>
+  <data name="PerfModeRestoreDone" xml:space="preserve">
+    <value>&quot;{0}&quot; is back to its factory settings.</value>
+  </data>
+  <data name="PerfModeRestoreFailed" xml:space="preserve">
+    <value>Restoring &quot;{0}&quot; was not confirmed.</value>
+  </data>
+  <data name="PerfModeOcArmed" xml:space="preserve">
+    <value>Enabled; takes effect once a clock offset is set.</value>
+  </data>
+  <data name="PerfModeNoSlotSeed" xml:space="preserve">
+    <value>Could not read this mode&apos;s vendor defaults, so it cannot be moved onto a custom slot.</value>
   </data>
 </root>

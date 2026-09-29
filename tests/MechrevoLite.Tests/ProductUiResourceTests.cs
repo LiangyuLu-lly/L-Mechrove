@@ -142,10 +142,10 @@ public class ProductUiResourceTests
             Assert.DoesNotContain("已连接", connected.Text);
 
             using var custom = new CustomModeForm();
-            Assert.Equal(En("CustomModeTitle"), custom.Text);
-            Assert.Equal(Properties.Strings.CustomModeTitle, custom.Text);
+            Assert.StartsWith(En("PerfEditorTitle"), custom.Text);
+            Assert.StartsWith(Properties.Strings.PerfEditorTitle, custom.Text);
             Assert.Contains(custom.Controls.Cast<Control>().SelectMany(All), c => c.Text == En("CpuPl1"));
-            Assert.Equal(En("CustomModeHint"), ModeSecondaryEditor.Hint(ModeEditorTarget.Custom));
+            Assert.Contains(custom.Controls.Cast<Control>().SelectMany(All), c => c.Text == En("PerfModeNew"));
 
             using var fan = new FanCurveForm();
             Assert.Equal(En("FanCurve"), fan.Text);

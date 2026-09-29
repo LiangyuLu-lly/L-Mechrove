@@ -77,6 +77,7 @@ public class UnsupportedModelUiHappyTests
     public void AnInSetInjectedModelHasNoNoticeAndKeepsWriteEntriesEnabled()
     {
         using var model = Model("PH4TRX1");
+        using var driver = ChargeLimitGatingTests.Driver(present: true);
         bool previousAudit = Program.UiAuditMode;
         MechrevoHw? previousHardware = Program.hw;
         Program.UiAuditMode = true;
@@ -90,8 +91,9 @@ public class UnsupportedModelUiHappyTests
                 "集合内机型不得出现横幅。");
 
             Control slider = form.Controls.Find("sliderBattery", true).Single();
-            Assert.False(slider.Enabled, "充电上限没有能力证明，滑条不得作为可用写入入口。");
-            Assert.Equal(EcChargeLimit.UnverifiedWriteNotice, form.ChargeLimitSliderReason);
+            // 集合内机型 + 厂商 EC 驱动在：充电上限入口可用（生效与否由充电证据判定）。
+            Assert.True(slider.Enabled, "集合内机型的充电上限入口可用（生效与否由充电证据判定）。");
+            Assert.DoesNotContain("不能证明", form.ChargeLimitSliderReason, StringComparison.Ordinal);
             Assert.True(form.Controls.Find("buttonEco", true).Single().Enabled);
         }
         finally

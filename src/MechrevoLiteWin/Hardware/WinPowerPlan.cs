@@ -3,17 +3,13 @@ using System.Runtime.InteropServices;
 namespace MechrevoLite.Hardware;
 
 /// <summary>
-/// Windows 电源计划 / 睿频模式（PROCESSOR_BOOST_MODE）——按自定义性能档独立保存与应用。
+/// Windows 电源计划 / 睿频模式（PROCESSOR_BOOST_MODE）的读写与回读确认。按模式保存与应用由 PerfModeService 负责。
 /// 机制（原 G-Helper PowerNative，仅借用协议不用其 UI）：
 ///   电源计划 = PowerSetActiveScheme(GUID)；睿频 = 修改当前活动计划的 CPU 子组 BOOST 索引（0-6）。
-/// 每档配置持久化在 AppConfig：custom{idx}_plan / custom{idx}_boost。
 /// </summary>
 public static class WinPowerPlan
 {
     const int ACCESS_SCHEME = 16;
-    internal const int CustomProfileCount = 4;
-
-    internal readonly record struct ProfileSettings(string Plan, int Boost);
 
     [DllImport("powrprof.dll")]
     static extern uint PowerEnumerate(IntPtr RootPowerKey, IntPtr SchemeGuid, IntPtr SubGroupOfPowerSettingsGuid, uint AccessFlags, uint Index, IntPtr Buffer, ref uint BufferSize);
@@ -44,60 +40,15 @@ public static class WinPowerPlan
 
     public static readonly (string Name, int Value)[] BoostModes =
     {
-        ("禁用睿频（CPU 不超基础频率）", 0),
-        ("启用睿频（默认，系统自动）", 1),
-        ("激进睿频（性能最强，发热最高）", 2),
-        ("效率睿频（省电优先，发热低）", 3),
-        ("高效激进（性能与省电平衡）", 4),
-        ("激进·保底（先保基准频率再加速）", 5),
-        ("高效·保底（保底 + 省电）", 6),
+        // 短名：下拉框在 100% 缩放下也不截断（原长描述 204px > 下拉可用 201px，UI 审计实测）。
+        ("禁用睿频", 0),
+        ("启用睿频（默认）", 1),
+        ("激进睿频", 2),
+        ("效率睿频", 3),
+        ("高效激进", 4),
+        ("激进（保底）", 5),
+        ("高效（保底）", 6),
     };
-
-    internal static string GetProfilePlanKey(int index) => "custom" + ValidateProfileIndex(index) + "_plan";
-
-    internal static string GetProfileBoostKey(int index) => "custom" + ValidateProfileIndex(index) + "_boost";
-
-    internal static ProfileSettings GetOrCreateProfileSettings(int index)
-    {
-        string planKey = GetProfilePlanKey(index);
-        string boostKey = GetProfileBoostKey(index);
-        string plan = AppConfig.GetString(planKey) ?? "";
-        int boost = AppConfig.Get(boostKey, -1);
-        bool changed = false;
-
-        if (string.IsNullOrWhiteSpace(plan))
-        {
-            plan = GetActivePlan();
-            if (!string.IsNullOrWhiteSpace(plan))
-            {
-                AppConfig.Set(planKey, plan);
-                changed = true;
-            }
-        }
-
-        if (boost is < 0 or >= 7)
-        {
-            boost = Math.Clamp(GetBoost(), 0, BoostModes.Length - 1);
-            AppConfig.Set(boostKey, boost);
-            changed = true;
-        }
-
-        if (changed) AppConfig.Flush();
-        return new ProfileSettings(plan, boost);
-    }
-
-    internal static void EnsureProfileSettings()
-    {
-        for (int index = 0; index < CustomProfileCount; index++)
-            _ = GetOrCreateProfileSettings(index);
-    }
-
-    private static int ValidateProfileIndex(int index)
-    {
-        if (index is < 0 or >= CustomProfileCount)
-            throw new ArgumentOutOfRangeException(nameof(index));
-        return index;
-    }
 
     internal const string UltimatePerformancePlanId = "e9a42b02-d5df-448d-aa00-03f14749eb61";
     internal const string BalancedOverlayId = "00000000-0000-0000-0000-000000000000";
@@ -285,19 +236,18 @@ public static class WinPowerPlan
         catch { return 2; }
     }
 
-    /// <summary>测试接缝：非 null 时代替真实 powrprof 应用（测试绝不改动机器当前电源计划）。</summary>
-    internal static Func<int, bool>? ApplyProfileOverride { get; set; }
-
-    /// <summary>应用指定自定义档保存的电源计划 + 睿频（切换档位时调用）。</summary>
-    public static bool ApplyProfile(int index)
+    /// <summary>只读：活动计划的睿频模式（AC 与 DC 都读到才算）；读不到返回 false，不猜值。</summary>
+    internal static bool TryGetBoost(out int ac, out int dc)
     {
-        Func<int, bool>? overrideAction = ApplyProfileOverride;
-        if (overrideAction is not null) return overrideAction(index);
-        ProfileSettings settings = GetOrCreateProfileSettings(index);
-        bool planConfirmed = string.IsNullOrEmpty(settings.Plan) || SetActivePlan(settings.Plan);
-        bool boostConfirmed = planConfirmed && SetBoost(settings.Boost);
-        bool confirmed = planConfirmed && boostConfirmed;
-        Logger.WriteLine($"WinPowerPlan ApplyProfile({index}): plan={settings.Plan} boost={settings.Boost} confirmed={confirmed}");
-        return confirmed;
+        ac = dc = -1;
+        try
+        {
+            return TryGetActivePlan(out Guid plan) &&
+                TryReadBoost(plan, ac: true, out ac) &&
+                TryReadBoost(plan, ac: false, out dc);
+        }
+        catch { return false; }
     }
+
+
 }

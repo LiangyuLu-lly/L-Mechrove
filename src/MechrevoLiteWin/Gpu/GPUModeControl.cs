@@ -317,10 +317,10 @@ namespace MechrevoLite.Gpu
                         Program.modeControl.SetGPUClocks(false);
                     }
 
-                    if (AppConfig.IsModeReapplyRequired())
+                    if (AppConfig.IsModeReapplyRequired() && MechrevoLite.Mode.PerfModeService.Instance is { } perfModes)
                     {
                         await Task.Delay(TimeSpan.FromMilliseconds(3000));
-                        Program.modeControl.AutoPerformance();
+                        await perfModes.ReplayAsync("gpu eco switch", powerSourceChanged: false, appSideOnly: false);
                     }
                 }
                 catch (Exception ex)

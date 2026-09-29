@@ -33,12 +33,12 @@ public class HardcodeMatrixLookupTests
     public void C1ChargeLimitIsDecidedByTheMatrixAndF3()
     {
         using var force = ChargeLimitGatingTests.Force(null);
+        using var driver = ChargeLimitGatingTests.Driver(present: true);
 
-        Assert.False(
+        Assert.True(
             EcChargeLimit.IsSupportedMachine(new SupportDecision(true, SupportReason.Ok, "PH4TRX1")),
-            "service-served is not a charge-limit capability bit; the channel stays closed.");
+            "service-served + vendor driver: offered; effect is proven by charging evidence, not by model names.");
         Assert.False(EcChargeLimit.IsSupportedMachine(SupportDecision.NotInSet("PH6AGxx")));
-        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
     }
 
     [Fact]

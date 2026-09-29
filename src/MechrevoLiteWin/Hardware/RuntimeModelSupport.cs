@@ -16,6 +16,15 @@ namespace MechrevoLite.Hardware;
 /// </summary>
 public static class RuntimeModelSupport
 {
+    static readonly object IdentityGate = new();
+    static ModelIdentity? _identity;            // 最近一次读到的 EC 身份（null = 驱动打不开）
+    static string _identityError = "";
+    static bool _identityAttempted;
+    static DateTime _identityRetryAfterUtc = DateTime.MinValue;
+
+    /// <summary>身份读不到/解析不了时的重试间隔；期间复用上一次的结果，不反复开驱动。</summary>
+    internal static readonly TimeSpan IdentityRetryInterval = TimeSpan.FromSeconds(30);
+
     public static SupportDecision Current()
     {
         if (ModelOverrideStateMachine.EnvironmentOverride() is { } injected)
@@ -25,28 +34,78 @@ public static class RuntimeModelSupport
 
         try
         {
-            if (!AcpiDriverReadTransport.TryOpen(out AcpiDriverReadTransport? transport, out string error) || transport is null)
+            ModelIdentity? identity = ReadIdentity(out string error);
+            if (identity is null)
             {
-                Logger.WriteLine("Model identity unavailable: " + error);
+                Logger.WriteLineIfChanged("model-identity", "Model identity unavailable: " + error);
                 return IsServiceServed()
                     ? SupportDecision.Supported("GCU")
                     : SupportDecision.Unparsable();
             }
-            using (transport)
-            {
-                // N8: the vendor's criterion, not the 24-code list. A machine the vendor service
-                // serves is usable; only a machine it does NOT serve degrades to read-only.
-                SupportDecision auto = ModelSupport.Determine(transport, IsServiceServed());
-                ModelOverrideDecision decision = ModelOverrideStateMachine.EvaluateConfigured(auto);
-                return decision.ManualApplied
-                    ? ModelOverrideStateMachine.ValidateManual(decision.EffectiveModel)
-                    : auto;
-            }
+            // N8: the vendor's criterion, not the 24-code list. A machine the vendor service
+            // serves is usable; only a machine it does NOT serve degrades to read-only.
+            SupportDecision auto = ModelSupport.Determine(identity, IsServiceServed());
+            ModelOverrideDecision decision = ModelOverrideStateMachine.EvaluateConfigured(auto);
+            return decision.ManualApplied
+                ? ModelOverrideStateMachine.ValidateManual(decision.EffectiveModel)
+                : auto;
         }
         catch (Exception ex)
         {
             Logger.WriteLine("Model support determination failed: " + ex.Message);
             return SupportDecision.Unparsable();
+        }
+    }
+
+    /// <summary>
+    /// EC 身份（1856/1868）在进程生命周期内不会变：解析成功后永久缓存，之后的判定不再开驱动、
+    /// 不再做 EC I/O——能力刷新每次都要问一遍，过去每次都在 UI 线程上开一次 ACPI 驱动。
+    /// 驱动打不开或身份解析不了时按 <see cref="IdentityRetryInterval"/> 节流重试。
+    /// 「是否被厂商服务服务」不缓存，每次判定都重新看（连接状态会变）。
+    /// </summary>
+    static ModelIdentity? ReadIdentity(out string error)
+    {
+        lock (IdentityGate)
+        {
+            if (_identity is { IsParsed: true } parsed)
+            {
+                error = "";
+                return parsed;
+            }
+            DateTime now = DateTime.UtcNow;
+            if (_identityAttempted && now < _identityRetryAfterUtc)
+            {
+                error = _identityError;
+                return _identity;
+            }
+            _identityAttempted = true;
+            _identityRetryAfterUtc = now + IdentityRetryInterval;
+            if (!AcpiDriverReadTransport.TryOpen(out AcpiDriverReadTransport? transport, out string openError) || transport is null)
+            {
+                _identity = null;
+                _identityError = openError;
+                error = openError;
+                return null;
+            }
+            using (transport)
+            {
+                _identity = ModelRegistry.Read(transport);
+                _identityError = "";
+                error = "";
+                return _identity;
+            }
+        }
+    }
+
+    /// <summary>测试接缝：清空身份缓存。</summary>
+    internal static void ResetIdentityCacheForTests()
+    {
+        lock (IdentityGate)
+        {
+            _identity = null;
+            _identityError = "";
+            _identityAttempted = false;
+            _identityRetryAfterUtc = DateTime.MinValue;
         }
     }
 

@@ -83,7 +83,10 @@ public class MiniledLocalDimmingTests
         int end = source.IndexOf("void ApplyUnsupportedModelNotice", start, StringComparison.Ordinal);
         Assert.True(start >= 0 && end > start);
         string body = source[start..end];
-        Assert.Contains("LocalDimmingSeen", body, StringComparison.Ordinal);
+        // 可见性走 SupportsLocalDimming（内含 LocalDimmingSupport=false 的一票否决）；
+        // 旧写法 LocalDimmingSeen || caps.LocalDimming 会绕过否决，长出不支持机型上的假开关。
+        Assert.Contains("hw.SupportsLocalDimming", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("LocalDimmingSeen == true || caps.LocalDimming", body, StringComparison.Ordinal);
         Assert.Contains("buttonMiniled", body, StringComparison.Ordinal);
         Assert.DoesNotContain("SupportsLocalDimming ??", body, StringComparison.Ordinal);
     }

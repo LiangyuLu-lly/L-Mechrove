@@ -53,6 +53,7 @@ public class FailVisibleToastTests
                 return (true, percent);
             };
             EcChargeLimit.ReadPercentOverride = () => EcPercent;
+            BatteryControl.ResetForTests();
         }
 
         public void WaitUntil(Func<bool> condition, int ms = 3000)
@@ -69,6 +70,7 @@ public class FailVisibleToastTests
             else AppConfig.Set("ec_charge_limit", _previousForce);
             if (_previousStored is null) AppConfig.Remove("charge_limit");
             else AppConfig.Set("charge_limit", _previousStored);
+            BatteryControl.ResetForTests();
         }
     }
 
@@ -104,11 +106,16 @@ public class FailVisibleToastTests
 
         Assert.True(BatteryControl.SetBatteryChargeLimit(80));
         h.WaitUntil(() => toast.Messages.Count > 0);
-        Assert.Equal("充电上限设置失败，已恢复原值。", Assert.Single(toast.Messages));
+        Assert.Equal(MechrevoLite.Properties.Strings.ChargeLimitWriteFailed, Assert.Single(toast.Messages));
+        Assert.NotEqual(80, AppConfig.Get("charge_limit"));
     }
 
+    /// <summary>
+    /// 回读一致：记下这个上限并提示「等待效果确认」——证据（插电到达上限后是否停充）由
+    /// ChargeLimitMonitor 之后给出；绝不宣称已生效。
+    /// </summary>
     [Fact]
-    public void ChargeLimit_Echo_IsNotConfirmation_and_IsNotPersisted()
+    public void ChargeLimit_Echo_IsPersisted_and_AnnouncesPendingVerification()
     {
         using var toast = new ToastProbe();
         using var h = new ChargeLimitHarness { TrySetSucceeds = true };
@@ -119,11 +126,12 @@ public class FailVisibleToastTests
         try
         {
             Assert.True(BatteryControl.SetBatteryChargeLimit(80));
-            h.WaitUntil(() => notices.Count > 0 || AppConfig.Get("charge_limit") == 80);
+            h.WaitUntil(() => notices.Count > 0 && AppConfig.Get("charge_limit") == 80);
             Thread.Sleep(50);
             Assert.Empty(toast.Messages);
-            Assert.NotEqual(80, AppConfig.Get("charge_limit"));
-            Assert.Equal(EcChargeLimit.UnverifiedWriteNotice, Assert.Single(notices));
+            Assert.Equal(80, AppConfig.Get("charge_limit"));
+            Assert.Equal(80, BatteryControl.KnownLimit);
+            Assert.Equal(EcChargeLimit.PendingNotice, Assert.Single(notices));
         }
         finally
         {
@@ -132,7 +140,7 @@ public class FailVisibleToastTests
     }
 
     [Fact]
-    public void ChargeLimit_DoesNotTreatADelayedEcho_AsConfirmation()
+    public void ChargeLimit_ADelayedEcho_IsTreatedLikeAnImmediateEcho()
     {
         using var toast = new ToastProbe();
         using var h = new ChargeLimitHarness { TrySetSucceeds = false, EcPercent = 80 };
@@ -142,11 +150,11 @@ public class FailVisibleToastTests
         try
         {
             Assert.True(BatteryControl.SetBatteryChargeLimit(80));
-            h.WaitUntil(() => notices.Count > 0 || AppConfig.Get("charge_limit") == 80);
+            h.WaitUntil(() => notices.Count > 0 && AppConfig.Get("charge_limit") == 80);
             Thread.Sleep(50);
             Assert.Empty(toast.Messages);
-            Assert.NotEqual(80, AppConfig.Get("charge_limit"));
-            Assert.Equal(EcChargeLimit.UnverifiedWriteNotice, Assert.Single(notices));
+            Assert.Equal(80, AppConfig.Get("charge_limit"));
+            Assert.Equal(EcChargeLimit.PendingNotice, Assert.Single(notices));
         }
         finally
         {

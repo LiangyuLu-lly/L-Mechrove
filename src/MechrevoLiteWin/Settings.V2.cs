@@ -1,5 +1,6 @@
 using MechrevoLite.Diagnostics;
 using MechrevoLite.Hardware;
+using MechrevoLite.Helpers;
 using MechrevoLite.Properties;
 using MechrevoLite.UI;
 
@@ -199,16 +200,24 @@ public partial class SettingsForm
                 {
                     if (_syncingDisplay || button.Activated) return;
                     _lastHzUi = DateTime.Now;
-                    if (Program.service is not null && Program.hw is { IsConnected: true } && value != Program.hw.CurrentHz)
+                    if (Program.service is null || Program.hw is not { IsConnected: true })
                     {
-                        foreach (RButton b in _hzButtons) b.Enabled = false;
-                        bool confirmed = await Program.service.SwitchRefreshRate(value);
-                        if (confirmed)
-                        {
-                            foreach (RButton b in _hzButtons) b.Activated = b == button;
-                        }
-                        foreach (RButton b in _hzButtons) b.Enabled = true;
+                        ToastForm.ShowFailure(Strings.GcuNotConnectedAction);
+                        return;
                     }
+                    if (value == Program.hw.CurrentHz) return;
+                    foreach (RButton b in _hzButtons) b.Enabled = false;
+                    bool confirmed = false;
+                    try { confirmed = await Program.service.SwitchRefreshRate(value); }
+                    catch (Exception ex) { Logger.WriteLine("Refresh rate switch failed: " + ex.Message); }
+                    // 等待期间分段可能已按新列表重建：按值而不是按按钮对象恢复高亮。
+                    int shown = confirmed ? value : Program.hw?.CurrentHz ?? 0;
+                    foreach (RButton b in _hzButtons)
+                    {
+                        b.Activated = b.Text == shown.ToString();
+                        b.Enabled = true;
+                    }
+                    if (!confirmed) ToastForm.ShowFailure(Strings.SettingNotApplied);
                 };
                 button.Activated = hzValue == current;
                 _hzButtons.Add(button);
@@ -320,6 +329,12 @@ public partial class SettingsForm
             FillRow(row, "键盘", out var sw, out var effectCombo, () => OpenRgbForm());
             _kbPowerSw = sw; _kbEffectCombo = effectCombo;
             FillKeyboardEffectCombo(effectCombo);
+            void RevertKeyboardCombo(int index)
+            {
+                _syncingEffectCombos = true;
+                try { if (index >= 0 && index < effectCombo.Items.Count) effectCombo.SelectedIndex = index; }
+                finally { _syncingEffectCombos = false; }
+            }
             effectCombo.SelectedIndexChanged += async (_, _) =>
             {
                 if (_syncingEffectCombos || Program.UiAuditMode) return;
@@ -338,13 +353,24 @@ public partial class SettingsForm
                         LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, settings with { Effect = id });
                         return;
                     }
-                    if (Program.service is null || Program.hw is not { IsConnected: true }) return;
+                    int previousIdx = Array.FindIndex(gcuCatalog, e => e.Id == settings.Effect);
+                    if (Program.service is null || Program.hw is not { IsConnected: true })
+                    {
+                        RevertKeyboardCombo(previousIdx);
+                        ToastForm.ShowFailure(Strings.GcuNotConnectedAction);
+                        return;
+                    }
                     Color? color = LightingSettingsStore.ColorForEffect(id, settings.ColorArgb);
                     sw.Enabled = false;
                     bool ok = await Program.service.SetKeyboardEffect(
                         id, settings.Light, settings.Speed, "None", color, save: true);
                     sw.Enabled = true;
                     if (ok) LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, settings with { Effect = id });
+                    else
+                    {
+                        RevertKeyboardCombo(previousIdx);
+                        ToastForm.ShowFailure(Strings.LightEffectFailed);
+                    }
                     return;
                 }
                 var hidCatalog = RgbForm.VisibleHidEffects(CurrentKeyboardType());
@@ -364,6 +390,16 @@ public partial class SettingsForm
                 Program.rgb.QueueSaveConfig();
                 // 唯一接缝（防双发）：确定性「不支持」→ 不进入 HID 分支（效果选择交官方通道）；
                 // Supported/Unknown 保持今天的阶梯（Unknown 视为支持）。
+                // HID 暂未连接（热插拔/唤醒后）但并非确定不支持：先按开关路径同样的语义连一次，
+                // 连上就由应用内渲染器接管——否则下拉显示的效果根本没有下发。
+                if (!Program.rgb.IsConnected && Program.rgb.ControllerAvailability != FeatureAvailability.Unsupported)
+                {
+                    KeyboardRgb rgbToConnect = Program.rgb;
+                    if (rgbToConnect.ControllerAvailability == FeatureAvailability.Unknown)
+                        await rgbToConnect.EnsureHidReadyAsync();
+                    if (!rgbToConnect.IsConnected && rgbToConnect.ControllerAvailability != FeatureAvailability.Unsupported)
+                        await Task.Run(() => rgbToConnect.Connect());
+                }
                 if (Program.rgb.IsConnected && !ShouldUseGcuKeyboardFallback(Program.rgb))
                 {
                     _ = Task.Run(() => Program.rgb.StartMode(hid.Mode));   // HID 帧写后台执行
@@ -371,7 +407,9 @@ public partial class SettingsForm
                 }
                 if (Program.service is not null && Program.hw is { IsConnected: true })
                 {
-                    // HID 未连时退回固件电源补开；效果名绝不用 HID 中文显示名。
+                    // HID 仍不可用：退回固件电源补开，并如实告诉用户效果要等控制器就绪后才会应用。
+                    // 效果名绝不用 HID 中文显示名。
+                    ToastForm.ShowNotice(Strings.KeyboardHidNotReady);
                     sw.Enabled = false;
                     bool ok = await Program.service.SetKeyboardPower(true);
                     if (ok)
@@ -539,19 +577,43 @@ public partial class SettingsForm
                     LightingSettingsStore.Save(topic, settings with { Effect = effectId });
                     return;
                 }
-                if (Program.service is null || Program.hw is not { IsConnected: true }) return;
+                int previousIdx = Array.FindIndex(effects, e => e.Effect == settings.Effect);
+                void RevertEffect()
+                {
+                    _syncingEffectCombos = true;
+                    try { if (previousIdx >= 0 && previousIdx < effectCombo.Items.Count) effectCombo.SelectedIndex = previousIdx; }
+                    finally { _syncingEffectCombos = false; }
+                }
+                if (Program.service is null || Program.hw is not { IsConnected: true })
+                {
+                    RevertEffect();
+                    ToastForm.ShowFailure(Strings.GcuNotConnectedAction);
+                    return;
+                }
                 sw.Enabled = false;
                 bool ok = await Program.service.SetLightEffect(topic, effectId,
                     settings.Light, settings.Speed, "None",
                     LightingSettingsStore.ColorForEffect(effectId, settings.ColorArgb), save: true);
                 sw.Enabled = true;
                 if (ok) LightingSettingsStore.Save(topic, settings with { Effect = effectId });
+                else
+                {
+                    RevertEffect();
+                    ToastForm.ShowFailure(Strings.LightEffectFailed);
+                }
             };
             sw.CheckedChanged += async (_, _) =>
             {
                 if (_syncingSwitches) return;
                 _lastQuickSwitchUi = DateTime.Now;
-                if (Program.service is not null && Program.hw is { IsConnected: true })
+                if (Program.service is null || Program.hw is not { IsConnected: true })
+                {
+                    _syncingSwitches = true;
+                    sw.Checked = !sw.Checked;
+                    _syncingSwitches = false;
+                    ToastForm.ShowFailure(Strings.GcuNotConnectedAction);
+                    return;
+                }
                 {
                     bool requested = sw.Checked;
                     sw.Enabled = false;
@@ -570,7 +632,11 @@ public partial class SettingsForm
                                     topic, effects[0].Effect).PowerOn);
                         }
                     }
-                    else { _syncingSwitches = true; sw.Checked = !requested; _syncingSwitches = false; }
+                    else
+                    {
+                        _syncingSwitches = true; sw.Checked = !requested; _syncingSwitches = false;
+                        ToastForm.ShowFailure(Strings.LightPowerFailed);
+                    }
                 }
             };
             body.Controls.Add(row, 0, gridRow);
@@ -641,15 +707,18 @@ public partial class SettingsForm
 
         // 行几何沿用 MakeRow 的节奏（同高 D(32)、同 body 左 padding）；右列绝对宽 = 下拉右缘
         // 与 键盘/灯条/Logo 行「编辑」按钮的右缘同一条线。
+        // 行高跟随内容（AutoSize）：固定 D(32) 在字体缩放后装不下下拉框（审计实测 37 > 32，
+        // 下拉底部越出父容器）。
         var prefsRow = new TableLayoutPanel
         {
             Dock = DockStyle.Top, ColumnCount = 2, RowCount = 1,
-            Height = D(32), Margin = Padding.Empty, BackColor = UiVisualStyle.Window,
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(0, D(32)), Margin = Padding.Empty, BackColor = UiVisualStyle.Window,
             Name = "rowLightPrefs",
         };
         prefsRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));   // 离电开关（左）
         prefsRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, D(120)));   // 睡眠时间（右）
-        prefsRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        prefsRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         prefsRow.Controls.Add(offOnBatteryChk, 0, 0);
         prefsRow.Controls.Add(sleepCombo, 1, 0);
 
@@ -722,7 +791,7 @@ public partial class SettingsForm
     /// 设备侧计时恒为 0——睡眠由应用内空闲检测实现（RgbForm.SyncDeviceCloseTimerAsync 同一纪律）。</summary>
     internal static readonly (string Label, int Mins, int IdleSeconds)[] LightingCloseTimerOptions =
     {
-        ("关闭", 0, 0), ("10 秒（软件）", 0, 10), ("10 分钟", 10, 600), ("15 分钟", 15, 900),
+        ("关闭", 0, 0), ("10 秒", 0, 10), ("10 分钟", 10, 600), ("15 分钟", 15, 900),
         ("20 分钟", 20, 1200), ("30 分钟", 30, 1800), ("45 分钟", 45, 2700),
         ("1 小时", 60, 3600), ("2 小时", 120, 7200),
     };
@@ -1014,11 +1083,19 @@ public partial class SettingsForm
     /// footer 重排（预览 1:1）：版本号(V2 版本 labelVersion 迁到 footer) + 五枚图标行尾键：
     /// ⊙悬浮窗 ⚙设置 ↻更新 ❤赞助 ✕退出（纯图标 + tooltip；可访问名保留）。Surface 底 + 顶部 1px Border。
     /// </summary>
+    /// <summary>
+    /// footer 图标键尺寸（逻辑 px）。16px 图标 + Caption 字高 + 平面按钮内边距约 38px：
+    /// 旧的 46x36 让 ImageAboveText 放不下两条，文字压在图标下半部（100% 缩放真机截图可见）。
+    /// 宽 52 容得下两个汉字或 6–7 个英文字母；六个键 + 版本列在 420 宽主窗内刚好排开。
+    /// </summary>
+    internal const int FooterButtonLogicalWidth = 52;
+    internal const int FooterButtonLogicalHeight = 44;
+
     void BuildFooterV2(Func<int, int> scale)
     {
         panelFooter.AutoSize = false;
         panelFooter.Padding = new Padding(scale(12), scale(6), scale(10), scale(4));
-        panelFooter.Height = scale(51);
+        panelFooter.Height = scale(58);
         panelFooter.Controls.Clear();
 
         var topLine = new Panel
@@ -1046,8 +1123,8 @@ public partial class SettingsForm
             Padding = new Padding(scale(4), 2, 0, 1),
             BackColor = panelFooter.BackColor,
         };
-        host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
-        for (int i = 0; i < 6; i++) host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78 / 6f));
+        host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16));
+        for (int i = 0; i < 6; i++) host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 84 / 6f));
         host.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         host.Controls.Add(labelVersion, 0, 0);
 
@@ -1070,7 +1147,7 @@ public partial class SettingsForm
             Text = Strings.FooterSettings,
             Cursor = Cursors.Hand,
             AutoSize = false,
-            Size = new Size(scale(46), scale(36)),
+            Size = new Size(scale(FooterButtonLogicalWidth), scale(FooterButtonLogicalHeight)),
             Anchor = AnchorStyles.None,   // 与其余键一致：单元格内垂直居中（缺省 Top|Left 会整体高 4px）
             BackColor = panelFooter.BackColor,
         };
@@ -1086,7 +1163,7 @@ public partial class SettingsForm
             Text = Strings.FooterDiagnostics,
             Cursor = Cursors.Hand,
             AutoSize = false,
-            Size = new Size(scale(46), scale(36)),
+            Size = new Size(scale(FooterButtonLogicalWidth), scale(FooterButtonLogicalHeight)),
             Anchor = AnchorStyles.None,
             BackColor = panelFooter.BackColor,
             AccessibleName = Strings.ExportDiagnostics,
@@ -1116,7 +1193,7 @@ public partial class SettingsForm
         button.Dock = DockStyle.None;
         button.Anchor = AnchorStyles.None;   // 单元内居中，保持 46x36 的紧凑键尺寸
         button.AutoSize = false;
-        button.Size = new Size(scale(46), scale(36));
+        button.Size = new Size(scale(FooterButtonLogicalWidth), scale(FooterButtonLogicalHeight));
         button.BackColor = panelFooter.BackColor;
         UiVisualStyle.StyleFooterGhostButton(button);
         if (icon == UiGlyph.Kind.Overlay)

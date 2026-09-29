@@ -54,6 +54,7 @@ public class BatteryChargeLimitDisplayFixTests
 
             Program.UiAuditMode = true;              // 不启动 3s 周期定时器（测试不泵消息）
             BatteryControl.ResetChargeLimitGesture();
+            BatteryControl.ResetForTests();
             AppConfig.Set("ec_charge_limit", "1");   // 强制走已实测机型通道（CI 不一定是 YAOSHI）
             AppConfig.Remove("charge_limit");        // 模拟用户从未成功写入过
 
@@ -91,6 +92,7 @@ public class BatteryChargeLimitDisplayFixTests
             EcChargeLimit.ReadPercentOverride = _previousRead;
             NativeMethods.IdleTimeProvider = _previousIdle;
             BatteryControl.ResetChargeLimitGesture();
+            BatteryControl.ResetForTests();
             Program.UiAuditMode = _previousAudit;
             if (_previousForce is null) AppConfig.Remove("ec_charge_limit");
             else AppConfig.Set("ec_charge_limit", _previousForce);
@@ -102,9 +104,9 @@ public class BatteryChargeLimitDisplayFixTests
     static Label LimitValue(SettingsForm form) =>
         form.Controls.Find("labelBatteryLimitValue", true).OfType<Label>().Single();
 
-    /// <summary>真实手势设置 → EC 写入 → 持久化 → 显示数值（不再显示「—」）。</summary>
+    /// <summary>真实手势设置 → EC 写入 → 回读一致 → 持久化并显示数值；效果由充电证据随后确认。</summary>
     [Fact]
-    public async Task GenuineGesture_ReachesTheWrite_and_DoesNotPersistAConfirmedLimit()
+    public async Task GenuineGesture_ReachesTheWrite_PersistsTheLimit_and_ShowsIt()
     {
         using var h = new Harness(TimeSpan.Zero);
         using var form = new SettingsForm();
@@ -119,11 +121,15 @@ public class BatteryChargeLimitDisplayFixTests
         Thread.Sleep(150);
 
         Assert.Equal(new[] { 78 }, h.Writes);
-        Assert.NotEqual(78, AppConfig.Get("charge_limit"));
+        h.WaitForStored(78);
+        Assert.Equal(78, AppConfig.Get("charge_limit"));
+        Assert.Equal(78, BatteryControl.KnownLimit);
         Assert.False(BatteryControl.chargeFull);
-        form.RefreshDeviceCapabilities();
-        Assert.Equal(EcChargeLimit.UnverifiedLimitLabel, LimitValue(form).Text);
-        Assert.NotEqual("78%", LimitValue(form).Text);
+        // await 之后可能换了线程：在当前线程新建窗体再读（窗体控件有线程亲和性）。
+        using var after = new SettingsForm();
+        after.CreateControl();
+        after.RefreshDeviceCapabilities();
+        Assert.Equal("78%", LimitValue(after).Text);
     }
 
     /// <summary>连续多次刷新回显不得把刚设的值回退——EC 真值优先于（缺失/陈旧的）配置。</summary>
@@ -186,7 +192,7 @@ public class BatteryChargeLimitDisplayFixTests
     /// 写后即时回读失败（硬件其实已改）时：不应停留在未知，而应再次读 EC 确认实际阈值并持久化 + 显示。
     /// </summary>
     [Fact]
-    public void ImmediateReadbackFailure_EvenWhenEcMatches_IsNotPersisted()
+    public void ImmediateReadbackFailure_WhenEcMatches_IsTreatedAsAnEcho()
     {
         using var h = new Harness(TimeSpan.FromSeconds(5));
         h.TrySetSucceeds = false;   // TrySet 报告失败
@@ -194,11 +200,11 @@ public class BatteryChargeLimitDisplayFixTests
 
         Assert.True(BatteryControl.SetBatteryChargeLimit(75));   // 重新应用已保存值是程序化路径，不受手势门禁
         h.WaitForWrite();
-        Thread.Sleep(150);
+        h.WaitForStored(75);
 
-        Assert.Equal(-1, AppConfig.Get("charge_limit"));
+        Assert.Equal(75, AppConfig.Get("charge_limit"));
+        Assert.Equal(75, BatteryControl.KnownLimit);
         Assert.False(BatteryControl.chargeFull);
-        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
     }
 
     /// <summary>写后即时回读失败且 EC 阈值也不是请求值 → 保持原值，不伪造成功。</summary>

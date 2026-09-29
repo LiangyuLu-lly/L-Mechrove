@@ -34,14 +34,50 @@ public class ChargeLimitGatingTests
         }
     }
 
+    /// <summary>固定「厂商 EC 驱动是否在」与本机效果判定（测试不依赖宿主机真实驱动）。</summary>
+    internal static IDisposable Driver(bool present, ChargeLimitVerdict verdict = ChargeLimitVerdict.Pending)
+    {
+        Func<bool>? previous = EcChargeLimit.DriverPresentOverride;
+        string? previousVerdict = AppConfig.GetString(EcChargeLimit.VerdictKey);
+        EcChargeLimit.DriverPresentOverride = () => present;
+        EcChargeLimit.RecordVerdict(verdict);
+        return new DriverRestore(previous, previousVerdict);
+    }
+
+    sealed class DriverRestore(Func<bool>? previous, string? previousVerdict) : IDisposable
+    {
+        public void Dispose()
+        {
+            EcChargeLimit.DriverPresentOverride = previous;
+            if (previousVerdict is null) AppConfig.Remove(EcChargeLimit.VerdictKey);
+            else AppConfig.Set(EcChargeLimit.VerdictKey, previousVerdict);
+        }
+    }
+
     [Fact]
-    public void ASupportedModelWithAServiceProfileDoesNotOpenTheChargeChannel()
+    public void ASupportedModelWithTheVendorDriverOffersTheChargeLimit()
     {
         using var _ = Force(null);
-        Assert.False(
-            EcChargeLimit.IsSupportedMachine(Supported),
-            "service-served is not a charge-limit capability bit.");
-        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
+        using var __ = Driver(present: true);
+        Assert.True(EcChargeLimit.IsSupportedMachine(Supported),
+            "service-served + vendor EC driver present: offered, then proven by charging evidence.");
+    }
+
+    [Fact]
+    public void WithoutTheVendorDriverTheChargeLimitIsNotOffered()
+    {
+        using var _ = Force(null);
+        using var __ = Driver(present: false);
+        Assert.False(EcChargeLimit.IsSupportedMachine(Supported));
+    }
+
+    [Fact]
+    public void AMachineWhoseLimitWasProvenIneffectiveIsNotOfferedAgain()
+    {
+        using var _ = Force(null);
+        using var __ = Driver(present: true, ChargeLimitVerdict.Ineffective);
+        Assert.False(EcChargeLimit.IsSupportedMachine(Supported),
+            "charging continued above the limit on this machine: no fake slider.");
     }
 
     [Fact]

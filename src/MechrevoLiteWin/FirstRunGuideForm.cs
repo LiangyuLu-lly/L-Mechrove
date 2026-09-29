@@ -169,25 +169,32 @@ public sealed class FirstRunGuideForm : RForm
             ForeColor = warning ? UiVisualStyle.Danger : UiVisualStyle.Text,
             Margin = Padding.Empty,
         }, 1, 0);
-        // 描述宽度随列自适应（Text Reflow Critical：禁固定宽裁字）——不再用固定像素
-        // MaximumSize（175% 下会提前折行/右边距不齐）：AutoSize 关掉，宽度由 Anchor 跟随
-        // Percent 列，高度按当前宽度的换行测量回填，Resize/FontChanged（含审计缩放）时重算。
+        // 描述宽度随列自适应（Text Reflow Critical：禁固定宽裁字）：AutoSize 标签 + 动态
+        // MaximumSize。最大宽每次布局都取第二列的真实宽度（不是固定像素，175% 下不会提前折行），
+        // 高度由 AutoSize 按换行结果自己长——手算高度在审计缩放下会少一行（旧实现 304x47 装不下三行）。
         var desc = new Label
         {
             Text = description,
-            AutoSize = false,
-            Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Top,
             Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
             ForeColor = UiVisualStyle.Muted,
             Margin = new Padding(0, UiVisualStyle.Space.Xs, 0, 0),
         };
+        bool reflowing = false;
         void ReflowDescription()
         {
-            int width = Math.Max(1, desc.Width - desc.Padding.Horizontal);
-            desc.Height = TextRenderer.MeasureText(description, desc.Font,
-                new Size(width, int.MaxValue), TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix).Height;
+            if (reflowing) return;
+            int[] widths = row.GetColumnWidths();
+            if (widths.Length < 2) return;
+            int width = Math.Max(40, widths[1] - desc.Margin.Horizontal - 2);
+            if (desc.MaximumSize.Width == width) return;
+            reflowing = true;
+            try { desc.MaximumSize = new Size(width, 0); }
+            finally { reflowing = false; }
         }
-        desc.Resize += (_, _) => ReflowDescription();
+        row.Layout += (_, _) => ReflowDescription();
+        row.Resize += (_, _) => ReflowDescription();
         desc.FontChanged += (_, _) => ReflowDescription();
         row.Controls.Add(desc, 1, 1);
         return row;

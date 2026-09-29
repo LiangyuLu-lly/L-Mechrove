@@ -1,4 +1,5 @@
 ﻿using MechrevoLite.Hardware;
+using MechrevoLite.Mode;
 using MechrevoLite.Update;
 using System.Drawing.Imaging;
 using System.Text;
@@ -171,6 +172,13 @@ internal static class UiAuditRunner
             ("Lightbar", () => new LightForm(MqttTopics.LightbarCtrl, "灯条灯效", LightForm.LightbarEffects), null),
             ("LogoLight", () => new LightForm(MqttTopics.LogoLightCtrl, "Logo灯效", LightForm.LogoEffects), null),
             ("Donate", () => new DonateForm(), null),
+            // 统一性能模式编辑器绑定到内置模式（官方默认说明 + 全部参数行，覆盖与自定义模式不同的路线提示）。
+            ("PerfModeBuiltIn", () =>
+            {
+                var editor = new CustomModeForm();
+                editor.BindMode(MechrevoLite.Mode.PerfModeDefinition.BuiltInId(MechrevoLite.Mode.PerfModeKind.Turbo));
+                return editor;
+            }, null),
             ("ColorPicker", () => new RColorPicker(Color.FromArgb(50, 219, 190), true), null),
             // 设置弹窗此前漏采：宿主面板在主窗里是游离（未挂树）控件，只有 ⚙ 弹窗托管时才参与布局。
             // 这里复刻 Settings.cs 的构建：BuildThemeModePanel 的面板结构 + 可选的响应加速。
@@ -179,53 +187,8 @@ internal static class UiAuditRunner
             {
                 // 与主窗构建一致：面板按宿主 DPI 定尺寸（设备像素），随后由审计的相对 scaling 归一到视口。
                 int D(int value) => (int)Math.Round(value * hostDpi / 96f);
-                var themePanel = new BufferedPanel
-                {
-                    Name = "panelThemeMode",
-                    CardStyle = true,
-                    Height = D(54),
-                    Padding = new Padding(D(12), D(8), D(12), D(8)),
-                    BackColor = UiVisualStyle.Surface,
-                };
-                var themeLayout = new TableLayoutPanel
-                {
-                    Dock = DockStyle.Fill,
-                    ColumnCount = 3,
-                    RowCount = 1,
-                    Margin = Padding.Empty,
-                    Padding = Padding.Empty,
-                    BackColor = themePanel.BackColor,
-                };
-                themeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-                themeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-                themeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-                themeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-                themeLayout.Controls.Add(new Label
-                {
-                    Name = "labelThemeModeTitle",
-                    Text = "界面外观",
-                    Dock = DockStyle.Fill,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    Margin = Padding.Empty,
-                    AutoEllipsis = true,
-                }, 0, 0);
-                themeLayout.Controls.Add(new Button
-                {
-                    Name = "buttonDayMode",
-                    Text = "日间",
-                    Dock = DockStyle.Fill,
-                    FlatStyle = FlatStyle.Flat,
-                    Cursor = Cursors.Hand,
-                }, 1, 0);
-                themeLayout.Controls.Add(new Button
-                {
-                    Name = "buttonNightMode",
-                    Text = "夜间",
-                    Dock = DockStyle.Fill,
-                    FlatStyle = FlatStyle.Flat,
-                    Cursor = Cursors.Hand,
-                }, 2, 0);
-                themePanel.Controls.Add(themeLayout);
+                // 与主窗同一份构建（SettingsForm.CreateThemeModePanel）：不再手写副本。
+                var themePanel = SettingsForm.CreateThemeModePanel(D, _ => { }, out _, out _);
 
                 var overdrive = new RCheckBox
                 {

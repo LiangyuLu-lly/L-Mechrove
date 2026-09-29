@@ -57,6 +57,16 @@ public sealed class MechrevoDeviceCapabilities
     public bool AcRecovery { get; init; }
 
     /// <summary>
+    /// 服务端显式写了 <c>AcRecoverySwitchBiosSupport=0</c>（UEFI 不支持来电自启）。
+    /// <c>AcRecoverySwitchSupport</c> 是厂商常量位（恒 1），不能作为判据——旧判据 OR 了它，
+    /// BIOS 不支持的机型也会长出一个点了就弹回的开关。显式否决优先于运行时字段。
+    /// </summary>
+    public bool AcRecoveryVetoed { get; init; }
+
+    /// <summary>服务端显式写了 <c>TurboModeSupport=0</c>：不提供狂暴入口（不再用 Fan/Status 到达兜底放行）。</summary>
+    public bool TurboModeVetoed { get; init; }
+
+    /// <summary>
     /// N15 #17: the AC-recovery ("来电自启") on/off state, or <c>null</c> when it cannot be read.
     /// The vendor service exposes two fields: <c>AcRecoverySwitch_Status</c> (a string) and
     /// <c>ACRecoveryStatus</c> (a hex-encoded byte, GCUService.decompiled.cs:21092). The string is
@@ -331,7 +341,13 @@ public sealed class MechrevoDeviceCapabilities
             LiquidCooling = Flag("LiquidCoolingSupport", "WaterCoolingSupport"),
             LiquidCoolingAutoMode = Flag("LiquidCoolingAutoModeSupport", "WaterCoolingAutoModeSupport"),
             Numpad = Flag("NumPadSupport", "NumpadSupport"),
-            AcRecovery = Flag("AcRecoverySwitchSupport") || Flag("AcRecoverySwitchBiosSupport"),
+            // 厂商判据是 UEFI 的 AcRecoverySwitchBiosSupport；AcRecoverySwitchSupport 是常量 1。
+            // BIOS 位缺失（旧服务不写）时才退回常量位，交给运行时状态字段决定。
+            AcRecovery = Value("AcRecoverySwitchBiosSupport") is not null
+                ? Flag("AcRecoverySwitchBiosSupport")
+                : Flag("AcRecoverySwitchSupport"),
+            AcRecoveryVetoed = Value("AcRecoverySwitchBiosSupport") is not null && !Flag("AcRecoverySwitchBiosSupport"),
+            TurboModeVetoed = Value("TurboModeSupport") is not null && !Flag("TurboModeSupport"),
             // N15 #17: the string field is primary; the vendor's hex byte is the fallback. Neither
             // present => null (unknown), never false.
             AcRecoveryOn = AcRecoveryState(Value("AcRecoverySwitch_Status"), Value("ACRecoveryStatus")),

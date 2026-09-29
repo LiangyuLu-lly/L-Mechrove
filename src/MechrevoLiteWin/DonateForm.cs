@@ -124,6 +124,10 @@ public class DonateForm : RForm
         int width = ResponsiveLayout.LogicalToDevice(this, SettingsForm.CompactDashboardLogicalClientSize.Width);
         ClientSize = new Size(width, ClientSize.Height);
         ResponsiveLayout.PerformLayoutTree(this);
-        ClientSize = new Size(width, root.Height);
+        // 高取内容在该宽度下的首选高（含边距），不是布局前的 root.Height——后者在缩放取整后
+        // 会少 3–4px（审计 1280x720-100pct：需要 297、客户区 293）。内容万一更高也能滚动，不会被裁。
+        AutoScroll = true;
+        int height = Math.Max(root.Height, root.GetPreferredSize(new Size(width, 0)).Height);
+        ClientSize = new Size(width, height);
     }
 }

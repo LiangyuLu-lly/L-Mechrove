@@ -213,6 +213,73 @@ namespace MechrevoLite.Mode
             return activePlan == ultimate && requestedPlan == balanced;
         }
 
+        /// <summary>
+        /// 只读：Windows 电源模式此刻是否就是 <paramref name="overlayIndex"/>（平衡计划 + 对应覆盖层）。
+        /// 模式二级自定义的守护窗口用它判断覆盖层是否被外部（厂商 GCU 的模式同步）改回。
+        /// 读不到时返回 null（不据此重写）。
+        /// </summary>
+        internal static bool? IsOverlayActive(int overlayIndex)
+        {
+            try
+            {
+                if (overlayIndex is < 0 or > 2) return null;
+                Guid target = new(overlayIndex switch
+                {
+                    0 => POWER_SILENT,
+                    2 => POWER_TURBO,
+                    _ => POWER_BALANCED,
+                });
+                if (PowerGetEffectiveOverlayScheme(out Guid actual) != 0) return null;
+                return GetActiveScheme() == new Guid(PLAN_BALANCED) && actual == target;
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("Power overlay read failed: " + ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 模式二级自定义：把 Windows 电源模式（覆盖层）设为指定档并回读确认。
+        /// 0=最佳能效 1=平衡 2=最佳性能。覆盖层只在「平衡」计划下生效，所以先切回平衡计划
+        /// （与 g-helper / 高性能电源自动同步同一做法）；当前是卓越性能计划时不动它（那是用户
+        /// 在自定义档里明确选的计划，静默改掉就是替用户做决定）。节电模式下 Windows 会忽略覆盖层。
+        /// </summary>
+        internal static PowerOverlayResult SetOverlayConfirmed(int overlayIndex)
+        {
+            try
+            {
+                if (overlayIndex is < 0 or > 2) return PowerOverlayResult.Failed;
+                if (GetBatterySaverStatus()) return PowerOverlayResult.BatterySaver;
+                Guid balancedPlan = new(PLAN_BALANCED);
+                Guid target = new(overlayIndex switch
+                {
+                    0 => POWER_SILENT,
+                    2 => POWER_TURBO,
+                    _ => POWER_BALANCED,
+                });
+                for (int attempt = 0; attempt < 3; attempt++)
+                {
+                    Guid activePlan = GetActiveScheme();
+                    if (WouldSilentlyUndo(activePlan, balancedPlan)) return PowerOverlayResult.UltimatePlanKept;
+                    uint planStatus = activePlan == balancedPlan ? 0 : PowerSetActiveScheme(IntPtr.Zero, balancedPlan);
+                    uint overlayStatus = PowerSetActiveOverlayScheme(target);
+                    uint readStatus = PowerGetEffectiveOverlayScheme(out Guid actual);
+                    bool confirmed = planStatus == 0 && overlayStatus == 0 && readStatus == 0 &&
+                        GetActiveScheme() == balancedPlan && actual == target;
+                    Logger.WriteLine($"Power overlay -> {target}: plan={planStatus} overlay={overlayStatus} read={readStatus}/{actual} confirmed={confirmed}");
+                    if (confirmed) return PowerOverlayResult.Confirmed;
+                    Thread.Sleep(100);
+                }
+                return PowerOverlayResult.Failed;
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("Power overlay apply failed: " + ex.Message);
+                return PowerOverlayResult.Failed;
+            }
+        }
+
         internal static bool ApplyMechrevoPowerModeAutomation(bool enabled, int operatingMode)
         {
             try
@@ -355,6 +422,35 @@ namespace MechrevoLite.Mode
             }
         }
 
+        /// <summary>
+        /// 电池充电状态（用于验证充电上限是否真的生效）：是否接交流电、是否正在充电、电量百分比。
+        /// 读不到时返回 null。
+        /// </summary>
+        internal static (bool OnAc, bool Charging, int Percent)? GetChargeState()
+        {
+            try
+            {
+                SystemPowerStatus sps = new SystemPowerStatus();
+                if (!GetSystemPowerStatus(sps)) return null;
+                if (sps.BatteryFlag == BatteryFlag.Unknown || (sps.BatteryFlag & BatteryFlag.NoSystemBattery) != 0) return null;
+                if (sps.BatteryLifePercent > 100) return null;
+                return (sps.ACLineStatus == ACLineStatus.Online,
+                    (sps.BatteryFlag & BatteryFlag.Charging) != 0,
+                    sps.BatteryLifePercent);
+            }
+            catch (Exception e)
+            {
+                Logger.WriteLine("Can't read battery charge state: " + e.Message);
+                return null;
+            }
+        }
+    }
 
+    internal enum PowerOverlayResult
+    {
+        Confirmed,
+        Failed,
+        BatterySaver,
+        UltimatePlanKept,
     }
 }

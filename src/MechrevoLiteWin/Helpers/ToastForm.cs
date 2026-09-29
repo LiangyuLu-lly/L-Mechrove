@@ -151,8 +151,15 @@ namespace MechrevoLite.Helpers
 
         public void RunToast(string text, ToastIcon? icon = null)
         {
+            SettingsForm host = Program.settingsForm;
+            // 后台线程来的提示只投递、不等待：同步 Invoke 在 UI 线程恰好等着这条后台工作时会互相卡死。
+            if (host.InvokeRequired)
+            {
+                host.BeginInvoke(() => RunToast(text, icon));
+                return;
+            }
 
-            Program.settingsForm.Invoke(delegate
+            host.Invoke(delegate
             {
                 //Hide();
                 timer.Stop();

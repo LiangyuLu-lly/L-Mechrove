@@ -442,7 +442,7 @@
     <value>诊断</value>
   </data>
   <data name="FooterOverlay" xml:space="preserve">
-    <value>悬浮窗</value>
+    <value>悬浮</value>
   </data>
   <data name="ExportDiagnostics" xml:space="preserve">
     <value>导出诊断包</value>
@@ -917,5 +917,272 @@
   </data>
   <data name="LightingOffOnBattery" xml:space="preserve">
     <value>离电自动关闭全部灯效</value>
+  </data>
+  <data name="ModeTuneFanBoost" xml:space="preserve">
+    <value>风扇增强</value>
+  </data>
+  <data name="BoostEnabled" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="ModeTuneRefresh" xml:space="preserve">
+    <value>屏幕刷新率</value>
+  </data>
+  <data name="BoostEfficient" xml:space="preserve">
+    <value>效率</value>
+  </data>
+  <data name="ModeTunePowerMode" xml:space="preserve">
+    <value>Windows 电源模式</value>
+  </data>
+  <data name="ModeTunePartialFailure" xml:space="preserve">
+    <value>模式自定义部分未生效：{0}</value>
+  </data>
+  <data name="BoostEfficientGuaranteed" xml:space="preserve">
+    <value>高效（保底）</value>
+  </data>
+  <data name="BoostAggressiveGuaranteed" xml:space="preserve">
+    <value>激进（保底）</value>
+  </data>
+  <data name="ModeTuneIntro" xml:space="preserve">
+    <value>以下设置在{0}运行时生效：切换到该模式、插拔电源或唤醒后自动应用，每项都会回读确认。</value>
+  </data>
+  <data name="BoostAggressive" xml:space="preserve">
+    <value>激进</value>
+  </data>
+  <data name="ModeTuneNothingToApply" xml:space="preserve">
+    <value>未设置覆盖项，使用该模式的默认行为。</value>
+  </data>
+  <data name="BoostDisabled" xml:space="preserve">
+    <value>禁用</value>
+  </data>
+  <data name="BoostEfficientAggressive" xml:space="preserve">
+    <value>高效激进</value>
+  </data>
+  <data name="ModeTuneApplyNow" xml:space="preserve">
+    <value>立即应用</value>
+  </data>
+  <data name="ModeTunePowerBalanced" xml:space="preserve">
+    <value>平衡</value>
+  </data>
+  <data name="ModeTuneActiveHint" xml:space="preserve">
+    <value>该模式正在运行，改动会立即应用。</value>
+  </data>
+  <data name="ModeTuneBatterySaver" xml:space="preserve">
+    <value>节电模式下不可用</value>
+  </data>
+  <data name="ModeTuneOff" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="ModeTuneUnchanged" xml:space="preserve">
+    <value>不改变</value>
+  </data>
+  <data name="ModeTunePending" xml:space="preserve">
+    <value>已保存，切换到{0}时自动生效。</value>
+  </data>
+  <data name="ModeTuneTurboOc" xml:space="preserve">
+    <value>显卡自动超频（官方 +105/+500 MHz）</value>
+  </data>
+  <data name="ModeTuneUltimatePlan" xml:space="preserve">
+    <value>卓越性能计划下保持不变</value>
+  </data>
+  <data name="ModeTunePowerPerformance" xml:space="preserve">
+    <value>最佳性能</value>
+  </data>
+  <data name="ModeTuneTurboOcFailed" xml:space="preserve">
+    <value>显卡自动超频设置未确认。</value>
+  </data>
+  <data name="ModeTuneOn" xml:space="preserve">
+    <value>开启</value>
+  </data>
+  <data name="ModeTuneHzUnavailable" xml:space="preserve">
+    <value>屏幕不支持该刷新率</value>
+  </data>
+  <data name="ModeTuneAutoHzOn" xml:space="preserve">
+    <value>已开启自动刷新率</value>
+  </data>
+  <data name="ModeTunePowerEfficiency" xml:space="preserve">
+    <value>最佳能效</value>
+  </data>
+  <data name="ModeTuneApplying" xml:space="preserve">
+    <value>正在应用…</value>
+  </data>
+  <data name="ModeTuneReset" xml:space="preserve">
+    <value>恢复默认</value>
+  </data>
+  <data name="ModeTuneNotConfirmed" xml:space="preserve">
+    <value>未确认</value>
+  </data>
+  <data name="ModeTuneNoConnection" xml:space="preserve">
+    <value>GCU 未连接，暂时无法应用。</value>
+  </data>
+  <data name="ModeTuneCpuBoost" xml:space="preserve">
+    <value>处理器睿频</value>
+  </data>
+  <data name="ChargeLimitWriteFailed" xml:space="preserve">
+    <value>充电上限设置失败，已保持原值。</value>
+  </data>
+  <data name="ChargeLimitNoDriver" xml:space="preserve">
+    <value>未找到厂商 EC 驱动，无法设置充电上限。</value>
+  </data>
+  <data name="ChargeLimitVerified" xml:space="preserve">
+    <value>已在本机确认生效：插电时电量到达上限即停止充电。</value>
+  </data>
+  <data name="ChargeLimitNone" xml:space="preserve">
+    <value>未限制：电池会充到 100%。</value>
+  </data>
+  <data name="ChargeLimitPending" xml:space="preserve">
+    <value>已写入。插电且电量到达上限后会自动确认是否生效。</value>
+  </data>
+  <data name="ChargeLimitIneffective" xml:space="preserve">
+    <value>本机的 EC 充电阈值不能停止充电（到达上限后仍在充电），已恢复满充并关闭此功能。</value>
+  </data>
+  <data name="DeepSleepOffRestart" xml:space="preserve">
+    <value>深度睡眠已关闭，重启后生效。</value>
+  </data>
+  <data name="ColorCalibrationFailed" xml:space="preserve">
+    <value>屏幕校色未生效，已保持原档位。</value>
+  </data>
+  <data name="LightEffectFailed" xml:space="preserve">
+    <value>灯效未被设备确认，已保持原灯效。</value>
+  </data>
+  <data name="GpuModeSwitchFailed" xml:space="preserve">
+    <value>切换到{0}未被 GCU 服务确认。</value>
+  </data>
+  <data name="KeyboardHidNotReady" xml:space="preserve">
+    <value>键盘灯控制器暂未就绪，灯效已保存，连接后自动应用。</value>
+  </data>
+  <data name="RestoreConfirmed" xml:space="preserve">
+    <value>已恢复默认，并已回读确认。</value>
+  </data>
+  <data name="GcuNotConnectedAction" xml:space="preserve">
+    <value>GCU 服务未连接，本次操作未执行。</value>
+  </data>
+  <data name="RestoreNotConfirmed" xml:space="preserve">
+    <value>恢复命令已发送，但没有收到新的状态回读。</value>
+  </data>
+  <data name="DeepSleepFailed" xml:space="preserve">
+    <value>深度睡眠设置未能下发到 GCU 服务，未做任何改动。</value>
+  </data>
+  <data name="LightPowerFailed" xml:space="preserve">
+    <value>灯光开关未被设备确认。</value>
+  </data>
+  <data name="SettingNotApplied" xml:space="preserve">
+    <value>设备没有确认这项改动，已恢复原状态。</value>
+  </data>
+  <data name="DeepSleepOnRestart" xml:space="preserve">
+    <value>深度睡眠已开启，重启后生效。</value>
+  </data>
+  <data name="ProfileNameLabel" xml:space="preserve">
+    <value>档位名称</value>
+  </data>
+  <data name="ProfileNameSaved" xml:space="preserve">
+    <value>档位名称已保存并回读确认。</value>
+  </data>
+  <data name="ProfileNameSave" xml:space="preserve">
+    <value>命名</value>
+  </data>
+  <data name="ProfileNameNotConfirmed" xml:space="preserve">
+    <value>GCU 服务没有确认新的档位名称。</value>
+  </data>
+  <data name="ProfileNameNeedsCustom" xml:space="preserve">
+    <value>请先切换到该自定义档：名称作用于正在运行的档位。</value>
+  </data>
+  <data name="PerfEditorTitle" xml:space="preserve">
+    <value>性能模式</value>
+  </data>
+  <data name="PerfModeLabel" xml:space="preserve">
+    <value>模式</value>
+  </data>
+  <data name="PerfModeNew" xml:space="preserve">
+    <value>新建</value>
+  </data>
+  <data name="PerfModeRename" xml:space="preserve">
+    <value>重命名</value>
+  </data>
+  <data name="PerfModeDelete" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="PerfModeNameSave" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="PerfModeNameCancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="PerfModeDeletePrompt" xml:space="preserve">
+    <value>删除「{0}」？该模式的所有参数都会被清除。</value>
+  </data>
+  <data name="PerfModeKeepOneCustom" xml:space="preserve">
+    <value>至少要保留一个自定义模式。</value>
+  </data>
+  <data name="PerfModeLimitReached" xml:space="preserve">
+    <value>自定义模式已达上限（{0} 个）。</value>
+  </data>
+  <data name="PerfModeCustomized" xml:space="preserve">
+    <value>{0} · 已自定义</value>
+  </data>
+  <data name="PerfModeHintVendor" xml:space="preserve">
+    <value>官方默认参数。修改功耗墙、显卡功率或风扇曲线后，该模式会改由固件自定义档承载（厂商屏显将显示为自定义）。</value>
+  </data>
+  <data name="PerfModeHintEmulated" xml:space="preserve">
+    <value>已自定义：由固件自定义档 {0} 承载，厂商屏显显示为自定义；「恢复出厂」即回到官方原样。</value>
+  </data>
+  <data name="PerfModeHintCustom" xml:space="preserve">
+    <value>由固件自定义档 {0} 承载。</value>
+  </data>
+  <data name="PerfModeHintCustomUnassigned" xml:space="preserve">
+    <value>切换到该模式时分配固件自定义档。</value>
+  </data>
+  <data name="PerfModeSwitched" xml:space="preserve">
+    <value>已切换到「{0}」</value>
+  </data>
+  <data name="PerfModeOutcome" xml:space="preserve">
+    <value>已生效 {0} 项 · 已下发待验证 {1} 项 · 失败 {2} 项</value>
+  </data>
+  <data name="PerfModeOutcomeFailedItems" xml:space="preserve">
+    <value>未生效：{0}</value>
+  </data>
+  <data name="PerfModeSavedInactive" xml:space="preserve">
+    <value>已保存，切换到该模式时生效。</value>
+  </data>
+  <data name="PerfModeRestore" xml:space="preserve">
+    <value>恢复出厂</value>
+  </data>
+  <data name="PerfModeRestorePrompt" xml:space="preserve">
+    <value>把「{0}」恢复为出厂参数？</value>
+  </data>
+  <data name="PerfModeSwitchPartial" xml:space="preserve">
+    <value>已切换，但部分参数未生效：{0}</value>
+  </data>
+  <data name="PerfModeEditorMenu" xml:space="preserve">
+    <value>性能模式设置…</value>
+  </data>
+  <data name="PerfModeFanCurveNeedsSlot" xml:space="preserve">
+    <value>风扇曲线只在固件自定义档里生效，正在把「{0}」转到自定义档…</value>
+  </data>
+  <data name="PerfStepSwitch" xml:space="preserve">
+    <value>模式切换</value>
+  </data>
+  <data name="PerfModeSegmentEmulated" xml:space="preserve">
+    <value>{0}（已自定义，由固件自定义档承载）</value>
+  </data>
+  <data name="PerfModeNameTooLong" xml:space="preserve">
+    <value>名称最多 {0} 个字符。</value>
+  </data>
+  <data name="PerfModeDeleted" xml:space="preserve">
+    <value>已删除「{0}」。</value>
+  </data>
+  <data name="PerfModeCreated" xml:space="preserve">
+    <value>已从「{1}」新建「{0}」。</value>
+  </data>
+  <data name="PerfModeRestoreDone" xml:space="preserve">
+    <value>「{0}」已恢复出厂参数。</value>
+  </data>
+  <data name="PerfModeRestoreFailed" xml:space="preserve">
+    <value>「{0}」的恢复没有得到确认。</value>
+  </data>
+  <data name="PerfModeOcArmed" xml:space="preserve">
+    <value>已开启，设置频率偏移后生效。</value>
+  </data>
+  <data name="PerfModeNoSlotSeed" xml:space="preserve">
+    <value>读不到该模式的厂商出厂参数，无法转到自定义档。</value>
   </data>
 </root>

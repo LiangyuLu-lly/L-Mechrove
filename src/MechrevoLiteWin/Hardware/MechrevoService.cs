@@ -67,6 +67,7 @@ public class MechrevoService
     // 滑条防抖的 SetCustomDetail 不得取消在飞的 SwitchCustomProfile。
     CancellationTokenSource? _modeSwitchCts;
     CancellationTokenSource? _customProfileSwitchCts;
+    int _customProfileSwitchSequence;   // 每次 SwitchCustomProfile 开始 +1：重发前判断是否已被更新的切换取代
     CancellationTokenSource? _customDetailCts;
     CancellationTokenSource? _gpuSwitchCts;
 
@@ -207,7 +208,7 @@ public class MechrevoService
                 ModeChanged?.Invoke(mode);
                 if (mode == ModeTurbo)
                     await _hw.RepairPathologicalTurboFanCurveAsync().ConfigureAwait(false);
-                if (ShouldApplyTurboGpuOverclockDefaultsOnModeSwitch(
+                if (MechrevoLite.Mode.PerfModeService.TurboAutoOcEnabled() && ShouldApplyTurboGpuOverclockDefaultsOnModeSwitch(
                     mode, _hw.Capabilities.SilentTurboAvailability == FeatureAvailability.Supported))
                     await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
                 return true;
@@ -234,7 +235,7 @@ public class MechrevoService
             // 硬件那边的超频参数不复位。
             var (fanPayload, overclockPayload) = MechrevoHw.BuildModeSwitchPayloads(
                 action, expectedOperatingMode,
-                mode == ModeCustom ? Math.Clamp(_hw.CustomProfileIndex, 0, 3) : 0,
+                mode == ModeCustom ? Math.Clamp(_hw.CustomProfileIndex, 0, MechrevoLite.Mode.FirmwareSlotPlanner.MaxSlotCount - 1) : 0,
                 mode == ModeCustom);
             // 发布失败必须解除过期包过滤窗口，否则这 8 秒内一切真实模式上报
             // （含用户按厂商 Fn 热键、GCU 自己回滚）都会被静默丢弃，UI 会一直显示
@@ -290,7 +291,9 @@ public class MechrevoService
             await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" }).ConfigureAwait(false);
             if (mode == ModeTurbo)
                 await _hw.RepairPathologicalTurboFanCurveAsync().ConfigureAwait(false);
-            if (ShouldApplyTurboGpuOverclockDefaultsOnModeSwitch(
+            // 官方狂暴自动超频只在用户没自定义过狂暴的显卡超频时下发；
+            // 自定义过的由 PerfModeService 的下发计划在切换之后覆盖。
+            if (MechrevoLite.Mode.PerfModeService.TurboAutoOcEnabled() && ShouldApplyTurboGpuOverclockDefaultsOnModeSwitch(
                 mode, _hw.Capabilities.SilentTurboAvailability == FeatureAvailability.Supported))
                 await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
             return true;
@@ -313,9 +316,28 @@ public class MechrevoService
         }
     }
 
+    /// <summary>
+    /// 用户发起的自定义档切换：<see cref="SwitchCustomProfile"/> 未确认时重发一次（同一条命令，幂等）。
+    /// GCU 刚处理完另一次模式切换时会丢掉这条命令（真机 2026-09-28：平衡 → 自定义，1.15 s 内模式
+    /// 没变，之后也没再变，用户再点一次才切过去；另一次是已进自定义但仍停在旧档）。这次请求已被
+    /// 更新的切换取代、或 GCU 已断开时不重发。
+    /// </summary>
+    public async Task<bool> SwitchCustomProfileWithResend(int index)
+    {
+        int before = Volatile.Read(ref _customProfileSwitchSequence);
+        bool confirmed = await SwitchCustomProfile(index).ConfigureAwait(false);
+        if (confirmed) return true;
+        // 本次调用只会 +1；更多说明期间有更新的切换开始了，那次负责最终结果。
+        if (Volatile.Read(ref _customProfileSwitchSequence) != before + 1) return false;
+        if (_hw is not { IsConnected: true }) return false;
+        Logger.WriteLine($"SwitchCustomProfile({index}) resend: GCU reports mode={_hw.OperatingMode} profile={_hw.CustomProfileIndex}");
+        return await SwitchCustomProfile(index).ConfigureAwait(false);
+    }
+
     /// <summary>切换自定义性能档（原版序列：OPERATING_CUSTOM_MODE + LCHWOC IsCustomRun + 刷新曲线设置 + 回读）。</summary>
     public async Task<bool> SwitchCustomProfile(int index)
     {
+        Interlocked.Increment(ref _customProfileSwitchSequence);
         var requestCts = new CancellationTokenSource();
         CancellationTokenSource? previous = Interlocked.Exchange(ref _customProfileSwitchCts, requestCts);
         previous?.Cancel();
@@ -326,7 +348,8 @@ public class MechrevoService
             lockTaken = await AcquireSwitchLockAsync($"SwitchCustomProfile({index})", requestCts.Token).ConfigureAwait(false);
             if (!lockTaken) return false;
             requestCts.Token.ThrowIfCancellationRequested();
-            if (index is < 0 or > 3) return false;
+            // 固件有 5 个自定义档（Mode4_Profile1..5；CustomId==9 的机型 3 个，由调用方按机型限制）。
+            if (index < 0 || index >= MechrevoLite.Mode.FirmwareSlotPlanner.MaxSlotCount) return false;
             if (_hw is not { IsConnected: true })
             {
                 Logger.WriteLine("SwitchCustomProfile: GCU 未连接");
@@ -688,6 +711,69 @@ public class MechrevoService
     }
 
     /// <summary>
+    /// 狂暴模式「显卡自动超频」开关（官方主页 Turbo GPU OC 开关）：开 = 下发官方 +105/+500，
+    /// 关 = 偏移归零并关掉超频总闸。
+    /// </summary>
+    internal Task<bool> ApplyTurboGpuOverclockPreference(bool enabled) => enabled
+        ? ApplyGcuGpuOverclock(true, MechrevoHw.TurboGpuCoreOffsetMhz, MechrevoHw.TurboGpuMemoryOffsetMhz)
+        : ApplyGcuGpuOverclock(false, 0, 0);
+
+    /// <summary>
+    /// 内置模式的显卡超频：只走 GCU（<c>SET_OPERATING_MODE_DETAIL</c>，逐字段一包）——
+    /// 非自定义模式下直连 NVAPI 被挂起，GCU 会把偏移写进当前模式的档位并自己应用
+    /// （官方狂暴自动超频就是这条路）。关 = 偏移归零并关掉总闸。
+    /// 有 NVIDIA 驱动后端时以驱动回读为准（GCU 回显不代表 P-state 已变）；没有驱动后端时
+    /// 只能以 GCU 状态帧里的偏移回显为准。
+    /// </summary>
+    internal async Task<bool> ApplyGcuGpuOverclock(bool enabled, int core, int memory)
+    {
+        if (_hw is not { IsConnected: true }) return false;
+        if (!_hw.SupportsGpuOverclock && !_hw.Capabilities.OverclockSettings) return false;
+        if (!enabled) { core = 0; memory = 0; }
+        try
+        {
+            (string Key, string Value)[] fields = enabled
+                ? new[]
+                {
+                    ("OverClockingSwitch", "1"),
+                    ("GpuCoreClockOffsetOC", core.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                    ("GpuMemoryClockOffsetOC", memory.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                }
+                : new[]
+                {
+                    ("GpuCoreClockOffsetOC", "0"),
+                    ("GpuMemoryClockOffsetOC", "0"),
+                    ("OverClockingSwitch", "0"),
+                };
+            for (int i = 0; i < fields.Length; i++)
+            {
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
+                {
+                    ["Action"] = "SET_OPERATING_MODE_DETAIL",
+                    [fields[i].Key] = fields[i].Value,
+                }).ConfigureAwait(false);
+                if (i + 1 < fields.Length) await Task.Delay(120).ConfigureAwait(false);
+            }
+
+            bool Matches() => _hw.DirectGpuOverclockBackendPresent
+                ? _hw.DriverGpuOverclockFieldMatches("GpuCoreClockOffsetOC", core)
+                  && _hw.DriverGpuOverclockFieldMatches("GpuMemoryClockOffsetOC", memory)
+                : _hw.GpuCoreClockOffset == core && _hw.GpuMemClockOffset == memory;
+
+            if (Matches()) return true;
+            await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            bool confirmed = await _hw.WaitForStateAsync(Matches, TimeSpan.FromMilliseconds(6000)).ConfigureAwait(false);
+            Logger.WriteLine($"ApplyGcuGpuOverclock({enabled}) core={core} memory={memory} confirmed={confirmed}");
+            return confirmed;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("ApplyGcuGpuOverclock fail: " + ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 总闸类字段：必须在同批的数值字段之前下发，否则服务端会丢掉被关着的那一项的值。
     /// 除了 *Switch 后缀，还有 FanSwitchSpeedEnabled 这种以 Enabled 结尾的写法。
     /// </summary>
@@ -992,13 +1078,27 @@ public class MechrevoService
     };
 
     /// <summary>设置当前自定义档名称（服务端 OSD 显示名，原版 SET_CUSTOM_PROFILE_OSD_STRING）。</summary>
+    internal const int CustomProfileNameMaxLength = 12;
+
     public async Task<bool> SetCustomProfileName(string name)
     {
         try
         {
             if (_hw is not { IsConnected: true }) return false;
+            name = (name ?? "").Trim();
+            if (name.Length == 0 || name.Length > CustomProfileNameMaxLength) return false;
+            // 名字作用于「当前运行的自定义档」：不在自定义模式时服务端没有目标档可改。
+            if (CurrentMode != ModeCustom) return false;
             await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "SET_CUSTOM_PROFILE_OSD_STRING", ["ProfileName"] = name });
-            return true;
+            // 回读：Fan/Status 的 ProfileName。
+            bool confirmed = await _hw.WaitForStateAsync(() => _hw.ProfileName == name, TimeSpan.FromMilliseconds(300));
+            if (!confirmed)
+            {
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+                confirmed = await _hw.WaitForStateAsync(() => _hw.ProfileName == name, TimeSpan.FromMilliseconds(1500));
+            }
+            Logger.WriteLine($"SetCustomProfileName({name}) confirmed={confirmed}");
+            return confirmed;
         }
         catch (Exception ex) { Logger.WriteLine("SetCustomProfileName fail: " + ex.Message); return false; }
     }
@@ -2340,6 +2440,31 @@ public class MechrevoService
     }
 
     /// <summary>深度睡眠开关；secs&gt;0 时携带定时（900-1800s），仅开启状态生效。</summary>
+    /// <summary>
+    /// 深度睡眠的真实结果。服务端对这项的回读要等重启才更新（真机实测），所以「命令已送达但
+    /// 暂无回读」是正常结果，必须和「命令根本没发出去」区分开——后者不能提示「重启后生效」。
+    /// </summary>
+    public enum DeepSleepResult { Failed, SentPendingRestart, Confirmed }
+
+    public async Task<DeepSleepResult> SendDeepSleepAsync(bool on)
+    {
+        if (_hw is not { IsConnected: true } || !_hw.DeepSleepSeen) return DeepSleepResult.Failed;
+        try
+        {
+            await _hw.Publish(MqttTopics.SettingControl,
+                new Dictionary<string, object> { ["Action"] = on ? "DEEPSLEEP_ON" : "DEEPSLEEP_OFF" }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("SendDeepSleep publish failed: " + ex.Message);
+            return DeepSleepResult.Failed;
+        }
+        bool confirmed = await ConfirmSettingAsync(() =>
+            _hw.QuickSwitches.TryGetValue("deepsleep", out bool actual) && actual == on).ConfigureAwait(false);
+        Logger.WriteLine($"SendDeepSleep({on}) confirmed={confirmed}");
+        return confirmed ? DeepSleepResult.Confirmed : DeepSleepResult.SentPendingRestart;
+    }
+
     public async Task<bool> SwitchDeepSleep(bool on, int secs = 0)
     {
         try
@@ -2366,7 +2491,7 @@ public class MechrevoService
             if (_hw is not { IsConnected: true } || _hw.Capabilities.SilentTurboAvailability != FeatureAvailability.Supported) return false;
             if (IsSilentTurboActive == silent)
             {
-                if (ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
+                if (MechrevoLite.Mode.PerfModeService.TurboAutoOcEnabled() && ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
                     await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
                 return true;
             }
@@ -2382,7 +2507,7 @@ public class MechrevoService
                 if (IsSilentTurboActive == silent)
                 {
                     Logger.WriteLine($"SwitchTurboSubMode(silent={silent}) confirmed");
-                    if (ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
+                    if (MechrevoLite.Mode.PerfModeService.TurboAutoOcEnabled() && ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
                         await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
                     return true;
                 }

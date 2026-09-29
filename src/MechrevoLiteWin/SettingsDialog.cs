@@ -207,7 +207,10 @@ public sealed class SettingsDialog : UI.RForm
 
         int needW = content.Padding.Horizontal + RequiredRowWidth(content);
         int parentCap = UI.ResponsiveLayout.LogicalToDevice(this, SettingsForm.CompactDashboardLogicalClientSize.Width);
-        int targetW = Math.Min(Math.Max(needW, 320), Math.Min(maxW, parentCap));
+        // 下限按逻辑像素缩放：旧的 320 是设备像素，175% 屏上只相当于 183 逻辑 px，
+        // 弹窗被压成一条、日间/夜间只剩一个字（真机与审计截图一致）。
+        int minW = UI.ResponsiveLayout.LogicalToDevice(this, 300);
+        int targetW = Math.Min(Math.Max(needW, minW), Math.Min(maxW, parentCap));
         int targetH = Math.Min(content.Height, maxH);
         if (ClientSize.Width == targetW && ClientSize.Height == targetH) return;
         ClientSize = new Size(targetW, targetH);

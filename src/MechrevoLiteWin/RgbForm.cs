@@ -58,7 +58,9 @@ public class RgbForm : RForm
         _lblStatus.Text = text;
         bool show = text.Length > 0;
         _lblStatus.Visible = show;
-        _statusRowStyle.Height = show ? D(25) : 0;
+        // 行是 AutoSize：可见时按字体实测高占行，隐藏时 0 高。绝对行高不随审计/DPI 缩放
+        // （RowStyle 不参与 form.Scale），100% 视口下曾只剩 9px、文字被裁。
+        if (IsHandleCreated) _updateClientHeight?.Invoke();
     }
 
     public RgbForm(KeyboardRgb rgb)
@@ -83,6 +85,9 @@ public class RgbForm : RForm
             Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right,
             ColumnCount = 2,
             Padding = new Padding(D(12)),
+            // Anchor 后设会覆盖 Dock（表实际是锚定布局）：锚定子控件的外边距会计入滚动面板的
+            // 首选高，默认 3px 让窗口高度（= 表高）比内容所需少 3px。外边距清零，两者一致。
+            Margin = Padding.Empty,
             BackColor = UiVisualStyle.Window,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -118,15 +123,14 @@ public class RgbForm : RForm
         else BuildHidParams();
 
         // ---- 状态（只在有事可说时占行：SetStatus 把行高在 0 与 D(25) 间切换）----
-        _statusRowStyle = new RowStyle(SizeType.Absolute, 0);
+        _statusRowStyle = new RowStyle(SizeType.AutoSize);
         table.RowStyles.Add(_statusRowStyle);
         _lblStatus = new Label
         {
-            AutoSize = false,
+            AutoSize = true,
             TextAlign = ContentAlignment.MiddleLeft,
-            Dock = DockStyle.Fill,
             ForeColor = UiVisualStyle.Muted,
-            AutoEllipsis = true,
+            Margin = new Padding(0, D(4), 0, D(4)),
             Visible = false,
         };
         SpanRow(_lblStatus);

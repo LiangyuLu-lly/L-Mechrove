@@ -80,7 +80,26 @@ public class SettingsLayoutTests
     public void FixedWidthDashboardRowsUseFractionsThatCannotCollapseTrailingControls()
     {
         Assert.Equal((26F, 60F, 14F), SettingsForm.BrightnessColumnPercentages);
-        Assert.Equal((60F, 20F, 20F), SettingsForm.ThemeColumnPercentages);
+        // 界面外观卡改为「标题吃剩余 + 两个按钮按文字实测宽」：百分比列在窄弹窗里把
+        // 日间/夜间压成一个字（UI 审计 buttonDayMode 需 35px、只剩 18px）。
+        Assert.Null(typeof(SettingsForm).GetField("ThemeColumnPercentages",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+    }
+
+    [Fact]
+    public void ThemeModeButtonsSizeToTheirTextAtAnyScale()
+    {
+        var panel = SettingsForm.CreateThemeModePanel(v => v * 2, _ => { }, out Button day, out Button night);
+        using (panel)
+        {
+            Assert.True(day.AutoSize);
+            Assert.True(night.AutoSize);
+            Assert.True(day.MinimumSize.Width >= 128);
+            var layout = Assert.IsAssignableFrom<TableLayoutPanel>(panel.Controls[0]);
+            Assert.Equal(SizeType.Percent, layout.ColumnStyles[0].SizeType);
+            Assert.Equal(SizeType.AutoSize, layout.ColumnStyles[1].SizeType);
+            Assert.Equal(SizeType.AutoSize, layout.ColumnStyles[2].SizeType);
+        }
     }
 
     [Fact]

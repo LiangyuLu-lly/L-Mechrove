@@ -33,21 +33,21 @@ public class ChargeLimitN15Tests
     }
 
     [Fact]
-    public void AServiceServedMachineIsNotAChargeLimitCapability()
+    public void AServiceServedMachineOffersTheLimitOnlyWithTheVendorDriver()
     {
-        // Profile lag must not open this channel: there is no charge-limit capability bit,
-        // and a register echo is not proof these addresses control charging.
+        // 服务在服务本机只说明身份可识别；能不能写还要厂商 EC 驱动在。生效与否由充电证据决定。
         SupportDecision served = SupportDecision.Supported("PH6TRX1");
-
-        Assert.False(EcChargeLimit.IsSupportedMachine(served));
-        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
+        using (ChargeLimitGatingTests.Driver(present: true))
+            Assert.True(EcChargeLimit.IsSupportedMachine(served));
+        using (ChargeLimitGatingTests.Driver(present: false))
+            Assert.False(EcChargeLimit.IsSupportedMachine(served));
     }
 
     [Fact]
     public void AnUnservedMachineStillCannotSetTheChargeLimit()
     {
         SupportDecision unserved = SupportDecision.NotInSet("GK7NXXR");
-
+        using var _ = ChargeLimitGatingTests.Driver(present: true);
         Assert.False(EcChargeLimit.IsSupportedMachine(unserved));
     }
 }

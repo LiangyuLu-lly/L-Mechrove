@@ -167,8 +167,11 @@ public class TrayContextMenuCapabilityTests
         Assert.DoesNotContain("CanOfferGpuModeSwitch ?? true", source, StringComparison.Ordinal);
         Assert.Contains("CanOfferIgpuOnly", body, StringComparison.Ordinal);
         Assert.Contains("Properties.Strings.TrayActionFailed", body, StringComparison.Ordinal);
-        Assert.Contains("Properties.Strings.PerfModeSwitchFailed", body, StringComparison.Ordinal);
-        Assert.Contains("Properties.Strings.CustomProfilePlanUnconfirmed", body, StringComparison.Ordinal);
+        // 托盘切模式与主界面同一入口（编排层），失败提示也在那一处。
+        Assert.Contains("ActivatePerfModeAsync(", body, StringComparison.Ordinal);
+        Assert.Contains("Properties.Strings.PerfModeSwitchFailed",
+            GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Mode", "ModeControl.cs"), StringComparison.Ordinal);
+        Assert.DoesNotContain("SwitchCustomProfileWithResend", body, StringComparison.Ordinal);
         Assert.Contains("Properties.Strings.QuickSwitchFailed", source, StringComparison.Ordinal);
         Assert.Contains("Properties.Strings.StartupTaskFailed", source, StringComparison.Ordinal);
         Assert.Equal("托盘操作失败。", ZhUi("TrayActionFailed"));

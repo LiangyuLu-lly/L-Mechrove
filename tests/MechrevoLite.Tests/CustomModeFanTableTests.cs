@@ -144,7 +144,7 @@ public class CustomModeFanTableTests
         using var form = new CustomModeForm();
         Label status = StatusOf(form);
 
-        Task<bool> opening = form.ActivateProfileAsync(0);
+        Task<bool> opening = form.ActivateModeAsync("custom1");
         Assert.True(opening.IsCompleted, "GCU 未连接时不得走宽限期空等。");
         Assert.False(await opening);
         Assert.Equal(CustomModeForm.GcuDisconnectedText, status.Text);

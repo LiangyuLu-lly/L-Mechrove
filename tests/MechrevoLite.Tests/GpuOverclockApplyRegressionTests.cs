@@ -116,7 +116,7 @@ public class GpuOverclockApplyRegressionTests
 
         Assert.Equal(150, driver.CoreOffset.Current);
         Assert.Equal(150, hardware.EffectiveGpuCoreClockOffset);
-        Assert.Equal("参数已确认", Field<Label>(form, "_status").Text);
+        Assert.Equal(Properties.Strings.ParamsConfirmed, Field<Label>(form, "_status").Text);
     }
 
     [Fact]
@@ -144,7 +144,7 @@ public class GpuOverclockApplyRegressionTests
         core.Value = 150;
         await Flush(form);
         Assert.Equal(150, driver.CoreOffset.Current);
-        Assert.Equal("参数已确认", Field<Label>(form, "_status").Text);
+        Assert.Equal(Properties.Strings.ParamsConfirmed, Field<Label>(form, "_status").Text);
     }
 
     [Fact]

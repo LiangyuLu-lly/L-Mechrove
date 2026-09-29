@@ -31,16 +31,6 @@ public class StartupAndDisplayStateTests
         Assert.Equal(expected, Program.IsStartupLaunch(action));
 
     [Theory]
-    [InlineData(0, 0, true)]
-    [InlineData(3, 3, true)]
-    [InlineData(2, 0, false)]
-    [InlineData(-1, 0, false)]
-    public void DelayedConnectionReapplyRequiresTheOriginalModeIntent(
-        int pendingMode, int selectedMode, bool expected) =>
-        Assert.Equal(expected,
-            Program.ShouldReapplyPendingPerformanceMode(pendingMode, selectedMode));
-
-    [Theory]
     [InlineData(false, false, false)]
     [InlineData(false, true, false)]
     [InlineData(true, false, true)]

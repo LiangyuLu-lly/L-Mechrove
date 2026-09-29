@@ -282,9 +282,10 @@ function Test-GcuPostInstall {
 # reported and skipped, never fatal.
 # ---------------------------------------------------------------------------
 
-# Concrete, verifiable vendor identifiers. Grounded in the app-side
-# OfficialConsoleIsolation markers and the vendor packages documented in
-# docs\hardware\README.md (GamingCenter3_Cross.UWP_5.17.*, CCU.WinUI).
+# Concrete, verifiable vendor identifiers, taken from the vendor packages
+# documented in docs\hardware\README.md (GamingCenter3_Cross.UWP_5.17.*, CCU.WinUI).
+# The app no longer isolates or restores the official console: the first-run
+# guide asks the user to uninstall it, and this installer removes it.
 $script:VendorPackageMarkers = @(
     'CCU.WinUI', 'GamingCenter3_Cross.UWP', 'GamingCenterU', 'ControlCenterU', 'GCUUI'
 )

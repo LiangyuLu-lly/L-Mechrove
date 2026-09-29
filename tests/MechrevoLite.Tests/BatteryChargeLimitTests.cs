@@ -72,20 +72,20 @@ public class BatteryChargeLimitTests
         Assert.Equal(expected, EcChargeLimit.IsSupportedLimit(percent));
 
     /// <summary>
-    /// 电池卡保持可见，这样未验证的上限不会被藏起来；滑条不得因为通道开着就启用。
+    /// 入口只由真实判据决定：本机提供（服务 + 驱动 + 未被判无效）时滑条可用，否则整行隐藏——
+    /// 不再摆一个永远禁用的死滑条；只读降级时整张电池卡隐藏。
     /// </summary>
     [Fact]
-    public void TheBatteryPanelStaysVisibleSoAnUnverifiedLimitIsNotHidden()
+    public void TheChargeLimitRowFollowsTheRealChannelAndIsNeverADeadSlider()
     {
         string source = File.ReadAllText(RepoFile(Path.Combine("src", "MechrevoLiteWin", "Settings.cs")));
         int start = source.IndexOf("void ApplyChargeLimitSliderGating", StringComparison.Ordinal);
         Assert.True(start >= 0);
-        string body = source[start..Math.Min(source.Length, start + 1200)];
+        string body = source[start..Math.Min(source.Length, start + 1600)];
         Assert.Contains("EcChargeLimit.IsAvailableOnThisMachine()", body, StringComparison.Ordinal);
-        Assert.Contains("EcChargeLimit.ReadbackProvesChargingStopped", body, StringComparison.Ordinal);
-        Assert.Contains("sliderBattery.Enabled = confirmed", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("sliderBattery.Enabled = available", body, StringComparison.Ordinal);
-        Assert.Contains("panelBattery.Visible = !unsupportedModel || Program.UiAuditMode", body, StringComparison.Ordinal);
+        Assert.Contains("sliderBattery.Enabled = channel", body, StringComparison.Ordinal);
+        Assert.Contains("row.Visible = channel", body, StringComparison.Ordinal);
+        Assert.Contains("panelBattery.Visible = !unsupportedModel || audit", body, StringComparison.Ordinal);
         Assert.DoesNotContain("panelBattery.Visible = true", body, StringComparison.Ordinal);
     }
 
@@ -146,12 +146,11 @@ public class BatteryChargeLimitTests
             AppConfig.Remove("ec_charge_limit");
             var supported = new SupportDecision(true, SupportReason.Ok, "PH4TRX1");
             var unparsable = SupportDecision.Unparsable();
+            using var driver = ChargeLimitGatingTests.Driver(present: true);
 
-            Assert.False(
-                EcChargeLimit.IsSupportedMachine(supported),
-                "service-served is not proof 0x7B9/0x7D0 control charging; the channel stays closed.");
+            Assert.True(EcChargeLimit.IsSupportedMachine(supported),
+                "served + vendor driver: offered; whether it controls charging is proven by ChargeLimitEvidence.");
             Assert.False(EcChargeLimit.IsSupportedMachine(unparsable));
-            Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
 
             AppConfig.Set("ec_charge_limit", "1");
             Assert.True(EcChargeLimit.IsSupportedMachine(unparsable));

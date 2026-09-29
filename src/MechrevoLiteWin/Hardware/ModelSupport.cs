@@ -52,6 +52,10 @@ public static class ModelSupport
     public static SupportDecision Determine(IEcReadTransport transport, bool serviceServed) =>
         Determine(ModelRegistry.Read(transport), RegistryData.Value.PlatformCodeSet, serviceServed);
 
+    /// <summary>已读出的身份 → 判定（运行时缓存身份后走这里，不再碰 EC）。</summary>
+    public static SupportDecision Determine(ModelIdentity identity, bool serviceServed) =>
+        Determine(identity, RegistryData.Value.PlatformCodeSet, serviceServed);
+
     /// <summary>
     /// 佐证重载。<paramref name="corroboratingBiosProjectId"/> 只应写日志/诊断，**被本判定刻意忽略**：
     /// 保留这个调用形状是为了让"佐证源与 EC 身份不一致时判定不变"这条规则可被测试锁定。

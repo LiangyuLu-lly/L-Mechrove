@@ -49,9 +49,6 @@ namespace MechrevoLite.Mode
         public static bool IsPawnInstalled()   => RyzenSmuService.IsPawnInstalled();
 
         static System.Timers.Timer? reapplyTimer;
-        static System.Timers.Timer modeToggleTimer = default!;
-        static CancellationTokenSource? _modeCts = new();
-        static Task _modeTask = Task.CompletedTask;
 
         public ModeControl()
         {
@@ -92,77 +89,17 @@ namespace MechrevoLite.Mode
 
         public void WaitForApply()
         {
-            // 唯一调用点是 GPUModeControl.SetGPUEco 的 Task.Run（后台线程），这里的同步等待不会阻塞 UI。
-            try { _modeTask.Wait(5000); } catch { }
+            // 性能模式的切换与下发已全部交给 PerfModeService；这里不再有自己的在途任务。
         }
 
-        public void AutoPerformance(bool powerChanged = false, bool preserveActiveCustom = false)
-        {
-            int selectedMode = Modes.GetCurrent();
-            int hardwareMode = Program.service?.CurrentMode ?? -1;
-            if (ShouldPreserveCustomMode(powerChanged, Program.hw is { IsConnected: true }, selectedMode, hardwareMode, preserveActiveCustom))
-            {
-                int hardwareProfile = Program.hw?.CustomProfileIndex ?? -1;
-                int profile = hardwareProfile is >= 0 and <= 3
-                    ? hardwareProfile
-                    : Math.Clamp(AppConfig.Get("custom_last_profile", 0), 0, 3);
-                // 文案必须说明真实触发原因。这个分支既可能由电源切换触发，也可能由
-                // 启动/唤醒/灯效重连的 preserveActiveCustom 触发；此前一律写成
-                // 「Power source changed」，而这正是用户发来排查的那份日志。
-                string reason = powerChanged ? "power source changed" : "custom mode preserved on init/wake";
-                Logger.WriteLine($"Reapplying custom profile {profile + 1} ({reason}).");
-                _ = ReapplyCustomProfileAsync(profile);
-                return;
-            }
-
-            int mode = AppConfig.Get("performance_" + Program.PerformanceKey());
-            Logger.WriteLine($"{Program.currentSource} Performance Mode: {Modes.GetName(mode == -1 ? Modes.GetCurrent() : mode)}");
-
-            if (mode != -1)
-                SetPerformanceMode(mode, powerChanged);
-            else
-                SetPerformanceMode(Modes.GetCurrent());
-        }
-
-        internal static bool ShouldPreserveCustomMode(bool powerChanged, bool connected, int selectedMode, int hardwareMode, bool preserveActiveCustom = false) =>
-            (powerChanged || preserveActiveCustom) && connected &&
-            (selectedMode == MechrevoService.ModeCustom || hardwareMode == MechrevoService.ModeCustom);
-
-        private static async Task ReapplyCustomProfileAsync(int profile)
-        {
-            try
-            {
-                MechrevoService? service = Program.service;
-                if (service is null) return;
-                bool confirmed = await service.SwitchCustomProfile(profile);
-                if (confirmed)
-                {
-                    bool powerConfirmed = WinPowerPlan.ApplyProfile(profile);
-                    Logger.WriteLine(powerConfirmed
-                        ? $"Custom profile {profile + 1} reapplied."
-                        : $"Custom profile {profile + 1} reapplied, but Windows power settings were not confirmed.");
-                }
-                else
-                {
-                    Logger.WriteLine($"Custom profile {profile + 1} was not confirmed by the service.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteLine("Custom profile power transition failed: " + ex.Message);
-            }
-        }
-
-
-        public void Toast()
-        {
-            Program.toast.RunToast(Modes.GetCurrentName(), SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Online ? ToastIcon.Charger : ToastIcon.Battery);
-        }
+        // AutoPerformance / SetPerformanceMode（g-helper 的「按供电方式切模式」与 4 档自定义重放）已删除：
+        // 启动、唤醒、插拔电源与 GCU 重连统一走 PerfModeService.ReplayAsync，
+        // 由它按用户模式（含多个自定义模式与被改过的内置模式）决定切到哪里、下发什么。
 
         internal static void NotifySwitchOutcome(bool success, bool cancelled)
         {
             if (success || cancelled) return;
-            ToastForm.ShowFailure("性能模式切换失败。");
+            ToastForm.ShowFailure(Properties.Strings.PerfModeSwitchFailed);
         }
 
         internal static void ReportApplyFault(Exception ex, int mode)
@@ -175,97 +112,6 @@ namespace MechrevoLite.Mode
             }
             Logger.WriteLine($"SetPerformanceMode failed (mode {mode}): {ex.Message}");
             NotifySwitchOutcome(success: false, cancelled: false);
-        }
-
-        public void SetPerformanceMode(int mode = -1, bool notify = false)
-        {
-
-            int oldMode = Modes.GetCurrent();
-            if (mode < 0) mode = oldMode;
-
-            if (!Modes.Exists(mode)) mode = 0;
-            Logger.WriteLine($"SetPerformanceMode(mode={mode} old={oldMode} exists={Modes.Exists(mode)})");
-
-            settings.ShowMode(mode);
-
-            Modes.SetCurrent(mode);
-
-
-            var nextCts = new CancellationTokenSource();
-            var previousCts = Interlocked.Exchange(ref _modeCts, nextCts);
-            previousCts?.Cancel();
-            if (_modeTask.IsCompleted) previousCts?.Dispose();
-            var ct = nextCts.Token;
-
-            _modeTask = Task.Run(async () =>
-            {
-                try
-                {
-                    customFans = false;
-                    customPower = 0;
-
-                    SetModeLabel();
-
-                    ct.ThrowIfCancellationRequested();
-
-                    await Program.acpi.SetPerformanceMode(AppConfig.IsManualModeRequired() ? AsusACPI.PerformanceManual : Modes.GetBase(mode));
-                    ct.ThrowIfCancellationRequested();
-
-                    SetGPUClocks();
-
-                    await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
-                    ct.ThrowIfCancellationRequested();
-                    AutoFans();
-                    await Task.Delay(TimeSpan.FromMilliseconds(Program.hw is { IsConnected: true } ? 50 : 250), ct);
-                    ct.ThrowIfCancellationRequested();
-                    await AutoPower(cancellationToken: ct);
-                    
-                    var command = AppConfig.GetModeString("mode_command");
-                    if (command is not null)
-                    {   Logger.WriteLine("Running mode command: " + command);
-                        RestrictedProcessHelper.RunAsRestrictedUser(command);
-                    }
-                }
-                catch (OperationCanceledException ex)
-                {
-                    ReportApplyFault(ex, mode);
-                }
-                catch (Exception ex)
-                {
-                    ReportApplyFault(ex, mode);
-                }
-                finally
-                {
-                    if (!ReferenceEquals(Volatile.Read(ref _modeCts), nextCts))
-                        nextCts.Dispose();
-                }
-            });
-
-            if (notify) Toast();
-
-            if (!AppConfig.Is("skip_powermode"))
-            {
-                // Windows power mode
-                if (AppConfig.GetModeString("powermode") is not null)
-                    PowerNative.SetPowerMode(AppConfig.GetModeString("powermode"));
-                else
-                    PowerNative.SetPowerMode(Modes.GetBase(mode));
-
-                if (AppConfig.IsAutoASPM()) PowerNative.SetBalancedASPM();
-            }
-
-            // CPU Boost setting override
-            if (AppConfig.GetMode("auto_boost") != -1)
-                    PowerNative.SetCPUBoost(AppConfig.GetMode("auto_boost"));
-        }
-
-
-        private void ModeToggleTimer_Elapsed(object? sender, System.Timers.ElapsedEventArgs e)
-        {
-            modeToggleTimer.Stop();
-            Logger.WriteLine($"Hotkey mode: {Modes.GetCurrent()}");
-            SetPerformanceMode();
-
         }
 
         public void AutoFans(bool force = false)
@@ -615,14 +461,9 @@ namespace MechrevoLite.Mode
 
         public void Dispose()
         {
-            var modeCts = Interlocked.Exchange(ref _modeCts, null);
-            modeCts?.Cancel();
-            if (_modeTask.IsCompleted) modeCts?.Dispose();
             reapplyTimer?.Stop();
             reapplyTimer?.Dispose();
             reapplyTimer = null;
-            modeToggleTimer?.Stop();
-            modeToggleTimer?.Dispose();
             lock (_smuLock)
             {
                 _smu?.Dispose();

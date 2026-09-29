@@ -90,6 +90,11 @@ public class MechrevoHw : IDisposable
     int _connectionGeneration;
     readonly MqttReconnectCoordinator _reconnect = new();
     volatile bool _subscriptionsReady;
+    // 会话就绪时刻与「就绪后很快又断」的连续次数。同 client id 的另一个进程（例如同机再开一份
+    // 使用 slot 4 的程序）会让 broker 按 MQTT 3.1.1 §3.1.4 互踢：每次重连都触发整轮状态重放，
+    // 旧实现 250ms 就重连，现场日志里连接代次涨到 2400+。快速断线时指数退避，稳定后清零。
+    long _sessionReadyTick;
+    int _quickDropStreak;
     long _lastTelemetryTick;
     readonly SemaphoreSlim _connectLock = new(1, 1);
     readonly SemaphoreSlim _controlLock = new(1, 1);
@@ -813,7 +818,7 @@ public class MechrevoHw : IDisposable
         "usb" => UsbChargerSeen,
         "deepsleep" => DeepSleepSeen,
         "copilot" => CopilotSeen,
-        "acrecovery" => Capabilities.AcRecovery || AcRecoverySeen,
+        "acrecovery" => !Capabilities.AcRecoveryVetoed && (Capabilities.AcRecovery || AcRecoverySeen),
         "highperf" => HighPerformanceSeen,
         "fanboost" => SupportsFanBoost,
         "lightbar" => SupportsLightbar,
@@ -973,7 +978,20 @@ public class MechrevoHw : IDisposable
     public int CpuAmdSppt { get; private set; } = -1;
     public int CpuAmdFppt { get; private set; } = -1;
     public bool AmdPowerStatusSeen { get; private set; }
-    public bool UsesAmdPowerFields => Capabilities.AmdPlatform || AmdPowerStatusSeen;
+
+    /// <summary>
+    /// Fan/Status 显式上报的平台标志 <c>IsAMDPlatform</c>（null = 帧里没有这个字段）。出现即为准：
+    /// 真机 Intel Core Ultra 9 275HX 的状态帧同时带着 <c>CPU_AmdSPL=210 / CPU_AmdSPPT=210 /
+    /// CPU_AmdFPPT=420</c> 这类占位值和 <c>IsAMDPlatform=false</c>——只看「有可用的 AMD 值」会把 Intel
+    /// 判成 AMD：自定义档显示 AMD 占位值（210/210/420 而不是真实的 PL1 145 / PL2 167）、功耗墙改发
+    /// AMD 键被 GCU 忽略。没有显式标志的老固件仍按 ItemSupport + 可用值推断。
+    /// </summary>
+    public bool? AmdPlatformReported { get; private set; }
+
+    public bool UsesAmdPowerFields => AmdPlatformReported ?? (Capabilities.AmdPlatform || AmdPowerStatusSeen);
+
+    /// <summary>温度墙等按平台区分的量程：显式标志优先，否则沿用 ItemSupport。</summary>
+    internal bool IsAmdPlatformForLimits => AmdPlatformReported ?? Capabilities.AmdPlatform;
     public int TccOffset { get; private set; } = -1; // GCU raw offset
     public int TccTarget { get; private set; } = -1; // temperature shown by the official UI
     public int Pl1Minimum { get; private set; } = -1;
@@ -1003,7 +1021,10 @@ public class MechrevoHw : IDisposable
     public int GpuMemoryOffsetMaximum { get; private set; } = -1;
 
     // ---- 自定义性能模式（Fan/Status，原版 CustomModeSettingPage 协议）----
-    public int CustomProfileIndex { get; private set; } = -1;   // 当前自定义档 0-3
+    public int CustomProfileIndex { get; private set; } = -1;   // 当前自定义档 0-4（Mode4_Profile1..5）
+
+    /// <summary>固件自定义档的最大序号（5 个档：0..4）。</summary>
+    internal const int CustomSlotMax = MechrevoLite.Mode.FirmwareSlotPlanner.MaxSlotCount - 1;
     public int GpuTgp { get; private set; } = -1;               // GPU_ConfigurableTGPTarget
     public bool GpuDbSwitch { get; private set; }               // GPU_DynamicBoostSwitch
     public int GpuDb { get; private set; } = -1;                // GPU_DynamicBoost
@@ -1057,6 +1078,8 @@ public class MechrevoHw : IDisposable
     // ---- 风扇曲线缓存（Fan/Table 主题，16 档）----
     public string CurveName { get; private set; } = "";
     public string TableName { get; private set; } = "";   // Fan/Status 的 FAN_TableName（当前模式表名，写入曲线时用）
+    /// <summary>Fan/Status 的 ProfileName：当前自定义档的 OSD 显示名。未报过为空串。</summary>
+    public string ProfileName { get; private set; } = "";
     public byte[] CpuCurveUpT { get; private set; } = new byte[16];
     public byte[] CpuCurveDuty { get; private set; } = new byte[16];
     public byte[] GpuCurveUpT { get; private set; } = new byte[16];
@@ -1108,7 +1131,17 @@ public class MechrevoHw : IDisposable
             };
             _client.DisconnectedAsync += disconnectedArgs =>
             {
+                bool wasReady = _subscriptionsReady;
                 _subscriptionsReady = false;
+                if (wasReady)
+                {
+                    long lived = Environment.TickCount64 - Volatile.Read(ref _sessionReadyTick);
+                    int streak = NextQuickDropStreak(Volatile.Read(ref _quickDropStreak), lived);
+                    Volatile.Write(ref _quickDropStreak, streak);
+                    if (streak >= 3)
+                        Logger.WriteLineIfChanged("mqtt-flap",
+                            $"MQTT 会话就绪后 {lived}ms 即断开（连续 {streak} 次）：可能有其他程序使用相同的客户端标识，重连退避 {ReconnectInitialDelayMs(streak)}ms");
+                }
                 if (!_disposed)
                 {
                     _reconnect.MarkDisconnectRequested();
@@ -1168,6 +1201,7 @@ public class MechrevoHw : IDisposable
             if (rejected.Length > 0)
                 throw new InvalidOperationException("broker 拒绝订阅: " + string.Join(", ", rejected));
             _subscriptionsReady = true;
+            Volatile.Write(ref _sessionReadyTick, Environment.TickCount64);
         }
         catch (Exception ex)
         {
@@ -1306,6 +1340,16 @@ public class MechrevoHw : IDisposable
         return currentTick - lastTelemetryTick > maximumAge.TotalMilliseconds;
     }
 
+    /// <summary>会话存活不到 10 秒就断算一次「快速断线」；存活 ≥30 秒清零，中间保持。</summary>
+    internal static int NextQuickDropStreak(int streak, long sessionLifetimeMs) =>
+        sessionLifetimeMs < 10_000 ? Math.Min(streak + 1, 16)
+        : sessionLifetimeMs >= 30_000 ? 0
+        : streak;
+
+    /// <summary>重连首次等待：正常断线 250ms；连续快速断线按 2 的幂退避，封顶 30 秒。</summary>
+    internal static int ReconnectInitialDelayMs(int quickDropStreak) =>
+        quickDropStreak <= 1 ? 250 : (int)Math.Min(30_000, 250L << Math.Min(quickDropStreak, 7));
+
     async Task ReconnectLoopAsync()
     {
         _reconnect.MarkDisconnectRequested();
@@ -1315,7 +1359,7 @@ public class MechrevoHw : IDisposable
             Volatile.Write(ref _reconnectStartedTick, Environment.TickCount64);
         try
         {
-            int retryDelayMs = 250;
+            int retryDelayMs = ReconnectInitialDelayMs(Volatile.Read(ref _quickDropStreak));
             while (_reconnect.ShouldContinue(
                        _subscriptionsReady && _client?.IsConnected == true,
                        _disposed))
@@ -1327,7 +1371,7 @@ public class MechrevoHw : IDisposable
                     if (await ConnectAsync()) return;
                 }
                 catch (Exception ex) { Logger.WriteLine("MQTT reconnect attempt failed: " + ex.Message); }
-                retryDelayMs = Math.Min(retryDelayMs * 2, 2000);
+                retryDelayMs = Math.Min(retryDelayMs * 2, Math.Max(2000, retryDelayMs));
             }
         }
         finally
@@ -2180,10 +2224,14 @@ public class MechrevoHw : IDisposable
         // Intel 机型上只要 GCU 报文里带了 CPU_AmdSPL: 0，就会被永久判成 AMD 平台，
         // 于是功耗墙改用 CpuAmdSPL/CpuAmdSPPT 键下发、被 GCU 忽略、确认永久失败。
         // 真实的功耗墙不可能是 0 或负数，所以只有「可用值」才构成平台证据。
-        bool amdPowerFields = Capabilities.AmdPlatform ||
+        // 帧里显式带了 IsAMDPlatform 就以它为准（见 AmdPlatformReported）：Intel 机型的 GCU 会同时
+        // 报出非零的 CPU_Amd* 占位值，靠「可用值」推断会误判。
+        bool? reportedAmdPlatform = FirstOptionalBool(o, "IsAMDPlatform", "IsAmdPlatform");
+        if (reportedAmdPlatform.HasValue) AmdPlatformReported = reportedAmdPlatform.Value;
+        bool amdPowerFields = AmdPlatformReported ?? (Capabilities.AmdPlatform ||
             HasUsablePowerValue(o, "CPU_AmdSPL") ||
             HasUsablePowerValue(o, "CPU_AmdSPPT") ||
-            HasUsablePowerValue(o, "CPU_AmdFPPT");
+            HasUsablePowerValue(o, "CPU_AmdFPPT"));
         if (amdPowerFields) AmdPowerStatusSeen = true;
         // 同理，只latch 可用值：0 一旦被记住就再也回不到"未知"，
         // 而 OptionalInt 的 fallback 是上一次的值（部分帧不该擦除已知值）。
@@ -2215,6 +2263,9 @@ public class MechrevoHw : IDisposable
         GpuDbMaximum = OptionalInt(o, "GPU_DynamicBoostMaximum", GpuDbMaximum);
         UpdateGpuOffsetRanges(o);
         TableName = o["FAN_TableName"]?.ToString() ?? TableName;
+        // 当前自定义档的显示名（官方 SET_CUSTOM_PROFILE_OSD_STRING 的回读；出厂为 "Mode4_Profile1" 这类内部名）。
+        if (o["ProfileName"] is JToken profileName && profileName.Type == JTokenType.String)
+            ProfileName = profileName.ToString();
         var cpi = o["CustomProfileIndex"]?.ToString();
         if (cpi is not null && int.TryParse(cpi, out int cpiV)) CustomProfileIndex = cpiV;
         // TGP 与 Dynamic Boost 的目标值同样只接受 > 0：GCU 在这两项关闭时
@@ -2231,7 +2282,7 @@ public class MechrevoHw : IDisposable
         var tj = o["TjMax"]?.ToString();
         if (tj is not null && int.TryParse(tj, out int tjV) && tjV > 0) TjMax = tjV;
         int amdTccTarget = OptionalInt(o, "CPU_AmdTccTarget", -1);
-        if (Capabilities.AmdPlatform)
+        if (IsAmdPlatformForLimits)
         {
             TccMinimum = 85;
             TccMaximum = TccRawMaximum > 0 ? TccRawMaximum : 95;
@@ -2564,7 +2615,7 @@ public class MechrevoHw : IDisposable
             : (int)ConsoleOperatingMode.Gaming;
         bool custom = mode == 3;
         var (fanPayload, overclockPayload) = BuildModeSwitchPayloads(
-            action, expectedOpMode, custom ? Math.Clamp(CustomProfileIndex, 0, 3) : 0, custom);
+            action, expectedOpMode, custom ? Math.Clamp(CustomProfileIndex, 0, CustomSlotMax) : 0, custom);
         // 先武装再发布是有意的：命令一旦上路，切换前排队的旧状态包随时可能到达。
         // 但发布失败时必须解除武装，否则这 8 秒内一切真实模式上报都会被静默丢弃，
         // UI 会显示一个从未下发成功的模式。
@@ -2834,11 +2885,18 @@ public class MechrevoHw : IDisposable
         IMqttClient? client = _client;
         if (client is null || !IsConnected) throw new MqttPublishFailedException(topic, "MQTT 未连接");
 
+        Task? publish = null;
         try
         {
-            await client.PublishStringAsync(topic, Newtonsoft.Json.JsonConvert.SerializeObject(payload), qos, false)
-                .WaitAsync(PublishTimeout)
-                .ConfigureAwait(false);
+            publish = client.PublishStringAsync(topic, Newtonsoft.Json.JsonConvert.SerializeObject(payload), qos, false);
+            await publish.WaitAsync(PublishTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            // WaitAsync 超时后内层发布仍在跑，稍后断线时它会以 MqttClientDisconnectedException 结束——
+            // 没人观察就成了终结器线程上的 UnobservedTaskException（crash.txt 里成串出现）。
+            if (publish is not null) ObserveOrphanedPublish(publish);
+            throw new MqttPublishFailedException(topic, ex.Message, ex);
         }
         catch (MqttPublishFailedException) { throw; }
         catch (Exception ex)
@@ -2849,6 +2907,13 @@ public class MechrevoHw : IDisposable
             throw new MqttPublishFailedException(topic, ex.Message, ex);
         }
     }
+
+    static void ObserveOrphanedPublish(Task publish) =>
+        publish.ContinueWith(
+            static t => Logger.WriteLine("超时后的发布最终失败（已忽略）: " + t.Exception?.GetBaseException().Message),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     /// <summary>表名 → 模式：M1*=Gaming(0), M2*=Office(1), M3*=Turbo(2)，其他（M4* 自定义等）→ -1（不推断）。</summary>
     static int TableNameToMode(string name)
@@ -3233,7 +3298,7 @@ public class MechrevoHw : IDisposable
             _elevatedGpuMemoryReadback = null;
         }
         if (!_persistDirectGpuOverclock) return;
-        int profileIndex = CustomProfileIndex is >= 0 and <= 3 ? CustomProfileIndex : 0;
+        int profileIndex = CustomProfileIndex is >= 0 and <= CustomSlotMax ? CustomProfileIndex : 0;
         AppConfig.Set(DirectGpuProfileKey("enabled", profileIndex), 0);
         AppConfig.Set(DirectGpuProfileKey("core", profileIndex), 0);
         AppConfig.Set(DirectGpuProfileKey("memory", profileIndex), 0);
@@ -3339,7 +3404,7 @@ public class MechrevoHw : IDisposable
 
     public bool RestoreDirectGpuOverclockProfile(int profileIndex)
     {
-        if (!_persistDirectGpuOverclock || profileIndex is < 0 or > 3 ||
+        if (!_persistDirectGpuOverclock || profileIndex is < 0 or > CustomSlotMax ||
             !AppConfig.Is(DirectGpuProfileKey("enabled", profileIndex)))
             return false;
         if (!EnsureDirectGpuOverclock()) return false;
@@ -3435,7 +3500,7 @@ public class MechrevoHw : IDisposable
     void SaveDirectGpuOverclockValue(string key, int value)
     {
         if (!_persistDirectGpuOverclock) return;
-        int profileIndex = CustomProfileIndex is >= 0 and <= 3 ? CustomProfileIndex : 0;
+        int profileIndex = CustomProfileIndex is >= 0 and <= CustomSlotMax ? CustomProfileIndex : 0;
         switch (key)
         {
             case "OverClockingSwitch":

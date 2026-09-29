@@ -94,9 +94,9 @@ namespace MechrevoLite
         private static System.Threading.Timer? _telemetryRecoveryTimer;
         private static long _lastTelemetryRecoveryRequest;
         private static int _lastRecoveredConnectionGeneration;
-        // SetAutoModes can run before the GCU MQTT session is ready. Keep the
-        // selected startup profile until that connection has one chance to apply it.
-        private static int _pendingStartupPerformanceMode = -1;
+        // SetAutoModes can run before the GCU MQTT session is ready. A power-source
+        // change seen while disconnected is replayed once the connection is up.
+        private static int _pendingPerfSourceSwitch;
 
         internal static string NormalizeReleaseLabel(string informationalVersion)
         {
@@ -306,6 +306,8 @@ namespace MechrevoLite
             acpi = new AsusACPI();
             hw = new MechrevoLite.Hardware.MechrevoHw();
             service = new MechrevoLite.Hardware.MechrevoService(hw);   // 同步创建，避免点击按钮 NRE/无响应
+            // 性能模式编排（含一次性的旧配置迁移）：主界面/托盘/编辑器都经它切换与改参数。
+            MechrevoLite.Mode.PerfModeService.Create(service, hw);
             hw.StateChanged += OnHardwareStateChanged;
             hw.CapabilitiesChanged += () =>
             {
@@ -343,15 +345,26 @@ namespace MechrevoLite
                 try
                 {
                     HardwareControl.AttachMechrevoHw(hw);
-                    service.ModeChanged += m =>
+                    service.ModeChanged += _ =>
                     {
-                        try
-                        {
-                            if (settingsForm is not null && !settingsForm.IsDisposed)
-                                settingsForm.BeginInvoke(() => { settingsForm.ShowMode(MechrevoLite.Hardware.MechrevoService.ToVisualMode(m)); settingsForm.SetContextMenu(); });
-                        }
-                        catch (Exception ex) { Logger.WriteLine("Mode UI refresh failed: " + ex.Message); }
+                        // 任何来源的模式变化（Fn 热键/厂商服务/我们自己的切换）都交给编排层对账：
+                        // 自己发起的切换它会忽略，外部变化映射回用户模式、必要时拉回该模式的自定义档。
+                        MechrevoLite.Mode.PerfModeService.Instance?.OnFirmwareModeChanged();
                     };
+                    if (MechrevoLite.Mode.PerfModeService.Instance is { } perfModes)
+                    {
+                        void RefreshPerfUi()
+                        {
+                            try
+                            {
+                                if (settingsForm is not null && !settingsForm.IsDisposed && settingsForm.IsHandleCreated)
+                                    settingsForm.BeginInvoke(() => { settingsForm.VisualisePerfModes(); settingsForm.RequestContextMenuRefresh(); });
+                            }
+                            catch (Exception ex) { Logger.WriteLine("Mode UI refresh failed: " + ex.Message); }
+                        }
+                        perfModes.ActiveChanged += RefreshPerfUi;
+                        perfModes.ModesChanged += RefreshPerfUi;
+                    }
                     service.GpuModeChanged += m =>
                     {
                         try
@@ -363,7 +376,7 @@ namespace MechrevoLite
                             AppConfig.Set("gpu_mode", logicalMode);
                             AppConfig.Set("gpu_auto", logicalMode == MechrevoLite.Hardware.MechrevoService.GpuAuto ? 1 : 0);
                             if (settingsForm is not null && !settingsForm.IsDisposed)
-                                settingsForm.BeginInvoke(() => { settingsForm.VisualiseGPUMode(logicalMode); settingsForm.SetContextMenu(); });
+                                settingsForm.BeginInvoke(() => { settingsForm.VisualiseGPUMode(logicalMode); settingsForm.RequestContextMenuRefresh(); });
                         }
                         catch (Exception ex) { Logger.WriteLine("GPU UI refresh failed: " + ex.Message); }
                     };
@@ -574,34 +587,18 @@ namespace MechrevoLite
                 bool lightingRestored = await RestoreLightingForGenerationAsync(generation, force: false)
                     .ConfigureAwait(false);
                 Logger.WriteLine($"灯效连接恢复结果: generation={generation}, restored={lightingRestored}");
-                int pendingPerformanceMode = Interlocked.Exchange(ref _pendingStartupPerformanceMode, -1);
-                void ReapplyPerformanceOnUiThread()
+                // 连上（首连或重连）后把用户的性能模式落地一次：固件已在该模式上时只补应用侧项，
+                // 否则切过去。插拔电源发生在断线期间时按供电方式切到上次用的模式。
+                bool pendingSourceSwitch = Interlocked.Exchange(ref _pendingPerfSourceSwitch, 0) != 0;
+                if (MechrevoLite.Mode.PerfModeService.Instance is { } perfModes)
                 {
-                    // The recovery continuation runs on a worker thread. Keep all
-                    // ModeControl/WinForms mutations on the UI thread.
-                    if (ShouldReapplyPendingPerformanceMode(pendingPerformanceMode, Modes.GetCurrent()))
+                    try
                     {
-                        Logger.WriteLine($"GCU 连接恢复后重放启动性能档: mode={pendingPerformanceMode}");
-                        modeControl.AutoPerformance(
-                            preserveActiveCustom: pendingPerformanceMode == MechrevoLite.Hardware.MechrevoService.ModeCustom);
+                        await perfModes.ReplayAsync("gcu connected", powerSourceChanged: pendingSourceSwitch, appSideOnly: false)
+                            .ConfigureAwait(false);
                     }
-                    else if (pendingPerformanceMode < 0 &&
-                        hw.OperatingMode == MechrevoLite.Hardware.MechrevoService.ModeCustom)
-                    {
-                        // A custom mode selected after startup still needs its own profile
-                        // replay, but must not overwrite a newer non-custom user choice.
-                        modeControl.AutoPerformance(preserveActiveCustom: true);
-                    }
+                    catch (Exception ex) { Logger.WriteLine("Performance mode replay after connection failed: " + ex.Message); }
                 }
-                try
-                {
-                    if (settingsForm is { IsDisposed: false } && settingsForm.IsHandleCreated &&
-                        settingsForm.InvokeRequired)
-                        settingsForm.BeginInvoke(ReapplyPerformanceOnUiThread);
-                    else
-                        ReapplyPerformanceOnUiThread();
-                }
-                catch (Exception ex) { Logger.WriteLine("Performance recovery UI dispatch failed: " + ex.Message); }
                 service.RestoreCurrentDirectGpuOverclock();
                 try
                 {
@@ -609,12 +606,19 @@ namespace MechrevoLite
                     {
                         settingsForm.BeginInvoke(() =>
                         {
-                            settingsForm.RefreshSensors();
-                            settingsForm.RefreshDeviceCapabilities();
                             if (hw.OperatingMode >= 0)
                                 settingsForm.ShowMode(hw.GHelperMode);
                             gpuControl.InitGPUMode();
-                            settingsForm.SetContextMenu();
+                            // 与 ConnectionReady / CapabilitiesChanged 发来的请求合并成一次，
+                            // 重连时不再在 UI 线程上连跑三遍能力刷新。
+                            settingsForm.RequestDeviceCapabilitiesRefresh();
+                            settingsForm.RequestContextMenuRefresh();
+                        });
+                        // 传感器读取含电池 IOCTL（最长约 1 秒），放后台；界面部分由 RefreshSensors 自己投递回 UI 线程。
+                        _ = Task.Run(() =>
+                        {
+                            try { settingsForm.RefreshSensors(); }
+                            catch (Exception ex) { Logger.WriteLine("Sensor refresh after recovery failed: " + ex.Message); }
                         });
                     }
                 }
@@ -1362,14 +1366,10 @@ namespace MechrevoLite
             lastObservedSource = detectedSource;
             Logger.WriteLine($"AutoSetting for {SystemInformation.PowerStatus.PowerLineStatus} (source={detectedSource}, changed={sourceChanged})");
 
-            if ((init || powerChanged || wakeup) &&
-                (hw is not { IsConnected: true } || service is null))
-            {
-                int configuredMode = AppConfig.Get("performance_" + PerformanceKey());
-                _pendingStartupPerformanceMode = Modes.Exists(configuredMode)
-                    ? configuredMode
-                    : Modes.GetCurrent();
-            }
+            bool perfSourceSwitch = powerChanged || sourceChanged;
+            bool perfConnected = hw is { IsConnected: true } && service is not null;
+            // 断线期间发生的插拔电源：连上后按供电方式重放（RestoreAfterHardwareConnectionAsync）。
+            if (!perfConnected && perfSourceSwitch) Interlocked.Exchange(ref _pendingPerfSourceSwitch, 1);
 
             BatteryControl.AutoBattery(init);
             if (init) InputDispatcher.InitScreenpad();
@@ -1379,10 +1379,16 @@ namespace MechrevoLite
             
             //HardwareControl.ReadSensors(true);
 
-            if (ShouldReapplyPerformanceMode(powerChanged, wakeup, sourceChanged))
-                modeControl.AutoPerformance(powerChanged || sourceChanged, preserveActiveCustom: init || wakeup);
-            else
+            // 性能模式重放：插拔电源切到该供电方式上次用的模式；纯唤醒不动模式、只把应用侧项
+            // （Windows 电源模式覆盖层按交流/电池分别保存）重新落地。未连接时由连接恢复路径接手。
+            bool appSideOnly = !ShouldReapplyPerformanceMode(powerChanged, wakeup, sourceChanged);
+            if (appSideOnly)
                 Logger.WriteLine("Display wake without a power-source change; preserving the active performance mode.");
+            if (perfConnected && MechrevoLite.Mode.PerfModeService.Instance is { } perfModes)
+                _ = perfModes.ReplayAsync(init ? "startup" : wakeup ? "wake" : "power change",
+                    powerSourceChanged: perfSourceSwitch, appSideOnly: appSideOnly);
+            // G-Helper 遗留的 AMD 降压/温度墙（默认关闭、无界面入口）照旧按配置应用。
+            modeControl.AutoRyzen();
 
             InputDispatcher.InitStatusLed();
             if (init) NumberPad.Init();
@@ -1406,8 +1412,6 @@ namespace MechrevoLite
         internal static bool ShouldReapplyPerformanceMode(bool powerChanged, bool wakeup, bool sourceChanged) =>
             powerChanged || sourceChanged || !wakeup;
 
-        internal static bool ShouldReapplyPendingPerformanceMode(int pendingMode, int selectedMode) =>
-            pendingMode >= 0 && pendingMode == selectedMode;
 
         public enum PowerSource { Battery, Barrel, USBC }
 
@@ -1568,9 +1572,19 @@ namespace MechrevoLite
 
         }
 
+        static int _trayRefreshInFlight;
+
         static void TrayIcon_MouseMove(object? sender, MouseEventArgs e)
         {
-            settingsForm.RefreshSensors();
+            // 传感器读取含电池 IOCTL（最长约 1 秒）：鼠标划过托盘图标不能卡住 UI 线程。
+            // RefreshSensors 自带 2 秒节流，界面部分由它 BeginInvoke 回 UI 线程；同一时刻最多一次。
+            if (Interlocked.Exchange(ref _trayRefreshInFlight, 1) != 0) return;
+            _ = Task.Run(() =>
+            {
+                try { settingsForm?.RefreshSensors(); }
+                catch (Exception ex) { Logger.WriteLine("Tray sensor refresh failed: " + ex.Message); }
+                finally { Interlocked.Exchange(ref _trayRefreshInFlight, 0); }
+            });
         }
 
         /// <summary>退出/会话结束/未处理异常共用的亮度兜底：绝不抛，息屏状态下一律还原。</summary>

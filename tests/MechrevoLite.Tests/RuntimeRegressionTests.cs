@@ -48,17 +48,6 @@ public class RuntimeRegressionTests
             AsusACPI.PerformanceTurbo, true));
     }
 
-    [Fact]
-    public void StartupCustomMode_IsPreservedWhenHardwareAlreadyReportsCustom()
-    {
-        Assert.True(ModeControl.ShouldPreserveCustomMode(
-            powerChanged: false,
-            connected: true,
-            selectedMode: MechrevoService.ModeGaming,
-            hardwareMode: MechrevoService.ModeCustom,
-            preserveActiveCustom: true));
-    }
-
     [Theory]
     [InlineData("GPU Package", true)]
     [InlineData("GPU Package Power", true)]

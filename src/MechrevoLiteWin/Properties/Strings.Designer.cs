@@ -2303,6 +2303,774 @@ namespace MechrevoLite.Properties {
                 return ResourceManager.GetString("LightingOffOnBattery", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Applied whenever {0} is active (mode switch, power change, wake). Every item is read back..
+        /// </summary>
+        internal static string ModeTuneIntro {
+            get {
+                return ResourceManager.GetString("ModeTuneIntro", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Windows power mode.
+        /// </summary>
+        internal static string ModeTunePowerMode {
+            get {
+                return ResourceManager.GetString("ModeTunePowerMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to CPU boost.
+        /// </summary>
+        internal static string ModeTuneCpuBoost {
+            get {
+                return ResourceManager.GetString("ModeTuneCpuBoost", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Fan boost.
+        /// </summary>
+        internal static string ModeTuneFanBoost {
+            get {
+                return ResourceManager.GetString("ModeTuneFanBoost", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Refresh rate.
+        /// </summary>
+        internal static string ModeTuneRefresh {
+            get {
+                return ResourceManager.GetString("ModeTuneRefresh", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to GPU auto overclock (vendor +105/+500 MHz).
+        /// </summary>
+        internal static string ModeTuneTurboOc {
+            get {
+                return ResourceManager.GetString("ModeTuneTurboOc", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Unchanged.
+        /// </summary>
+        internal static string ModeTuneUnchanged {
+            get {
+                return ResourceManager.GetString("ModeTuneUnchanged", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Best efficiency.
+        /// </summary>
+        internal static string ModeTunePowerEfficiency {
+            get {
+                return ResourceManager.GetString("ModeTunePowerEfficiency", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Balanced.
+        /// </summary>
+        internal static string ModeTunePowerBalanced {
+            get {
+                return ResourceManager.GetString("ModeTunePowerBalanced", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Best performance.
+        /// </summary>
+        internal static string ModeTunePowerPerformance {
+            get {
+                return ResourceManager.GetString("ModeTunePowerPerformance", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to On.
+        /// </summary>
+        internal static string ModeTuneOn {
+            get {
+                return ResourceManager.GetString("ModeTuneOn", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Off.
+        /// </summary>
+        internal static string ModeTuneOff {
+            get {
+                return ResourceManager.GetString("ModeTuneOff", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Apply now.
+        /// </summary>
+        internal static string ModeTuneApplyNow {
+            get {
+                return ResourceManager.GetString("ModeTuneApplyNow", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Reset.
+        /// </summary>
+        internal static string ModeTuneReset {
+            get {
+                return ResourceManager.GetString("ModeTuneReset", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Saved. Applies when {0} becomes active..
+        /// </summary>
+        internal static string ModeTunePending {
+            get {
+                return ResourceManager.GetString("ModeTunePending", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to This mode is active; changes apply immediately..
+        /// </summary>
+        internal static string ModeTuneActiveHint {
+            get {
+                return ResourceManager.GetString("ModeTuneActiveHint", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Applying….
+        /// </summary>
+        internal static string ModeTuneApplying {
+            get {
+                return ResourceManager.GetString("ModeTuneApplying", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to No overrides; the mode&apos;s defaults are used..
+        /// </summary>
+        internal static string ModeTuneNothingToApply {
+            get {
+                return ResourceManager.GetString("ModeTuneNothingToApply", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Some mode overrides did not take effect: {0}.
+        /// </summary>
+        internal static string ModeTunePartialFailure {
+            get {
+                return ResourceManager.GetString("ModeTunePartialFailure", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to battery saver on.
+        /// </summary>
+        internal static string ModeTuneBatterySaver {
+            get {
+                return ResourceManager.GetString("ModeTuneBatterySaver", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to kept: Ultimate plan active.
+        /// </summary>
+        internal static string ModeTuneUltimatePlan {
+            get {
+                return ResourceManager.GetString("ModeTuneUltimatePlan", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to not confirmed.
+        /// </summary>
+        internal static string ModeTuneNotConfirmed {
+            get {
+                return ResourceManager.GetString("ModeTuneNotConfirmed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to auto refresh is on.
+        /// </summary>
+        internal static string ModeTuneAutoHzOn {
+            get {
+                return ResourceManager.GetString("ModeTuneAutoHzOn", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to rate unavailable.
+        /// </summary>
+        internal static string ModeTuneHzUnavailable {
+            get {
+                return ResourceManager.GetString("ModeTuneHzUnavailable", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to GCU is not connected..
+        /// </summary>
+        internal static string ModeTuneNoConnection {
+            get {
+                return ResourceManager.GetString("ModeTuneNoConnection", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to GPU auto overclock was not confirmed..
+        /// </summary>
+        internal static string ModeTuneTurboOcFailed {
+            get {
+                return ResourceManager.GetString("ModeTuneTurboOcFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Disabled.
+        /// </summary>
+        internal static string BoostDisabled {
+            get {
+                return ResourceManager.GetString("BoostDisabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Enabled.
+        /// </summary>
+        internal static string BoostEnabled {
+            get {
+                return ResourceManager.GetString("BoostEnabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Aggressive.
+        /// </summary>
+        internal static string BoostAggressive {
+            get {
+                return ResourceManager.GetString("BoostAggressive", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Efficient.
+        /// </summary>
+        internal static string BoostEfficient {
+            get {
+                return ResourceManager.GetString("BoostEfficient", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Efficient aggressive.
+        /// </summary>
+        internal static string BoostEfficientAggressive {
+            get {
+                return ResourceManager.GetString("BoostEfficientAggressive", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Aggressive (guaranteed).
+        /// </summary>
+        internal static string BoostAggressiveGuaranteed {
+            get {
+                return ResourceManager.GetString("BoostAggressiveGuaranteed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Efficient (guaranteed).
+        /// </summary>
+        internal static string BoostEfficientGuaranteed {
+            get {
+                return ResourceManager.GetString("BoostEfficientGuaranteed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Limit written. It is confirmed automatically once the battery reaches it while plugged in..
+        /// </summary>
+        internal static string ChargeLimitPending {
+            get {
+                return ResourceManager.GetString("ChargeLimitPending", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Confirmed on this machine: charging stops at the limit while plugged in..
+        /// </summary>
+        internal static string ChargeLimitVerified {
+            get {
+                return ResourceManager.GetString("ChargeLimitVerified", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to On this machine the EC charge threshold does not stop charging. Full charge was restored and the limit is turned off..
+        /// </summary>
+        internal static string ChargeLimitIneffective {
+            get {
+                return ResourceManager.GetString("ChargeLimitIneffective", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to No limit: the battery charges to 100%..
+        /// </summary>
+        internal static string ChargeLimitNone {
+            get {
+                return ResourceManager.GetString("ChargeLimitNone", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The vendor EC driver is not available, so the charge limit cannot be set..
+        /// </summary>
+        internal static string ChargeLimitNoDriver {
+            get {
+                return ResourceManager.GetString("ChargeLimitNoDriver", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The charge limit was not applied; the previous value is kept..
+        /// </summary>
+        internal static string ChargeLimitWriteFailed {
+            get {
+                return ResourceManager.GetString("ChargeLimitWriteFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The GCU service is not connected, so nothing was changed..
+        /// </summary>
+        internal static string GcuNotConnectedAction {
+            get {
+                return ResourceManager.GetString("GcuNotConnectedAction", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The device did not confirm the change; the previous state was restored..
+        /// </summary>
+        internal static string SettingNotApplied {
+            get {
+                return ResourceManager.GetString("SettingNotApplied", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Deep sleep could not be sent to the GCU service; nothing was changed..
+        /// </summary>
+        internal static string DeepSleepFailed {
+            get {
+                return ResourceManager.GetString("DeepSleepFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Deep sleep was turned on. It takes effect after a restart..
+        /// </summary>
+        internal static string DeepSleepOnRestart {
+            get {
+                return ResourceManager.GetString("DeepSleepOnRestart", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Deep sleep was turned off. It takes effect after a restart..
+        /// </summary>
+        internal static string DeepSleepOffRestart {
+            get {
+                return ResourceManager.GetString("DeepSleepOffRestart", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The color profile was not applied; the previous profile is kept..
+        /// </summary>
+        internal static string ColorCalibrationFailed {
+            get {
+                return ResourceManager.GetString("ColorCalibrationFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The lighting effect was not confirmed; the previous effect is kept..
+        /// </summary>
+        internal static string LightEffectFailed {
+            get {
+                return ResourceManager.GetString("LightEffectFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The light did not confirm the on/off change..
+        /// </summary>
+        internal static string LightPowerFailed {
+            get {
+                return ResourceManager.GetString("LightPowerFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The keyboard lighting controller is not ready yet. The effect is saved and applied once it connects..
+        /// </summary>
+        internal static string KeyboardHidNotReady {
+            get {
+                return ResourceManager.GetString("KeyboardHidNotReady", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Switching to {0} was not confirmed by the GCU service..
+        /// </summary>
+        internal static string GpuModeSwitchFailed {
+            get {
+                return ResourceManager.GetString("GpuModeSwitchFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Defaults restored and read back..
+        /// </summary>
+        internal static string RestoreConfirmed {
+            get {
+                return ResourceManager.GetString("RestoreConfirmed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The restore command was sent but no fresh status came back..
+        /// </summary>
+        internal static string RestoreNotConfirmed {
+            get {
+                return ResourceManager.GetString("RestoreNotConfirmed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Profile name.
+        /// </summary>
+        internal static string ProfileNameLabel {
+            get {
+                return ResourceManager.GetString("ProfileNameLabel", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Rename.
+        /// </summary>
+        internal static string ProfileNameSave {
+            get {
+                return ResourceManager.GetString("ProfileNameSave", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Profile name saved and read back..
+        /// </summary>
+        internal static string ProfileNameSaved {
+            get {
+                return ResourceManager.GetString("ProfileNameSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The GCU service did not confirm the new name..
+        /// </summary>
+        internal static string ProfileNameNotConfirmed {
+            get {
+                return ResourceManager.GetString("ProfileNameNotConfirmed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Switch to this custom profile first; the name applies to the running profile..
+        /// </summary>
+        internal static string ProfileNameNeedsCustom {
+            get {
+                return ResourceManager.GetString("ProfileNameNeedsCustom", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Performance modes.
+        /// </summary>
+        internal static string PerfEditorTitle {
+            get {
+                return ResourceManager.GetString("PerfEditorTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Mode.
+        /// </summary>
+        internal static string PerfModeLabel {
+            get {
+                return ResourceManager.GetString("PerfModeLabel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to New.
+        /// </summary>
+        internal static string PerfModeNew {
+            get {
+                return ResourceManager.GetString("PerfModeNew", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Rename.
+        /// </summary>
+        internal static string PerfModeRename {
+            get {
+                return ResourceManager.GetString("PerfModeRename", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Delete.
+        /// </summary>
+        internal static string PerfModeDelete {
+            get {
+                return ResourceManager.GetString("PerfModeDelete", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Save.
+        /// </summary>
+        internal static string PerfModeNameSave {
+            get {
+                return ResourceManager.GetString("PerfModeNameSave", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Cancel.
+        /// </summary>
+        internal static string PerfModeNameCancel {
+            get {
+                return ResourceManager.GetString("PerfModeNameCancel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Delete &quot;{0}&quot;? All of its settings will be removed..
+        /// </summary>
+        internal static string PerfModeDeletePrompt {
+            get {
+                return ResourceManager.GetString("PerfModeDeletePrompt", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to At least one custom mode must remain..
+        /// </summary>
+        internal static string PerfModeKeepOneCustom {
+            get {
+                return ResourceManager.GetString("PerfModeKeepOneCustom", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The custom mode limit ({0}) has been reached..
+        /// </summary>
+        internal static string PerfModeLimitReached {
+            get {
+                return ResourceManager.GetString("PerfModeLimitReached", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to {0} · customized.
+        /// </summary>
+        internal static string PerfModeCustomized {
+            get {
+                return ResourceManager.GetString("PerfModeCustomized", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Vendor defaults. Changing power limits, GPU power or the fan curve moves this mode onto a firmware custom slot (the vendor OSD then shows it as custom)..
+        /// </summary>
+        internal static string PerfModeHintVendor {
+            get {
+                return ResourceManager.GetString("PerfModeHintVendor", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Customized: runs on firmware custom slot {0}, which the vendor OSD shows as custom. Restore defaults to return to the vendor mode..
+        /// </summary>
+        internal static string PerfModeHintEmulated {
+            get {
+                return ResourceManager.GetString("PerfModeHintEmulated", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Runs on firmware custom slot {0}..
+        /// </summary>
+        internal static string PerfModeHintCustom {
+            get {
+                return ResourceManager.GetString("PerfModeHintCustom", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to A firmware custom slot is assigned when this mode is activated..
+        /// </summary>
+        internal static string PerfModeHintCustomUnassigned {
+            get {
+                return ResourceManager.GetString("PerfModeHintCustomUnassigned", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Switched to &quot;{0}&quot;.
+        /// </summary>
+        internal static string PerfModeSwitched {
+            get {
+                return ResourceManager.GetString("PerfModeSwitched", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to {0} confirmed · {1} sent (not verifiable yet) · {2} failed.
+        /// </summary>
+        internal static string PerfModeOutcome {
+            get {
+                return ResourceManager.GetString("PerfModeOutcome", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Not applied: {0}.
+        /// </summary>
+        internal static string PerfModeOutcomeFailedItems {
+            get {
+                return ResourceManager.GetString("PerfModeOutcomeFailedItems", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Saved; applies when this mode is activated..
+        /// </summary>
+        internal static string PerfModeSavedInactive {
+            get {
+                return ResourceManager.GetString("PerfModeSavedInactive", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restore defaults.
+        /// </summary>
+        internal static string PerfModeRestore {
+            get {
+                return ResourceManager.GetString("PerfModeRestore", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restore &quot;{0}&quot; to its factory settings?.
+        /// </summary>
+        internal static string PerfModeRestorePrompt {
+            get {
+                return ResourceManager.GetString("PerfModeRestorePrompt", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Switched, but some settings were not applied: {0}.
+        /// </summary>
+        internal static string PerfModeSwitchPartial {
+            get {
+                return ResourceManager.GetString("PerfModeSwitchPartial", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Performance mode settings….
+        /// </summary>
+        internal static string PerfModeEditorMenu {
+            get {
+                return ResourceManager.GetString("PerfModeEditorMenu", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Fan curves only take effect on a firmware custom slot; moving &quot;{0}&quot; there….
+        /// </summary>
+        internal static string PerfModeFanCurveNeedsSlot {
+            get {
+                return ResourceManager.GetString("PerfModeFanCurveNeedsSlot", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Mode switch.
+        /// </summary>
+        internal static string PerfStepSwitch {
+            get {
+                return ResourceManager.GetString("PerfStepSwitch", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to {0} (customized, runs on a firmware custom slot).
+        /// </summary>
+        internal static string PerfModeSegmentEmulated {
+            get {
+                return ResourceManager.GetString("PerfModeSegmentEmulated", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Names can be at most {0} characters..
+        /// </summary>
+        internal static string PerfModeNameTooLong {
+            get {
+                return ResourceManager.GetString("PerfModeNameTooLong", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Deleted &quot;{0}&quot;..
+        /// </summary>
+        internal static string PerfModeDeleted {
+            get {
+                return ResourceManager.GetString("PerfModeDeleted", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Created &quot;{0}&quot; from &quot;{1}&quot;..
+        /// </summary>
+        internal static string PerfModeCreated {
+            get {
+                return ResourceManager.GetString("PerfModeCreated", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to &quot;{0}&quot; is back to its factory settings..
+        /// </summary>
+        internal static string PerfModeRestoreDone {
+            get {
+                return ResourceManager.GetString("PerfModeRestoreDone", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restoring &quot;{0}&quot; was not confirmed..
+        /// </summary>
+        internal static string PerfModeRestoreFailed {
+            get {
+                return ResourceManager.GetString("PerfModeRestoreFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Enabled; takes effect once a clock offset is set..
+        /// </summary>
+        internal static string PerfModeOcArmed {
+            get {
+                return ResourceManager.GetString("PerfModeOcArmed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not read this mode&apos;s vendor defaults, so it cannot be moved onto a custom slot..
+        /// </summary>
+        internal static string PerfModeNoSlotSeed {
+            get {
+                return ResourceManager.GetString("PerfModeNoSlotSeed", resourceCulture);
+            }
+        }
     }
 }
 

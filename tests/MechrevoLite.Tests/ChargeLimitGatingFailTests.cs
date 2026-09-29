@@ -9,9 +9,10 @@ namespace MechrevoLite.Tests;
 public class ChargeLimitGatingFailTests
 {
     [Fact]
-    public void AnUnparsableIdentityIsRejectedEvenWithAServiceProfile()
+    public void AnUnparsableIdentityIsRejectedEvenWithTheDriverPresent()
     {
         using var _ = ChargeLimitGatingTests.Force(null);
+        using var __ = ChargeLimitGatingTests.Driver(present: true);
         Assert.False(EcChargeLimit.IsSupportedMachine(ChargeLimitGatingTests.Unparsable));
     }
 
@@ -19,6 +20,7 @@ public class ChargeLimitGatingFailTests
     public void AModelOutsideTheTwentyFourIsRejected()
     {
         using var _ = ChargeLimitGatingTests.Force(null);
+        using var __ = ChargeLimitGatingTests.Driver(present: true);
         Assert.False(EcChargeLimit.IsSupportedMachine(ChargeLimitGatingTests.NotInSet));
     }
 
@@ -27,17 +29,18 @@ public class ChargeLimitGatingFailTests
     /// by opening a channel whose addresses are not proven to control charging.
     /// </summary>
     [Fact]
-    public void ASupportedModelIsNotAChargeLimitCapabilityEvenBeforeTheProfileArrives()
+    public void AnIneffectiveVerdictWinsOverServiceAndDriver()
     {
         using var _ = ChargeLimitGatingTests.Force(null);
+        using var __ = ChargeLimitGatingTests.Driver(present: true, ChargeLimitVerdict.Ineffective);
         Assert.False(EcChargeLimit.IsSupportedMachine(ChargeLimitGatingTests.Supported));
-        Assert.False(EcChargeLimit.ReadbackProvesChargingStopped);
     }
 
     [Fact]
     public void ANonOneZeroForceValueIsNotTreatedAsAForceSwitch()
     {
         using var _ = ChargeLimitGatingTests.Force("yes");
+        using var __ = ChargeLimitGatingTests.Driver(present: true);
         Assert.False(EcChargeLimit.IsSupportedMachine(ChargeLimitGatingTests.Unparsable));
     }
 

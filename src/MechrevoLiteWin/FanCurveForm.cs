@@ -258,12 +258,24 @@ public class FanCurveForm : RForm
         catch (Exception ex) { Logger.WriteLine("Fan curve refresh failed: " + ex.GetType().Name + " " + ex.Message); }
     }
 
+    int _customChangedQueued;   // 1 = 已有一次回显在 UI 队列里
+
     void OnCustomChanged()
     {
         try
         {
             if (IsDisposed || _respectiveChk is null) return;
-            if (InvokeRequired) { BeginInvoke(OnCustomChanged); return; }
+            if (InvokeRequired)
+            {
+                // 每帧状态都会发这个事件：已有一次在排队就合并（执行时读的就是最新值）。
+                if (Interlocked.Exchange(ref _customChangedQueued, 1) != 0) return;
+                BeginInvoke(() =>
+                {
+                    Interlocked.Exchange(ref _customChangedQueued, 0);
+                    OnCustomChanged();
+                });
+                return;
+            }
             _syncingRespective = true;
             _respectiveChk.Checked = Program.hw?.FanRespective ?? false;
             _syncingRespective = false;
@@ -338,6 +350,9 @@ public class FanCurveForm : RForm
                 bool confirmed = (!sendCpu || CurveMatches(cpu, Program.hw.CpuCurveDuty, Program.hw.CpuCurveUpT))
                     && (!sendGpu || CurveMatches(gpu, Program.hw.GpuCurveDuty, Program.hw.GpuCurveUpT));
                 _status.Text = confirmed ? string.Format(Strings.ConfirmedAt, DateTime.Now.ToString("HH:mm:ss")) : Strings.SaveUnconfirmedRetry;
+                // 曲线记进当前模式：档位被轮转复用后重新装入，也还是这条曲线。
+                if (confirmed)
+                    MechrevoLite.Mode.PerfModeService.Instance?.RecordFanCurves(sendCpu ? cpu : null, sendGpu ? gpu : null);
             }
         }
         catch (Exception ex)

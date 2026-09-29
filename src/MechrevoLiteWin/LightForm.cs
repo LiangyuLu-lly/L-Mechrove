@@ -105,7 +105,12 @@ public class LightForm : RForm
         {
             SyncEffectFromDashboard();
             SaveSettings();
-            if (Program.service is null || Program.hw is not { IsConnected: true }) return;
+            if (Program.service is null || Program.hw is not { IsConnected: true })
+            {
+                // 设置已保存（重连后按保存值恢复），但这一次灯没有变化：必须让用户看见，不能静默。
+                ToastForm.ShowFailure(Properties.Strings.GcuNotConnectedAction);
+                return;
+            }
             int generation = Interlocked.Increment(ref _sendGeneration);
             bool lockTaken = false;
             try

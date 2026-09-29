@@ -120,14 +120,6 @@ public class CustomModeFormTests
     }
 
     [Fact]
-    public void PerCustomProfilePowerSettings_UseIndependentStorageKeys()
-    {
-        Assert.NotEqual(WinPowerPlan.GetProfilePlanKey(0), WinPowerPlan.GetProfilePlanKey(1));
-        Assert.NotEqual(WinPowerPlan.GetProfileBoostKey(0), WinPowerPlan.GetProfileBoostKey(1));
-        Assert.NotEqual(WinPowerPlan.GetProfilePlanKey(0), WinPowerPlan.GetProfileBoostKey(0));
-    }
-
-    [Fact]
     public void SetActivePlan_RejectsAnInvalidGuidWithoutReportingSuccess()
     {
         Assert.False(WinPowerPlan.SetActivePlan("not-a-power-plan"));
@@ -150,19 +142,6 @@ public class CustomModeFormTests
     public void BoostConfirmation_RequiresMatchingAcAndDcValues(int requested, int ac, int dc, bool expected)
     {
         Assert.Equal(expected, WinPowerPlan.IsBoostConfirmed(requested, ac, dc));
-    }
-
-    [Theory]
-    [InlineData(true, true, MechrevoService.ModeCustom, MechrevoService.ModeGaming, true)]
-    [InlineData(true, true, MechrevoService.ModeGaming, MechrevoService.ModeCustom, true)]
-    [InlineData(false, true, MechrevoService.ModeCustom, MechrevoService.ModeCustom, false)]
-    [InlineData(true, false, MechrevoService.ModeCustom, MechrevoService.ModeCustom, false)]
-    [InlineData(true, true, MechrevoService.ModeGaming, MechrevoService.ModeOffice, false)]
-    public void PowerTransition_PreservesOnlyAnActiveCustomMode(
-        bool powerChanged, bool connected, int selectedMode, int hardwareMode, bool expected)
-    {
-        Assert.Equal(expected,
-            ModeControl.ShouldPreserveCustomMode(powerChanged, connected, selectedMode, hardwareMode));
     }
 
     [Fact]
@@ -234,15 +213,34 @@ public class CustomModeFormTests
         Assert.DoesNotContain("未确认", CustomModeForm.SwitchPendingText);
     }
 
-    [Theory]
-    [InlineData(true, 0, 1, false)]    // 服务已确认 → 永不报失败
-    [InlineData(false, 1, 1, false)]   // 服务超时但硬件已上报目标档（晚到确认）→ 不得报失败
-    [InlineData(false, 0, 1, true)]    // 服务超时且硬件仍在旧档 → 才允许失败措辞
-    [InlineData(false, -1, 1, true)]   // 服务超时且硬件无档位读数 → 允许失败措辞
-    public void SwitchFailureWording_RequiresServiceTimeoutAndNoHardwareConfirmation(
-        bool serviceConfirmed, int hardwareProfile, int requestedProfile, bool expected)
+    [Fact]
+    public void BoostCombo_FirstEntryMeansUnchanged()
     {
-        Assert.Equal(expected,
-            CustomModeForm.SwitchShouldReportFailure(serviceConfirmed, hardwareProfile, requestedProfile));
+        // 按模式保存：第 0 项「不改变」= 沿用官方行为，不再在打开时把当前系统值落成用户设置。
+        bool previousAuditMode = Program.UiAuditMode;
+        MechrevoHw? previousHardware = Program.hw;
+        Program.UiAuditMode = true;
+        Program.hw = null;
+        try
+        {
+            using var form = new CustomModeForm();
+            form.CreateControl();
+            var boostCombo = (ComboBox)typeof(CustomModeForm)
+                .GetField("_boostCombo", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(form)!;
+            Assert.Equal(Properties.Strings.ModeTuneUnchanged, boostCombo.Items[0]);
+            Assert.Equal(WinPowerPlan.BoostModes.Length + 1, boostCombo.Items.Count);
+        }
+        finally
+        {
+            Program.hw = previousHardware;
+            Program.UiAuditMode = previousAuditMode;
+        }
+    }
+
+    [Fact]
+    public void PowerPlanGuid_UnchangedEntryIsNull()
+    {
+        Assert.Null(CustomModeForm.GetPowerPlanGuid(new KeyValuePair<string, string>(Properties.Strings.ModeTuneUnchanged, "")));
     }
 }

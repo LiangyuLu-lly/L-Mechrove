@@ -37,7 +37,7 @@
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <AssemblyVersion>0.289.0.0</AssemblyVersion>
     <FileVersion>0.289.0.0</FileVersion>
-    <Version>0.289.0-beta19</Version>
+    <Version>0.289.0-beta20</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
     <!-- English lives in the main Strings.resx; only ship the zh-CN satellite. Also filters TaskScheduler package satellites. -->

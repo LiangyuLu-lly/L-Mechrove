@@ -65,11 +65,30 @@ namespace MechrevoLite.Battery
 
         public static void SetBatteryLimitFull()
         {
-            // Echo is not confirmation. Do not persist or paint 100% on before a write that cannot be confirmed.
             if (chargeFull) chargeFull = false;
             PaintBatteryFull();
             if (EcChargeLimit.IsAvailableOnThisMachine())
                 SetBatteryChargeLimit(EcChargeLimit.MaximumPercent);
+        }
+
+        /// <summary>
+        /// 最近一次确认过的 EC 上限（写入回读或启动读取）。界面定时刷新只读这个缓存，
+        /// 不在 UI 线程上每秒做一次驱动 I/O。-1 表示未知。
+        /// </summary>
+        static int _knownLimit = -1;
+
+        internal static int KnownLimit => Volatile.Read(ref _knownLimit);
+
+        static void RememberLimit(int percent)
+        {
+            Volatile.Write(ref _knownLimit, EcChargeLimit.IsSupportedLimit(percent) ? percent : -1);
+        }
+
+        /// <summary>测试接缝：清掉进程内缓存的上限与效果取证状态，避免跨测试泄漏。</summary>
+        internal static void ResetForTests()
+        {
+            Volatile.Write(ref _knownLimit, -1);
+            ChargeLimitMonitor.ResetForTests();
         }
 
         public static void AutoBattery(bool init = false)
@@ -110,20 +129,30 @@ namespace MechrevoLite.Battery
             // EC 写是驱动调用（毫秒级，但可能被 EC 总线拖住），放后台，别卡住 UI 线程。
             _ = Task.Run(() =>
             {
-                if (EcChargeLimit.TrySet(limit, out int echoedPercent))
-                    FinishEcho(echoedPercent, delayed: false);
-                else
+                try
                 {
-                    // 写入当刻的回读可能撞上 EC 总线时序。值相等只说明寄存器回读一致。
-                    int actual = EcChargeLimit.ReadPercent();
-                    if (actual == limit)
-                        FinishEcho(actual, delayed: true);
+                    if (EcChargeLimit.TrySet(limit, out int echoedPercent))
+                        FinishEcho(echoedPercent, delayed: false);
                     else
                     {
-                        Logger.WriteLine($"EC 充电上限写入未确认：请求 {limit}%，保持原值");
-                        LeaveChargeLimitUnconfirmed();
-                        ToastForm.ShowFailure("充电上限设置失败，已恢复原值。");
+                        // 写入当刻的回读可能撞上 EC 总线时序：再读一次。
+                        int actual = EcChargeLimit.ReadPercent();
+                        if (actual == limit)
+                            FinishEcho(actual, delayed: true);
+                        else
+                        {
+                            Logger.WriteLine($"EC 充电上限写入未确认：请求 {limit}%，保持原值");
+                            RememberLimit(actual);
+                            RefreshChargeLimitDisplay();
+                            ToastForm.ShowFailure(Properties.Strings.ChargeLimitWriteFailed);
+                        }
                     }
+                }
+                catch (Exception ex)
+                {
+                    Logger.WriteLine("EC 充电上限写入异常: " + ex.Message);
+                    RefreshChargeLimitDisplay();
+                    ToastForm.ShowFailure(Properties.Strings.ChargeLimitWriteFailed);
                 }
             });
             return true;
@@ -132,13 +161,22 @@ namespace MechrevoLite.Battery
         static void FinishEcho(int percent, bool delayed)
         {
             NoteRegisterEcho(percent, delayed);
-            LeaveChargeLimitUnconfirmed();
+            RememberLimit(percent);
+            AppConfig.Set("charge_limit", percent);
+            if (chargeFull != (percent >= EcChargeLimit.MaximumPercent)) chargeFull = percent >= EcChargeLimit.MaximumPercent;
+            // 回读一致不等于生效：开始收集真实充电状态证据（插电到达上限后是否真的停充）。
+            ChargeLimitMonitor.Arm(percent);
+            RefreshChargeLimitDisplay();
         }
+
+        /// <summary>按已知上限 + 本机效果判定刷新电池卡（任意线程可调）。</summary>
+        internal static void RefreshChargeLimitDisplay() =>
+            RunOnSettingsForm(static form => form.PresentChargeLimitReadout());
 
         static void LeaveChargeLimitUnconfirmed()
         {
             if (chargeFull) chargeFull = false;
-            RunOnSettingsForm(static form => form.VisualiseBatteryUnverified());
+            RefreshChargeLimitDisplay();
         }
 
         static void PaintBatteryFull() =>
@@ -168,9 +206,9 @@ namespace MechrevoLite.Battery
             string timing = delayed ? "延迟后" : "写入后";
             Logger.WriteLine(
                 $"EC 寄存器{timing}回读一致：上限 {percent}%、复充下限 {EcChargeLimit.LowerValueFor(percent)}%" +
-                $"（0x{EcChargeLimit.UpperRegister:X3}/0x{EcChargeLimit.LowerRegister:X3}）。" +
-                EcChargeLimit.UnverifiedWriteNotice);
-            ToastForm.ShowNotice(EcChargeLimit.UnverifiedWriteNotice);
+                $"（0x{EcChargeLimit.UpperRegister:X3}/0x{EcChargeLimit.LowerRegister:X3}），本机效果判定={EcChargeLimit.Verdict}");
+            if (percent < EcChargeLimit.MaximumPercent && EcChargeLimit.Verdict == ChargeLimitVerdict.Pending)
+                ToastForm.ShowNotice(EcChargeLimit.PendingNotice);
         }
 
         /// <summary>
@@ -182,10 +220,22 @@ namespace MechrevoLite.Battery
         /// </summary>
         public static int ResolveDisplayLimitPercent()
         {
-            if (EcChargeLimit.IsAvailableOnThisMachine())
+            // EC 真值优先：成功读到一次就缓存（写入回读也会刷新缓存），界面定时刷新不再每秒做驱动 I/O；
+            // 读不到时不缓存「未知」，下次还会再试。两者都没有才退回配置里上次设置的值。
+            int known = KnownLimit;
+            if (EcChargeLimit.IsSupportedLimit(known)) return known;
+            // 通道被强制关闭或本机判为无效时不读 EC：那对寄存器在这台机器上没有意义。
+            if (EcChargeLimit.IsDriverPresent()
+                && AppConfig.GetString("ec_charge_limit") != "0"
+                && EcChargeLimit.Verdict != ChargeLimitVerdict.Ineffective)
             {
                 int fromEc = EcChargeLimit.ReadPercent();
-                if (EcChargeLimit.IsSupportedLimit(fromEc)) return fromEc;
+                if (EcChargeLimit.IsSupportedLimit(fromEc))
+                {
+                    RememberLimit(fromEc);
+                    if (fromEc < EcChargeLimit.MaximumPercent) ChargeLimitMonitor.Arm(fromEc);
+                    return fromEc;
+                }
             }
             int stored = AppConfig.Get("charge_limit");
             return EcChargeLimit.IsSupportedLimit(stored) ? stored : -1;
