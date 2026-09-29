@@ -169,6 +169,43 @@ public class Startup
         return null;
     }
 
+    /// <summary>
+    /// Starts the Highest autostart task so a filtered (non-elevated) launch can hand over to an
+    /// elevated instance without a UAC prompt (see <see cref="ElevationRelaunch"/>). Refuses a task
+    /// that is disabled, not Highest, already running (IgnoreNew would swallow the start) or pointing
+    /// at a different executable than the one running now.
+    /// </summary>
+    internal static bool TryRunUserTaskForElevation(out string reason)
+    {
+        try
+        {
+            using TaskService taskService = new();
+            var task = GetUserTask(taskService);
+            if (task is null) { reason = "no autostart task"; return false; }
+            if (!task.Enabled) { reason = "autostart task disabled"; return false; }
+            TaskDefinition definition = task.Definition;
+            if (definition.Principal.RunLevel != TaskRunLevel.Highest) { reason = "autostart task is not Highest"; return false; }
+            var exec = definition.Actions.OfType<ExecAction>().FirstOrDefault();
+            string path = Environment.ExpandEnvironmentVariables(exec?.Path ?? "").Trim('"');
+            string running = Environment.ProcessPath ?? strExeFilePath;
+            if (string.IsNullOrWhiteSpace(path) ||
+                !Path.GetFullPath(path).Equals(Path.GetFullPath(running), StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "autostart task points at " + path;
+                return false;
+            }
+            if (task.State == TaskState.Running) { reason = "autostart task instance already running"; return false; }
+            task.Run();
+            reason = task.Name;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reason = ex.Message;
+            return false;
+        }
+    }
+
     public static bool IsScheduled()
     {
         try

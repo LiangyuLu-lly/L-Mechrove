@@ -3335,6 +3335,30 @@ namespace MechrevoLite.Properties {
                 return ResourceManager.GetString("LightSingleColorBacklight", resourceCulture);
             }
         }
+        /// <summary>
+        ///   Looks up a localized string similar to Installing the update in the background; L-Mechrevo reopens by itself….
+        /// </summary>
+        internal static string UpdateSilentStarted {
+            get {
+                return ResourceManager.GetString("UpdateSilentStarted", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Updated to {0}..
+        /// </summary>
+        internal static string UpdateSucceeded {
+            get {
+                return ResourceManager.GetString("UpdateSucceeded", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The update to {0} did not finish (setup exit code {1}); {2} is still installed. Details: {3}.
+        /// </summary>
+        internal static string UpdateFailedKept {
+            get {
+                return ResourceManager.GetString("UpdateFailedKept", resourceCulture);
+            }
+        }
     }
 }
 

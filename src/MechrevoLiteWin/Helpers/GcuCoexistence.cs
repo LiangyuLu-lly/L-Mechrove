@@ -126,7 +126,7 @@ internal static class GcuCoexistence
     {
         try
         {
-            if (!IsMqttPortListening(MqttSecurity.DefaultPort)) return false;
+            if (!IsMqttPortListening(MechrevoLite.Hardware.GcuEndpoint.Port)) return false;
             return IsLeftoverPortOwner(true, ReadServiceImagePath(VendorServiceName));
         }
         catch (Exception ex)

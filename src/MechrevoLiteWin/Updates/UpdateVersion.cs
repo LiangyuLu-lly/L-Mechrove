@@ -68,4 +68,7 @@ internal static class UpdateVersion
 
     internal static bool IsNewer(string? candidate, string? current) =>
         Compare(candidate, current) > 0;
+
+    internal static bool IsSameVersion(string? left, string? right) =>
+        !string.IsNullOrWhiteSpace(left) && !string.IsNullOrWhiteSpace(right) && Compare(left, right) == 0;
 }

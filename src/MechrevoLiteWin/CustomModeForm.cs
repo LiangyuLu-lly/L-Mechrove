@@ -71,6 +71,21 @@ public class CustomModeForm : RForm
     string _modeId = PerfModeDefinition.CustomId(1);
 
     Label _status = null!;
+    FlowLayoutPanel _statusRow = null!;
+
+    /// <summary>
+    /// 状态行只在有内容时出现：切换/下发结果或功耗墙结论。用各自的文字判断，而不是 Label.Visible——
+    /// 父容器隐藏时子控件的 Visible 读出来恒为 false。
+    /// </summary>
+    void SyncStatusRow()
+    {
+        if (_statusRow is null || _status is null) return;
+        bool statusText = !string.IsNullOrEmpty(_status.Text);
+        bool powerWallText = _powerWallStatus is not null && !string.IsNullOrEmpty(_powerWallStatus.Text);
+        _status.Visible = statusText;
+        bool show = statusText || powerWallText;
+        if (_statusRow.Visible != show) _statusRow.Visible = show;
+    }
     Label _routeHint = null!;
     RButton _restoreButton = null!;
     RButton _fanCurveButton = null!;
@@ -121,13 +136,15 @@ public class CustomModeForm : RForm
         int rootRow = 0;
 
         // ---- 模式行：下拉 + 新建 / 重命名 / 删除 ----
+        // 按窗口宽度折行：窄窗口（1280×720 @100%）下按钮换到第二行，而不是被挤出窗口右边。
         var modeFlow = new FlowLayoutPanel
         {
             Name = "modeRow",
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            WrapContents = true,
             BackColor = UiVisualStyle.Window,
             Margin = new Padding(0, 0, 0, D(6)),
         };
@@ -241,9 +258,23 @@ public class CustomModeForm : RForm
         root.Controls.Add(_nameRow, 0, rootRow++);
 
         // ---- 状态行：切换/下发结果 + 功耗墙实测结论 ----
-        var titleFlow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, BackColor = UiVisualStyle.Window, Margin = new Padding(0, 0, 0, D(4)) };
+        // 两段都为空时整行隐藏（可见但零宽的控件是布局缺陷）；有文字时按窗口宽度折行。
+        var titleFlow = new FlowLayoutPanel
+        {
+            Name = "modeStatusRow",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true,
+            BackColor = UiVisualStyle.Window,
+            Margin = new Padding(0, 0, 0, D(4)),
+            Visible = false,
+        };
         _status = new Label { Name = "labelModeEditorStatus", Text = "", ForeColor = UiVisualStyle.Muted, AutoSize = true, Margin = Padding.Empty };
         titleFlow.Controls.Add(_status);
+        _statusRow = titleFlow;
+        _status.TextChanged += (_, _) => SyncStatusRow();
         // 功耗墙实测结论。单独一个标签而不是复用 _status：后者要显示各种一次性提示，
         // 混在一起会互相覆盖。判不出来时整个标签隐藏，不占地方。
         _powerWallStatus = new Label
@@ -1254,6 +1285,7 @@ public class CustomModeForm : RForm
         }
         // 空文本时隐藏整个标签：可见但零宽的控件是布局缺陷。
         _powerWallStatus.Visible = text.Length > 0;
+        SyncStatusRow();
         _powerWallStatus.ForeColor = verdict == PowerWallVerdict.NotEnforced
             ? UiVisualStyle.Warn
             : UiVisualStyle.Muted;

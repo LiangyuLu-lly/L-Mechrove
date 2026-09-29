@@ -429,17 +429,36 @@ begin
     Result := MsgBox(FmtMessage(CustomMessage('SameVersionRepair'), ['']), mbConfirmation, MB_YESNO) = IDYES;
 end;
 
+procedure WaitForUpdatingApp;
+var
+  Pid, ResultCode: Integer;
+begin
+  // In-app update: the app passes its PID and exits on its own (config flushed, tray removed).
+  // Wait for that instead of killing it mid-shutdown. Only a positive number is accepted, so the
+  // parameter can never inject anything into the command line.
+  Pid := StrToIntDef(ExpandConstant('{param:WAITPID|0}'), 0);
+  if Pid <= 0 then
+    Exit;
+  Log(Format('Waiting for the updating app (pid %d) to exit', [Pid]));
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Format('-NoProfile -WindowStyle Hidden -Command "Wait-Process -Id %d -Timeout 20 -ErrorAction SilentlyContinue"', [Pid]),
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 procedure StopLockedAppProcesses;
 var
   ResultCode: Integer;
 begin
+  WaitForUpdatingApp;
   // Highest autostart (LMechrevo / LMechrevo_<SID>) restarts the exe after taskkill
   // (RestartCount=3). Disable first, then kill, then wait so file locks drop.
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like ''LMechrevo*'' } | ForEach-Object { Stop-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue; Disable-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue }"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   TasksDisabledBySetup := True;
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM L-Mechrevo.exe /F /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // No /T: every helper is itself an L-Mechrevo.exe (matched by /IM), and a process tree kill would
+  // also take down this setup when the app started it (in-app update).
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM L-Mechrevo.exe /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(800);
 end;
 

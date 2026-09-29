@@ -916,6 +916,11 @@ function Set-GcuMqttPortMarker {
         Write-Log ('  GCU MQTT port recorded: {0}' -f $Port)
     }
     catch { Write-Log ('  WARNING: could not record the GCU MQTT port: ' + $_.Exception.Message) }
+    # A broker on another port (legacy bridge) needs its own inbound block rule.
+    if ($Port -ne 13688) {
+        try { Ensure-FirewallRule -Port $Port }
+        catch { Write-Log ('  WARNING: could not block TCP {0}: {1}' -f $Port, $_.Exception.Message) }
+    }
 }
 
 function Set-RebootRequiredMarker {
@@ -1016,22 +1021,25 @@ function Install-Service {
 }
 
 function Ensure-FirewallRule {
+    # One rule per blocked port, all sharing the display name (uninstall removes them by name).
+    param([int]$Port = 13688)
     $cmd = Get-Command -Name New-NetFirewallRule -ErrorAction SilentlyContinue
     if ($cmd) {
-        $existing = Get-NetFirewallRule -DisplayName $script:RuleName -ErrorAction SilentlyContinue
-        if ($existing) {
-            Write-Log '  firewall block rule already present'
+        $existing = @(Get-NetFirewallRule -DisplayName $script:RuleName -ErrorAction SilentlyContinue |
+            Where-Object { @(($_ | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue).LocalPort) -contains [string]$Port })
+        if ($existing.Count -gt 0) {
+            Write-Log ('  firewall block rule already present (TCP {0})' -f $Port)
         }
         else {
             New-NetFirewallRule -DisplayName $script:RuleName -Direction Inbound -Action Block `
-                -Protocol TCP -LocalPort 13688 -Profile Any -Enabled True | Out-Null
-            Write-Log '  firewall inbound block rule created (TCP 13688)'
+                -Protocol TCP -LocalPort $Port -Profile Any -Enabled True | Out-Null
+            Write-Log ('  firewall inbound block rule created (TCP {0})' -f $Port)
         }
         return
     }
     Write-Log '  WARNING: New-NetFirewallRule unavailable; trying netsh fallback'
-    & netsh.exe advfirewall firewall delete rule ("name=" + $script:RuleName) | Out-Null
-    & netsh.exe advfirewall firewall add rule ("name=" + $script:RuleName) dir=in action=block protocol=TCP localport=13688 | Out-Null
+    if ($Port -eq 13688) { & netsh.exe advfirewall firewall delete rule ("name=" + $script:RuleName) | Out-Null }
+    & netsh.exe advfirewall firewall add rule ("name=" + $script:RuleName) dir=in action=block protocol=TCP ("localport=" + $Port) | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'netsh firewall rule creation failed' }
 }
 

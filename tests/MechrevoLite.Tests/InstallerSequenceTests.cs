@@ -119,7 +119,11 @@ public class InstallerSequenceTests
         Assert.Contains("CloseApplications=no", iss, StringComparison.Ordinal);
         Assert.DoesNotContain("CloseApplications=yes", iss, StringComparison.Ordinal);
         Assert.Contains("procedure StopLockedAppProcesses", iss, StringComparison.Ordinal);
-        Assert.Contains("/IM L-Mechrevo.exe /F /T", iss, StringComparison.Ordinal);
+        // No process-tree kill: the in-app update starts setup from the app, so /T would kill setup too.
+        Assert.Contains("'/IM L-Mechrevo.exe /F'", iss, StringComparison.Ordinal);
+        Assert.DoesNotContain("/IM L-Mechrevo.exe /F /T", iss, StringComparison.Ordinal);
+        Assert.Contains("{param:WAITPID|0}", iss, StringComparison.Ordinal);
+        Assert.Contains("StrToIntDef(ExpandConstant('{param:WAITPID|0}'), 0)", iss, StringComparison.Ordinal);
         Assert.Contains("LMechrevo*", iss, StringComparison.Ordinal);
         Assert.Contains("Disable-ScheduledTask", iss, StringComparison.Ordinal);
         Assert.Contains("Stop-ScheduledTask", iss, StringComparison.Ordinal);

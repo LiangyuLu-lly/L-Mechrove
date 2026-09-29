@@ -38,8 +38,9 @@ public class MechrevoHw : IDisposable
     const int GcuFallbackCoreOffsetMaximum = 250;
     const int GcuFallbackMemoryOffsetMinimum = -1000;
     const int GcuFallbackMemoryOffsetMaximum = 2000;
-    const string Host = "127.0.0.1";
-    const int Port = 13688;
+    const string Host = GcuEndpoint.Host;
+    // 13688 unless the installer measured a different broker port (GamingCenterU legacy service).
+    static int Port => GcuEndpoint.Port;
     // GCU rejects arbitrary client IDs. The official UI occupies slot 5; slot 4 keeps L-Mechrevo compatible and separate.
     const string User = "UWPClient_User_4";
     const string Pwd = "UWPClient_Pwd888881772688_4";

@@ -386,16 +386,20 @@ internal sealed class UpdateForm : RForm
 
             if (installer || UpdateInstaller.IsPeExecutable(package))
             {
-                if (!UpdateInstaller.StartInstaller(package))
+                // 内更新：静默覆盖安装（设置、性能模式、风扇曲线都保留），装完自动重新打开本程序；
+                // 静默方式起不来时退回带界面的安装包。
+                bool silent = SilentUpdate.Start(package, info.LatestVersion ?? "");
+                if (!silent && !UpdateInstaller.StartInstaller(package))
                 {
+                    _closingForInstall = false;
                     _status.Text = Strings.UpdateCannotStartInstaller;
                     _status.ForeColor = UiVisualStyle.Danger;
                     return;
                 }
 
-                _status.Text = Strings.UpdateInstallerStarted;
+                _status.Text = silent ? Strings.UpdateSilentStarted : Strings.UpdateInstallerStarted;
                 _status.ForeColor = UiVisualStyle.Ok;
-                Logger.WriteLine($"更新安装包已启动：{package}（{verification.Reason}）");
+                Logger.WriteLine($"更新安装包已启动（{(silent ? "静默" : "界面")}）：{package}（{verification.Reason}）");
             }
             else
             {

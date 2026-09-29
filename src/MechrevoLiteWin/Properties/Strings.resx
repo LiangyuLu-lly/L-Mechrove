@@ -634,7 +634,9 @@
     <value>&#10;&#10;The download page will open.</value>
   </data>
   <data name="UpdateConfirmInstaller" xml:space="preserve">
-    <value>The package will download and the installer will start. This app will exit.&#10;&#10;Continue?</value>
+    <value>The new version will be downloaded and installed in the background. L-Mechrevo closes during the install and opens again when it is done; your settings, performance modes and fan curves are kept.
+
+Continue?</value>
   </data>
   <data name="UpdateConfirmReplace" xml:space="preserve">
     <value>Installation closes this app, replaces the current exe, and restarts it.&#10;&#10;Continue?</value>
@@ -1283,5 +1285,14 @@
   </data>
   <data name="LightSingleColorBacklight" xml:space="preserve">
     <value>Single-color backlight</value>
+  </data>
+  <data name="UpdateSilentStarted" xml:space="preserve">
+    <value>Installing the update in the background; L-Mechrevo reopens by itself…</value>
+  </data>
+  <data name="UpdateSucceeded" xml:space="preserve">
+    <value>Updated to {0}.</value>
+  </data>
+  <data name="UpdateFailedKept" xml:space="preserve">
+    <value>The update to {0} did not finish (setup exit code {1}); {2} is still installed. Details: {3}</value>
   </data>
 </root>

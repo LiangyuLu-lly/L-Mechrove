@@ -3700,6 +3700,14 @@ namespace MechrevoLite
             PeripheralsProvider.RefreshBatteryForAllDevices(true);
         }
 
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // The window runs elevated; a second launch from a filtered token is lower integrity and
+            // UIPI would drop its "show the window" message without this per-window exception.
+            SingleInstanceSignal.AllowFromLowerIntegrity(Handle);
+        }
+
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == NativeMethods.WM_POWERBROADCAST)
@@ -3714,6 +3722,15 @@ namespace MechrevoLite
             {
                 Logger.WriteLine("Taskbar created, re-creating tray icon");
                 if (Program.trayIcon is not null) Program.trayIcon.Visible = true;
+            }
+
+            // 第二次启动（快捷方式/开始菜单）请求把已运行实例的主窗口带到前台。
+            if (m.Msg != 0 && m.Msg == SingleInstanceSignal.Message)
+            {
+                try { BeginInvoke(Program.ShowMainWindow); }
+                catch (Exception ex) { Logger.WriteLine("Show-window request failed: " + ex.Message); }
+                m.Result = IntPtr.Zero;
+                return;
             }
 
             try

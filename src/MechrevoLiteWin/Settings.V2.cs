@@ -271,9 +271,11 @@ public partial class SettingsForm
             };
             // 列宽全走百分比（同读数区教训）：绝对列在审计的多重缩放里被算小，
             // 真机首验后 100pct 视口下 编辑键只剩 ~24px，'编辑' 两字被裁。
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 14));   // 灯名（预览 .sname 52px）
+            // 灯名列按最长的四字名（「同步灯带」）定宽：14% 在最窄的 300px 行里只有 42px，
+            // 铰链灯/同步灯带两行被裁（beta21 审计 b21b，54 处）。22% 在同一行里是 66px。
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));   // 灯名
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 11));   // 电源开关
-            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 63));   // 效果（输入框样式）
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));   // 效果（输入框样式）
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));   // 编辑
             row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             body.RowStyles.Add(new RowStyle(SizeType.AutoSize));

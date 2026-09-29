@@ -634,7 +634,9 @@
     <value>&#10;&#10;将为你打开下载页。</value>
   </data>
   <data name="UpdateConfirmInstaller" xml:space="preserve">
-    <value>将下载安装包并启动安装程序。安装过程中本程序会退出。&#10;&#10;继续吗？</value>
+    <value>将下载新版本并在后台静默安装。安装期间本程序会暂时退出，装好后自动重新打开；设置、性能模式和风扇曲线都会保留。
+
+继续吗？</value>
   </data>
   <data name="UpdateConfirmReplace" xml:space="preserve">
     <value>安装会关闭本程序，替换当前 exe 后自动重启。&#10;&#10;继续吗？</value>
@@ -1283,5 +1285,14 @@
   </data>
   <data name="LightSingleColorBacklight" xml:space="preserve">
     <value>单色背光</value>
+  </data>
+  <data name="UpdateSilentStarted" xml:space="preserve">
+    <value>正在后台安装更新，完成后会自动重新打开…</value>
+  </data>
+  <data name="UpdateSucceeded" xml:space="preserve">
+    <value>已更新到 {0}。</value>
+  </data>
+  <data name="UpdateFailedKept" xml:space="preserve">
+    <value>更新到 {0} 没有完成（安装程序退出码 {1}），当前仍是 {2}。详情见：{3}</value>
   </data>
 </root>

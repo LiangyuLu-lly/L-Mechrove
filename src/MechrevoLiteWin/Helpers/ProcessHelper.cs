@@ -75,6 +75,10 @@ namespace MechrevoLite.Helpers
                         }
 
                         Logger.WriteLine("Another L-Mechrevo instance is already running; leaving it untouched.");
+                        // A user-initiated second launch (shortcut / Start menu) brings the running
+                        // instance's window up; the logon autostart of an already running app stays quiet.
+                        if (!string.Equals(action, "startup", StringComparison.OrdinalIgnoreCase))
+                            SingleInstanceSignal.RequestShow();
                         ReleaseExitEvent(currentEvent);
                         return false;
                     }
@@ -124,6 +128,14 @@ namespace MechrevoLite.Helpers
 
             ThreadPool.RegisterWaitForSingleObject(currentEvent, (_, _) => Application.Exit(), null, Timeout.Infinite, true);
             return true;
+        }
+
+        /// <summary>Is a UI instance of L-Mechrevo already running in this login session (helpers excluded)?</summary>
+        internal static bool HasExistingUiOwner()
+        {
+            List<Process> owners = FindExistingUiProcesses();
+            try { return owners.Count > 0; }
+            finally { foreach (Process owner in owners) owner.Dispose(); }
         }
 
         private static void ReleaseExitEvent(EventWaitHandle currentEvent)

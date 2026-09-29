@@ -194,6 +194,22 @@ namespace MechrevoLite
                 return;
             }
 
+            // 常驻管理员：被移交过来的提权实例还原发起方的动作。UAC 路径带 --elevated-relaunch；
+            // 计划任务路径固定带 startup，真正的动作放在短时配置项里（登录自启时没有这一项）。
+            bool elevationHandedOver = false;
+            if (action == ElevationRelaunch.RelaunchArgument)
+            {
+                action = args.Length > 1 ? args[1] : "";
+                elevationHandedOver = true;
+            }
+            else if (IsStartupLaunch(action) && ProcessHelper.IsUserAdministrator()
+                && ElevationRelaunch.ConsumeRequest() is string handedOver)
+            {
+                Logger.WriteLine("Elevation: continuing the handed-over launch '" + handedOver + "'");
+                action = handedOver;
+                elevationHandedOver = true;
+            }
+
             bool startMinimized = IsStartupLaunch(action);
             _showGuideOnFirstRestore = startMinimized;
 
@@ -202,7 +218,7 @@ namespace MechrevoLite
                 // 厂商 broker 监听 0.0.0.0:13688 且凭据固定。此前程序只在日志里警告，
                 // 没有任何处置手段；这两个入口提供实际的入站阻断规则创建与撤销。
                 MqttSecurity.OperationResult mqttResult = action == "--secure-mqtt"
-                    ? MqttSecurity.TryCreateInboundBlockRule()
+                    ? MqttSecurity.TryCreateInboundBlockRule(MechrevoLite.Hardware.GcuEndpoint.Port)
                     : MqttSecurity.TryRemoveInboundBlockRule();
                 Logger.WriteLine(mqttResult.Message);
                 Console.WriteLine(mqttResult.Message);
@@ -278,7 +294,18 @@ namespace MechrevoLite
             Logger.WriteLine("----------------------");
             Logger.WriteLine("App launched: " + Assembly.GetExecutingAssembly().GetName().Version.ToString() + CultureInfo.CurrentUICulture + (ProcessHelper.IsUserAdministrator() ? "." : ""));
 
-            // Mechrevo：不再请求管理员权限（FPS ETW 本机不可用，Overlay 使用率低——普通权限即可）
+            // 常驻管理员（用户要求）：受限令牌启动时移交给提权实例后退出——优先走安装器建的 Highest
+            // 自启任务（无 UAC 弹窗），不可用时弹一次 UAC；拒绝则继续以普通权限运行。
+            // 必须先于单实例检查：本进程不能占住单实例事件，否则提权实例会把它当成已在运行的主人。
+            // 已有主实例时不移交，交给下面的单实例检查唤起它的窗口。
+            if (ElevationRelaunch.ShouldHandOver(ElevationRelaunch.CurrentTokenKind(), action, elevationHandedOver, UiAuditMode)
+                && !ProcessHelper.HasExistingUiOwner()
+                && ElevationRelaunch.TryHandOver(action))
+            {
+                Logger.Close();
+                return;
+            }
+
             // 单实例检查必须先于窗体、硬件和托盘创建，重复启动不能留下半初始化资源。
             if (!ProcessHelper.CheckAlreadyRunning(action))
             {
@@ -394,9 +421,9 @@ namespace MechrevoLite
                 Icon = new Icon(Path.Combine(AppContext.BaseDirectory, "favicon.ico")),
                 Visible = true
             };
-            if (!MqttSecurity.HasInboundBlockRule())
+            if (!MqttSecurity.HasInboundBlockRule(MechrevoLite.Hardware.GcuEndpoint.Port))
             {
-                Logger.WriteLine(MqttSecurity.MissingRuleWarning());
+                Logger.WriteLine(MqttSecurity.MissingRuleWarning(MechrevoLite.Hardware.GcuEndpoint.Port));
             }
 
             _trayRetryTimer = new System.Windows.Forms.Timer { Interval = 5000 };
@@ -475,6 +502,7 @@ namespace MechrevoLite
                 SetAutoModes(init: true);
                 StartLightingIdleMonitor();
                 if (AppConfig.IsOverlay()) hardwareOverlay?.StartOverlay();
+                ReportUpdateOutcome();
             };
             Application.Idle += deferredInitialization;
 
@@ -1539,6 +1567,37 @@ namespace MechrevoLite
                 catch (Exception ex) { Logger.WriteLine("RGB 唤醒恢复失败: " + ex.Message); }
                 finally { Volatile.Write(ref _resumeKeyboardRestorePending, 0); }
             });
+        }
+
+        /// <summary>
+        /// 内更新的结果回报：静默安装后（或下一次启动时）告诉用户更新成功了，还是没装上、仍是旧版。
+        /// </summary>
+        static void ReportUpdateOutcome()
+        {
+            try
+            {
+                MechrevoLite.Update.UpdateOutcome outcome = MechrevoLite.Update.SilentUpdate.CollectOutcome();
+                switch (outcome.Kind)
+                {
+                    case MechrevoLite.Update.UpdateOutcomeKind.Succeeded:
+                        ToastForm.ShowNotice(string.Format(Properties.Strings.UpdateSucceeded,
+                            string.IsNullOrWhiteSpace(ReleaseLabel) ? ReleaseVersion : ReleaseLabel));
+                        break;
+                    case MechrevoLite.Update.UpdateOutcomeKind.Failed:
+                        ToastForm.ShowFailure(string.Format(Properties.Strings.UpdateFailedKept, outcome.ToVersion,
+                            outcome.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "?", ReleaseVersion, outcome.SetupLog));
+                        break;
+                }
+            }
+            catch (Exception ex) { Logger.WriteLine("Update outcome report failed: " + ex.Message); }
+        }
+
+        /// <summary>Shows the main window (never hides it), e.g. when a second launch asks for it.</summary>
+        internal static void ShowMainWindow()
+        {
+            if (settingsForm is null || settingsForm.IsDisposed) return;
+            if (settingsForm.Visible) settingsForm.ShowAll();
+            else SettingsToggle(false);
         }
 
         public static void SettingsToggle(bool checkForFocus = true, bool trayClick = false)
