@@ -34,6 +34,13 @@ public class VendorConsoleRemovalN7Tests
     [InlineData("autostart", "SystrayComponent.exe")]
     [InlineData("process", "CCUWinUI")]
     [InlineData("process", "SystrayComponent")]
+    // beta21: every vendor console generation is the same Inno product (one AppId) ...
+    [InlineData("uninstallkey", "{6ea3ce12-b991-4b65-9f8d-b148eaaecd87}_is1")]
+    [InlineData("uninstall", "Control Center")]
+    [InlineData("uninstall", "GamingCenterU")]
+    [InlineData("uninstall", "机械革命控制中心")]
+    // ... and the 30/40-series UWP package identity is ControlCenter3.
+    [InlineData("package", "ControlCenter3")]
     public void VendorConsoleArtefactsAreRemovable(string kind, string value)
     {
         PsResult result = Classify(kind, value);
@@ -65,6 +72,14 @@ public class VendorConsoleRemovalN7Tests
     [InlineData("autostart", "GameViewer")]
     [InlineData("process", "explorer")]
     [InlineData("process", "L-Mechrevo")]
+    // beta21: the old bare "Mechrevo" marker matched our own uninstall entry and other Mechrevo apps.
+    [InlineData("uninstall", "L-Mechrevo 0.289.0-beta18")]
+    [InlineData("uninstall", "L-Mechrevo GCU 0.289.0-beta20")]
+    [InlineData("uninstall", "机械革命电子保修卡")]
+    [InlineData("uninstall", "Intel(R) Graphics Command Center")]
+    [InlineData("uninstallkey", "{8F4E2C71-9B3A-4D6E-A1C2-7E5B9D0F3A64}_is1")]
+    // An uninstall key without a DisplayName must classify, not abort the removal with a binding error.
+    [InlineData("uninstall", "")]
     public void UnrelatedSoftwareIsNotRemovable(string kind, string value)
     {
         PsResult result = Classify(kind, value);

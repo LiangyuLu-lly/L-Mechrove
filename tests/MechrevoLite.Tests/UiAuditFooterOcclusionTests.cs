@@ -98,7 +98,7 @@ public class UiAuditFooterOcclusionTests
             IgpuOnly = true,
             Keyboard = true,
             Lightbar = true,
-            LogoLight = true,
+            LogoLight = true, MbaLogo = true,
         });
         Program.hw = hardware;
         try
@@ -147,7 +147,7 @@ public class UiAuditFooterOcclusionTests
         {
             ProfileAvailable = true, TurboMode = true, CpuPerformanceTuning = true, FanSettings = true,
             LiquidCooling = true, DisplayRefresh = true, ColorCalibration = true, LcdOverdrive = true,
-            DgpuDirect = true, IgpuOnly = true, Keyboard = true, Lightbar = true, LogoLight = true,
+            DgpuDirect = true, IgpuOnly = true, Keyboard = true, Lightbar = true, LogoLight = true, MbaLogo = true,
         });
         Program.hw = hardware;
         try

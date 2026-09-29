@@ -3071,6 +3071,270 @@ namespace MechrevoLite.Properties {
                 return ResourceManager.GetString("PerfModeNoSlotSeed", resourceCulture);
             }
         }
+        /// <summary>
+        ///   Looks up a localized string similar to Flash.
+        /// </summary>
+        internal static string LightEffectFlash {
+            get {
+                return ResourceManager.GetString("LightEffectFlash", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Chase.
+        /// </summary>
+        internal static string LightEffectThinking {
+            get {
+                return ResourceManager.GetString("LightEffectThinking", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Music.
+        /// </summary>
+        internal static string LightEffectMusic {
+            get {
+                return ResourceManager.GetString("LightEffectMusic", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Battery level.
+        /// </summary>
+        internal static string LightEffectBatteryPercent {
+            get {
+                return ResourceManager.GetString("LightEffectBatteryPercent", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Dawn.
+        /// </summary>
+        internal static string LightEffectDawn {
+            get {
+                return ResourceManager.GetString("LightEffectDawn", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Color marquee.
+        /// </summary>
+        internal static string LightEffectColorMarquee {
+            get {
+                return ResourceManager.GetString("LightEffectColorMarquee", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Confirmed (device readback).
+        /// </summary>
+        internal static string LightApplyConfirmedDevice {
+            get {
+                return ResourceManager.GetString("LightApplyConfirmedDevice", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Confirmed (service readback).
+        /// </summary>
+        internal static string LightApplyConfirmedService {
+            get {
+                return ResourceManager.GetString("LightApplyConfirmedService", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Sent (no readback).
+        /// </summary>
+        internal static string LightApplySent {
+            get {
+                return ResourceManager.GetString("LightApplySent", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Failed.
+        /// </summary>
+        internal static string LightApplyFailed {
+            get {
+                return ResourceManager.GetString("LightApplyFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to {0}: {1}.
+        /// </summary>
+        internal static string LightApplyStatusFormat {
+            get {
+                return ResourceManager.GetString("LightApplyStatusFormat", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Hinge.
+        /// </summary>
+        internal static string LightChannelHinge {
+            get {
+                return ResourceManager.GetString("LightChannelHinge", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Sync strip.
+        /// </summary>
+        internal static string LightChannelSync {
+            get {
+                return ResourceManager.GetString("LightChannelSync", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Logo.
+        /// </summary>
+        internal static string LightChannelLogo {
+            get {
+                return ResourceManager.GetString("LightChannelLogo", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Direction.
+        /// </summary>
+        internal static string LightParamDirection {
+            get {
+                return ResourceManager.GetString("LightParamDirection", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Color.
+        /// </summary>
+        internal static string LightParamColor {
+            get {
+                return ResourceManager.GetString("LightParamColor", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Palette.
+        /// </summary>
+        internal static string LightColorPalette {
+            get {
+                return ResourceManager.GetString("LightColorPalette", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to None.
+        /// </summary>
+        internal static string LightDirNone {
+            get {
+                return ResourceManager.GetString("LightDirNone", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Rightward.
+        /// </summary>
+        internal static string LightDirLeftRight {
+            get {
+                return ResourceManager.GetString("LightDirLeftRight", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Leftward.
+        /// </summary>
+        internal static string LightDirRightLeft {
+            get {
+                return ResourceManager.GetString("LightDirRightLeft", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Upward.
+        /// </summary>
+        internal static string LightDirDownUp {
+            get {
+                return ResourceManager.GetString("LightDirDownUp", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Downward.
+        /// </summary>
+        internal static string LightDirUpDown {
+            get {
+                return ResourceManager.GetString("LightDirUpDown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to On key press.
+        /// </summary>
+        internal static string LightDirOnKeyPressed {
+            get {
+                return ResourceManager.GetString("LightDirOnKeyPressed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Colorful.
+        /// </summary>
+        internal static string LightEcModeColorful {
+            get {
+                return ResourceManager.GetString("LightEcModeColorful", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Static.
+        /// </summary>
+        internal static string LightEcModeStatic {
+            get {
+                return ResourceManager.GetString("LightEcModeStatic", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Breathing.
+        /// </summary>
+        internal static string LightEcBreathing {
+            get {
+                return ResourceManager.GetString("LightEcBreathing", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Red.
+        /// </summary>
+        internal static string LightEcRed {
+            get {
+                return ResourceManager.GetString("LightEcRed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Green.
+        /// </summary>
+        internal static string LightEcGreen {
+            get {
+                return ResourceManager.GetString("LightEcGreen", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Blue.
+        /// </summary>
+        internal static string LightEcBlue {
+            get {
+                return ResourceManager.GetString("LightEcBlue", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Hinge lighting.
+        /// </summary>
+        internal static string LightHingeTitle {
+            get {
+                return ResourceManager.GetString("LightHingeTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Sync strip lighting.
+        /// </summary>
+        internal static string LightSyncTitle {
+            get {
+                return ResourceManager.GetString("LightSyncTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Lightbar lighting.
+        /// </summary>
+        internal static string LightEcTitle {
+            get {
+                return ResourceManager.GetString("LightEcTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Single-color backlight.
+        /// </summary>
+        internal static string LightSingleColorBacklight {
+            get {
+                return ResourceManager.GetString("LightSingleColorBacklight", resourceCulture);
+            }
+        }
     }
 }
 

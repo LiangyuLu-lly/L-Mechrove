@@ -1037,6 +1037,8 @@ namespace MechrevoLite
         static readonly (string Topic, string SwitchKey, Func<bool> Supported)[] ExternalLightChannels =
         [
             (MqttTopics.LightbarCtrl, "lightbar", () => hw.SupportsLightbar),
+            (MqttTopics.HingeLightCtrl, "hingelight", () => hw.SupportsHingeLight),
+            (MqttTopics.SyncLightCtrl, "synclight", () => hw.SupportsSyncLight),
             (MqttTopics.LogoLightCtrl, "logolight", () => hw.SupportsLogoLight),
         ];
 
@@ -1077,8 +1079,12 @@ namespace MechrevoLite
             if (delayMs > 0) await Task.Delay(delayMs).ConfigureAwait(false);
             if (shouldApply is not null && !shouldApply()) return false;
             if (service is null) return false;
+            // 颜色/方向按该通道该效果的官方规格给（固件不采用的参数不下发用户值）。
+            LightEffectSpec? spec = hw is null ? null : LightingEffectCatalog.Find(
+                LightingEffectCatalog.ForTopic(topic, hw.Lighting, hw.BiosProjectId), settings.Effect);
             return await service.SetLightEffect(topic, settings.Effect, settings.Light, settings.Speed,
-                "None", LightingSettingsStore.ColorForEffect(settings.Effect, settings.ColorArgb), save: false)
+                LightingSettingsStore.DirectionForSpec(spec, settings),
+                LightingSettingsStore.ColorForSpec(spec, settings), save: false)
                 .ConfigureAwait(false);
         }
 
@@ -1266,12 +1272,15 @@ namespace MechrevoLite
         internal static async Task<bool> RestoreKeyboardEffectViaGcuAsync()
         {
             if (service is null || hw is not { IsConnected: true }) return false;
-            var catalog = KeyboardFirmwareEffects.Visible(hw.Capabilities.KeyboardType);
+            KeyboardLightKind kind = hw.Lighting.Keyboard;
+            var catalog = KeyboardFirmwareEffects.Visible(kind);
             LightChannelSettings settings = LightingSettingsStore.Load(MqttTopics.KeyboardCtrl, catalog[0].Id);
-            string effect = KeyboardFirmwareEffects.Contains(settings.Effect) ? settings.Effect : catalog[0].Id;
-            Color? color = LightingSettingsStore.ColorForEffect(effect, settings.ColorArgb);
-            return await service.SetKeyboardEffect(
-                effect, settings.Light, settings.Speed, "None", color, save: false).ConfigureAwait(false);
+            string effect = Array.Exists(catalog, e => e.Id == settings.Effect) ? settings.Effect : catalog[0].Id;
+            LightEffectSpec? spec = KeyboardFirmwareEffects.Spec(kind, effect);
+            LightChannelSettings applied = settings with { Effect = effect };
+            return await service.SetKeyboardEffect(effect, settings.Light, settings.Speed,
+                LightingSettingsStore.DirectionForSpec(spec, applied),
+                LightingSettingsStore.ColorForSpec(spec, applied), save: false).ConfigureAwait(false);
         }
 
 

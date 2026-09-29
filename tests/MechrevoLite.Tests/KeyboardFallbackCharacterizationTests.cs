@@ -114,7 +114,7 @@ public class KeyboardFallbackCharacterizationTests
                     }
                 }
                 return Task.CompletedTask;
-            }, new MechrevoDeviceCapabilities { Lightbar = true, LogoLight = true, Keyboard = true });
+            }, new MechrevoDeviceCapabilities { Lightbar = true, LogoLight = true, MbaLogo = true, Keyboard = true });
             hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\"}");
             hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\"}");
             Hardware = hardware;

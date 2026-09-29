@@ -1,4 +1,4 @@
-﻿using MechrevoLite.Hardware;
+using MechrevoLite.Hardware;
 using System.Reflection;
 
 namespace MechrevoLite.Tests;
@@ -33,12 +33,16 @@ public class LightbarChannelTests
         Assert.False(hardware.QuickSwitches["logolight"]);
     }
 
-    /// <summary>状态主题到过即视为这条子灯带存在。</summary>
+    /// <summary>
+    /// Logo 通道状态到过 + 官方认的 Logo 灯珠标志（本机 1.2 版服务在主灯带状态里报 MBlogoSupport=true）
+    /// 才视为这条子灯带存在；服务对每台 Lighbar4 都会回 Logo 状态壳，壳本身不算（见 LightingChannelDetectionTests）。
+    /// </summary>
     [Fact]
     public void LogoLightSupportIsEstablishedByItsOwnStatusTopic()
     {
         using MechrevoHw hardware = NewHardware();
 
+        hardware.HandleMessage("HidLightbar/Status", "{\"powerStatus\":\"Off\",\"type\":\"MEZone_Lighbar4\",\"MBlogoSupport\":true}");
         hardware.HandleMessage("HidLightbar_Logo/Status", "{\"powerStatus\":\"On\",\"type\":\"MEZone_Lighbar4\"}");
 
         Assert.True(hardware.LogoLightStatusSeen);
@@ -81,7 +85,9 @@ public class LightbarChannelTests
     }
 
     /// <summary>
-    /// ItemSupport / 注册表画像与键盘同一口径：出厂位置位就必须出入口。
+    /// 服务还没回灯条状态时按注册表画像给入口：LightbarSupport 位 → 灯条；
+    /// Logo 要 LightbarSupport + Support\MBALogo（官方 A 面 Logo 判据），
+    /// 不再认 RGBKeyboard 下的 Lightbar_logo_* 值（每台 Lighbar4 都有，会造假入口）。
     /// 空 MQTT 载荷仍然不能把 *Seen 置位。
     /// </summary>
     [Fact]
@@ -91,7 +97,7 @@ public class LightbarChannelTests
         {
             ProfileAvailable = true,
             Lightbar = true,
-            LogoLight = true,
+            MbaLogo = true,
         });
 
         Assert.True(hardware.SupportsLightbar);
@@ -162,7 +168,8 @@ public class EmptyLightbarStatusRegressionTests
     {
         using var hardware = NewHardware();
 
-        // 开发机实测的子灯带载荷。
+        // 开发机实测：主灯带状态带 MBlogoSupport=true，Logo 子灯带载荷有 type/powerStatus。
+        hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\",\"MBlogoSupport\":true}");
         hardware.HandleMessage("HidLightbar_Logo/Status",
             "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"brightNess\":3}");
 
@@ -182,6 +189,7 @@ public class EmptyLightbarStatusRegressionTests
         hardware.HandleMessage("HidLightbar_Logo/Status", "{}");
         Assert.False(hardware.SupportsLogoLight);
 
+        hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\",\"MBlogoSupport\":true}");
         hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\"}");
         Assert.True(hardware.SupportsLogoLight);
     }
@@ -195,6 +203,7 @@ public class EmptyLightbarStatusRegressionTests
     {
         using var hardware = NewHardware();
 
+        hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\",\"MBlogoSupport\":true}");
         hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\"}");
         hardware.HandleMessage("HidLightbar_Logo/Status", "{}");
 
@@ -244,57 +253,62 @@ public class EmptyLightbarStatusRegressionTests
 }
 
 /// <summary>
-/// 铰链灯带与同步灯带功能移除的守卫（beta12 模式：反射断言符号不存在）。
-///
-/// 这两个功能按用户决定全链路移除。任何一处以旧形状复活（哪怕编译通过）都会
-/// 在界面上长出背后没有完整链路的入口，所以从四个方向分别锁死：
-/// 能力位属性、订阅与日志键、解析行为、主题映射。
+/// 铰链灯带与同步灯带：按官方口径识别的守卫（原先整体移除，是因为服务对每台 Lighbar4
+/// 都回这两条状态壳，只看主题会造假入口；现在按官方判据恢复——壳本身仍然不构成存在证据）。
+/// 铰链 = 做过 0xA2 分区探测的 BIOS（IDA/IDB/IDX/IDZ）且 HingeSupport=true；
+/// 同步 = BIOS=IDZ 的 Lighbar4 且同步状态有内容。
 /// </summary>
-public class HingeSyncRemovalGuardTests
+public class HingeSyncOfficialGatingTests
 {
-    [Theory]
-    [InlineData("SupportsHingeLight")]
-    [InlineData("SupportsSyncLight")]
-    [InlineData("HingeLightStatusSeen")]
-    [InlineData("SyncLightStatusSeen")]
-    [InlineData("LightbarHingeSupport")]
-    public void RemovedCapabilitySymbolsDoNotExist(string propertyName)
+    [Fact]
+    public void HingeAndSyncTopicsAreSubscribedAndLoggedWithDedup()
     {
-        var property = typeof(MechrevoHw).GetProperty(propertyName,
-            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        Assert.True(property is null, $"MechrevoHw.{propertyName} 已随铰链/同步灯带功能移除，不应再存在。");
+        Assert.Contains("HidLightbar_Hinge/#", MechrevoHw.SubscribedTopicFilters);
+        Assert.Contains("HidLightbar_Sync/#", MechrevoHw.SubscribedTopicFilters);
+        Assert.Contains("lb-status-HidLightbar_Hinge/Status", MechrevoHw.StatusLogKeys);
+        Assert.Contains("lb-status-HidLightbar_Sync/Status", MechrevoHw.StatusLogKeys);
     }
 
     [Fact]
-    public void HingeAndSyncTopicsAreNoLongerSubscribedOrLogged()
-    {
-        Assert.DoesNotContain(MechrevoHw.SubscribedTopicFilters,
-            f => f.Contains("Hinge", StringComparison.OrdinalIgnoreCase) || f.Contains("Sync", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(MechrevoHw.StatusLogKeys,
-            k => k.Contains("Hinge", StringComparison.OrdinalIgnoreCase) || k.Contains("Sync", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void HingeAndSyncTopicsNoLongerParseIntoSupport()
+    public void StatusShellsOnANonProbedBiosNeverEstablishSupport()
     {
         using MechrevoHw hardware = new(null, new MechrevoDeviceCapabilities());
 
-        // 真实固件仍可能推这两条主题；收到时必须无害（不解析、不建立任何能力）。
+        // 本机（IDY）实测：主灯带 Lighbar4，铰链回 type=MEZone_Lighbar4 的壳，同步全空。
+        hardware.HandleMessage("Customize/SupportInfo", "{\"BIOS_PROJECT_ID\":\"IDY\"}");
+        hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\",\"HingeSupport\":false}");
         hardware.HandleMessage("HidLightbar_Hinge/Status",
             "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"brightNess\":3}");
-        hardware.HandleMessage("HidLightbar_Sync/Status",
-            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"brightNess\":3}");
+        hardware.HandleMessage("HidLightbar_Sync/Status", "{\"type\":null,\"powerStatus\":null}");
 
+        Assert.True(hardware.HingeLightStatusSeen);   // 原始证据照记
+        Assert.False(hardware.SupportsHingeLight);    // 但没有灯珠
+        Assert.False(hardware.SupportsSyncLight);
         Assert.False(hardware.SupportsQuickSwitch("hingelight"));
         Assert.False(hardware.SupportsQuickSwitch("synclight"));
-        Assert.False(hardware.QuickSwitches.ContainsKey("hingelight"));
-        Assert.False(hardware.QuickSwitches.ContainsKey("synclight"));
     }
 
     [Fact]
-    public void HingeAndSyncTopicsMapToNothing()
+    public void ProbedIdzWithHingeBitAndSyncStatusEstablishesBoth()
     {
-        Assert.Null(MechrevoService.LightTopicToQuickSwitchKey("HidLightbar_Hinge/Ctrl"));
-        Assert.Null(MechrevoService.LightTopicToQuickSwitchKey("HidLightbar_Sync/Ctrl"));
+        using MechrevoHw hardware = new(null, new MechrevoDeviceCapabilities());
+
+        hardware.HandleMessage("Customize/SupportInfo", "{\"BIOS_PROJECT_ID\":\"IDZ\"}");
+        hardware.HandleMessage("HidLightbar/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"HingeSupport\":true,\"BaseSupport\":true}");
+        hardware.HandleMessage("HidLightbar_Sync/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\"}");
+
+        Assert.True(hardware.SupportsHingeLight);
+        Assert.True(hardware.SupportsSyncLight);
+        Assert.True(hardware.QuickSwitches["synclight"]);
+    }
+
+    [Fact]
+    public void HingeAndSyncTopicsMapToTheirOwnSwitchKeys()
+    {
+        Assert.Equal("hingelight", MechrevoService.LightTopicToQuickSwitchKey("HidLightbar_Hinge/Ctrl"));
+        Assert.Equal("synclight", MechrevoService.LightTopicToQuickSwitchKey("HidLightbar_Sync/Ctrl"));
+        Assert.Equal("lightbar", MechrevoService.LightTopicToQuickSwitchKey("HidLightbar/Ctrl"));
+        Assert.Equal("eclightbar", MechrevoService.LightTopicToQuickSwitchKey("MyRgbLightbar/Control"));
     }
 }

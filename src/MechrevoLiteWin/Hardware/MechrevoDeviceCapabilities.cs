@@ -98,6 +98,8 @@ public sealed class MechrevoDeviceCapabilities
     public bool AmdPlatform { get; init; }
     public bool IsOldType { get; init; }
     public int KeyboardType { get; init; }
+    /// <summary>Support\MBALogo（A 面 Logo 灯）。只作灯光通道识别的证据，见 LightingChannelDetector。</summary>
+    public bool MbaLogo { get; init; }
     public int DisplayRefreshLevel { get; init; }
 
     public string IdentitySummary =>
@@ -208,7 +210,7 @@ public sealed class MechrevoDeviceCapabilities
             identity["SystemProductName"] = modelOverride;
         }
 
-        var capabilities = FromValues(values, identity, DetectLogoLightingRegistry());
+        var capabilities = FromValues(values, identity, DetectLogoLightingRegistry(), ReadMbaLogoFlag());
         Logger.WriteLine("Device capabilities: " + capabilities.IdentitySummary +
             $", officialProfile={capabilities.ProfileAvailable}, logo={capabilities.LogoLight}");
         return capabilities;
@@ -265,7 +267,8 @@ public sealed class MechrevoDeviceCapabilities
     internal static MechrevoDeviceCapabilities FromValues(
         IReadOnlyDictionary<string, object?> values,
         IReadOnlyDictionary<string, object?>? identity = null,
-        bool logoRegistryDetected = false)
+        bool logoRegistryDetected = false,
+        bool mbaLogo = false)
     {
         object? Value(params string[] names)
         {
@@ -367,6 +370,7 @@ public sealed class MechrevoDeviceCapabilities
             AmdPlatform = Flag("IsAMDPlatform", "IsAmdPlatform"),
             IsOldType = Flag("IsOldType"),
             KeyboardType = keyboardType,
+            MbaLogo = mbaLogo,
             DisplayRefreshLevel = refreshLevel,
         };
     }
@@ -403,6 +407,26 @@ public sealed class MechrevoDeviceCapabilities
             (name.Contains("lightbar", StringComparison.OrdinalIgnoreCase) ||
              name.Contains("lighbar", StringComparison.OrdinalIgnoreCase)) &&
             name.Contains("logo", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// HKLM\SOFTWARE\OEM\GamingCenter2\Support\MBALogo：CCUWinUI 据此显示 A 面 Logo 页并在 Logo 效果里加「混合」
+    /// （LightViewModel.cs:2518、MyHidLightbarTypeInfo.cs:205）。只读。
+    /// </summary>
+    static bool ReadMbaLogoFlag()
+    {
+        try
+        {
+            using RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using RegistryKey? key = baseKey.OpenSubKey(@"SOFTWARE\OEM\GamingCenter2\Support");
+            object? value = key?.GetValue("MBALogo");
+            return value is not null && Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture) != 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("Cannot read Support\\MBALogo: " + ex.Message);
+            return false;
+        }
+    }
 
     static bool DetectLogoLightingRegistry()
     {

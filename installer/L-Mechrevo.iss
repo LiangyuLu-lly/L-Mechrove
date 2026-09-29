@@ -5,6 +5,12 @@
 ;  Start Menu + optional desktop shortcuts, uninstall entry, and silent GCU
 ;  vendor-payload installation (see installer\README.md).
 ;
+;  Upgrades are OVERLAY installs (beta21): the previous version is no longer
+;  uninstalled first - that deleted the GCU service's user state (modes, fan
+;  curves) on every update. Same version = repair; an older installer refuses
+;  to downgrade. /RELAUNCH=1 (used by the in-app updater together with
+;  /VERYSILENT) starts the app again after a silent install.
+;
 ;  Build with installer\Build-Installer.ps1, which reads the version from
 ;  src\MechrevoLiteWin\MechrevoLite.csproj and passes /DAppVersion, /DAppLabel,
 ;  /DAppVersionNumeric, /DRepoRoot and /DAppSourceDir. The #ifndef defaults below
@@ -18,19 +24,19 @@
   #define AppPublisher "L-Mechrevo contributors"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.289.0-beta20"
+  #define AppVersion "0.289.0-beta21"
 #endif
 #ifndef AppVersionNumeric
   #define AppVersionNumeric "0.289.0.0"
 #endif
 #ifndef AppLabel
-  #define AppLabel "beta20"
+  #define AppLabel "beta21"
 #endif
 #ifndef RepoRoot
   #define RepoRoot AddBackslash(SourcePath) + ".."
 #endif
 #ifndef AppSourceDir
-  #define AppSourceDir RepoRoot + "\dist\beta20"
+  #define AppSourceDir RepoRoot + "\dist\beta21"
 #endif
 #ifndef OutputDir
   #define OutputDir "output"
@@ -87,22 +93,22 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.i
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
+; %n is the line break in custom messages. The break constant used before is only valid in
+; multi-string registry values and showed up literally in these dialogs.
 chinesesimplified.GcuStatus=正在安装 GCU...
 english.GcuStatus=Installing GCU...
 chinesesimplified.LaunchApp=运行 {#AppName}
 english.LaunchApp=Launch {#AppName}
-chinesesimplified.RuntimeRequired=本程序需要 .NET 桌面运行时 10（x64），当前未安装。{break}{break}是否现在从 Microsoft 官方地址自动下载并安装？
-english.RuntimeRequired=This app needs the .NET Desktop Runtime 10 (x64), which is not installed.{break}{break}Download and install it now from Microsoft?
-chinesesimplified.RuntimeFailed=自动下载或安装 .NET 桌面运行时失败，无法继续。{break}{break}将打开官方下载页面，请手动安装后重新运行本安装程序。
-english.RuntimeFailed=Automatic download/install of the .NET Desktop Runtime failed.{break}{break}The official download page will open; install it manually and run setup again.
-chinesesimplified.RuntimeDeclined=缺少 .NET 桌面运行时 10（x64），安装无法继续。{break}{break}将打开官方下载页面。
-english.RuntimeDeclined=.NET Desktop Runtime 10 (x64) is missing; setup cannot continue.{break}{break}The official download page will open.
-chinesesimplified.UninstallingOld=检测到已安装的 L-Mechrevo，将先卸载旧版本再安装新版本。
-english.UninstallingOld=An existing L-Mechrevo install was found. Setup will uninstall it first, then install this version.
-chinesesimplified.OldVersionUninstallMissing=找不到已安装 L-Mechrevo 的卸载程序，安装已中止。请先手动卸载旧版本后再试。
-english.OldVersionUninstallMissing=The existing L-Mechrevo uninstaller was not found. Setup aborted. Uninstall the old version manually and try again.
-chinesesimplified.OldVersionUninstallFailed=无法卸载已安装的 L-Mechrevo，安装已中止。请先手动卸载旧版本后再试。
-english.OldVersionUninstallFailed=Could not uninstall the existing L-Mechrevo. Setup aborted. Uninstall the old version manually and try again.
+chinesesimplified.RuntimeRequired=本程序需要 .NET 桌面运行时 10（x64），当前未安装。%n%n是否现在从 Microsoft 官方地址自动下载并安装？
+english.RuntimeRequired=This app needs the .NET Desktop Runtime 10 (x64), which is not installed.%n%nDownload and install it now from Microsoft?
+chinesesimplified.RuntimeFailed=自动下载或安装 .NET 桌面运行时失败，无法继续。%n%n将打开官方下载页面，请手动安装后重新运行本安装程序。
+english.RuntimeFailed=Automatic download/install of the .NET Desktop Runtime failed.%n%nThe official download page will open; install it manually and run setup again.
+chinesesimplified.RuntimeDeclined=缺少 .NET 桌面运行时 10（x64），安装无法继续。%n%n将打开官方下载页面。
+english.RuntimeDeclined=.NET Desktop Runtime 10 (x64) is missing; setup cannot continue.%n%nThe official download page will open.
+chinesesimplified.SameVersionRepair=已安装相同版本 {#AppVersion}。%n%n是否重新安装以修复？你的设置、性能模式与风扇曲线都会保留。
+english.SameVersionRepair=Version {#AppVersion} is already installed.%n%nReinstall it to repair? Your settings, performance modes and fan curves are kept.
+chinesesimplified.DowngradeBlocked=已安装更新的版本 %1，不能用较旧的 {#AppVersion} 覆盖安装。%n%n如需回退，请先在「设置 - 应用」中卸载当前版本。
+english.DowngradeBlocked=A newer version (%1) is already installed; {#AppVersion} cannot be installed over it.%n%nTo roll back, uninstall the current version first.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -122,13 +128,14 @@ Source: "{#RepoRoot}\用前必看.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Select-GcuPayload.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
 Source: "Install-Gcu.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
 Source: "Uninstall-Gcu.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
-; --- GCU vendor payload (N6: exactly one tree) --------------------------------
-; release\GCU-only is the newest payload and the superset: it serves 30/40/50, carries its own
-; UWACPIDriver, and its UserFanTables holds all 24 per-model chassis dirs + the 23 flat files
-; (the retired 40-series payloads carry zero per-model dirs). The shared driver tree is NOT
-; staged either: it is byte-identical to GCU-only\UWACPIDriver, so staging it would duplicate it.
-; The 40-series trees stay on disk untouched as the material for the visible fallback.
+; --- GCU vendor payloads (Install-Gcu.ps1 installs the one that matches this machine) ----------
+; release\GCU-only: the newest payload for 30/40/50 (and any undeterminable generation). It carries
+; its own UWACPIDriver, and its UserFanTables holds all 24 per-model chassis dirs + the 23 flat files.
+; release\GCU-1020: the GamingCenterU 1.1.0.49 legacy service (GCUBridge 1.0.1.4 + GCUService
+; 1.0.2.47 + ACPIDriver) for GTX 10 / GTX 16 / RTX 20 - the service those machines shipped with.
+; The retired 40-series trees and the shared driver tree are not staged.
 Source: "{#RepoRoot}\release\GCU-only\*"; DestDir: "{app}\GCU\payload\50"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#RepoRoot}\release\GCU-1020\*"; DestDir: "{app}\GCU\payload\1020"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
@@ -139,16 +146,20 @@ Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-; GCU payload install: runs AFTER files are copied. One shipped payload; no generation picker.
-; /GCUVARIANT is retired and ignored. Silent: no UI, log under ProgramData.
+; GCU payload install: runs AFTER files are copied. The payload is chosen by GPU generation inside
+; Install-Gcu.ps1; /GCUVARIANT is retired and ignored. Silent: no UI, log under ProgramData.
 ; N5: the installer is the single place elevation is obtained. Install-Gcu.ps1 creates the
-; highest-privileges autostart task, grants the app's directory ACLs and the ACPIDriver access
-; while this process is already elevated, so the app never needs to elevate at runtime.
+; highest-privileges autostart task, re-enables the app's scheduled tasks and grants the config/log
+; directory ACLs while this process is already elevated.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant Auto -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"" -AppExe ""{app}\{#AppExeName}"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
+; Interactive install: the finish-page checkbox (postinstall runs as the original, non-elevated
+; user; the app then elevates itself through its Highest autostart task without a UAC prompt).
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
+; Silent in-app update (/VERYSILENT /RELAUNCH=1): start the app again for the user who started setup.
+Filename: "{app}\{#AppExeName}"; Parameters: "--after-update"; Flags: nowait runasoriginaluser; Check: ShouldRelaunchAfterSilentInstall
 
 [UninstallRun]
-; Stop/remove the GCU service + firewall rule + staged UWACPI driver BEFORE files are deleted.
+; Stop/remove the GCU service + firewall rule + staged ACPI driver BEFORE files are deleted.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Uninstall-Gcu.ps1"" -TargetDir ""{app}\GCU"" -LogDir ""{commonappdata}\L-Mechrevo\logs"""; Flags: runhidden waituntilterminated; RunOnceId: "GcuUninstall"
 
 [UninstallDelete]
@@ -159,6 +170,9 @@ Type: filesandordirs; Name: "{commonappdata}\L-Mechrevo\logs"
 Type: filesandordirs; Name: "{app}\GCU\AiStoneService"
 Type: filesandordirs; Name: "{app}\GCU\UniwillService"
 Type: filesandordirs; Name: "{app}\GCU\UWACPIDriver"
+Type: filesandordirs; Name: "{app}\GCU\ACPIDriver"
+Type: filesandordirs; Name: "{app}\GCU\state-backup"
+Type: files; Name: "{app}\GCU\gcu-registry-*.reg"
 
 [Code]
 // ============================================================================
@@ -176,11 +190,17 @@ Type: filesandordirs; Name: "{app}\GCU\UWACPIDriver"
 // ============================================================================
 const
   DotNetDesktopSharedFxKey = 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
-  // Versioned Microsoft blob URL is immutable, so the pinned SHA256 stays valid.
+  // Versioned Microsoft blob URL is immutable, so the pinned SHA-256 stays valid.
   DotNetRuntimeUrl = 'https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.12/windowsdesktop-runtime-10.0.12-win-x64.exe';
-  DotNetRuntimeSha256 = '0B907E9312867172A4EB82F4B5AB3F7C2D25E27D8349546D77EEB5D5B8CBECAB9EBEBFED189B13E9669DC578D892756C548366DA539D47B3DDAC5EFCB7AE72FE';
+  // SHA-256 (64 hex digits). The value here used to be the file's SHA-512 (128 digits) taken from
+  // Microsoft's release metadata, so every download failed verification and fell back to the browser.
+  DotNetRuntimeSha256 = '55a67d8476cde95a9cc43a95803b4f54446e7c9251ed22aa6421d4908174ae84';
   DotNetRuntimeFileName = 'windowsdesktop-runtime-10.0.12-win-x64.exe';
   DotNetDownloadPage = 'https://dotnet.microsoft.com/download/dotnet/10.0';
+  AppRegistryKey = 'SOFTWARE\L-Mechrevo';
+
+var
+  TasksDisabledBySetup: Boolean;
 
 function MajorVersionOf(const Value: String): Integer;
 var
@@ -318,47 +338,95 @@ begin
   Result := ShellExec('open', DotNetDownloadPage, '', '', SW_SHOWNORMAL, ewNoWait, ExitCode);
 end;
 
-function GetUninstallString: String;
+// ============================================================================
+//  Version ordering for upgrade / repair / downgrade decisions.
+//  "0.289.0-beta21" -> base 0.289.0, pre-release beta 21. A final release (no suffix) sorts
+//  after every beta of the same base. AppVersionNumeric cannot be used: all 0.289.0 betas share it.
+// ============================================================================
+function NextNumber(const Text: String; var Index: Integer): Integer;
+var
+  Start: Integer;
+begin
+  Result := 0;
+  while (Index <= Length(Text)) and not ((Text[Index] >= '0') and (Text[Index] <= '9')) do
+    Index := Index + 1;
+  Start := Index;
+  while (Index <= Length(Text)) and (Text[Index] >= '0') and (Text[Index] <= '9') do
+    Index := Index + 1;
+  if Index > Start then
+    Result := StrToIntDef(Copy(Text, Start, Index - Start), 0);
+end;
+
+function AppVersionKey(const Version: String): Int64;
+var
+  Base, Suffix: String;
+  Dash, Index, Major, Minor, Patch, Beta: Integer;
+  Key: Int64;
+begin
+  Dash := Pos('-', Version);
+  if Dash > 0 then
+  begin
+    Base := Copy(Version, 1, Dash - 1);
+    Suffix := Copy(Version, Dash + 1, Length(Version));
+  end
+  else
+  begin
+    Base := Version;
+    Suffix := '';
+  end;
+  Index := 1;
+  Major := NextNumber(Base, Index);
+  Minor := NextNumber(Base, Index);
+  Patch := NextNumber(Base, Index);
+  if Suffix = '' then
+    Beta := 9999
+  else
+  begin
+    Index := 1;
+    Beta := NextNumber(Suffix, Index);
+  end;
+  Key := Major;
+  Key := Key * 1000 + Minor;
+  Key := Key * 1000 + Patch;
+  Key := Key * 10000 + Beta;
+  Result := Key;
+end;
+
+function GetInstalledAppVersion: String;
 var
   UninstallKey: String;
 begin
   UninstallKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#emit SetupSetting("AppId")}_is1';
   Result := '';
-  if not RegQueryStringValue(HKLM64, UninstallKey, 'UninstallString', Result) then
-    if not RegQueryStringValue(HKLM32, UninstallKey, 'UninstallString', Result) then
-      RegQueryStringValue(HKCU, UninstallKey, 'UninstallString', Result);
+  if not RegQueryStringValue(HKLM64, UninstallKey, 'DisplayVersion', Result) then
+    if not RegQueryStringValue(HKLM32, UninstallKey, 'DisplayVersion', Result) then
+      RegQueryStringValue(HKCU, UninstallKey, 'DisplayVersion', Result);
 end;
 
-function UnInstallOldVersion: String;
+function InitializeSetup: Boolean;
 var
-  Uninstaller: String;
-  ExitCode: Integer;
-  KillCode: Integer;
+  Installed: String;
+  InstalledKey, IncomingKey: Int64;
 begin
-  Result := '';
-  Uninstaller := RemoveQuotes(GetUninstallString);
-  if Uninstaller = '' then
+  Result := True;
+  Installed := GetInstalledAppVersion;
+  if Installed = '' then
     Exit;
-
-  if not FileExists(Uninstaller) then
+  InstalledKey := AppVersionKey(Installed);
+  IncomingKey := AppVersionKey('{#AppVersion}');
+  Log(Format('Installed version %s, this installer %s', [Installed, '{#AppVersion}']));
+  if InstalledKey > IncomingKey then
   begin
-    Result := ExpandConstant('{cm:OldVersionUninstallMissing}');
+    // Never overwrite a newer install with older binaries (silent: fail with a non-zero exit code).
+    // CustomMessage returns the raw text; FmtMessage fills %1 and turns %n into line breaks.
+    if not WizardSilent then
+      MsgBox(FmtMessage(CustomMessage('DowngradeBlocked'), [Installed]), mbError, MB_OK);
+    Log('Refusing to downgrade: ' + Installed + ' is newer than {#AppVersion}');
+    Result := False;
     Exit;
   end;
-
-  if not WizardSilent then
-    MsgBox(ExpandConstant('{cm:UninstallingOld}'), mbInformation, MB_OK);
-
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM L-Mechrevo.exe /F /T', '', SW_HIDE, ewWaitUntilTerminated, KillCode);
-
-  if not Exec(Uninstaller, '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES', '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
-  begin
-    Result := ExpandConstant('{cm:OldVersionUninstallFailed}');
-    Exit;
-  end;
-
-  if (ExitCode <> 0) and (ExitCode <> 3010) then
-    Result := ExpandConstant('{cm:OldVersionUninstallFailed}');
+  if (InstalledKey = IncomingKey) and not WizardSilent then
+    Result := MsgBox(FmtMessage(CustomMessage('SameVersionRepair'), ['']), mbConfirmation, MB_YESNO) = IDYES;
 end;
 
 procedure StopLockedAppProcesses;
@@ -370,18 +438,29 @@ begin
   Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like ''LMechrevo*'' } | ForEach-Object { Stop-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue; Disable-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue }"',
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  TasksDisabledBySetup := True;
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM L-Mechrevo.exe /F /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(800);
+end;
+
+procedure EnableLMechrevoTasks;
+var
+  ResultCode: Integer;
+begin
+  // Undo StopLockedAppProcesses on every exit path (success, failed runtime check, cancel):
+  // a disabled LMechrevoCharge task silently stops the boot-time charge limit.
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like ''LMechrevo*'' -and $_.State -eq ''Disabled'' } | ForEach-Object { Enable-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue | Out-Null }"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Answer: Integer;
 begin
+  // Overlay install: stop the running app and its tasks so files can be replaced, then check the
+  // runtime. The previous version is deliberately NOT uninstalled first.
   StopLockedAppProcesses;
-  Result := UnInstallOldVersion;
-  if Result <> '' then
-    Exit;
 
   Result := '';
   if IsDesktopRuntime10Installed then
@@ -414,9 +493,28 @@ begin
   end;
 end;
 
-function NeedRestart(): Boolean;
+function ShouldRelaunchAfterSilentInstall: Boolean;
 begin
-  // Suggest a reboot after GCU/driver install. The finished page lets the user postpone
-  // (Yes now / No later). Silent installs still honor /NORESTART.
-  Result := True;
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;
+
+function NeedRestart(): Boolean;
+var
+  Flag: Cardinal;
+begin
+  // Offer a reboot only when Install-Gcu.ps1 recorded a real reason (a driver install that asked
+  // for one, or locked official-console components). The value is consumed here so a later
+  // install does not ask again. Silent installs still honor /NORESTART.
+  Result := False;
+  if RegQueryDWordValue(HKLM64, AppRegistryKey, 'RebootRequired', Flag) and (Flag <> 0) then
+  begin
+    RegDeleteValue(HKLM64, AppRegistryKey, 'RebootRequired');
+    Result := True;
+  end;
+end;
+
+procedure DeinitializeSetup;
+begin
+  if TasksDisabledBySetup then
+    EnableLMechrevoTasks;
 end;

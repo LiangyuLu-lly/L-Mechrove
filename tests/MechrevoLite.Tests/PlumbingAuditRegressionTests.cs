@@ -519,8 +519,9 @@ public class LightTopicMappingTests
             // 让 Logo 子灯带的能力成立，同时主灯带保持关闭。
             hardware.HandleMessage("HidLightbar_Logo/Status",
                 """{"type":"MEZone_Lighbar4","powerStatus":"Off","brightNess":"50"}""");
+            // Logo 通道只在 Lighbar4 上存在，且要有官方的 Logo 灯珠标志（这里用 A 面 Logo 的 MBlogoSupport）。
             hardware.HandleMessage("HidLightbar/Status",
-                """{"type":"MEZone_Lighbar1","powerStatus":"Off","brightNess":"50"}""");
+                """{"type":"MEZone_Lighbar4","powerStatus":"Off","brightNess":"50","MBlogoSupport":true}""");
 
             bool confirmed = await service.SetLightPower("HidLightbar_Logo/Ctrl", true);
 

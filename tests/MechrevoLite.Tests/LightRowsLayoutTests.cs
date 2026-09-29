@@ -207,7 +207,7 @@ public class LightRowsLayoutTests
         {
             ProfileAvailable = true,
             Keyboard = true,
-            LogoLight = true,
+            LogoLight = true, MbaLogo = true,
         });
         Program.hw = hardware;
         try
@@ -334,6 +334,10 @@ public class LightRowsLayoutTests
         hardware.HandleMessage("HidLightbar/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\"}");
         hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\"}");
         Assert.True(hardware.SupportsLightbar);
+        // 服务对每台 Lighbar4 都回 Logo 状态壳：没有官方的 Logo 灯珠标志就不是 Logo 灯。
+        Assert.False(hardware.SupportsLogoLight);
+        hardware.HandleMessage("HidLightbar/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"MBlogoSupport\":true}");
         Assert.True(hardware.SupportsLogoLight);
         Program.hw = hardware;
         try

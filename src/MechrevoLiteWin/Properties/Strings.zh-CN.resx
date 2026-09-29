@@ -1185,4 +1185,103 @@
   <data name="PerfModeNoSlotSeed" xml:space="preserve">
     <value>读不到该模式的厂商出厂参数，无法转到自定义档。</value>
   </data>
+  <data name="LightEffectFlash" xml:space="preserve">
+    <value>闪烁</value>
+  </data>
+  <data name="LightEffectThinking" xml:space="preserve">
+    <value>追光</value>
+  </data>
+  <data name="LightEffectMusic" xml:space="preserve">
+    <value>音乐律动</value>
+  </data>
+  <data name="LightEffectBatteryPercent" xml:space="preserve">
+    <value>电量显示</value>
+  </data>
+  <data name="LightEffectDawn" xml:space="preserve">
+    <value>晨曦</value>
+  </data>
+  <data name="LightEffectColorMarquee" xml:space="preserve">
+    <value>彩色跑马灯</value>
+  </data>
+  <data name="LightApplyConfirmedDevice" xml:space="preserve">
+    <value>已确认（设备回读）</value>
+  </data>
+  <data name="LightApplyConfirmedService" xml:space="preserve">
+    <value>已确认（官方服务回读）</value>
+  </data>
+  <data name="LightApplySent" xml:space="preserve">
+    <value>已下发（未收到回读）</value>
+  </data>
+  <data name="LightApplyFailed" xml:space="preserve">
+    <value>失败</value>
+  </data>
+  <data name="LightApplyStatusFormat" xml:space="preserve">
+    <value>{0}：{1}</value>
+  </data>
+  <data name="LightChannelHinge" xml:space="preserve">
+    <value>铰链灯</value>
+  </data>
+  <data name="LightChannelSync" xml:space="preserve">
+    <value>同步灯带</value>
+  </data>
+  <data name="LightChannelLogo" xml:space="preserve">
+    <value>Logo</value>
+  </data>
+  <data name="LightParamDirection" xml:space="preserve">
+    <value>方向</value>
+  </data>
+  <data name="LightParamColor" xml:space="preserve">
+    <value>颜色</value>
+  </data>
+  <data name="LightColorPalette" xml:space="preserve">
+    <value>七彩</value>
+  </data>
+  <data name="LightDirNone" xml:space="preserve">
+    <value>无</value>
+  </data>
+  <data name="LightDirLeftRight" xml:space="preserve">
+    <value>向右</value>
+  </data>
+  <data name="LightDirRightLeft" xml:space="preserve">
+    <value>向左</value>
+  </data>
+  <data name="LightDirDownUp" xml:space="preserve">
+    <value>向上</value>
+  </data>
+  <data name="LightDirUpDown" xml:space="preserve">
+    <value>向下</value>
+  </data>
+  <data name="LightDirOnKeyPressed" xml:space="preserve">
+    <value>按键触发</value>
+  </data>
+  <data name="LightEcModeColorful" xml:space="preserve">
+    <value>炫彩</value>
+  </data>
+  <data name="LightEcModeStatic" xml:space="preserve">
+    <value>单色</value>
+  </data>
+  <data name="LightEcBreathing" xml:space="preserve">
+    <value>呼吸</value>
+  </data>
+  <data name="LightEcRed" xml:space="preserve">
+    <value>红</value>
+  </data>
+  <data name="LightEcGreen" xml:space="preserve">
+    <value>绿</value>
+  </data>
+  <data name="LightEcBlue" xml:space="preserve">
+    <value>蓝</value>
+  </data>
+  <data name="LightHingeTitle" xml:space="preserve">
+    <value>铰链灯效</value>
+  </data>
+  <data name="LightSyncTitle" xml:space="preserve">
+    <value>同步灯带灯效</value>
+  </data>
+  <data name="LightEcTitle" xml:space="preserve">
+    <value>灯条灯效</value>
+  </data>
+  <data name="LightSingleColorBacklight" xml:space="preserve">
+    <value>单色背光</value>
+  </data>
 </root>

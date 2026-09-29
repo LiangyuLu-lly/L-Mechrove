@@ -93,14 +93,14 @@ public class UiAuditEmptyBandCheckTests
             ProfileAvailable = true, TurboMode = true, TurboSubMode = false, CpuPerformanceTuning = true,
             FanSettings = true, LiquidCooling = true, DisplayRefresh = true, ColorCalibration = true,
             LcdOverdrive = true, DgpuDirect = true, IgpuOnly = true,
-            Keyboard = true, Lightbar = true, LogoLight = true,
+            Keyboard = true, Lightbar = true, LogoLight = true, MbaLogo = true,
         } };
         yield return new object[] { "NoLiquidCooling", new MechrevoDeviceCapabilities
         {
             ProfileAvailable = true, TurboMode = true, TurboSubMode = true, CpuPerformanceTuning = true,
             FanSettings = true, LiquidCooling = false, DisplayRefresh = true, ColorCalibration = true,
             LcdOverdrive = true, DgpuDirect = true, IgpuOnly = true,
-            Keyboard = true, Lightbar = true, LogoLight = true,
+            Keyboard = true, Lightbar = true, LogoLight = true, MbaLogo = true,
         } };
         yield return new object[] { "MinimalDisplay", new MechrevoDeviceCapabilities
         {

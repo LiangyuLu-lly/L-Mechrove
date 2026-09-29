@@ -1185,4 +1185,103 @@
   <data name="PerfModeNoSlotSeed" xml:space="preserve">
     <value>Could not read this mode&apos;s vendor defaults, so it cannot be moved onto a custom slot.</value>
   </data>
+  <data name="LightEffectFlash" xml:space="preserve">
+    <value>Flash</value>
+  </data>
+  <data name="LightEffectThinking" xml:space="preserve">
+    <value>Chase</value>
+  </data>
+  <data name="LightEffectMusic" xml:space="preserve">
+    <value>Music</value>
+  </data>
+  <data name="LightEffectBatteryPercent" xml:space="preserve">
+    <value>Battery level</value>
+  </data>
+  <data name="LightEffectDawn" xml:space="preserve">
+    <value>Dawn</value>
+  </data>
+  <data name="LightEffectColorMarquee" xml:space="preserve">
+    <value>Color marquee</value>
+  </data>
+  <data name="LightApplyConfirmedDevice" xml:space="preserve">
+    <value>Confirmed (device readback)</value>
+  </data>
+  <data name="LightApplyConfirmedService" xml:space="preserve">
+    <value>Confirmed (service readback)</value>
+  </data>
+  <data name="LightApplySent" xml:space="preserve">
+    <value>Sent (no readback)</value>
+  </data>
+  <data name="LightApplyFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="LightApplyStatusFormat" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="LightChannelHinge" xml:space="preserve">
+    <value>Hinge</value>
+  </data>
+  <data name="LightChannelSync" xml:space="preserve">
+    <value>Sync strip</value>
+  </data>
+  <data name="LightChannelLogo" xml:space="preserve">
+    <value>Logo</value>
+  </data>
+  <data name="LightParamDirection" xml:space="preserve">
+    <value>Direction</value>
+  </data>
+  <data name="LightParamColor" xml:space="preserve">
+    <value>Color</value>
+  </data>
+  <data name="LightColorPalette" xml:space="preserve">
+    <value>Palette</value>
+  </data>
+  <data name="LightDirNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="LightDirLeftRight" xml:space="preserve">
+    <value>Rightward</value>
+  </data>
+  <data name="LightDirRightLeft" xml:space="preserve">
+    <value>Leftward</value>
+  </data>
+  <data name="LightDirDownUp" xml:space="preserve">
+    <value>Upward</value>
+  </data>
+  <data name="LightDirUpDown" xml:space="preserve">
+    <value>Downward</value>
+  </data>
+  <data name="LightDirOnKeyPressed" xml:space="preserve">
+    <value>On key press</value>
+  </data>
+  <data name="LightEcModeColorful" xml:space="preserve">
+    <value>Colorful</value>
+  </data>
+  <data name="LightEcModeStatic" xml:space="preserve">
+    <value>Static</value>
+  </data>
+  <data name="LightEcBreathing" xml:space="preserve">
+    <value>Breathing</value>
+  </data>
+  <data name="LightEcRed" xml:space="preserve">
+    <value>Red</value>
+  </data>
+  <data name="LightEcGreen" xml:space="preserve">
+    <value>Green</value>
+  </data>
+  <data name="LightEcBlue" xml:space="preserve">
+    <value>Blue</value>
+  </data>
+  <data name="LightHingeTitle" xml:space="preserve">
+    <value>Hinge lighting</value>
+  </data>
+  <data name="LightSyncTitle" xml:space="preserve">
+    <value>Sync strip lighting</value>
+  </data>
+  <data name="LightEcTitle" xml:space="preserve">
+    <value>Lightbar lighting</value>
+  </data>
+  <data name="LightSingleColorBacklight" xml:space="preserve">
+    <value>Single-color backlight</value>
+  </data>
 </root>

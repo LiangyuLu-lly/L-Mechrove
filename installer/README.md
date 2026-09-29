@@ -1,10 +1,46 @@
  # L-Mechrevo installer (Inno Setup)
 
 Per-machine Windows installer for L-Mechrevo, built with Inno Setup 6.7.x. It ships the
-**framework-dependent** app plus exactly one vendor GCU payload tree (`release\GCU-only`, the
-newest payload, which serves 30/40/50-series machines; see "Single payload (N6)" below). The app
-needs the **.NET Desktop Runtime 10 (x64)**; the installer detects it, can download/install it,
-and falls back to the browser (see ".NET Desktop Runtime requirement" below).
+**framework-dependent** app plus two vendor GCU payload trees: `release\GCU-only` (the newest
+payload, 30/40/50-series and any undeterminable generation) and `release\GCU-1020` (the
+GamingCenterU 1.1.0.49 legacy service for GTX 10 / GTX 16 / RTX 20). The app needs the
+**.NET Desktop Runtime 10 (x64)**; the installer detects it, can download/install it, and falls
+back to the browser (see ".NET Desktop Runtime requirement" below).
+
+## beta21 changes (these supersede the older sections below where they differ)
+
+- **Overlay upgrade.** Setup no longer runs the previous uninstaller first (that deleted the GCU
+  service's user state - per-mode profiles, user fan curves - on every update). Same version =
+  "repair?" prompt; an older installer refuses to overwrite a newer install (ordering by
+  `AppVersion` incl. the beta number, read from the uninstall key's `DisplayVersion`).
+- **User state is carried over.** `Install-Gcu.ps1` saves `MyControlCenter\UserPofiles`, the
+  top-level `UserFanTables\M<n>T<n>.json` and the feature-settings folders before the payload copy
+  and restores them afterwards (`Save-GcuUserState` / `Restore-GcuUserState`).
+- **Payload-specific driver.** The selection carries `DriverDir/DriverInf/DriverSys`
+  (`UWACPIDriver` or `ACPIDriver`); the store name pnputil reports is recorded as
+  `HKLM\SOFTWARE\L-Mechrevo\GcuDriverPublishedName`, and uninstall removes exactly that package.
+  `pnputil /enum-drivers` is parsed without relying on English labels.
+- **Privileges.** The privilege step runs on the verify-only fast path too. `{app}` and `{app}\GCU`
+  are no longer granted to the user; grants left by older installers are **revoked** (a per-user
+  Modify ACE also applies to the filtered token, so any user process could replace the exe the
+  Highest / SYSTEM tasks run). Only `%AppData%\MechrevoLite` and the log directory are granted.
+  Tasks disabled by setup (including `LMechrevoCharge`) are re-enabled on every exit path, and the
+  service replacement (`Uninstall-Gcu.ps1 -KeepTasks`) no longer deletes them.
+- **Official console removal (owner decision A).** Vendor products are identified by the shared Inno
+  AppId `{6ea3ce12-b991-4b65-9f8d-b148eaaecd87}_is1`, exact generic names and brand+console word
+  pairs - never our own `L-Mechrevo*` entries or other Mechrevo software. Inno uninstallers run with
+  `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`. `HKLM\SOFTWARE\OEM\GamingCenter2` is exported before
+  the first vendor uninstaller and re-imported afterwards, then `pnputil /scan-devices` re-binds the
+  EC device the vendor uninstaller removes. A present vendor console forces the full install path.
+- **Legacy 10/20 service.** `ItemSupport` / `ServiceReady` are advisory for it (its service has no
+  writer for them); the MQTT port is measured from what `GCUBridge` listens on and recorded as
+  `HKLM\SOFTWARE\L-Mechrevo\GcuMqttPort` for the app.
+- **Reboot only when needed.** `NeedRestart` consumes `HKLM\SOFTWARE\L-Mechrevo\RebootRequired`,
+  written only when pnputil returned 3010 or locked vendor components remain.
+- **.NET download fixed.** The pinned runtime hash is the SHA-256 (it used to be the SHA-512, so
+  every download failed verification). Dialog line breaks use `%n`.
+- **Silent in-app update.** `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /RELAUNCH=1` starts the app
+  again as the original user (`--after-update`) after a silent install.
 
 ## Build
 
@@ -101,8 +137,8 @@ elevation is obtained. `Install-Gcu.ps1` (run by the elevated installer) therefo
 | Artefact | What the installer does |
 |---|---|
 | Autostart task `LMechrevo_<SID>` | `Register-ScheduledTask -RunLevel Highest -Force`, action = the app exe with **no arguments**, LogonTrigger + ConsoleConnect trigger. Created before the app ever runs, so the app never needs to elevate to create it. |
-| Install dir `{app}` and `{app}\GCU` | `Modify` for the installing user only (read/write/delete for its own files). Not a broad principal, not the widest right. |
-| Config/log dir `%AppData%\MechrevoLite` | same `Modify` grant, so config and log writes cannot fail on permissions. |
+| Install dir `{app}` and `{app}\GCU` | **admin-only** (Program Files default). beta21 revokes the per-user `Modify` grant older installers added. |
+| Config/log dir `%AppData%\MechrevoLite`, `%ProgramData%\L-Mechrevo\logs` | `Modify` for the installing user only, so config and log writes cannot fail on permissions. |
 | `%SystemRoot%\System32\drivers\UWACPIDriver.sys` | `ReadAndExecute` for the installing user, making the `\\.\ACPIDriver` access explicit and idempotent. Running elevated already covers it; no EC/firmware write is added. |
 
 `Uninstall-Gcu.ps1` removes the task (`Unregister-ScheduledTask`) before anything else, so no

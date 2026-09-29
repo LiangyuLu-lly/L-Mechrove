@@ -6,8 +6,8 @@
 
 .DESCRIPTION
     Reads the version from src\MechrevoLiteWin\MechrevoLite.csproj, locates the
-    newest self-contained single-file publish directory under dist\, validates the
-    four GCU payload trees, ensures an ISCC.exe compiler is available (provisioning
+    newest framework-dependent publish directory under dist\, validates the
+    GCU payload trees (release\GCU-only and release\GCU-1020), ensures an ISCC.exe compiler is available (provisioning
     one under %TEMP%\ulw\tools\innosetup when needed), compiles installer\L-Mechrevo.iss
     and writes hash / staging evidence next to the installer.
 
@@ -158,10 +158,11 @@ foreach ($doc in @((Join-Path $root 'LICENSE'), (Join-Path $root 'THIRD_PARTY_NO
 }
 
 # --- GCU payload accounting --------------------------------------------------
-# N6: exactly one payload tree is packaged (release\GCU-only). Assert-GcuPayloadDirs hard-fails
+# beta21: two payload trees are packaged - release\GCU-only (30/40/50) and release\GCU-1020 (the
+# GamingCenterU legacy service for GTX 10/16 + RTX 20). Assert-GcuPayloadDirs hard-fails
 # the build when it is missing, so a package can never be produced without its payload.
 $bundle = Assert-GcuPayloadDirs -Root $root
-Write-Host ("GCU payload bundle: single ({0})" -f ($bundle | ForEach-Object { $_.RepoPayload }) -join ', ')
+Write-Host ("GCU payload bundle: {0}" -f (($bundle | ForEach-Object { $_.RepoPayload }) -join ', '))
 $payloads = foreach ($entry in $bundle) {
     [pscustomobject]@{ Key = $entry.Key; Dir = (Join-Path $root $entry.RepoPayload) }
 }

@@ -5,39 +5,39 @@ namespace MechrevoLite.Hardware;
 /// CHANGELOG 里的「16 种」是口误：CCU InitalizeKeyboardTypeEffect 的 else 分支是
 /// Enum RGBKB_Effect 去掉 Impact/Flash/Mix/Thinking/Devour/UserMode/BatteryPercent/Manual/
 /// ColorfulWave/Dawn/ColorMarquee/Twinkling/Sine/Interlace/Diagonal/Music 后剩下的 11 项。
+/// 四区 / 四区单色 / EC 单区各有自己的目录（<see cref="LightingEffectCatalog.Keyboard"/>）。
 /// HID 路径仍用 <c>RgbForm.HidEffects</c>（BetterRGB 10），不得把中文显示名当 MQTT effect。
 /// </summary>
 internal static class KeyboardFirmwareEffects
 {
     internal static readonly (string Id, string Label)[] All =
-    {
-        ("Single", "单色"),
-        ("Breathing", "呼吸"),
-        ("Wave", "波浪"),
-        ("Reactive", "按键反应"),
-        ("Rainbow", "彩虹"),
-        ("Ripple", "涟漪"),
-        ("Raindrop", "雨滴"),
-        ("Marquee", "跑马灯"),
-        ("Spark", "火花"),
-        ("Aurora", "极光"),
-        ("Gaming", "游戏"),
-    };
+        LightingEffectCatalog.PerKeyKeyboard().Select(e => (e.Id, e.Label)).ToArray();
 
     internal static bool Contains(string id) =>
-        Array.Exists(All, e => string.Equals(e.Id, id, StringComparison.Ordinal));
+        Array.Exists(All, e => string.Equals(e.Id, id, StringComparison.Ordinal))
+        || Array.Exists(LightingEffectCatalog.FourZoneKeyboard(), e => string.Equals(e.Id, id, StringComparison.Ordinal));
 
     /// <summary>
-    /// 官方 KeyboardType：1/2 = 单区 RGB（只有整键盘单色/呼吸）；0 = 未知（保持全表）；≥3 = 分区/逐键。
+    /// ItemSupport\KeyboardType 是官方 RGBKB_Type 的**序号**：1 = SingleZone（EC 单区），
+    /// 2 = FourZone，3 = FourZoneSingleColor，≥4 = 逐键各代；0 = Normal（未识别，保持全表）。
+    /// 旧实现把 1/2 都当「单区」，于是四区键盘只剩单色/呼吸两项。
     /// </summary>
-    internal static bool IsSingleZoneRgb(int keyboardType) => keyboardType is 1 or 2;
+    internal static bool IsSingleZoneRgb(int keyboardType) =>
+        KindFromRegistryOrdinal(keyboardType) == KeyboardLightKind.SingleZone;
 
-    internal static readonly (string Id, string Label)[] SingleZone =
+    internal static KeyboardLightKind KindFromRegistryOrdinal(int keyboardType) =>
+        LightingChannelDetector.KindFromTypeName(LightingChannelDetector.TypeNameFromOrdinal(keyboardType))
+        ?? KeyboardLightKind.PerKey;
+
+    internal static (string Id, string Label)[] Visible(KeyboardLightKind kind)
     {
-        ("Single", "单色"),
-        ("Breathing", "呼吸"),
-    };
+        LightEffectSpec[] specs = LightingEffectCatalog.Keyboard(kind);
+        return specs.Length == 0 ? All : specs.Select(e => (e.Id, e.Label)).ToArray();
+    }
 
-    internal static (string Id, string Label)[] Visible(int keyboardType) =>
-        IsSingleZoneRgb(keyboardType) ? SingleZone : All;
+    internal static (string Id, string Label)[] Visible(int keyboardType) => Visible(KindFromRegistryOrdinal(keyboardType));
+
+    internal static LightEffectSpec? Spec(KeyboardLightKind kind, string effect) =>
+        LightingEffectCatalog.Find(LightingEffectCatalog.Keyboard(kind) is { Length: > 0 } specs
+            ? specs : LightingEffectCatalog.PerKeyKeyboard(), effect);
 }

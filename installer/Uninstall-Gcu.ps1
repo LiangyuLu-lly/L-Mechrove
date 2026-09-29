@@ -16,6 +16,9 @@ param(
     [Parameter(Mandatory = $true)][string]$TargetDir,
     [string]$LogDir,
     [switch]$KeepDriver,
+    # Set by Install-Gcu's uninstall-first step: only the GCU service is replaced there. Deleting the
+    # SYSTEM charge-limit task on every upgrade left machines without boot-time charge limiting.
+    [switch]$KeepTasks,
     [switch]$DryRun
 )
 
@@ -89,25 +92,61 @@ function Remove-FirewallRule {
     Write-Log '  firewall rule removed via netsh (best effort)'
 }
 
-function Remove-UwacpiDriver {
-    $text = ((& pnputil.exe /enum-drivers 2>&1) | Out-String)
-    $blocks = [regex]::Matches($text, '(?ms)Published Name:\s*(oem\d+\.inf).*?(?=Published Name:|\z)')
-    $published = $null
-    foreach ($block in $blocks) {
-        if ($block.Value -match '(?i)Original Name:\s*uwacpidriver\.inf') {
-            $published = $block.Groups[1].Value
-            break
-        }
+function Invoke-Native {
+    # PS 5.1 + EAP 'Stop' turns native stderr lines into terminating errors; judge by exit code only.
+    param([Parameter(Mandatory = $true)][string]$FilePath, [string[]]$Arguments = @())
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object { [string]$_ })
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
     }
-    if (-not $published) {
-        Write-Log '  UWACPIDriver not found in the driver store (nothing to remove)'
+    finally { $ErrorActionPreference = $saved }
+}
+
+function Get-AcpiDriverPublishedNames {
+    # "pnputil /enum-drivers" is localized ("Published Name:" vs the Chinese label), so the old
+    # English-label regex never matched on zh-CN and the driver was never removed. Parse by shape:
+    # records are blocks of "label: value" lines separated by blank lines; a record is ours when one
+    # of its values is one of our INF names, and its published name is the oemNN.inf value.
+    param([string[]]$Lines, [string[]]$InfNames = @('uwacpidriver.inf', 'acpidriver.inf'))
+    $names = New-Object System.Collections.Generic.List[string]
+    $block = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (@($Lines) + @(''))) {
+        if (-not [string]::IsNullOrWhiteSpace($line)) { $block.Add($line); continue }
+        if ($block.Count -eq 0) { continue }
+        $values = @($block | ForEach-Object { (($_ -split '[:\uFF1A]', 2)[-1]).Trim() })
+        $published = @($values | Where-Object { $_ -match '^(?i)oem\d+\.inf$' }) | Select-Object -First 1
+        $ours = @($values | Where-Object { $InfNames -contains $_.ToLowerInvariant() }).Count -gt 0
+        if ($published -and $ours) { $names.Add([string]$published) }
+        $block.Clear()
+    }
+    return $names.ToArray()
+}
+
+function Remove-UwacpiDriver {
+    # Removes both driver packages we can install: UWACPIDriver.inf (newest payload) and
+    # ACPIDriver.inf (GamingCenterU legacy payload).
+    $enum = Invoke-Native -FilePath 'pnputil.exe' -Arguments @('/enum-drivers')
+    $published = @(Get-AcpiDriverPublishedNames -Lines $enum.Output)
+    # beta21+ installers record the store name of the package they added; remove exactly that one and
+    # leave older copies of the same INF (OEM image / vendor console) alone.
+    $recorded = $null
+    try { $recorded = [string](Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\L-Mechrevo' -Name 'GcuDriverPublishedName' -ErrorAction Stop).GcuDriverPublishedName } catch { $recorded = $null }
+    if (-not [string]::IsNullOrWhiteSpace($recorded)) {
+        $published = @($published | Where-Object { $_ -ieq $recorded })
+    }
+    if ($published.Count -eq 0) {
+        Write-Log '  UWACPIDriver / ACPIDriver not found in the driver store (nothing to remove)'
         return
     }
-    Write-Log ("  pnputil /delete-driver {0} /uninstall /force" -f $published)
-    $output = & pnputil.exe /delete-driver $published /uninstall /force 2>&1
-    $output | ForEach-Object { Write-Log ('    ' + [string]$_) }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Log ("  WARNING: driver removal returned {0} (may require reboot)" -f $LASTEXITCODE)
+    foreach ($name in $published) {
+        Write-Log ("  pnputil /delete-driver {0} /uninstall /force" -f $name)
+        $result = Invoke-Native -FilePath 'pnputil.exe' -Arguments @('/delete-driver', $name, '/uninstall', '/force')
+        $result.Output | ForEach-Object { Write-Log ('    ' + $_) }
+        if ($result.ExitCode -ne 0) {
+            Write-Log ("  WARNING: driver removal returned {0} (may require reboot)" -f $result.ExitCode)
+        }
     }
 }
 
@@ -115,6 +154,10 @@ function Remove-AutostartTask {
     # N5: the installer created a highest-privileges autostart task; uninstall must remove it so no
     # boot-time elevation entry point is left behind. Match the app's naming (LMechrevo_<SID>) and
     # also sweep the legacy names the app used to register.
+    if ($KeepTasks) {
+        Write-Log '  -KeepTasks set; autostart and charge-limit tasks kept (service replacement only)'
+        return
+    }
     $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
     $names = @('LMechrevo_' + $sid, 'LMechrevo', 'LMechrevoCharge', 'LMechrevo_' + $sid + 'Charge')
     foreach ($name in $names) {
@@ -136,11 +179,19 @@ function Remove-AutostartTask {
 function Remove-InstallMarker {
     $key = 'HKLM:\SOFTWARE\L-Mechrevo'
     if (Test-Path -LiteralPath $key) {
-        foreach ($name in @('GcuVariant', 'GcuServiceDir', 'GcuServiceExe', 'GcuInstalledUtc')) {
+        $names = @('GcuVariant', 'GcuServiceDir', 'GcuServiceExe', 'GcuInstalledUtc', 'GcuMqttPort')
+        # Keep the driver record while the driver stays installed (the uninstall-first step of an install).
+        if (-not $KeepDriver) { $names += @('GcuDriverInf', 'GcuDriverPublishedName') }
+        foreach ($name in $names) {
             Remove-ItemProperty -LiteralPath $key -Name $name -ErrorAction SilentlyContinue
         }
         Write-Log '  install marker values removed'
     }
+}
+
+if ($MyInvocation.InvocationName -eq '.') {
+    # Dot-sourced (tests): expose the functions only, run nothing.
+    return
 }
 
 try {
@@ -153,6 +204,7 @@ try {
     Write-Log '=== L-Mechrevo GCU payload uninstall ==='
     Write-Log ("TargetDir  = {0}" -f $TargetDir)
     Write-Log ("KeepDriver = {0}" -f [bool]$KeepDriver)
+    Write-Log ("KeepTasks  = {0}" -f [bool]$KeepTasks)
     Write-Log ("DryRun     = {0}" -f [bool]$DryRun)
 
     if ($DryRun) {

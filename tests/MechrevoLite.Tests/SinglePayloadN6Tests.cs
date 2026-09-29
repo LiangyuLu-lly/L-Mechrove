@@ -56,6 +56,8 @@ public class SinglePayloadN6Tests
             .ToArray();
 
         Assert.Contains(sources, l => l.Contains(@"release\GCU-only\*", StringComparison.Ordinal));
+        // beta21: plus exactly one legacy tree, the GamingCenterU service for GTX 10/16 + RTX 20.
+        Assert.Contains(sources, l => l.Contains(@"release\GCU-1020\*", StringComparison.Ordinal));
         Assert.DoesNotContain(sources, l => l.Contains("GCU-40-51749", StringComparison.Ordinal));
         Assert.DoesNotContain(sources, l => l.Contains("GCU-40-51751", StringComparison.Ordinal));
         Assert.DoesNotContain(sources, l => l.Contains("GCU-common", StringComparison.Ordinal));

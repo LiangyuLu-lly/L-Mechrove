@@ -341,9 +341,11 @@ public partial class SettingsForm
                 int idx = effectCombo.SelectedIndex;
                 if (idx < 0) return;
                 if (Program.rgb is null) return;
+                if (CurrentKeyboardKind() == KeyboardLightKind.SingleColorBacklight) return;   // 单色背光没有效果可选
                 if (ShouldUseGcuKeyboardFallback(Program.rgb))
                 {
-                    var gcuCatalog = KeyboardFirmwareEffects.Visible(CurrentKeyboardType());
+                    KeyboardLightKind kind = CurrentKeyboardKind();
+                    var gcuCatalog = KeyboardFirmwareEffects.Visible(kind);
                     if (idx >= gcuCatalog.Length) return;
                     string id = gcuCatalog[idx].Id;
                     LightChannelSettings settings = LightingSettingsStore.Load(
@@ -360,13 +362,18 @@ public partial class SettingsForm
                         ToastForm.ShowFailure(Strings.GcuNotConnectedAction);
                         return;
                     }
-                    Color? color = LightingSettingsStore.ColorForEffect(id, settings.ColorArgb);
+                    LightEffectSpec? spec = KeyboardFirmwareEffects.Spec(kind, id);
+                    LightChannelSettings next = settings with { Effect = id };
                     sw.Enabled = false;
-                    bool ok = await Program.service.SetKeyboardEffect(
-                        id, settings.Light, settings.Speed, "None", color, save: true);
+                    var (outcome, source) = await Program.service.ApplyLightEffectConfirmedAsync(MqttTopics.KeyboardCtrl,
+                        id, settings.Light, settings.Speed, LightingSettingsStore.DirectionForSpec(spec, next),
+                        LightingSettingsStore.ColorForSpec(spec, next), save: true,
+                        brightnessApplies: spec?.Brightness ?? true,
+                        firmwareReadback: Program.rgb is { } rgbReadback ? rgbReadback.QueryFirmwareEffectRegister : null,
+                        onPublished: () => LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next));
                     sw.Enabled = true;
-                    if (ok) LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, settings with { Effect = id });
-                    else
+                    ShowLightApplyOutcome(Strings.Keyboard, outcome, source);
+                    if (outcome == LightApplyOutcome.Failed)
                     {
                         RevertKeyboardCombo(previousIdx);
                         ToastForm.ShowFailure(Strings.LightEffectFailed);
@@ -402,7 +409,10 @@ public partial class SettingsForm
                 }
                 if (Program.rgb.IsConnected && !ShouldUseGcuKeyboardFallback(Program.rgb))
                 {
-                    _ = Task.Run(() => Program.rgb.StartMode(hid.Mode));   // HID 帧写后台执行
+                    KeyboardRgb rgbStarted = Program.rgb;
+                    _ = Task.Run(() => rgbStarted.StartMode(hid.Mode));   // HID 帧写后台执行
+                    // 软件路径的结果：流打开 + 0x88 回读确认自定义帧模式 → 已确认（设备回读），否则已下发。
+                    ShowLightApplyOutcome(Strings.Keyboard, rgbStarted.SoftwarePathOutcome, LightReadbackSource.Device);
                     return;
                 }
                 if (Program.service is not null && Program.hw is { IsConnected: true })
@@ -430,6 +440,28 @@ public partial class SettingsForm
                 if (_syncingSwitches) return;
                 _lastQuickSwitchUi = DateTime.Now;
                 bool requested = sw.Checked;
+                // 单色背光：官方只有开关（Setting/Control SINGLE_COLOR_KBBL_STATUS_ON/OFF），没有 HID/效果通道。
+                if (CurrentKeyboardKind() == KeyboardLightKind.SingleColorBacklight)
+                {
+                    if (Program.service is null || Program.hw is not { IsConnected: true })
+                    {
+                        _syncingSwitches = true; sw.Checked = !requested; _syncingSwitches = false;
+                        ToastForm.ShowFailure(Strings.GcuNotConnectedAction);
+                        return;
+                    }
+                    sw.Enabled = false;
+                    bool switched = await Program.service.SwitchQuick("singlecolorkb", requested);
+                    sw.Enabled = true;
+                    bool readback = Program.hw.QuickSwitches.TryGetValue("singlecolorkb", out bool actual) && actual == requested;
+                    ShowLightApplyOutcome(Strings.Keyboard,
+                        LightingEffectCatalog.ResolveOutcome(switched, switched ? readback : null), LightReadbackSource.Service);
+                    if (!switched)
+                    {
+                        _syncingSwitches = true; sw.Checked = !requested; _syncingSwitches = false;
+                        ToastForm.ShowFailure(Strings.LightPowerFailed);
+                    }
+                    return;
+                }
                 int gen = ++_kbCmdGen;   // 代际：迟到的旧续体不得再启动 HID
 
                 // 唯一接缝（防双发）：确定性「不支持」→ 本分支绝不触碰 HID（连接/旁路/StartMode 全部跳过），
@@ -553,19 +585,18 @@ public partial class SettingsForm
         // 事件语义必须与原逐行块一致：控件存档字段在事件接线前赋值（构造期不触发），
         // 关通道改选只持久化；电源确认后按存档效果补发一次。
         void BuildLightChannelRow(string rowName, string label, string topic, string title,
-            (string Effect, string Name)[] effects, int gridRow, Action<RCheckBox, ComboBox> storeControls)
+            (string Effect, string Name)[] fallbackEffects, int gridRow, Action<RCheckBox, ComboBox> storeControls)
         {
             var row = MakeRow(rowName);
-            FillRow(row, label, out var sw, out var effectCombo, () => OpenLightForm(topic, title, effects));
+            FillRow(row, label, out var sw, out var effectCombo,
+                () => OpenLightForm(topic, title, ChannelCatalog(topic, fallbackEffects)));
             storeControls(sw, effectCombo);
-            foreach (var (_, fxName) in effects)
-                effectCombo.Items.Add(new KeyValuePair<string, string>(fxName, fxName));
-            string saved = LightingSettingsStore.Load(topic, effects[0].Effect).Effect;
-            int savedIdx = Array.FindIndex(effects, e => e.Effect == saved);
-            effectCombo.SelectedIndex = savedIdx >= 0 ? savedIdx : 0;
+            _lightChannelCombos[topic] = (effectCombo, fallbackEffects);
+            FillChannelEffectCombo(effectCombo, topic, fallbackEffects);
             effectCombo.SelectedIndexChanged += async (_, _) =>
             {
                 if (_syncingEffectCombos || Program.UiAuditMode) return;
+                var effects = ChannelCatalog(topic, fallbackEffects);
                 int idx = effectCombo.SelectedIndex;
                 if (idx < 0 || idx >= effects.Length) return;
                 string effectId = effects[idx].Effect;
@@ -590,13 +621,17 @@ public partial class SettingsForm
                     ToastForm.ShowFailure(Strings.GcuNotConnectedAction);
                     return;
                 }
+                LightChannelSettings next = settings with { Effect = effectId };
+                LightEffectSpec? spec = ChannelSpec(topic, effectId);
                 sw.Enabled = false;
-                bool ok = await Program.service.SetLightEffect(topic, effectId,
-                    settings.Light, settings.Speed, "None",
-                    LightingSettingsStore.ColorForEffect(effectId, settings.ColorArgb), save: true);
+                var (outcome, source) = await Program.service.ApplyLightEffectConfirmedAsync(topic, effectId,
+                    settings.Light, settings.Speed, LightingSettingsStore.DirectionForSpec(spec, next),
+                    LightingSettingsStore.ColorForSpec(spec, next), save: true,
+                    brightnessApplies: spec?.Brightness ?? true,
+                    onPublished: () => LightingSettingsStore.Save(topic, next));
                 sw.Enabled = true;
-                if (ok) LightingSettingsStore.Save(topic, settings with { Effect = effectId });
-                else
+                ShowLightApplyOutcome(label, outcome, source);
+                if (outcome == LightApplyOutcome.Failed)
                 {
                     RevertEffect();
                     ToastForm.ShowFailure(Strings.LightEffectFailed);
@@ -617,19 +652,24 @@ public partial class SettingsForm
                 {
                     bool requested = sw.Checked;
                     sw.Enabled = false;
-                    bool ok = await Program.service.SetLightPower(topic, requested);
+                    // 下发与回读分开判：命令没发出去才算失败（回滚开关）；发出去但没等到状态回读
+                    // 只能如实报「已下发」——此时灯可能已经变了，回滚开关反而会让界面与灯对不上。
+                    bool issued = await Program.service.PublishLightPower(topic, requested);
+                    bool confirmed = issued && await Program.service.ConfirmLightPower(topic, requested);
                     sw.Enabled = true;
-                    if (ok)
+                    ShowLightApplyOutcome(label,
+                        LightingEffectCatalog.ResolveOutcome(issued, issued ? confirmed : null), LightReadbackSource.Service);
+                    if (issued)
                     {
                         LightingSettingsStore.SavePower(topic, requested);
                         // 固件上电只显示默认的常亮；电源确认后按存档效果补发一次，
                         // 否则用户选的效果会丢。下发前再确认电源仍开着。
                         if (requested)
                         {
-                            var applied = LightingSettingsStore.Load(topic, effects[0].Effect);
+                            var applied = LightingSettingsStore.Load(topic, fallbackEffects[0].Effect);
                             _ = Program.ApplyLightChannelEffectAsync(topic, applied,
                                 shouldApply: () => LightingSettingsStore.Load(
-                                    topic, effects[0].Effect).PowerOn);
+                                    topic, fallbackEffects[0].Effect).PowerOn);
                         }
                     }
                     else
@@ -648,6 +688,72 @@ public partial class SettingsForm
         // —— Logo 行 ——
         BuildLightChannelRow("rowLogo", "Logo", MqttTopics.LogoLightCtrl, "Logo灯效",
             LightForm.LogoEffects, 2, (sw, effectCombo) => { _logoPowerSw = sw; _logoEffectCombo = effectCombo; });
+        // —— 铰链灯 / 同步灯带（Lighbar4 子通道；只有官方识别到灯珠时才显示，见 RefreshDeviceCapabilities）——
+        (string Effect, string Name)[] Catalog(LightEffectSpec[] specs) => specs.Select(s => (s.Id, s.Label)).ToArray();
+        BuildLightChannelRow("rowHinge", Strings.LightChannelHinge, MqttTopics.HingeLightCtrl, Strings.LightHingeTitle,
+            Catalog(LightingEffectCatalog.Lighbar4(null)), 3, (sw, _) => _hingePowerSw = sw);
+        BuildLightChannelRow("rowSync", Strings.LightChannelSync, MqttTopics.SyncLightCtrl, Strings.LightSyncTitle,
+            Catalog(LightingEffectCatalog.Sync()), 4, (sw, _) => _syncPowerSw = sw);
+        BuildEcLightbarRow(5);
+
+        // —— 下发结果行：最近一次灯光操作的「已确认 / 已下发 / 失败」，无内容时整行收 0 ——
+        _lblLightApplyStatus = new Label
+        {
+            Name = "labelLightApplyStatus",
+            AutoSize = true,
+            Visible = false,
+            ForeColor = UiVisualStyle.Muted,
+            BackColor = UiVisualStyle.Window,
+            Font = UiStyleCaptionFont(),
+            Margin = new Padding(D(2), 0, D(4), D(2)),
+        };
+        body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        body.RowCount = body.RowStyles.Count;
+        body.Controls.Add(_lblLightApplyStatus, 0, body.RowCount - 1);
+
+        // EC 灯带（旧机型 MyRgbLightbar）：开关 + 炫彩/单色；每个 Action 后服务都回一帧状态，据此确认。
+        void BuildEcLightbarRow(int gridRow)
+        {
+            var row = MakeRow("rowEcBar");
+            FillRow(row, Strings.Lightbar, out var sw, out var modeCombo, () => { });
+            _ecPowerSw = sw;
+            _ecModeCombo = modeCombo;
+            row.Controls.OfType<Button>().First().Visible = false;   // EC 灯带没有可编辑的效果参数页
+            modeCombo.Items.Add(new KeyValuePair<string, int>(Strings.LightEcModeColorful, 1));
+            modeCombo.Items.Add(new KeyValuePair<string, int>(Strings.LightEcModeStatic, 0));
+            modeCombo.SelectedIndex = 0;
+            async Task<LightApplyOutcome> SendEcAsync(string action, Func<MechrevoHw, bool> confirmed)
+            {
+                if (Program.service is null || Program.hw is not { IsConnected: true } hwNow) return LightApplyOutcome.Failed;
+                var (published, matched) = await Program.service.SendEcLightbarActionAsync(action, () => confirmed(hwNow));
+                return LightingEffectCatalog.ResolveOutcome(published, published ? matched : null);
+            }
+            sw.CheckedChanged += async (_, _) =>
+            {
+                if (_syncingSwitches || Program.UiAuditMode) return;
+                bool requested = sw.Checked;
+                sw.Enabled = false;
+                LightApplyOutcome outcome = await SendEcAsync(requested ? "POWER_ON" : "POWER_OFF",
+                    h => h.EcLightbarPower == requested);
+                sw.Enabled = true;
+                ShowLightApplyOutcome(Strings.Lightbar, outcome, LightReadbackSource.Service);
+                if (outcome == LightApplyOutcome.Failed)
+                {
+                    _syncingSwitches = true; sw.Checked = !requested; _syncingSwitches = false;
+                    ToastForm.ShowFailure(Strings.LightPowerFailed);
+                }
+            };
+            modeCombo.SelectedIndexChanged += async (_, _) =>
+            {
+                if (_syncingEffectCombos || Program.UiAuditMode || modeCombo.SelectedIndex < 0) return;
+                bool colorful = modeCombo.SelectedIndex == 0;
+                LightApplyOutcome outcome = await SendEcAsync(colorful ? "COLORFUL_ON" : "COLORFUL_OFF",
+                    h => h.EcLightbarColorful == colorful);
+                ShowLightApplyOutcome(Strings.Lightbar, outcome, LightReadbackSource.Service);
+                if (outcome == LightApplyOutcome.Failed) ToastForm.ShowFailure(Strings.LightEffectFailed);
+            };
+            body.Controls.Add(row, 0, gridRow);
+        }
 
         _lightGroup?.SetContent(body);
 
@@ -847,11 +953,93 @@ public partial class SettingsForm
 
     static int CurrentKeyboardType() => Program.hw?.Capabilities.KeyboardType ?? 0;
 
+    /// <summary>本机键盘灯形态（官方分型口径，见 LightingChannelDetector）。</summary>
+    static KeyboardLightKind CurrentKeyboardKind() => Program.hw?.Lighting.Keyboard ?? KeyboardLightKind.Unknown;
+
+    /// <summary>某条官方通道当前的效果目录（按识别出的灯条代际 / Logo 形态）；识别前用行的默认目录。</summary>
+    internal static (string Effect, string Name)[] ChannelCatalog(string topic, (string Effect, string Name)[] fallback)
+    {
+        MechrevoHw? hw = Program.hw;
+        if (hw is null) return fallback;
+        LightEffectSpec[] specs = LightingEffectCatalog.ForTopic(topic, hw.Lighting, hw.BiosProjectId);
+        return specs.Length == 0 ? fallback : specs.Select(s => (s.Id, s.Label)).ToArray();
+    }
+
+    internal static LightEffectSpec? ChannelSpec(string topic, string effect)
+    {
+        MechrevoHw? hw = Program.hw;
+        LightEffectSpec[] specs = hw is null
+            ? LightingEffectCatalog.ForTopic(topic, LightingChannelSet.Empty, null)
+            : LightingEffectCatalog.ForTopic(topic, hw.Lighting, hw.BiosProjectId);
+        return LightingEffectCatalog.Find(specs, effect);
+    }
+
+    /// <summary>通道效果下拉：目录变化（识别结果到达）时重填，选中项跟随存档效果。</summary>
+    void FillChannelEffectCombo(ComboBox combo, string topic, (string Effect, string Name)[] fallback)
+    {
+        var effects = ChannelCatalog(topic, fallback);
+        bool same = combo.Items.Count == effects.Length;
+        for (int i = 0; same && i < effects.Length; i++)
+            same = combo.GetItemText(combo.Items[i]) == effects[i].Name;
+        string saved = LightingSettingsStore.Load(topic, fallback[0].Effect).Effect;
+        int idx = Math.Max(0, Array.FindIndex(effects, e => e.Effect == saved));
+        if (same && combo.SelectedIndex == idx) return;
+        _syncingEffectCombos = true;
+        try
+        {
+            if (!same)
+            {
+                combo.Items.Clear();
+                foreach (var (_, name) in effects) combo.Items.Add(new KeyValuePair<string, string>(name, name));
+            }
+            if (combo.Items.Count > 0) combo.SelectedIndex = Math.Clamp(idx, 0, combo.Items.Count - 1);
+        }
+        finally { _syncingEffectCombos = false; }
+    }
+
+    /// <summary>最近一次灯光操作结果：「灯条：已确认（官方服务回读）」等，8 秒后收起。</summary>
+    void ShowLightApplyOutcome(string channel, LightApplyOutcome outcome, LightReadbackSource source)
+    {
+        Label? label = _lblLightApplyStatus;
+        if (label is null || IsDisposed) return;
+        void Apply()
+        {
+            label.Text = string.Format(Strings.LightApplyStatusFormat, channel,
+                LightingEffectCatalog.OutcomeText(outcome, source));
+            label.ForeColor = outcome == LightApplyOutcome.Failed ? UiVisualStyle.Danger : UiVisualStyle.Muted;
+            label.Visible = true;
+            int stamp = ++_lightApplyStatusStamp;
+            _ = Task.Delay(8000).ContinueWith(_ =>
+            {
+                if (IsDisposed || !IsHandleCreated) return;
+                try { BeginInvoke(() => { if (stamp == _lightApplyStatusStamp) label.Visible = false; }); }
+                catch (InvalidOperationException) { }
+            }, TaskScheduler.Default);
+        }
+        if (InvokeRequired) BeginInvoke(Apply); else Apply();
+    }
+
     void FillKeyboardEffectCombo(ComboBox combo)
     {
+        KeyboardLightKind kind = CurrentKeyboardKind();
+        if (kind == KeyboardLightKind.SingleColorBacklight)
+        {
+            // 单色背光只有开关：下拉只做形态说明且不可操作（不给出点了无效的选项）。
+            if (combo.Items.Count != 1 || combo.GetItemText(combo.Items[0]) != Strings.LightSingleColorBacklight)
+            {
+                _syncingEffectCombos = true;
+                combo.Items.Clear();
+                combo.Items.Add(new KeyValuePair<string, int>(Strings.LightSingleColorBacklight, 0));
+                combo.SelectedIndex = 0;
+                _syncingEffectCombos = false;
+            }
+            combo.Enabled = false;
+            return;
+        }
+        combo.Enabled = true;
         bool gcu = ShouldUseGcuKeyboardFallback(Program.rgb);
         int keyboardType = CurrentKeyboardType();
-        var gcuCatalog = KeyboardFirmwareEffects.Visible(keyboardType);
+        var gcuCatalog = KeyboardFirmwareEffects.Visible(kind);
         var hidCatalog = RgbForm.VisibleHidEffects(keyboardType);
         string[] labels = gcu
             ? gcuCatalog.Select(e => e.Label).ToArray()
@@ -917,6 +1105,24 @@ public partial class SettingsForm
             bool state = LightingState.IsLightSwitchOn(logo, temporarilySuspended);
             if (_logoPowerSw.Checked != state) { _syncingSwitches = true; _logoPowerSw.Checked = state; _syncingSwitches = false; }
         }
+        foreach (var (sw, key) in new[] { (_hingePowerSw, "hingelight"), (_syncPowerSw, "synclight"), (_ecPowerSw, "eclightbar") })
+        {
+            if (sw is null || hw is null || !hw.QuickSwitches.TryGetValue(key, out bool on)) continue;
+            bool state = LightingState.IsLightSwitchOn(on, temporarilySuspended);
+            if (sw.Checked != state) { _syncingSwitches = true; sw.Checked = state; _syncingSwitches = false; }
+        }
+        if (_ecModeCombo is not null && hw?.EcLightbarColorful is bool colorful && _ecModeCombo.SelectedIndex != (colorful ? 0 : 1))
+        {
+            _syncingEffectCombos = true; _ecModeCombo.SelectedIndex = colorful ? 0 : 1; _syncingEffectCombos = false;
+        }
+        foreach (var (topic, (combo, fallback)) in _lightChannelCombos)
+            FillChannelEffectCombo(combo, topic, fallback);
+        if (_kbPowerSw is not null && CurrentKeyboardKind() == KeyboardLightKind.SingleColorBacklight
+            && hw is not null && hw.QuickSwitches.TryGetValue("singlecolorkb", out bool sckb))
+        {
+            bool state = LightingState.IsLightSwitchOn(sckb, temporarilySuspended);
+            if (_kbPowerSw.Checked != state) { _syncingSwitches = true; _kbPowerSw.Checked = state; _syncingSwitches = false; }
+        }
         if (_lblKeyboardControllerStatus is not null && !IsDisposed)
         {
             bool serviceConnected = Program.service is not null && hw is { IsConnected: true };
@@ -942,11 +1148,15 @@ public partial class SettingsForm
     void UpdateLightSummary()
     {
         if (_lightGroup is null) return;
-        int channels = (_lightChannelKeyboard ? 1 : 0) + (_lightChannelLightbar ? 1 : 0) + (_lightChannelLogo ? 1 : 0);
+        int channels = (_lightChannelKeyboard ? 1 : 0) + (_lightChannelLightbar ? 1 : 0) + (_lightChannelLogo ? 1 : 0)
+            + (_lightChannelHinge ? 1 : 0) + (_lightChannelSync ? 1 : 0) + (_lightChannelEc ? 1 : 0);
         int on = 0;
         if (_lightChannelKeyboard && _kbPowerSw?.Checked == true) on++;
         if (_lightChannelLightbar && _lbPowerSw?.Checked == true) on++;
         if (_lightChannelLogo && _logoPowerSw?.Checked == true) on++;
+        if (_lightChannelHinge && _hingePowerSw?.Checked == true) on++;
+        if (_lightChannelSync && _syncPowerSw?.Checked == true) on++;
+        if (_lightChannelEc && _ecPowerSw?.Checked == true) on++;
         _lightGroup.Summary = $"{channels} 通道 · {on} 开启";
     }
 

@@ -13,15 +13,17 @@ public class InstallerSequenceTests
     const string UninstallScript = @"installer\Uninstall-Gcu.ps1";
     const string Iss = @"installer\L-Mechrevo.iss";
 
+    /// <summary>
+    /// beta21: upgrades are overlay installs. Running the previous uninstaller first deleted the GCU
+    /// service's user state ({app}\GCU\...\UserPofiles, user fan curves) on every update.
+    /// </summary>
     [Fact]
-    public void Iss_PrepareToInstall_UninstallsOldVersionBeforeRuntimeCheck()
+    public void Iss_OverlayInstall_NeverRunsThePreviousUninstaller()
     {
         string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
-        Assert.Contains("GetUninstallString", iss, StringComparison.Ordinal);
-        Assert.Contains("UnInstallOldVersion", iss, StringComparison.Ordinal);
-        Assert.Contains("/VERYSILENT", iss, StringComparison.Ordinal);
-        Assert.Contains("/NORESTART", iss, StringComparison.Ordinal);
-        Assert.Contains("/SUPPRESSMSGBOXES", iss, StringComparison.Ordinal);
+        Assert.DoesNotContain("UnInstallOldVersion", iss, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetUninstallString", iss, StringComparison.Ordinal);
+        Assert.DoesNotContain("UninstallingOld", iss, StringComparison.Ordinal);
 
         int prepare = iss.IndexOf("function PrepareToInstall", StringComparison.Ordinal);
         Assert.True(prepare >= 0, "PrepareToInstall is missing");
@@ -31,15 +33,83 @@ public class InstallerSequenceTests
             body = body.Substring(0, nextFunc);
 
         int stopLocked = body.IndexOf("StopLockedAppProcesses", StringComparison.Ordinal);
-        int uninstall = body.IndexOf("UnInstallOldVersion", StringComparison.Ordinal);
         int runtime = body.IndexOf("IsDesktopRuntime10Installed", StringComparison.Ordinal);
         Assert.True(stopLocked >= 0, "StopLockedAppProcesses must be invoked inside PrepareToInstall");
-        Assert.True(uninstall >= 0, "UnInstallOldVersion must be invoked inside PrepareToInstall");
         Assert.True(runtime >= 0, "IsDesktopRuntime10Installed must remain in PrepareToInstall");
-        Assert.True(stopLocked < uninstall, "StopLockedAppProcesses must run BEFORE UnInstallOldVersion");
-        Assert.True(uninstall < runtime, "UnInstallOldVersion must run BEFORE IsDesktopRuntime10Installed");
-        Assert.Contains("UninstallingOld", iss, StringComparison.Ordinal);
-        Assert.Contains("MsgBox", iss, StringComparison.Ordinal);
+        Assert.True(stopLocked < runtime, "StopLockedAppProcesses must run BEFORE IsDesktopRuntime10Installed");
+    }
+
+    /// <summary>Same version = repair prompt; an older installer refuses to overwrite a newer install.</summary>
+    [Fact]
+    public void Iss_InitializeSetup_OffersRepairAndRefusesDowngrade()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        int init = iss.IndexOf("function InitializeSetup", StringComparison.Ordinal);
+        Assert.True(init >= 0, "InitializeSetup is missing");
+        string body = iss.Substring(init);
+        int end = body.IndexOf("\nend;", StringComparison.Ordinal);
+        body = body.Substring(0, end);
+
+        Assert.Contains("GetInstalledAppVersion", body, StringComparison.Ordinal);
+        Assert.Contains("AppVersionKey", body, StringComparison.Ordinal);
+        Assert.Contains("DowngradeBlocked", body, StringComparison.Ordinal);
+        Assert.Contains("SameVersionRepair", body, StringComparison.Ordinal);
+        Assert.Contains("Result := False", body, StringComparison.Ordinal);
+        // The ordering key: the beta number is part of the version (all 0.289.0 betas share AppVersionNumeric).
+        Assert.Contains("DisplayVersion", iss, StringComparison.Ordinal);
+        Assert.Contains("Beta := 9999", iss, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Iss_ReenablesTheScheduledTasksItDisabledOnEveryExitPath()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        Assert.Contains("procedure DeinitializeSetup", iss, StringComparison.Ordinal);
+        Assert.Contains("TasksDisabledBySetup := True", iss, StringComparison.Ordinal);
+        Assert.Contains("Enable-ScheduledTask", iss, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Iss_NeedRestartOnlyWhenTheGcuStepAskedForIt()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        int need = iss.IndexOf("function NeedRestart", StringComparison.Ordinal);
+        Assert.True(need >= 0);
+        string body = iss.Substring(need);
+        body = body.Substring(0, body.IndexOf("\nend;", StringComparison.Ordinal));
+        Assert.Contains("RebootRequired", body, StringComparison.Ordinal);
+        Assert.Contains("Result := False", body, StringComparison.Ordinal);
+        Assert.Contains("RegDeleteValue", body, StringComparison.Ordinal);
+        // Install-Gcu.ps1 is the only writer of the flag.
+        string script = GcuInstallerHarness.Read("installer", "Install-Gcu.ps1");
+        Assert.Contains("'RebootRequired'", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Iss_SilentInstallRelaunchesTheAppForTheOriginalUser()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        Assert.Contains("{param:RELAUNCH|0}", iss, StringComparison.Ordinal);
+        string relaunch = iss.Split('\n').Single(l => l.Contains("ShouldRelaunchAfterSilentInstall", StringComparison.Ordinal)
+            && l.TrimStart().StartsWith("Filename:", StringComparison.Ordinal));
+        Assert.Contains("runasoriginaluser", relaunch, StringComparison.Ordinal);
+        Assert.Contains("--after-update", relaunch, StringComparison.Ordinal);
+        Assert.Contains("nowait", relaunch, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Iss_RuntimeHashIsASha256AndMessagesUseInnoLineBreaks()
+    {
+        string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
+        var match = System.Text.RegularExpressions.Regex.Match(iss, "DotNetRuntimeSha256 = '([0-9A-Fa-f]+)'");
+        Assert.True(match.Success, "DotNetRuntimeSha256 constant is missing");
+        // DownloadTemporaryFile verifies SHA-256: a 128-digit SHA-512 here fails every download.
+        Assert.Equal(64, match.Groups[1].Value.Length);
+        // {break} is only valid in multi-string registry values; in messages it showed up literally.
+        int custom = iss.IndexOf("[CustomMessages]", StringComparison.Ordinal);
+        string messages = iss.Substring(custom, iss.IndexOf("\n[", custom + 1, StringComparison.Ordinal) - custom);
+        Assert.DoesNotContain("{break}", messages, StringComparison.Ordinal);
+        Assert.Contains("%n%n", messages, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -69,6 +139,10 @@ public class InstallerSequenceTests
         Assert.Contains("{app}\\GCU\\AiStoneService", block, StringComparison.Ordinal);
         Assert.Contains("{app}\\GCU\\UniwillService", block, StringComparison.Ordinal);
         Assert.Contains("{app}\\GCU\\UWACPIDriver", block, StringComparison.Ordinal);
+        // The GamingCenterU legacy payload brings its own driver dir; the overlay install leaves a
+        // transient user-state backup and registry snapshot behind only when something failed.
+        Assert.Contains("{app}\\GCU\\ACPIDriver", block, StringComparison.Ordinal);
+        Assert.Contains("{app}\\GCU\\state-backup", block, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -306,6 +306,69 @@ public class MechrevoHw : IDisposable
     public bool? LightbarBaseSupport { get; private set; }
     public bool? LightbarNewLogoSupport { get; private set; }
     public bool? LightbarMbLogoSupport { get; private set; }
+    public bool? LightbarHingeSupport { get; private set; }
+
+    // ---- 灯光通道识别证据（docs/hardware/lighting-channels.md）----
+    public string? KeyboardStatusType { get; private set; }
+    public string? LightbarStatusType { get; private set; }
+    public string? LogoStatusType { get; private set; }
+    public string? HingeStatusType { get; private set; }
+    public string? SyncStatusType { get; private set; }
+    public bool HingeLightStatusSeen { get; private set; }
+    public bool SyncLightStatusSeen { get; private set; }
+    public string? CustomizeKeyboardType { get; private set; }
+    public string? CustomizeLightbarType { get; private set; }
+    public string? ReportedBiosProjectId { get; private set; }
+    public bool EcLightbarStatusSeen { get; private set; }
+    public bool? EcLightbarPower { get; private set; }
+    public bool? EcLightbarColorful { get; private set; }
+    public bool? EcLightbarBreathing { get; private set; }
+    public bool EcLightbarOnAc { get; private set; } = true;
+    public int EcLightbarRed { get; private set; } = -1;
+    public int EcLightbarGreen { get; private set; } = -1;
+    public int EcLightbarBlue { get; private set; } = -1;
+    long _ecLightbarStatusVersion;
+    internal long EcLightbarStatusVersion => Interlocked.Read(ref _ecLightbarStatusVersion);
+
+    /// <summary>BIOS 项目号：服务 SupportInfo 优先，否则注册表 ItemSupport\BIOS_PROJECT_ID。</summary>
+    internal string BiosProjectId => ReportedBiosProjectId ?? Capabilities.ProjectId;
+
+    /// <summary>
+    /// 我方 HID 扫描结果：取应用键盘控制器实例（Program.rgb）最近一次枚举的结论。
+    /// 取实例而不是进程静态值——测试宿主里别的用例做过的真实枚举不得串进来。
+    /// </summary>
+    static HidKeyboardInterfaceKind ScannedKeyboardInterface() =>
+        Program.rgb?.ScannedKeyboardInterface ?? HidKeyboardInterfaceKind.NotScanned;
+
+    internal LightingEvidence BuildLightingEvidence() => new()
+    {
+        KeyboardStatusType = KeyboardStatusType,
+        RegistryKeyboardType = Capabilities.KeyboardType > 0 ? Capabilities.KeyboardType
+            : Capabilities.ProfileAvailable ? 0 : -1,
+        CustomizeKeyboardType = CustomizeKeyboardType,
+        HidKeyboard = ScannedKeyboardInterface(),
+        UntypedKeyboardEvidence = KeyboardStatusType is null
+            && (KeyboardStatusSeen || Capabilities.Keyboard && !(Capabilities.ProfileAvailable && Capabilities.KeyboardType == 0)),
+        LightbarStatusType = LightbarStatusType,
+        LightbarStatusContent = LightbarStatusSeen,
+        BiosProjectId = BiosProjectId,
+        LogoSupport = LightbarLogoSupport,
+        HingeSupport = LightbarHingeSupport,
+        BaseSupport = LightbarBaseSupport,
+        NewlogoSupport = LightbarNewLogoSupport,
+        MbLogoSupport = LightbarMbLogoSupport,
+        MbaLogoRegistry = Capabilities.MbaLogo,
+        LogoStatusType = LogoStatusType,
+        SyncStatusType = SyncStatusType,
+        EcLightbarStatusSeen = EcLightbarStatusSeen,
+    };
+
+    /// <summary>本机真实存在的灯光通道（官方口径，每次读取按最新证据重算）。</summary>
+    internal LightingChannelSet Lighting => LightingChannelDetector.Detect(BuildLightingEvidence());
+
+    /// <summary>服务是否已经就灯条给出过结论（Customize/Info 的 LightbarType 或任一灯条状态）。</summary>
+    bool LightbarEvidenceSettled => CustomizeLightbarType is not null || LightbarStatusSeen || LogoLightStatusSeen
+        || EcLightbarStatusSeen;
 
     // ---- 显示色彩模式与显示特性（Setting/Status，只读）----
     //
@@ -356,8 +419,11 @@ public class MechrevoHw : IDisposable
     {
         string Yn(bool value) => value ? "Y" : "n";
         string Tri(bool? value) => value is null ? "-" : value.Value ? "Y" : "n";
+        LightingChannelSet lighting = Lighting;
         return "Resolved caps: " +
             $"kb={Yn(SupportsKeyboard)} lightbar={Yn(SupportsLightbar)} logo={Yn(SupportsLogoLight)} " +
+            $"(lighting kb={lighting.Keyboard} bar={lighting.LightbarGeneration}/{Yn(lighting.MainLightbar)} " +
+            $"logo={lighting.Logo} hinge={Yn(lighting.Hinge)} sync={Yn(lighting.Sync)} ec={Yn(lighting.EcLightbar)} bios={BiosProjectId}) " +
             $"(reported logo={Tri(LightbarLogoSupport)} " +
             $"base={Tri(LightbarBaseSupport)} newLogo={Tri(LightbarNewLogoSupport)} mbLogo={Tri(LightbarMbLogoSupport)}; " +
             $"statusSeen lightbar={Yn(LightbarStatusSeen)} logo={Yn(LogoLightStatusSeen)}) " +
@@ -533,7 +599,12 @@ public class MechrevoHw : IDisposable
          IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOff) ||
          IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart));
 
-    public bool SupportsKeyboard => Capabilities.Keyboard || KeyboardStatusSeen;
+    /// <summary>
+    /// 键盘灯入口：按官方分型判定本机真有可控的键盘灯（逐键/四区/单区/单色背光）。
+    /// 旧口径是 KeyboardSupport（官方恒写 1）或「收到过 Keyboard/Status」——没有 RGB 键盘的机器
+    /// 服务也会回 type=Normal 的状态，于是会造出假入口。
+    /// </summary>
+    public bool SupportsKeyboard => Lighting.KeyboardPresent;
     /// <summary>
     /// 灯带/Logo 与键盘同一口径：ItemSupport / 注册表画像 或 MQTT 实据。
     /// 空 MQTT 载荷仍不能把 *Seen 置位（<see cref="HasLightbarContent"/>）；
@@ -541,8 +612,20 @@ public class MechrevoHw : IDisposable
     /// 是官方控制台用来画入口的依据，丢掉就会在有硬件的机器上藏行。
     /// MQTT 主题里的设备级 LogoSupport 仍然不算入口——那会串到不存在的灯带上。
     /// </summary>
-    public bool SupportsLightbar => LightbarStatusSeen || Capabilities.Lightbar || Capabilities.RgbLightbar;
-    public bool SupportsLogoLight => LogoLightStatusSeen || Capabilities.LogoLight;
+    public bool SupportsLightbar => LightbarEvidenceSettled
+        ? Lighting.MainLightbar
+        : Capabilities.Lightbar || Capabilities.RgbLightbar;
+    /// <summary>
+    /// Logo：服务的 Logo 通道只在 Lighbar4 上存在，且要有官方认的 Logo 灯珠标志（LogoSupport / 单线 Logo /
+    /// A 面 Logo）。状态到过但这些标志都没有 → 没有 Logo 灯珠（服务对每台 Lighbar4 都会回 Logo 状态壳）。
+    /// 灯条证据未到时按注册表：有 HID 灯条画像 + Support\MBALogo。
+    /// </summary>
+    public bool SupportsLogoLight => LightbarEvidenceSettled
+        ? Lighting.LogoPresent
+        : Capabilities.Lightbar && Capabilities.MbaLogo;
+    public bool SupportsHingeLight => Lighting.Hinge;
+    public bool SupportsSyncLight => Lighting.Sync;
+    public bool SupportsEcLightbar => Lighting.EcLightbar;
     public bool SupportsLiquidCooling => Capabilities.LiquidCooling || LcStatusSeen;
     public bool SupportsDisplayRefresh => Capabilities.DisplayRefresh || (GpuDeviceStatusSeen && HzList.Count > 0);
     public bool SupportsColorCalibration => Capabilities.ColorCalibration || ColorCalibrationSeen;
@@ -828,7 +911,9 @@ public class MechrevoHw : IDisposable
         "logolight" => SupportsLogoLight,
         // 新补齐的开关：一律要求服务端真的报过对应字段，没报就是这台机器没有。
         "touchpadtoggle" => TouchpadToggleSeen,
-        "singlecolorkb" => SingleColorKbSeen,
+        // 单色背光：Setting/Status 在所有机型上都带 SingleColorKBBL 字段（本机逐键 RGB 也报），
+        // 官方只在 Customize/Info KeyboardType="2" 时才显示单色背光页（LightViewModel.cs:2188-2191）。
+        "singlecolorkb" => SingleColorKbSeen && Lighting.Keyboard == KeyboardLightKind.SingleColorBacklight,
         "uni" => UniOmniSeen,
         "omni" => UniOmniSeen,
         "powerlight" => PowerLightSeen,
@@ -1261,6 +1346,7 @@ public class MechrevoHw : IDisposable
         MqttTopics.BtLcFilter,            // 液冷系统
         MqttTopics.KeyboardFilter,         // 键盘灯状态
         MqttTopics.LightbarFilter, MqttTopics.LogoLightFilter,
+        MqttTopics.HingeLightFilter, MqttTopics.SyncLightFilter, MqttTopics.EcLightbarFilter,   // 铰链 / 同步 / EC 灯带
         MqttTopics.LchwocFilter,           // GPU 超频通道状态
     };
 
@@ -1288,6 +1374,12 @@ public class MechrevoHw : IDisposable
         await Publish(MqttTopics.KeyboardCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
         await Publish(MqttTopics.LightbarCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
         await Publish(MqttTopics.LogoLightCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        // 灯光通道识别所需的其余证据（全是只读查询，官方控制台进入灯效页时同样发送）。
+        await Publish(MqttTopics.HingeLightCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.SyncLightCtrl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.EcLightbarControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
+        await Publish(MqttTopics.CustomizeControl, new Dictionary<string, object> { ["Action"] = "GETSUPPORT" });
+        await Publish(MqttTopics.CustomizeSupportControl, new Dictionary<string, object> { ["Action"] = "GETSUPPORT" });
         await Publish(MqttTopics.BtLcControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
         await Publish(MqttTopics.BatteryProtectionControl, new Dictionary<string, object> { ["Report"] = "GET" });   // 初始电池档回读（否则三档高亮不显示）
     }
@@ -1300,6 +1392,7 @@ public class MechrevoHw : IDisposable
     {
         "lc-status", "kb-status", "hwoc-status", "fan-table", "display-color", "resolved-caps",
         "lb-status-HidLightbar/Status", "lb-status-HidLightbar_Logo/Status",
+        "lb-status-HidLightbar_Hinge/Status", "lb-status-HidLightbar_Sync/Status", "ec-lightbar-status",
     };
 
     /// <summary>
@@ -1482,6 +1575,17 @@ public class MechrevoHw : IDisposable
                 case MqttTopics.LogoLightStatus:
                     OnLightbarOrLogoLightStatus(topic, o);
                     break;
+                case MqttTopics.HingeLightStatus:
+                case MqttTopics.SyncLightStatus:
+                    OnHingeOrSyncLightStatus(topic, o);
+                    break;
+                case MqttTopics.EcLightbarStatus:
+                    OnEcLightbarStatus(o);
+                    break;
+                case MqttTopics.CustomizeInfo:
+                case MqttTopics.CustomizeSupportInfo:
+                    OnCustomizeLightingInfo(o);
+                    break;
                 case MqttTopics.KeyboardStatus:
                     OnKeyboardStatus(o);
                     break;
@@ -1657,8 +1761,17 @@ public class MechrevoHw : IDisposable
                 LightbarBaseSupport = OptionalBool(o, "BaseSupport") ?? LightbarBaseSupport;
                 LightbarNewLogoSupport = OptionalBool(o, "NewlogoSupport") ?? LightbarNewLogoSupport;
                 LightbarMbLogoSupport = OptionalBool(o, "MBlogoSupport") ?? LightbarMbLogoSupport;
+                LightbarHingeSupport = OptionalBool(o, "HingeSupport") ?? LightbarHingeSupport;
                 break;
         }
+        // 官方界面按 type 决定灯条代际与页面；只记有内容的值，空壳状态不覆盖已知类型。
+        string? reportedType = o.GetValue("type", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (!string.IsNullOrWhiteSpace(reportedType))
+        {
+            if (topic == MqttTopics.LogoLightStatus) LogoStatusType = reportedType;
+            else LightbarStatusType = reportedType;
+        }
+        RecordLightStatusBrightness(topic, o);
         // 官方是 text.Equals(RGBKB_PowerStatus.On.ToString())，即精确比 "On"。
         // 这里放宽到忽略大小写：值域只有 On/Off 两个枚举名，
         // 忽略大小写不会引入误判，但能兜住固件写成 "ON"/"on" 的情况——
@@ -1673,9 +1786,89 @@ public class MechrevoHw : IDisposable
             : $"LB {topic}: no hardware evidence (type/powerStatus empty), raw={o.ToString(Newtonsoft.Json.Formatting.None)}");
     }
 
+    /// <summary>
+    /// 铰链 / 同步灯带状态。服务对每台 Lighbar4 机器都会初始化这两条子通道并回一个状态壳
+    /// （本机 IDY 实测：铰链回 type=MEZone_Lighbar4、同步全空），所以「主题到过」不等于有灯珠——
+    /// 这里只记证据，存在与否交给 <see cref="LightingChannelDetector"/> 按官方口径判。
+    /// </summary>
+    private void OnHingeOrSyncLightStatus(string topic, JObject o)
+    {
+        bool content = HasLightbarContent(o);
+        string? reportedType = o.GetValue("type", StringComparison.OrdinalIgnoreCase)?.ToString();
+        string lightKey;
+        if (topic == MqttTopics.HingeLightStatus)
+        {
+            HingeLightStatusSeen |= content;
+            if (!string.IsNullOrWhiteSpace(reportedType)) HingeStatusType = reportedType;
+            lightKey = "hingelight";
+        }
+        else
+        {
+            SyncLightStatusSeen |= content;
+            if (!string.IsNullOrWhiteSpace(reportedType)) SyncStatusType = reportedType;
+            lightKey = "synclight";
+        }
+        var power = o["powerStatus"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(power))
+            QuickSwitches[lightKey] = string.Equals(power, "On", StringComparison.OrdinalIgnoreCase);
+        RecordLightStatusBrightness(topic, o);
+        Logger.WriteLineIfChanged("lb-status-" + topic,
+            $"LB {topic}: type={reportedType ?? "-"} power={power ?? "-"} light={o["brightNess"]?.ToString() ?? "-"}");
+    }
+
+    /// <summary>
+    /// 旧机型 EC 灯带状态（MyRgbLightbarManager.UpdateStatusToClient，全字符串）。
+    /// 服务每执行一个 Action 都会回一帧，所以它同时是 EC 灯带命令的回读。
+    /// </summary>
+    private void OnEcLightbarStatus(JObject o)
+    {
+        EcLightbarStatusSeen = true;
+        int? Level(string key) => int.TryParse(o[key]?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : null;
+        bool ac = o["ACLINESTATUS"]?.ToString() != "0";
+        EcLightbarPower = Level("POWER") is int power ? power != 0 : EcLightbarPower;
+        EcLightbarColorful = Level("COLORFUL") is int colorful ? colorful != 0 : EcLightbarColorful;
+        EcLightbarBreathing = Level("BREATHINGLIGHT") is int breathing ? breathing != 0 : EcLightbarBreathing;
+        EcLightbarOnAc = ac;
+        EcLightbarRed = Level(ac ? "RL" : "RL_DC") ?? EcLightbarRed;
+        EcLightbarGreen = Level(ac ? "GL" : "GL_DC") ?? EcLightbarGreen;
+        EcLightbarBlue = Level(ac ? "BL" : "BL_DC") ?? EcLightbarBlue;
+        if (EcLightbarPower is bool on) QuickSwitches["eclightbar"] = on;
+        Interlocked.Increment(ref _ecLightbarStatusVersion);
+        Logger.WriteLineIfChanged("ec-lightbar-status",
+            $"EC lightbar: power={EcLightbarPower} colorful={EcLightbarColorful} breathing={EcLightbarBreathing} rgb={EcLightbarRed}/{EcLightbarGreen}/{EcLightbarBlue} ac={ac}");
+    }
+
+    /// <summary>Customize/Info 与 Customize/SupportInfo 里的灯光能力字段（官方界面据此决定页面）。</summary>
+    private void OnCustomizeLightingInfo(JObject o)
+    {
+        string? keyboardType = o.GetValue("KeyboardType", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (!string.IsNullOrWhiteSpace(keyboardType)) CustomizeKeyboardType = keyboardType.Trim();
+        string? lightbarType = o.GetValue("LightbarType", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (!string.IsNullOrWhiteSpace(lightbarType)) CustomizeLightbarType = lightbarType.Trim();
+        string? bios = o.GetValue("BIOS_PROJECT_ID", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (!string.IsNullOrWhiteSpace(bios)) ReportedBiosProjectId = bios.Trim();
+    }
+
+    /// <summary>各灯光通道最近一帧 Status 的电源态与亮度档（0..4），供下发后的回读比对。</summary>
+    internal readonly System.Collections.Concurrent.ConcurrentDictionary<string, LightStatusSnapshot> LightStatusReadback =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    void RecordLightStatusBrightness(string topic, JObject o)
+    {
+        string? power = o["powerStatus"]?.ToString();
+        int level = int.TryParse(o.GetValue("brightNess", StringComparison.OrdinalIgnoreCase)?.ToString(),
+            NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) ? parsed : -1;
+        LightStatusReadback.AddOrUpdate(topic,
+            _ => new LightStatusSnapshot(power, level, 1),
+            (_, previous) => new LightStatusSnapshot(power, level, previous.Version + 1));
+    }
+
     private void OnKeyboardStatus(JObject o)
     {
         KeyboardStatusSeen = true;
+        string? kbType = o.GetValue("type", StringComparison.OrdinalIgnoreCase)?.ToString();
+        if (kbType is not null) KeyboardStatusType = kbType;
+        RecordLightStatusBrightness(MqttTopics.KeyboardStatus, o);
         var kbEffect = o["effect"]?.ToString();
         if (kbEffect is not null) KeyboardEffect = kbEffect;
         var kbLight = o["light"]?.ToString();
@@ -3850,6 +4043,11 @@ public class MechrevoHw : IDisposable
     static bool IsCapabilityStatusTopic(string topic) => topic is
         MqttTopics.LightbarStatus or
         MqttTopics.LogoLightStatus or
+        MqttTopics.HingeLightStatus or
+        MqttTopics.SyncLightStatus or
+        MqttTopics.EcLightbarStatus or
+        MqttTopics.CustomizeInfo or
+        MqttTopics.CustomizeSupportInfo or
         MqttTopics.KeyboardStatus or
         MqttTopics.BtLcStatus or
         MqttTopics.FanTable or

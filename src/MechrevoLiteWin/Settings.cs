@@ -89,6 +89,18 @@ namespace MechrevoLite
         bool _lightChannelKeyboard;
         bool _lightChannelLightbar;
         bool _lightChannelLogo;
+        // 铰链灯 / 同步灯带 / EC 灯带（灯光通道识别见 LightingChannelDetector）。
+        bool _lightChannelHinge;
+        bool _lightChannelSync;
+        bool _lightChannelEc;
+        RCheckBox? _hingePowerSw;
+        RCheckBox? _syncPowerSw;
+        RCheckBox? _ecPowerSw;
+        ComboBox? _ecModeCombo;
+        Label? _lblLightApplyStatus;
+        int _lightApplyStatusStamp;
+        readonly Dictionary<string, (ComboBox Combo, (string Effect, string Name)[] Fallback)> _lightChannelCombos = new();
+        readonly Dictionary<string, LightForm> _lightForms = new();
         ComboBox? _kbEffectCombo; ComboBox? _lbEffectCombo; ComboBox? _logoEffectCombo;
         // 键盘控制器状态行（判定为「不支持」时提示已改走官方通道；Supported/Unknown 隐藏）。
         Label? _lblKeyboardControllerStatus;
@@ -391,8 +403,16 @@ namespace MechrevoLite
 
         void OpenLightForm(string topic, string title, (string Effect, string Name)[]? effects = null)
         {
-            var f = topic.Contains("Logo") ? (logoLightForm ??= new LightForm(topic, title, effects)) : (lightbarForm ??= new LightForm(topic, title, effects));
-            if (f.IsDisposed) { f = topic.Contains("Logo") ? (logoLightForm = new LightForm(topic, title, effects)) : (lightbarForm = new LightForm(topic, title, effects)); }
+            // 每条通道一个窗体（灯条 / Logo / 铰链 / 同步），不能共用：共用会把铰链的设置写进灯条窗体。
+            LightForm f;
+            if (topic == MqttTopics.LogoLightCtrl) f = logoLightForm is { IsDisposed: false } logo ? logo : (logoLightForm = new LightForm(topic, title, effects));
+            else if (topic == MqttTopics.LightbarCtrl) f = lightbarForm is { IsDisposed: false } bar ? bar : (lightbarForm = new LightForm(topic, title, effects));
+            else
+            {
+                if (!_lightForms.TryGetValue(topic, out LightForm? cached) || cached.IsDisposed)
+                    _lightForms[topic] = cached = new LightForm(topic, title, effects);
+                f = cached;
+            }
             if (f.Visible) f.Close();
             else
             {
@@ -2823,11 +2843,26 @@ namespace MechrevoLite
             }
             bool quick = audit || quickVisibility.Any(visible => visible);
 
-            bool keyboard = Show(caps.Keyboard || hw?.SupportsKeyboard == true);
-            bool lightbar = Show(hw?.LightbarStatusSeen == true || caps.Lightbar || caps.RgbLightbar);
-            bool logo = Show(hw?.LogoLightStatusSeen == true);
+            // 灯光通道：与官方控制台同一口径（LightingChannelDetector），只显示本机真有灯珠、有控制路径的通道。
+            // 逐键一代（MEZone_1st）官方没有控制器，只有软件路径可用：软件判定为不支持时不显示。
+            LightingChannelSet lighting = hw?.Lighting ?? LightingChannelSet.Empty;
+            // 没有服务对象时只有软件路径可用：离线证据只认逐键（HID 扫描或注册表分型）。
+            bool keyboardByOffline =
+                (Program.rgb?.ScannedKeyboardInterface ?? HidKeyboardInterfaceKind.NotScanned) is HidKeyboardInterfaceKind.PerKey or HidKeyboardInterfaceKind.PerKeyLegacy
+                || caps.ProfileAvailable && LightingChannelDetector.KindFromTypeName(
+                    LightingChannelDetector.TypeNameFromOrdinal(caps.KeyboardType)) is KeyboardLightKind.PerKey or KeyboardLightKind.PerKeyLegacy;
+            bool keyboard = Show(hw is not null
+                ? hw.SupportsKeyboard && !(lighting.Keyboard == KeyboardLightKind.PerKeyLegacy
+                    && Program.rgb?.ControllerAvailability == FeatureAvailability.Unsupported)
+                : keyboardByOffline);
+            bool lightbar = Show(hw is not null ? hw.SupportsLightbar : caps.Lightbar || caps.RgbLightbar);
+            bool logo = Show(hw?.SupportsLogoLight == true);
+            bool hinge = Show(hw?.SupportsHingeLight == true);
+            bool sync = Show(hw?.SupportsSyncLight == true);
+            bool ecLightbar = !audit && hw?.SupportsEcLightbar == true;
+            if (ecLightbar) lightbar = false;   // HID 灯条与 EC 灯带互斥（官方界面同样只显示一种）
             bool refresh = Show(caps.DisplayRefresh || hw?.SupportsDisplayRefresh == true);
-            bool anyLighting = keyboard || lightbar || logo;
+            bool anyLighting = keyboard || lightbar || logo || hinge || sync || ecLightbar;
             bool lightEnabled = audit || anyLighting;
             bool brightness = Show(hw?.ScreenBrightnessSeen == true);
             bool calibration = Show(caps.ColorCalibration || hw?.SupportsColorCalibration == true);
@@ -2859,7 +2894,7 @@ namespace MechrevoLite
             {
                 true, true, true, true, gpu, brightnessSection, true, liquidCooling, lightEnabled, quick,
             }) + '|' +
-                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{miniled}|{unsupportedModel}|{controllerUnsupported}|{generationRouteHidden}|{hw?.DgpuGeneration}";
+                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{hinge}|{sync}|{ecLightbar}|{lighting.Keyboard}|{lighting.LightbarGeneration}|{lighting.Logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{miniled}|{unsupportedModel}|{controllerUnsupported}|{generationRouteHidden}|{hw?.DgpuGeneration}";
             if (fingerprint == _lastCapabilityLayout)
             {
                 ApplyChargeLimitSliderGating(unsupportedModel);
@@ -2886,10 +2921,20 @@ namespace MechrevoLite
                     if (descendant.Name == "rowKeyboard") descendant.Visible = keyboard;
                     if (descendant.Name == "rowLightbar") descendant.Visible = lightbar;
                     if (descendant.Name == "rowLogo") descendant.Visible = logo;
+                    if (descendant.Name == "rowHinge") descendant.Visible = hinge;
+                    if (descendant.Name == "rowSync") descendant.Visible = sync;
+                    if (descendant.Name == "rowEcBar") descendant.Visible = ecLightbar;
                 }
                 _lightChannelKeyboard = keyboard;
                 _lightChannelLightbar = lightbar;
                 _lightChannelLogo = logo;
+                _lightChannelHinge = hinge;
+                _lightChannelSync = sync;
+                _lightChannelEc = ecLightbar;
+                // 单色背光没有效果参数页；其余分型的「编辑」照常可用。
+                if (Controls.Find("rowKeyboard", true).FirstOrDefault() is TableLayoutPanel keyboardRow
+                    && keyboardRow.Controls.OfType<Button>().FirstOrDefault() is { } keyboardEdit)
+                    keyboardEdit.Visible = audit || lighting.Keyboard != KeyboardLightKind.SingleColorBacklight;
                 EnableSection(_lightGroup, lightEnabled);
                 SyncLightRows();
             }
@@ -3921,9 +3966,13 @@ namespace MechrevoLite
                 contextMenuStrip.Items.Add("-");
             }
 
-            bool keyboardLighting = trayAudit
-                || trayCaps.Keyboard
-                || trayHw?.SupportsKeyboard == true;
+            // 托盘「键盘灯效」打开的是 RGB 灯效窗：只在本机真有 RGB 键盘时出现
+            // （官方 KeyboardSupport 恒为 1，不能当证据；单色背光没有灯效窗）。
+            bool keyboardLighting = trayAudit || (trayHw is not null
+                ? trayHw.SupportsKeyboard && trayHw.Lighting.Keyboard != KeyboardLightKind.SingleColorBacklight
+                : (Program.rgb?.ScannedKeyboardInterface ?? HidKeyboardInterfaceKind.NotScanned) is HidKeyboardInterfaceKind.PerKey or HidKeyboardInterfaceKind.PerKeyLegacy
+                    || trayCaps.KeyboardType > 0 && KeyboardFirmwareEffects.KindFromRegistryOrdinal(trayCaps.KeyboardType)
+                        is KeyboardLightKind.PerKey or KeyboardLightKind.PerKeyLegacy);
             if (keyboardLighting) AddAction(Properties.Strings.TrayKeyboardLighting, false, () => OpenRgbForm());
             AddAction(Properties.Strings.TrayOverlayMonitor, AppConfig.IsOverlay(), () => ToggleOverlay());   // Overlay 硬件状态悬浮窗
             AddAction(Properties.Strings.TrayOpenMain, false, () => ShowAll());

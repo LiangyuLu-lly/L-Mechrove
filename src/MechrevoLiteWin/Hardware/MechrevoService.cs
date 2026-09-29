@@ -2308,27 +2308,21 @@ public class MechrevoService
         try
         {
             if (!SupportsLightTopic(topic)) return false;
+            // 每个色块都带 ID：服务端 ConvertJsonRGB2RGBColor 逐块读 ColorBuffer[i]["ID"] 赋给 uint，
+            // 缺 ID 时 dynamic 转换会抛（HIDKeyboard.cs:179-192）。官方界面发的色块一律带 ID。
+            Color[] slots = singleColor.HasValue
+                ? new[] { singleColor.Value }
+                : LightingEffectCatalog.DefaultPalette;   // 原版默认 7 色块（rkgcolor）
             var color = new Dictionary<string, object>
             {
                 ["isCircular"] = true,
-                ["ColorBlocks"] = singleColor.HasValue ? 1 : 7,
-                ["ColorBuffer"] = singleColor.HasValue
-                    ? new object[]
-                    {
-                        new Dictionary<string, object> { ["R"] = (int)singleColor.Value.R, ["G"] = (int)singleColor.Value.G, ["B"] = (int)singleColor.Value.B },
-                    }
-                    : new object[]   // 原版默认 7 色块（rkgcolor）
-                    {
-                        new Dictionary<string, object> { ["R"] = 255, ["G"] = 0, ["B"] = 0 },
-                        new Dictionary<string, object> { ["R"] = 255, ["G"] = 165, ["B"] = 0 },
-                        new Dictionary<string, object> { ["R"] = 255, ["G"] = 255, ["B"] = 0 },
-                        new Dictionary<string, object> { ["R"] = 0, ["G"] = 255, ["B"] = 0 },
-                        new Dictionary<string, object> { ["R"] = 0, ["G"] = 255, ["B"] = 255 },
-                        new Dictionary<string, object> { ["R"] = 0, ["G"] = 0, ["B"] = 255 },
-                        new Dictionary<string, object> { ["R"] = 255, ["G"] = 0, ["B"] = 255 },
-                    },
+                ["ColorBlocks"] = slots.Length,
+                ["ColorBuffer"] = slots.Select((c, i) => (object)new Dictionary<string, object>
+                {
+                    ["ID"] = i, ["R"] = (int)c.R, ["G"] = (int)c.G, ["B"] = (int)c.B,
+                }).ToArray(),
             };
-            await _hw.Publish(topic, new Dictionary<string, object>
+            var payload = new Dictionary<string, object>
             {
                 ["function"] = "SetEffectALL",
                 ["mode"] = "Lighting",
@@ -2338,7 +2332,12 @@ public class MechrevoService
                 ["direction"] = direction,
                 ["nv_save"] = save ? "SAVE" : "NOT_SAVE",
                 ["color"] = color,
-            });
+            };
+            // EC 单区键盘的服务端解析要求一组额外字段，缺任何一个整条命令被丢弃。
+            if (topic == MqttTopics.KeyboardCtrl && _hw.Lighting.Keyboard == KeyboardLightKind.SingleZone)
+                foreach (var (key, value) in LightingEffectCatalog.SingleZoneFields(slots[0]))
+                    payload[key] = value;
+            await _hw.Publish(topic, payload);
             Logger.WriteLine($"SetLightEffect({topic}, {effect}, light={light}, speed={speed}, save={save}) 已发送");
             return true;
         }
@@ -2565,13 +2564,132 @@ public class MechrevoService
 
     bool SupportsLightTopic(string topic)
     {
-        if (topic.StartsWith(MqttTopics.KeyboardPrefix, StringComparison.OrdinalIgnoreCase)) return _hw.SupportsKeyboard;
+        // Keyboard/Ctrl 只对服务真有 RGB 控制器的分型生效（逐键/四区/四区单色/单区）；
+        // 单色背光走 Setting/Control，逐键一代官方没有控制器——向它们发 Keyboard/Ctrl 是空操作。
+        if (topic.StartsWith(MqttTopics.KeyboardPrefix, StringComparison.OrdinalIgnoreCase))
+            return _hw.Lighting.KeyboardGcuControllable;
         return LightTopicToQuickSwitchKey(topic) switch
         {
             "logolight" => _hw.SupportsLogoLight,
+            "hingelight" => _hw.SupportsHingeLight,
+            "synclight" => _hw.SupportsSyncLight,
+            "eclightbar" => _hw.SupportsEcLightbar,
             "lightbar" => _hw.SupportsLightbar,
             _ => false,
         };
+    }
+
+    /// <summary>
+    /// 旧机型 EC 灯带动作（MyRgbLightbar/Control {"Action":…}，MyRgbLightbarManager.Recieve）。
+    /// 服务每执行一个动作都会回一帧 MyRgbLightbar/Status，据此判定回读是否与期望一致。
+    /// </summary>
+    internal async Task<(bool Published, bool Matched)> SendEcLightbarActionAsync(string action, Func<bool> confirmed)
+    {
+        if (!_hw.SupportsEcLightbar) return (false, false);
+        try
+        {
+            long before = _hw.EcLightbarStatusVersion;
+            await _hw.Publish(MqttTopics.EcLightbarControl, new Dictionary<string, object> { ["Action"] = action }).ConfigureAwait(false);
+            bool matched = await _hw.WaitForStateAsync(
+                () => _hw.EcLightbarStatusVersion > before && confirmed(), TimeSpan.FromMilliseconds(1200)).ConfigureAwait(false);
+            Logger.WriteLine($"EC lightbar {action}: confirmed={matched}");
+            return (true, matched);
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("EC lightbar action failed: " + ex.Message);
+            return (false, false);
+        }
+    }
+
+    /// <summary>灯光通道 Ctrl 主题 → 对应的 Status 主题（回读比对用）。</summary>
+    internal static string? StatusTopicFor(string ctrlTopic) => ctrlTopic switch
+    {
+        MqttTopics.KeyboardCtrl => MqttTopics.KeyboardStatus,
+        MqttTopics.LightbarCtrl => MqttTopics.LightbarStatus,
+        MqttTopics.LogoLightCtrl => MqttTopics.LogoLightStatus,
+        MqttTopics.HingeLightCtrl => MqttTopics.HingeLightStatus,
+        MqttTopics.SyncLightCtrl => MqttTopics.SyncLightStatus,
+        _ => null,
+    };
+
+    /// <summary>服务落盘「上次灯效」用的类型子键（SetACDCLightString 的 forceEffectSaveName / 实际分型名）。</summary>
+    string? ServiceRecordTypeKey(string ctrlTopic) => ctrlTopic switch
+    {
+        MqttTopics.KeyboardCtrl => _hw.KeyboardStatusType,
+        MqttTopics.LightbarCtrl => _hw.LightbarStatusType,
+        MqttTopics.LogoLightCtrl => "MEZone_Lighbar4_logo",
+        MqttTopics.HingeLightCtrl => "MEZone_Lighbar4_hinge",
+        MqttTopics.SyncLightCtrl => "MEZone_Lighbar4_sync",
+        _ => null,
+    };
+
+    /// <summary>
+    /// 官方通道灯效：下发 SetEffectALL 后尽力回读，按证据给出三态结果。
+    /// 证据顺序：键盘先看设备 0x88 回读（固件效果寄存器，真硬件回读）；
+    /// 其余通道（以及拿不到 HID 回读的键盘）看服务回读——GETSTATUS 的新帧里电源为 On 且亮度档一致，
+    /// 并且服务落盘的上次灯效（HKLM ...\RGBKeyboard\&lt;类型&gt;\&lt;ProjectID&gt;_LastEffect）效果号一致。
+    /// 任一证据缺失或不一致都只报「已下发」，绝不冒充「已确认」。
+    /// </summary>
+    internal async Task<(LightApplyOutcome Outcome, LightReadbackSource Source)> ApplyLightEffectConfirmedAsync(
+        string topic, string effect, int light, int speed, string direction, Color? singleColor, bool save,
+        bool brightnessApplies = true, Func<byte[]?>? firmwareReadback = null, Action? onPublished = null)
+    {
+        bool published = await SetLightEffect(topic, effect, light, speed, direction, singleColor, save).ConfigureAwait(false);
+        if (!published) return (LightApplyOutcome.Failed, LightReadbackSource.None);
+        // 命令已发出：调用方在这里落盘用户选择。回读要等 ~0.35–1.8 s，期间仪表盘的同步
+        // 会按存档重填下拉——存档若还是旧效果，下拉会跳回去，下一次操作也会带着旧效果。
+        onPublished?.Invoke();
+        int expectedEffect = LightingEffectCatalog.FirmwareEffectId(effect);
+        try
+        {
+            await Task.Delay(350).ConfigureAwait(false);   // 服务执行效果（含 Lighbar4 单色的 500ms 双发）后再读
+            if (topic == MqttTopics.KeyboardCtrl && firmwareReadback is not null && expectedEffect > 0)
+            {
+                byte[]? report = await Task.Run(firmwareReadback).ConfigureAwait(false);
+                if (report is { Length: >= 6 } && report[1] == 0x88)
+                {
+                    bool effectMatches = report[3] == expectedEffect;
+                    Logger.WriteLine($"Light readback (device 0x88) {topic}: effect={report[3]} expected={expectedEffect} light={report[5]}");
+                    if (effectMatches) return (LightApplyOutcome.Confirmed, LightReadbackSource.Device);
+                }
+            }
+            bool serviceMatched = await ServiceReadbackMatchesAsync(topic, expectedEffect, light, brightnessApplies).ConfigureAwait(false);
+            return serviceMatched
+                ? (LightApplyOutcome.Confirmed, LightReadbackSource.Service)
+                : (LightApplyOutcome.Sent, LightReadbackSource.None);
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("Light readback failed: " + ex.Message);
+            return (LightApplyOutcome.Sent, LightReadbackSource.None);
+        }
+    }
+
+    async Task<bool> ServiceReadbackMatchesAsync(string topic, int expectedEffect, int light, bool brightnessApplies)
+    {
+        string? statusTopic = StatusTopicFor(topic);
+        if (statusTopic is null) return false;
+        long before = _hw.LightStatusReadback.TryGetValue(statusTopic, out LightStatusSnapshot old) ? old.Version : 0;
+        bool StatusMatches()
+        {
+            if (!_hw.LightStatusReadback.TryGetValue(statusTopic, out LightStatusSnapshot s) || s.Version <= before) return false;
+            bool powerOn = string.Equals(s.PowerStatus, "On", StringComparison.OrdinalIgnoreCase);
+            return powerOn && (!brightnessApplies || s.BrightnessLevel < 0 || s.BrightnessLevel == Math.Clamp(light, 0, 4));
+        }
+        bool statusOk = false;
+        for (int attempt = 0; attempt < 2 && !statusOk; attempt++)
+        {
+            await _hw.Publish(topic, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            statusOk = await _hw.WaitForStateAsync(StatusMatches, TimeSpan.FromMilliseconds(700)).ConfigureAwait(false);
+        }
+        if (!statusOk) return false;
+        string? typeKey = ServiceRecordTypeKey(topic);
+        bool recordOk = typeKey is not null && expectedEffect > 0
+            && GcuLightingReadback.TryReadLastEffect(typeKey, out GcuLightEffectRecord record)
+            && record.Effect == expectedEffect;
+        Logger.WriteLine($"Light readback (service) {topic}: status=ok record={(recordOk ? "match" : "no-match")} type={typeKey}");
+        return recordOk;
     }
 
     /// <summary>
@@ -2588,6 +2706,9 @@ public class MechrevoService
     internal static string? LightTopicToQuickSwitchKey(string topic)
     {
         if (topic.Contains("Logo", StringComparison.OrdinalIgnoreCase)) return "logolight";
+        if (topic.Contains("Hinge", StringComparison.OrdinalIgnoreCase)) return "hingelight";
+        if (topic.Contains("_Sync", StringComparison.OrdinalIgnoreCase)) return "synclight";
+        if (topic.StartsWith("MyRgbLightbar/", StringComparison.OrdinalIgnoreCase)) return "eclightbar";
         if (topic.StartsWith(MqttTopics.LightbarPrefix, StringComparison.OrdinalIgnoreCase)) return "lightbar";
         return null;
     }

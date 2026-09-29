@@ -201,9 +201,12 @@ public class KeyboardFirmwareEffectsTests
         var effectAll = harness.Snapshot().Where(entry => entry.Topic == KeyboardTopic &&
             entry.Payload.TryGetValue("function", out object? function) && Equals(function, "SetEffectALL")).ToList();
         Assert.True(effectAll.Count >= 1, "GCU 改效果必须下发 Keyboard/Ctrl SetEffectALL。");
+        string sequence = string.Join(" | ", harness.Snapshot().Select(entry =>
+            entry.Topic + ":" + (entry.Payload.TryGetValue("function", out object? f) ? f : entry.Payload.GetValueOrDefault("Action"))
+            + (entry.Payload.TryGetValue("effect", out object? e) ? "=" + e : "")));
         Assert.All(effectAll, entry =>
         {
-            Assert.Equal("Wave", entry.Payload["effect"]);
+            Assert.True(Equals("Wave", entry.Payload["effect"]), "下发序列：" + sequence);
             Assert.Equal("SAVE", entry.Payload["nv_save"]);
             Assert.False(IsChineseHidDisplayName(entry.Payload["effect"]));
         });
@@ -245,6 +248,9 @@ public class KeyboardFirmwareEffectsTests
     {
         using var harness = new Harness();
         Assert.False(await harness.Keyboard.EnsureHidReadyAsync());
+        // 呼吸同时采用亮度、速度、颜色（官方规格）；单色不采用速度，参数页不会出现速度（见下方断言）。
+        LightingSettingsStore.Save(KeyboardTopic,
+            new LightChannelSettings("Breathing", 4, 1, Color.White.ToArgb(), PowerOn: true));
         DetachUiContext();
 
         Program.UiAuditMode = true;
@@ -261,18 +267,36 @@ public class KeyboardFirmwareEffectsTests
         var status = (Label)typeof(RgbForm).GetField("_lblStatus",
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(form)!;
         Assert.DoesNotContain("仅电源与亮度", status.Text);
+
+        // 单色效果：固件不采用速度 → 不给出速度控件（点了无效的控件就是伪功能）。
+        LightingSettingsStore.Save(KeyboardTopic,
+            new LightChannelSettings("Single", 4, 1, Color.White.ToArgb(), PowerOn: true));
+        Program.UiAuditMode = true;
+        using var singleForm = new RgbForm(harness.Keyboard);
+        Program.UiAuditMode = false;
+        Control singlePanel = (Control)typeof(RgbForm).GetField("_hidPanel",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(singleForm)!;
+        Assert.DoesNotContain(Descendants(singlePanel).OfType<ComboBox>(),
+            c => ComboLabels(c).SequenceEqual(new[] { "慢", "中", "快" }));
+        Assert.Contains(Descendants(singlePanel), c => c is Button && c.Enabled);
     }
 
+    /// <summary>
+    /// ItemSupport\KeyboardType 是官方 RGBKB_Type 序号：1 = SingleZone（EC 单区：单色/彩虹，CCUWinUI
+    /// SingleZoneKeyboardView），2 = FourZone（四区 6 项）。旧实现把 1/2 都当单区。
+    /// </summary>
     [Fact]
     public void SingleZoneRgb_ExposesOnlySingleAndBreathing()
     {
         Assert.True(KeyboardFirmwareEffects.IsSingleZoneRgb(1));
-        Assert.True(KeyboardFirmwareEffects.IsSingleZoneRgb(2));
+        Assert.False(KeyboardFirmwareEffects.IsSingleZoneRgb(2));
         Assert.False(KeyboardFirmwareEffects.IsSingleZoneRgb(0));
         Assert.False(KeyboardFirmwareEffects.IsSingleZoneRgb(3));
-        Assert.Equal(new[] { "Single", "Breathing" }, KeyboardFirmwareEffects.Visible(1).Select(e => e.Id).ToArray());
+        Assert.Equal(new[] { "Single", "Rainbow" }, KeyboardFirmwareEffects.Visible(1).Select(e => e.Id).ToArray());
+        Assert.Equal(new[] { "Single", "Breathing", "Wave", "Rainbow", "Mix", "Flash" },
+            KeyboardFirmwareEffects.Visible(2).Select(e => e.Id).ToArray());
         Assert.Equal(KeyboardFirmwareEffects.All, KeyboardFirmwareEffects.Visible(0));
-        Assert.Equal(new[] { "静态", "呼吸" }, RgbForm.VisibleHidEffects(2).Select(e => e.Name).ToArray());
+        Assert.Equal(new[] { "静态", "呼吸" }, RgbForm.VisibleHidEffects(1).Select(e => e.Name).ToArray());
         Assert.Equal(10, RgbForm.VisibleHidEffects(0).Length);
     }
 
@@ -351,7 +375,7 @@ public class KeyboardFirmwareEffectsTests
         using var form = BuildKeyboardForm(out ComboBox effectCombo);
         Program.UiAuditMode = false;
 
-        Assert.Equal(new[] { "单色", "呼吸" }, ComboLabels(effectCombo));
+        Assert.Equal(new[] { "单色", "彩虹" }, ComboLabels(effectCombo));
     }
 
     static IEnumerable<Control> Descendants(Control root)

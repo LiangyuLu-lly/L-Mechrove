@@ -34,15 +34,25 @@ public class LightbarSingleColorEffectTests
     }
 
     [Fact]
+    public void ColorForSpec_WithoutASpecFallsBackToColorForEffect()
+    {
+        Color cyan = Color.FromArgb(0, 255, 255);
+        var impact = new LightChannelSettings("Impact", 3, 1, cyan.ToArgb(), PowerOn: true);
+        Assert.Equal(cyan.ToArgb(), LightingSettingsStore.ColorForSpec(null, impact)!.Value.ToArgb());
+        Assert.Null(LightingSettingsStore.ColorForSpec(null, impact with { Effect = "Wave" }));
+    }
+
+    [Fact]
     public void Lightbar_and_restore_paths_pass_color_for_non_single_swatch_effects()
     {
         string lightForm = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "LightForm.cs");
         string settings = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Settings.V2.cs");
         string program = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Program.cs");
         string service = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Hardware", "MechrevoService.cs");
-        Assert.Contains("ColorForEffect", lightForm, StringComparison.Ordinal);
-        Assert.Contains("ColorForEffect", settings, StringComparison.Ordinal);
-        Assert.Contains("ColorForEffect", program, StringComparison.Ordinal);
+        // 界面与恢复路径按效果规格取色（ColorForSpec）；规格未知时它退回 ColorForEffect（见下方用例）。
+        Assert.Contains("ColorForSpec", lightForm, StringComparison.Ordinal);
+        Assert.Contains("ColorForSpec", settings, StringComparison.Ordinal);
+        Assert.Contains("ColorForSpec", program, StringComparison.Ordinal);
         Assert.Contains("ColorForEffect", service, StringComparison.Ordinal);
         Assert.DoesNotContain("_effect == \"Single\" ? _singleColor", lightForm, StringComparison.Ordinal);
         Assert.DoesNotContain("effectId == \"Single\" ? Color.FromArgb", settings, StringComparison.Ordinal);

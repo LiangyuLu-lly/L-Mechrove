@@ -28,7 +28,7 @@ public class FooterOverlapDpiTests
         {
             ProfileAvailable = true, TurboMode = true, CpuPerformanceTuning = true, FanSettings = true,
             LiquidCooling = true, DisplayRefresh = true, ColorCalibration = true, LcdOverdrive = true,
-            DgpuDirect = true, IgpuOnly = true, Keyboard = true, Lightbar = true, LogoLight = true,
+            DgpuDirect = true, IgpuOnly = true, Keyboard = true, Lightbar = true, LogoLight = true, MbaLogo = true,
         });
         Program.hw = hardware;
         // 恢复由调用方的 RestoreProcessStatics 负责（硬件对象由测试持有）。

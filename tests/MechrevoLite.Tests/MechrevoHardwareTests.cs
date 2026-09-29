@@ -512,10 +512,12 @@ public class MechrevoHardwareTests
     [Fact]
     public void HandleMessage_KeepsLogoAndLightbarPowerIndependent()
     {
-        using var hardware = new MechrevoHw();
+        // 显式能力画像：不读本机注册表，结果与运行测试的机器无关。
+        using var hardware = new MechrevoHw(null, new MechrevoDeviceCapabilities());
 
-        hardware.HandleMessage("HidLightbar/Status", "{\"powerStatus\":\"On\"}");
-        hardware.HandleMessage("HidLightbar_Logo/Status", "{\"powerStatus\":\"Off\"}");
+        hardware.HandleMessage("HidLightbar/Status",
+            "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"On\",\"MBlogoSupport\":true}");
+        hardware.HandleMessage("HidLightbar_Logo/Status", "{\"type\":\"MEZone_Lighbar4\",\"powerStatus\":\"Off\"}");
 
         Assert.True(hardware.QuickSwitches["lightbar"]);
         Assert.False(hardware.QuickSwitches["logolight"]);
@@ -530,9 +532,10 @@ public class MechrevoHardwareTests
         {
             publishedTopic = topic;
             return Task.CompletedTask;
-        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, LogoLight = true });
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, Lightbar = true, LogoLight = true, MbaLogo = true });
         var service = new MechrevoService(hardware);
 
+        // 离线画像：有 HID 灯条 + Support\MBALogo（A 面 Logo）才提供 Logo 入口。
         Assert.True(hardware.SupportsLogoLight);
         Assert.True(await service.SetLightEffect("HidLightbar_Logo/Ctrl", "Single"));
         Assert.Equal("HidLightbar_Logo/Ctrl", publishedTopic);

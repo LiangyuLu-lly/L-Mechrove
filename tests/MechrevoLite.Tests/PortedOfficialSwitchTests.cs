@@ -74,7 +74,11 @@ public class PortedOfficialSwitchTests
     {
         using MechrevoHw hardware = NewHardware();
         hardware.HandleMessage("Setting/Status", """{"SingleColorKBBL":"SINGLE_COLOR_KBBL_STATUS_ON"}""");
+        // Setting/Status 在所有机型上都带 SingleColorKBBL（逐键 RGB 机型也报）：单凭它开放开关就是假入口。
+        Assert.False(hardware.SupportsQuickSwitch("singlecolorkb"));
 
+        // 官方只在 Customize/Info KeyboardType="2"（单色背光项目）时显示单色背光页。
+        hardware.HandleMessage("Customize/Info", """{"KeyboardType":"2"}""");
         Assert.True(hardware.SupportsQuickSwitch("singlecolorkb"));
         Assert.True(hardware.QuickSwitches["singlecolorkb"]);
 
@@ -280,6 +284,8 @@ public class QuickSwitchReadbackContractTests
             {"GameWhitelistSwitch":1,"CPUPerformanceAndOverClockMenuSwitch":1,
              "GPU_WhisperModeSupport":true,"GPU_WhisperModeSwitch":1}
             """);
+        // 单色背光开关只在单色背光项目上存在（Customize/Info KeyboardType="2"）。
+        hardware.HandleMessage("Customize/Info", """{"KeyboardType":"2"}""");
 
         // whisper 不在这张表里：它是只读族，不该出现在可写开关字典里。
         string[] added =

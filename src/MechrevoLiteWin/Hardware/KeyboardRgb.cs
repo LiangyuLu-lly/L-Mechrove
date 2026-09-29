@@ -160,32 +160,77 @@ public class KeyboardRgb : IDisposable
     readonly FramePacer _pacer = new(new SystemFrameClock());
     void PaceFrame(int fps) => _pacer.Pace(fps);
 
+    /// <summary>
+    /// 最近一次 HID 枚举按官方判据（键盘 PID 表 + Usage 1 + UsagePage）得到的键盘接口形态。
+    /// 灯光通道识别用它做离线证据：服务不在时也能分出逐键 / 四区 / 无键盘。
+    /// </summary>
+    internal HidKeyboardInterfaceKind ScannedKeyboardInterface { get; private set; } = HidKeyboardInterfaceKind.NotScanned;
+
     /// <summary>枚举 BetterRGB 支持的 ITE8291 键盘 RGB 接口。</summary>
     HidDeviceWin? ResolveDevice()
     {
         if (ResolveDeviceProbe is not null) return ResolveDeviceProbe();   // 测试 seam
         HidDeviceWin? best = null;
         int bestScore = 0;
+        var official = HidKeyboardInterfaceKind.None;
         foreach (var d in HidDeviceWin.Enumerate(VendorId))
         {
-            int score = ScoreCandidate(d.ProductID, d.UsagePage, d.InterfaceNumber,
+            official = PreferInterface(official,
+                LightingChannelDetector.ClassifyKeyboardInterface(d.VendorID, d.ProductID, d.Usage, d.UsagePage));
+            int score = ScoreCandidate(d.ProductID, d.UsagePage, d.Usage, d.InterfaceNumber,
                 d.OutputReportLength, d.FeatureReportLength);
             Logger.WriteLine($"RGB HID candidate: {d.DeviceInfo} out={d.OutputReportLength} feature={d.FeatureReportLength} score={score}");
             if (score > bestScore) { bestScore = score; best = d; }
         }
+        ScannedKeyboardInterface = official;
+        LastScannedKeyboardInterface = official;
         return best;
+    }
+
+    /// <summary>进程内最近一次真实 HID 枚举的官方键盘接口形态（灯光通道识别的离线证据）。</summary>
+    internal static HidKeyboardInterfaceKind LastScannedKeyboardInterface { get; private set; } = HidKeyboardInterfaceKind.NotScanned;
+
+    /// <summary>同机多接口时按「逐键 &gt; 四区 &gt; 逐键一代」取最能说明键盘形态的那个。</summary>
+    internal static HidKeyboardInterfaceKind PreferInterface(HidKeyboardInterfaceKind current, HidKeyboardInterfaceKind next)
+    {
+        static int Rank(HidKeyboardInterfaceKind kind) => kind switch
+        {
+            HidKeyboardInterfaceKind.PerKey => 3,
+            HidKeyboardInterfaceKind.FourZone => 2,
+            HidKeyboardInterfaceKind.PerKeyLegacy => 1,
+            _ => 0,
+        };
+        return Rank(next) > Rank(current) ? next : current;
     }
 
     /// <summary>
     /// Mirrors BetterRGB: FF03 is preferred, MI_01 is the fallback, and PID 600B is
     /// only a bonus. Report sizes are tie-breakers because compatible controllers
     /// may omit or expose different HID descriptors while using the same protocol.
+    /// 描述符里拿不到 Usage 的旧调用按键盘集合（Usage 1）处理。
     /// </summary>
     internal static int ScoreCandidate(ushort productId, ushort usagePage, int interfaceNumber,
+        ushort outputReportLength, ushort featureReportLength) =>
+        ScoreCandidate(productId, usagePage, 1, interfaceNumber, outputReportLength, featureReportLength);
+
+    /// <summary>
+    /// 在 BetterRGB 评分之上加官方判据，杜绝把非键盘接口当键盘写逐键帧：
+    /// 官方灯条接口（PID 7000/7001/6005/6008/6010）、FF03 上的 Usage 2 集合（Lighbar4 形态）、
+    /// 四区控制器（FF12，逐键帧协议不适用，交官方通道）一律 0 分；
+    /// 官方键盘 PID 表内的接口额外加分，保证同机有灯条时键盘接口总是胜出。
+    /// </summary>
+    internal static int ScoreCandidate(ushort productId, ushort usagePage, ushort usage, int interfaceNumber,
         ushort outputReportLength, ushort featureReportLength)
     {
-        int score = usagePage == 0xFF03 ? 30 : interfaceNumber == 1 ? 20 : 0;
+        if (Array.IndexOf(LightingChannelDetector.LightbarProductIds, productId) >= 0) return 0;
+        if (usagePage == LightingChannelDetector.UsagePageFourZone) return 0;
+        if (usagePage == LightingChannelDetector.UsagePagePerKey && usage == 2) return 0;
+        bool officialKeyboard = LightingChannelDetector.IsKeyboardInterface(VendorId, productId, usage);
+        int score = usagePage == LightingChannelDetector.UsagePagePerKey ? 30
+            : usagePage == LightingChannelDetector.UsagePagePerKeyLegacy && officialKeyboard ? 25
+            : interfaceNumber == 1 ? 20 : 0;
         if (score == 0) return 0;
+        if (officialKeyboard) score += 6;
         if (productId == ProductId) score += 4;
         if (outputReportLength == 65) score += 2;
         if (featureReportLength == 9) score += 2;
@@ -263,7 +308,73 @@ public class KeyboardRgb : IDisposable
         if (!_stream!.SetFeature(Step1)) return false;
         if (!_stream.Write(new byte[65])) return false;   // clearFrame 65×0
         if (!_stream.SetFeature(Step2)) return false;
+        // 设备回读（0x88）：固件当前效果寄存器应当就是刚写入的自定义帧模式（Control=2, Effect=0x33）。
+        // 读不到（控制器不支持回读/测试桩）只记 null，不影响连接结论——那种情况界面只说「已下发」。
+        CustomModeReadback = ReadbackCustomMode(_stream);
         return true;
+    }
+
+    static readonly byte[] QueryEffect88 = { 0x00, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+    /// <summary>
+    /// 最近一次进入自定义帧模式后的设备回读：true = 0x88 回读确认固件处于自定义帧模式；
+    /// false = 回读到了但不是（固件被别的通道改回了固件效果）；null = 没有回读证据。
+    /// </summary>
+    internal bool? CustomModeReadback { get; private set; }
+
+    /// <summary>0x88 回读是否表明固件处于我方自定义帧模式（与 Step2 的 Control/Effect 字节比对）。</summary>
+    internal static bool? IsCustomModeReadback(byte[] report) =>
+        report.Length < 6 || report[1] != 0x88 ? null : report[2] == Step2[2] && report[3] == Step2[3];
+
+    static bool? ReadbackCustomMode(HidDeviceWin stream)
+    {
+        byte[]? report = QueryEffectRegister(stream);
+        return report is null ? null : IsCustomModeReadback(report);
+    }
+
+    /// <summary>0x88 查询：SetFeature(查询号) + GetFeature。只读，不改任何灯效状态（官方服务热键路径同用法）。</summary>
+    static byte[]? QueryEffectRegister(HidDeviceWin stream)
+    {
+        try
+        {
+            if (!stream.SetFeature(QueryEffect88)) return null;
+            var report = new byte[9];
+            return stream.GetFeature(report) && report[1] == 0x88 ? report : null;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("RGB 0x88 readback failed: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 键盘固件效果寄存器的设备回读（官方通道下发后用来确认）：我方流打开时复用它，
+    /// 否则临时以共享方式打开官方判据下的键盘接口（含四区 FF12）查询后立即关闭。
+    /// 返回 [2]=Control [3]=Effect [4]=Speed [5]=Light；拿不到返回 null。
+    /// </summary>
+    internal byte[]? QueryFirmwareEffectRegister()
+    {
+        if (ResolveDeviceProbe is not null) return null;   // 测试 seam：不碰真实硬件
+        lock (_lock)
+        {
+            if (_stream is not null) return QueryEffectRegister(_stream);
+        }
+        try
+        {
+            foreach (var d in HidDeviceWin.Enumerate(VendorId))
+            {
+                if (LightingChannelDetector.ClassifyKeyboardInterface(d.VendorID, d.ProductID, d.Usage, d.UsagePage)
+                    is HidKeyboardInterfaceKind.None) { d.Dispose(); continue; }
+                using (d)
+                {
+                    if (!d.Open()) continue;
+                    return QueryEffectRegister(d);
+                }
+            }
+        }
+        catch (Exception ex) { Logger.WriteLine("RGB firmware readback failed: " + ex.Message); }
+        return null;
     }
 
     // ---- 控制器能力探测（判定来源；探测 ≡ 真实路径，复用 ConnectCoreLocked）----
@@ -539,7 +650,15 @@ public class KeyboardRgb : IDisposable
     {
         _brightnessWriteObserved = false;
         _hidBrightnessTookEffect = true;
+        CustomModeReadback = null;
     }
+
+    /// <summary>
+    /// 软件（HID 逐键帧）路径的结果三态：流打开且 0x88 回读确认自定义帧模式 → 已确认（设备回读）；
+    /// 流打开但没有回读证据 → 已下发；流没打开 → 失败。
+    /// </summary>
+    internal LightApplyOutcome SoftwarePathOutcome =>
+        LightingEffectCatalog.ResolveOutcome(IsConnected, IsConnected ? CustomModeReadback : null);
 
     /// <summary>
     /// 路由用的亮度写入结果。只有设备已连接、判定为 Supported、且这次写入真的失败时才返回 false。

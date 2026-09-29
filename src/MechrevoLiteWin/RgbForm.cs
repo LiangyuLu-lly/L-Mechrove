@@ -369,13 +369,32 @@ public class RgbForm : RForm
         PublishGcuBrightness();
     }
 
+    static KeyboardLightKind CurrentKeyboardKind() => Program.hw?.Lighting.Keyboard ?? KeyboardLightKind.Unknown;
+
+    int _gcuEffectGen;   // 官方通道下发代际：只显示最后一次下发的结果
+
     void PublishGcuFirmwareEffect(LightChannelSettings settings)
     {
         if (Program.UiAuditMode || !_rgb.KbPowerOn) return;
-        if (Program.service is null || Program.hw is not { IsConnected: true }) return;
-        Color? color = LightingSettingsStore.ColorForEffect(settings.Effect, settings.ColorArgb);
-        _ = Program.service.SetKeyboardEffect(
-            settings.Effect, settings.Light, settings.Speed, "None", color, save: true);
+        if (Program.service is null || Program.hw is not { IsConnected: true })
+        {
+            SetStatus(LightingEffectCatalog.OutcomeText(LightApplyOutcome.Failed, LightReadbackSource.None));
+            return;
+        }
+        LightEffectSpec? spec = KeyboardFirmwareEffects.Spec(CurrentKeyboardKind(), settings.Effect);
+        int gen = Interlocked.Increment(ref _gcuEffectGen);
+        MechrevoService service = Program.service;
+        KeyboardRgb rgb = _rgb;
+        _ = Task.Run(async () =>
+        {
+            var (outcome, source) = await service.ApplyLightEffectConfirmedAsync(MqttTopics.KeyboardCtrl,
+                settings.Effect, settings.Light, settings.Speed, LightingSettingsStore.DirectionForSpec(spec, settings),
+                LightingSettingsStore.ColorForSpec(spec, settings), save: true,
+                brightnessApplies: spec?.Brightness ?? true, firmwareReadback: rgb.QueryFirmwareEffectRegister);
+            if (gen != Volatile.Read(ref _gcuEffectGen) || IsDisposed) return;
+            try { BeginInvoke(() => { if (!IsDisposed) SetStatus(LightingEffectCatalog.OutcomeText(outcome, source)); }); }
+            catch (InvalidOperationException) { }
+        });
     }
 
     /// <summary>GCU 回退参数：亮度 + 速度 + 单色。效果选择由仪表盘键盘行承担，本窗不再切效果。</summary>
@@ -437,38 +456,90 @@ public class RgbForm : RForm
         };
         AddRow("亮度", _brightSlider);
 
-        var speedCombo = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
-        speedCombo.Items.AddRange(new[] { "慢", "中", "快" });
-        speedCombo.SelectedIndex = Math.Clamp(settings.Speed - 1, 0, 2);
-        speedCombo.SelectedIndexChanged += (_, _) =>
+        // 只显示当前固件效果真正采用的参数（官方各效果的速度/颜色/方向规格，LightingEffectCatalog）。
+        LightEffectSpec? spec = KeyboardFirmwareEffects.Spec(CurrentKeyboardKind(), settings.Effect);
+        if (spec?.Speed ?? true)
         {
-            LightChannelSettings next = GcuSettings() with { Speed = speedCombo.SelectedIndex + 1 };
-            LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next);
-            PublishGcuFirmwareEffect(next);
-        };
-        AddRow("速度", speedCombo);
-
-        var colorBtn = new RColorButton
-        {
-            Size = new Size(D(46), D(24)),
-            BackColor = UiVisualStyle.Input,
-            BorderColor = UiVisualStyle.Border,
-            SwatchColor = Color.FromArgb(settings.ColorArgb),
-            Cursor = Cursors.Hand,
-        };
-        colorBtn.Click += (_, _) =>
-        {
-            var dlg = new RColorPicker(Color.FromArgb(GcuSettings().ColorArgb), false);
-            dlg.ColorChanged += c =>
+            var speedCombo = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+            speedCombo.Items.AddRange(new[] { "慢", "中", "快" });
+            speedCombo.SelectedIndex = Math.Clamp(settings.Speed - 1, 0, 2);
+            speedCombo.SelectedIndexChanged += (_, _) =>
             {
-                LightChannelSettings next = GcuSettings() with { ColorArgb = c.ToArgb() };
+                LightChannelSettings next = GcuSettings() with { Speed = speedCombo.SelectedIndex + 1 };
                 LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next);
-                colorBtn.SwatchColor = c;
-                if (LightingSettingsStore.EffectUsesSingleColor(next.Effect)) PublishGcuFirmwareEffect(next);
+                PublishGcuFirmwareEffect(next);
             };
-            dlg.ShowDialog(this);
-        };
-        AddRow("单色颜色", colorBtn);
+            AddRow("速度", speedCombo);
+        }
+
+        if (spec?.Directions is { Length: > 1 } directions)
+        {
+            var directionCombo = new RComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+            foreach (string d in directions) directionCombo.Items.Add(LightingEffectCatalog.DirectionLabel(d));
+            directionCombo.SelectedIndex = Math.Max(0, Array.IndexOf(directions, settings.Direction));
+            directionCombo.SelectedIndexChanged += (_, _) =>
+            {
+                LightChannelSettings next = GcuSettings() with { Direction = directions[Math.Max(0, directionCombo.SelectedIndex)] };
+                LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next);
+                PublishGcuFirmwareEffect(next);
+            };
+            AddRow(Properties.Strings.LightParamDirection, directionCombo);
+        }
+
+        if (spec?.UsesColor ?? true)
+        {
+            var colorBtn = new RColorButton
+            {
+                Size = new Size(D(46), D(24)),
+                BackColor = UiVisualStyle.Input,
+                BorderColor = UiVisualStyle.Border,
+                SwatchColor = Color.FromArgb(settings.ColorArgb),
+                Cursor = Cursors.Hand,
+                Enabled = !(spec?.MultiColor == true && settings.UsePalette),
+                Margin = new Padding(0, D(2), D(8), D(2)),
+            };
+            colorBtn.Click += (_, _) =>
+            {
+                var dlg = new RColorPicker(Color.FromArgb(GcuSettings().ColorArgb), false);
+                dlg.ColorChanged += c =>
+                {
+                    LightChannelSettings next = GcuSettings() with { ColorArgb = c.ToArgb() };
+                    LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next);
+                    colorBtn.SwatchColor = c;
+                    PublishGcuFirmwareEffect(next);
+                };
+                dlg.ShowDialog(this);
+            };
+            Control colorCell = colorBtn;
+            if (spec?.MultiColor == true)
+            {
+                // 多色效果：七彩调色板，或把所选颜色铺满全部色块（官方「同步颜色」同义）。
+                var paletteCheck = new RCheckBox
+                {
+                    Text = Properties.Strings.LightColorPalette,
+                    AutoSize = true,
+                    ForeColor = UiVisualStyle.Text,
+                    Checked = settings.UsePalette,
+                    Margin = new Padding(0, D(4), 0, D(2)),
+                };
+                paletteCheck.CheckedChanged += (_, _) =>
+                {
+                    LightChannelSettings next = GcuSettings() with { UsePalette = paletteCheck.Checked };
+                    LightingSettingsStore.Save(MqttTopics.KeyboardCtrl, next);
+                    colorBtn.Enabled = !paletteCheck.Checked;
+                    PublishGcuFirmwareEffect(next);
+                };
+                var host = new FlowLayoutPanel
+                {
+                    AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false,
+                    Margin = Padding.Empty, BackColor = UiVisualStyle.Surface,
+                };
+                host.Controls.Add(colorBtn);
+                host.Controls.Add(paletteCheck);
+                colorCell = host;
+            }
+            AddRow(spec?.ColorSlots == 1 ? "单色颜色" : Properties.Strings.LightParamColor, colorCell);
+        }
 
         _hidPanel.Controls.Add(table);
         FitParameterTable(_hidPanel);

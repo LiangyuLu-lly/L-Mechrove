@@ -90,7 +90,7 @@ public class KeyboardLightingFallbackGapTests
             hardware = new MechrevoHw(publish, new MechrevoDeviceCapabilities
             {
                 Lightbar = true,
-                LogoLight = true,
+                LogoLight = true, MbaLogo = true,
                 Keyboard = true,
             });
             if (serviceConnected)

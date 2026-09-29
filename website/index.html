@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>L-Mechrevo · 机械革命游戏本开源轻量控制中心</title>
+<meta name="description" content="L-Mechrevo 是机械革命游戏本的开源轻量控制中心：常驻托盘，一键切换静音、平衡、静音狂暴、狂暴与自定义模式，功耗墙、显卡 TGP、风扇曲线都能按模式自定义。支持 GTX 10 到 RTX 50 系，GPL-3.0 开源，无广告。">
+<link rel="canonical" href="https://l-mechrevo.cn/">
+<meta name="theme-color" content="#05070D">
+<meta name="color-scheme" content="dark">
+<meta name="format-detection" content="telephone=no">
+<link rel="icon" href="favicon.ico" sizes="any">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="L-Mechrevo">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:url" content="https://l-mechrevo.cn/">
+<meta property="og:title" content="L-Mechrevo · 机械革命游戏本开源轻量控制中心">
+<meta property="og:description" content="掌控每一瓦性能。五种性能模式一键切换，每个模式都能二次自定义；开源 GPL-3.0，无广告，硬件控制在本机完成。">
+<meta property="og:image" content="https://l-mechrevo.cn/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="L-Mechrevo：掌控每一瓦性能">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="L-Mechrevo · 机械革命游戏本开源轻量控制中心">
+<meta name="twitter:description" content="掌控每一瓦性能。五种性能模式一键切换，每个模式都能二次自定义；开源 GPL-3.0，无广告。">
+<meta name="twitter:image" content="https://l-mechrevo.cn/og.png">
+<link rel="stylesheet" href="assets/site.css?v=20260929">
+<script>document.documentElement.classList.add('js')</script>
+<script src="assets/site.js?v=20260929" defer></script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"L-Mechrevo","description":"机械革命游戏本开源轻量控制中心","applicationCategory":"UtilitiesApplication","operatingSystem":"Windows 10 2004+, Windows 11 (x64)","license":"https://www.gnu.org/licenses/gpl-3.0.html","url":"https://l-mechrevo.cn/","sameAs":"https://github.com/LiangyuLu-lly/L-Mechrevo","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"}}</script>
+</head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<defs>
+<linearGradient id="lg-mark-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A2842"/><stop offset="1" stop-color="#0A111F"/></linearGradient>
+<linearGradient id="lg-mark-l" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C4E8FF"/><stop offset="1" stop-color="#4DA3FF"/></linearGradient>
+</defs>
+<symbol id="logo" viewBox="0 0 32 32"><rect x=".75" y=".75" width="30.5" height="30.5" rx="8.5" fill="url(#lg-mark-bg)" stroke="#2D4266" stroke-width="1.5"/><path d="M11.4 8.6v14.2h10.2" fill="none" stroke="url(#lg-mark-l)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="22" cy="9.6" r="2.2" fill="#5CE1FF"/></symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.5 16.5a7.5 7.5 0 1 1 15 0"/><path d="M12 16.5l3.4-4.4"/><circle cx="12" cy="16.5" r="1.2"/></symbol>
+<symbol id="i-gpu" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2.5"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></symbol>
+<symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7.5" width="16" height="9" rx="2.5"/><path d="M21.2 10.5v3M6.8 12h6.4"/></symbol>
+<symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3.6c3 3.5 5.6 6.7 5.6 10a5.6 5.6 0 0 1-11.2 0c0-3.3 2.6-6.5 5.6-10z"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.3M12 18.2v2.3M3.5 12h2.3M18.2 12h2.3M6 6l1.6 1.6M16.4 16.4 18 18M6 18l1.6-1.6M16.4 7.6 18 6"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95"/><path d="M19.2 4.6v3.6h-3.6"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 19.5s-7-4.3-7-9.7A3.9 3.9 0 0 1 12 7.4a3.9 3.9 0 0 1 7 2.4c0 5.4-7 9.7-7 9.7z"/></symbol>
+<symbol id="i-toolbox" viewBox="0 0 24 24"><rect x="3.5" y="7" width="17" height="12" rx="2"/><path d="M9 7V5.6c0-.9.7-1.6 1.6-1.6h2.8c.9 0 1.6.7 1.6 1.6V7M3.5 12.2h17M12 11v2.6"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+<symbol id="i-github" viewBox="0 0 16 16"><path fill="currentColor" stroke="none" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6c0-.8-.7-1.5-1.5-1.5H6c-.8 0-1.5.7-1.5 1.5v8c0 .8.7 1.5 1.5 1.5h2.5"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="i-chip" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M9.5 3.5v3M14.5 3.5v3M9.5 17.5v3M14.5 17.5v3M3.5 9.5h3M3.5 14.5h3M17.5 9.5h3M17.5 14.5h3"/></symbol>
+<symbol id="i-wall" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><path d="M3.5 9.7h17M3.5 14.3h17M9 5v4.7M15 9.7v4.6M9 14.3V19"/></symbol>
+<symbol id="i-seal" viewBox="0 0 24 24"><path d="M12 3.2l2.3 1.7 2.8-.1.9 2.7 2.3 1.6-.9 2.7.9 2.7-2.3 1.6-.9 2.7-2.8-.1L12 20.8l-2.3-1.7-2.8.1-.9-2.7-2.3-1.6.9-2.7-.9-2.7L6 7.5l.9-2.7 2.8.1z"/><path d="M9 12l2.1 2.1 3.9-4"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 7.5 4 12l4.5 4.5M15.5 7.5 20 12l-4.5 4.5M13.4 5l-2.8 14"/></symbol>
+<symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+<symbol id="i-fan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.7"/><path d="M12 10.3c-.5-3.3.5-6 3-6.2 2.4-.2 3.2 2.9.6 4.4-1.2.7-2.4 1.2-3.6 1.8zM13.7 12c3.3-.5 6 .5 6.2 3 .2 2.4-2.9 3.2-4.4.6-.7-1.2-1.2-2.4-1.8-3.6zM12 13.7c.5 3.3-.5 6-3 6.2-2.4.2-3.2-2.9-.6-4.4 1.2-.7 2.4-1.2 3.6-1.8zM10.3 12c-3.3.5-6-.5-6.2-3-.2-2.4 2.9-3.2 4.4-.6.7 1.2 1.2 2.4 1.8 3.6z"/></symbol>
+<symbol id="i-keys" viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="19" height="11" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7.5 14h9"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5.5 13.5H11L10 21l7.5-10.5H12z"/></symbol>
+<symbol id="i-bt" viewBox="0 0 24 24"><path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/></symbol>
+<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M7.2 6.4a7.4 7.4 0 1 0 9.6 0"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M4 7.8 12 3.5l8 4.3v8.4l-8 4.3-8-4.3z"/><path d="M4 7.8l8 4.4 8-4.4M12 12.2v8.3"/></symbol>
+<symbol id="i-verified" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.2l2.7 2.7L16 9.6"/></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.2a5.5 5.5 0 0 1-11 0zM12 16.2v4.3"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4 3.5 8.5 12 13l8.5-4.5z"/><path d="M3.5 12.5 12 17l8.5-4.5M3.5 16.3 12 20.8l8.5-4.5"/></symbol>
+</svg>
+
+<a class="skip" href="#main">跳到主要内容</a>
+
+<header class="nav" id="nav">
+<div class="nav__inner">
+<a class="brand" href="#top" aria-label="L-Mechrevo，回到顶部">
+<svg class="brand__mark" aria-hidden="true"><use href="#logo"/></svg>
+<span class="brand__name">L-Mechrevo</span>
+</a>
+<button class="nav__toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-menu">
+<span class="sr">打开导航菜单</span><i aria-hidden="true"></i>
+</button>
+<nav class="nav__menu" id="nav-menu" aria-label="主导航">
+<a href="#modes">性能模式</a>
+<a href="#features">功能</a>
+<a href="#compat">适配</a>
+<a href="#download">下载</a>
+<a class="nav__gh" href="https://github.com/LiangyuLu-lly/L-Mechrevo" target="_blank" rel="noopener"><svg class="ico" aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
+</nav>
+</div>
+</header>
+
+<main id="main">
+<section class="hero" id="top" aria-labelledby="hero-title">
+<div class="hero__bg" aria-hidden="true">
+<div class="hero__fallback"></div>
+<canvas id="lightfield"></canvas>
+<div class="hero__scrim"></div>
+</div>
+<div class="container hero__inner">
+<div class="hero__copy">
+<a class="pill" href="#download">
+<span class="pill__dot" aria-hidden="true"></span>
+<span>最新版本 <b data-rel="label">beta20</b></span>
+<span class="pill__sep" aria-hidden="true"></span>
+<time data-rel="date" datetime="2026-09-28">2026-09-28</time>
+<svg class="ico pill__arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+</a>
+<h1 class="hero__title" id="hero-title">掌控<span class="glow-text">每一瓦</span>性能</h1>
+<p class="hero__lead"><span class="nb">L-Mechrevo</span> 是<span class="nb">机械革命</span><span class="nb">游戏本</span>的开源<span class="nb">轻量控制中心</span>。<span class="nb">常驻托盘</span>，一键切换<span class="nb">性能模式</span>、<span class="nb">风扇曲线</span>与<span class="nb">显卡模式</span>，替代<span class="nb">厚重的官方控制台</span>。</p>
+<div class="hero__cta">
+<a class="btn btn--primary" data-dl href="https://stats.l-mechrevo.cn/download/L-Mechrevo-beta20-setup.exe">
+<svg class="ico" aria-hidden="true"><use href="#i-download"/></svg>
+<span>免费下载</span>
+<span class="btn__meta"><span data-rel="label">beta20</span> · <span data-rel="size">46.3 MB</span></span>
+</a>
+<a class="btn btn--ghost" href="https://github.com/LiangyuLu-lly/L-Mechrevo" target="_blank" rel="noopener">
+<svg class="ico" aria-hidden="true"><use href="#i-github"/></svg>
+<span>查看源码</span>
+</a>
+</div>
+<ul class="trust" aria-label="项目特点">
+<li>开源 GPL-3.0</li>
+<li>无广告</li>
+<li>硬件控制本地完成</li>
+<li>支持 10–50 系</li>
+</ul>
+</div>
+<div class="hero__stage" id="stage3d">
+<div class="panel-wrap">
+<div class="panel" id="panel" role="group" aria-label="L-Mechrevo 主界面示意，可切换性能模式">
+<div class="panel__bar">
+<span class="panel__title"><svg class="panel__logo" aria-hidden="true"><use href="#logo"/></svg>L-Mechrevo</span>
+<span class="panel__ctl" aria-hidden="true"><i class="ctl-min"></i><i class="ctl-x"></i></span>
+</div>
+<div class="panel__body">
+<div class="p-status"><span class="p-status__dot" aria-hidden="true"></span>GCU 已连接</div>
+<div class="p-sec">
+<div class="p-head"><svg class="ico" aria-hidden="true"><use href="#i-gauge"/></svg>性能模式</div>
+<div class="seg seg--5" role="tablist" aria-label="性能模式" data-modes>
+<button type="button" role="tab" data-mode="silent" aria-selected="false" tabindex="-1">静音模式</button>
+<button type="button" role="tab" data-mode="balanced" aria-selected="true" tabindex="0">平衡模式</button>
+<button type="button" role="tab" data-mode="silentturbo" aria-selected="false" tabindex="-1">静音狂暴</button>
+<button type="button" role="tab" data-mode="turbo" aria-selected="false" tabindex="-1">狂暴</button>
+<button type="button" role="tab" data-mode="custom" aria-selected="false" tabindex="-1">自定义</button>
+</div>
+<div class="p-tele" aria-hidden="true">
+<span><em>CPU</em><b data-t="cpuT">63</b>°C<i>·</i><b data-t="cpuP">58</b> W</span>
+<span><em>GPU</em><b data-t="gpuT">60</b>°C<i>·</i><b data-t="gpuP">95</b> W</span>
+</div>
+</div>
+<div class="p-sec">
+<div class="p-head"><svg class="ico" aria-hidden="true"><use href="#i-gpu"/></svg>显卡模式</div>
+<div class="seg seg--3" role="radiogroup" aria-label="显卡模式（示意）" data-radio>
+<button type="button" role="radio" aria-checked="false" tabindex="-1">集显</button>
+<button type="button" role="radio" aria-checked="true" tabindex="0">标准</button>
+<button type="button" role="radio" aria-checked="false" tabindex="-1">直连</button>
+</div>
+</div>
+<div class="p-sec">
+<div class="p-head p-head--split">
+<span class="p-head__l"><svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg>屏幕</span>
+<span class="p-head__r"><span class="p-select" aria-hidden="true">240 Hz</span><button type="button" class="p-switch" role="switch" aria-checked="true" aria-label="自动刷新率（示意）"><i></i></button><span class="p-switch__label" aria-hidden="true">自动刷新率</span></span>
+</div>
+<div class="p-range"><span aria-hidden="true">亮度</span><input type="range" min="0" max="100" value="80" aria-label="亮度（示意）" data-out="bri"><output data-o="bri">80%</output></div>
+</div>
+<div class="p-sec">
+<div class="p-head"><svg class="ico" aria-hidden="true"><use href="#i-battery"/></svg>电池</div>
+<div class="p-range"><span aria-hidden="true">限充</span><input type="range" min="60" max="100" value="80" aria-label="充电上限（示意）" data-out="chg"><output data-o="chg">80%</output></div>
+</div>
+<div class="p-fold" aria-hidden="true"><span class="p-fold__l"><i class="p-caret"></i><svg class="ico"><use href="#i-drop"/></svg>液冷</span><span class="p-fold__sum">泵速 自动 · 风扇 自动</span></div>
+</div>
+<div class="panel__foot" aria-hidden="true">
+<span class="p-ver" data-rel="label">beta20</span>
+<span class="p-fi"><svg class="ico"><use href="#i-target"/></svg>悬浮</span>
+<span class="p-fi"><svg class="ico"><use href="#i-sun"/></svg>设置</span>
+<span class="p-fi"><svg class="ico"><use href="#i-refresh"/></svg>更新</span>
+<span class="p-fi"><svg class="ico"><use href="#i-heart"/></svg>赞助</span>
+<span class="p-fi"><svg class="ico"><use href="#i-toolbox"/></svg>诊断</span>
+<span class="p-fi"><svg class="ico"><use href="#i-x"/></svg>退出</span>
+</div>
+</div>
+<div class="panel-floor" aria-hidden="true"></div>
+</div>
+<p class="panel-note">界面示意，数值为示例 · 试试切换性能模式</p>
+</div>
+</div>
+</section>
+
+<section class="section section--modes" id="modes" aria-labelledby="modes-title">
+<div class="container">
+<header class="sec-head reveal">
+<p class="eyebrow"><span>01</span>性能模式</p>
+<h2 class="sec-title" id="modes-title">每个模式，都由你定义</h2>
+<p class="sec-lead">静音、平衡、静音狂暴、狂暴、自定义，五个模式一键切换。每个模式都能二次自定义，是否生效如实标注。</p>
+</header>
+
+<div class="stage reveal">
+<div class="stage__tabs">
+<div class="seg seg--xl" role="tablist" aria-label="选择性能模式" data-modes>
+<button type="button" role="tab" data-mode="silent" aria-selected="false" tabindex="-1" aria-controls="stage-panel">静音</button>
+<button type="button" role="tab" data-mode="balanced" aria-selected="true" tabindex="0" aria-controls="stage-panel">平衡</button>
+<button type="button" role="tab" data-mode="silentturbo" aria-selected="false" tabindex="-1" aria-controls="stage-panel">静音狂暴</button>
+<button type="button" role="tab" data-mode="turbo" aria-selected="false" tabindex="-1" aria-controls="stage-panel">狂暴</button>
+<button type="button" role="tab" data-mode="custom" aria-selected="false" tabindex="-1" aria-controls="stage-panel">自定义</button>
+</div>
+</div>
+<div class="stage__main">
+<div class="meter" id="stage-panel" role="tabpanel" aria-label="当前模式的功耗墙">
+<div class="gauge" id="gauge" aria-hidden="true">
+<svg class="gauge__svg" viewBox="0 0 320 320">
+<defs>
+<linearGradient id="lg-g1" x1="1" y1="1" x2="0" y2="0"><stop offset="0" class="gs-a"/><stop offset="1" class="gs-b"/></linearGradient>
+<linearGradient id="lg-g2" x1="1" y1="1" x2="0" y2="0"><stop offset="0" class="gs-b"/><stop offset="1" class="gs-c"/></linearGradient>
+<linearGradient id="lg-g3" x1="1" y1="1" x2="0" y2="0"><stop offset="0" class="gs-c"/><stop offset="1" class="gs-w"/></linearGradient>
+</defs>
+<g class="gauge__ticks"></g>
+<circle class="gauge__track" cx="160" cy="160" r="138" pathLength="100"/>
+<circle class="gauge__track" cx="160" cy="160" r="113" pathLength="100"/>
+<circle class="gauge__track" cx="160" cy="160" r="88" pathLength="100"/>
+<circle class="gauge__arc gauge__arc--4" cx="160" cy="160" r="138" pathLength="100" stroke="url(#lg-g3)"/>
+<circle class="gauge__arc gauge__arc--2" cx="160" cy="160" r="113" pathLength="100" stroke="url(#lg-g2)"/>
+<circle class="gauge__arc gauge__arc--1" cx="160" cy="160" r="88" pathLength="100" stroke="url(#lg-g1)"/>
+</svg>
+<div class="gauge__center">
+<span class="gauge__num"><b id="g-num">75</b><small id="g-unit">W</small></span>
+<span class="gauge__cap" id="g-cap">PL1 持续功耗墙</span>
+</div>
+<span class="gauge__min">0</span><span class="gauge__max">240 W</span>
+</div>
+<div class="meter__info">
+<p class="meter__kicker" id="s-kicker">耀世 16 Ultra 出厂默认值</p>
+<h3 class="meter__name" id="s-name">平衡模式</h3>
+<p class="meter__desc" id="s-desc">性能与噪音兼顾，日常首选。</p>
+<dl class="pl">
+<div class="pl__row pl__row--1"><dt>PL1<span>持续</span></dt><dd><b data-pl="0">75</b><small>W</small></dd></div>
+<div class="pl__row pl__row--2"><dt>PL2<span>短时</span></dt><dd><b data-pl="1">85</b><small>W</small></dd></div>
+<div class="pl__row pl__row--4"><dt>PL4<span>瞬时</span></dt><dd><b data-pl="2">145</b><small>W</small></dd></div>
+</dl>
+<p class="meter__foot" id="s-foot">Ultra 9 275HX + RTX 5080 Laptop · EC 实测</p>
+</div>
+</div>
+<div class="params">
+<div class="params__head">
+<h3>每个模式都能二次自定义</h3>
+<p>内置模式也能调，设置按模式分别保存。</p>
+</div>
+<div class="params__grid">
+<div class="params__g"><h4><svg class="ico" aria-hidden="true"><use href="#i-chip"/></svg>处理器</h4><ul><li>功耗墙 PL1 / PL2 / PL4</li><li>CPU 温度墙</li><li>睿频</li></ul></div>
+<div class="params__g"><h4><svg class="ico" aria-hidden="true"><use href="#i-gpu"/></svg>显卡</h4><ul><li>显卡 TGP</li><li>动态加速</li><li>核心 / 显存超频</li></ul></div>
+<div class="params__g"><h4><svg class="ico" aria-hidden="true"><use href="#i-fan"/></svg>散热</h4><ul><li>风扇曲线</li><li>风扇增强</li></ul></div>
+<div class="params__g"><h4><svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg>系统</h4><ul><li>Windows 电源模式</li><li>电源计划</li><li>屏幕刷新率</li></ul></div>
+</div>
+<ul class="facts">
+<li><svg class="ico" aria-hidden="true"><use href="#i-layers"/></svg><span>自定义模式可新建多个，<b>最多 12 个</b></span></li>
+<li><svg class="ico" aria-hidden="true"><use href="#i-plug"/></svg><span>插拔电源时，<b>分别记住</b>所选模式</span></li>
+<li><svg class="ico" aria-hidden="true"><use href="#i-keys"/></svg><span>按 <kbd>Fn</kbd> 键切换模式，界面同步跟随</span></li>
+</ul>
+</div>
+</div>
+</div>
+
+<div class="proof reveal" id="proof">
+<div class="proof__copy">
+<p class="eyebrow eyebrow--warm"><span>实测</span>真机满载</p>
+<h3 class="proof__title">改了，就真的生效</h3>
+<p class="proof__text">在内置模式里直接改功耗墙，固件并不执行：设成 40 W，满载实测仍是 <span class="nb">82.8 W</span>。<span class="nb">L-Mechrevo</span> 会把这类修改自动放到固件的自定义槽里运行，同样设 40 W，满载实测 <span class="nb">40.1 W</span>。</p>
+<ul class="states">
+<li><span class="state state--ok">已确认</span><span>拿到硬件侧的回读证据，确认已经生效。</span></li>
+<li><span class="state state--sent">已下发</span><span>命令已发出，但此刻还判断不了，比如功耗墙要有负载才看得出来。</span></li>
+<li><span class="state state--fail">失败</span><span>没有生效，就如实告诉你。</span></li>
+</ul>
+<p class="proof__note">每一项设置都标注这三种状态，不做看起来生效的假功能。</p>
+</div>
+<div class="proof__viz">
+<div class="bars" role="img" aria-label="功耗墙设定 40 W：在内置模式里直接改，满载实测 82.8 W；L-Mechrevo 放到固件自定义槽运行，满载实测 40.1 W">
+<div class="bars__head"><span>满载实测 CPU 功耗</span><span class="bars__legend">设定值 40 W</span></div>
+<div class="bars__plot">
+<div class="bars__target" aria-hidden="true"><span>设定 40 W</span></div>
+<div class="bar bar--warm">
+<div class="bar__meta"><span>在内置模式里直接改</span><b><span data-count="82.8" data-dec="1">82.8</span> W</b></div>
+<div class="bar__track"><i style="--v:.828"></i><em class="bar__over">超出 42.8 W</em></div>
+</div>
+<div class="bar bar--cool">
+<div class="bar__meta"><span>L-Mechrevo · 固件自定义槽</span><b><span data-count="40.1" data-dec="1">40.1</span> W</b></div>
+<div class="bar__track"><i style="--v:.401"></i></div>
+</div>
+<div class="bars__axis" aria-hidden="true"><span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100 W</span></div>
+</div>
+</div>
+<figure class="shot">
+<img src="assets/img/mode-tuning.webp" width="880" height="360" loading="lazy" decoding="async" alt="L-Mechrevo 二次自定义窗口截图：平衡模式下提示“修改功耗墙、显卡功率或风扇曲线后，该模式会改由固件自定义档承载”">
+<figcaption>二次自定义窗口 · 真实截图</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+
+<div class="beam" aria-hidden="true"><i></i></div>
+
+<section class="section section--features" id="features" aria-labelledby="features-title">
+<div class="container">
+<header class="sec-head reveal">
+<p class="eyebrow"><span>02</span>功能</p>
+<h2 class="sec-title" id="features-title">日常要用的，都在托盘里</h2>
+<p class="sec-lead">风扇、显卡、灯效、充电、监控，常用功能一个不少。界面只显示你的机型真正支持的功能。</p>
+</header>
+
+<div class="bento" id="bento">
+<article class="card card--fan reveal">
+<div class="card__text">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-fan"/></svg></span>
+<h3>风扇曲线</h3>
+<p>CPU 与 GPU 各 16 个点，拖拽即可编辑，按模式分别保存。</p>
+</div>
+<div class="fan" id="fan" aria-hidden="true"></div>
+<div class="fan__legend" aria-hidden="true"><span class="lg-cpu">CPU</span><span class="lg-gpu">GPU</span><span class="fan__hint">拖动圆点试试</span></div>
+</article>
+
+<article class="card card--gpu reveal">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-gpu"/></svg></span>
+<h3>显卡模式</h3>
+<p>集显、标准、直连，按机型只显示真正可用的选项。</p>
+<div class="mini-seg" aria-hidden="true"><span>集显</span><span class="is-on">标准</span><span>直连</span></div>
+</article>
+
+<article class="card card--charge reveal">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg></span>
+<h3>充电上限</h3>
+<p>设定上限后，自动确认硬件是否真正执行。</p>
+<div class="mini-charge" aria-hidden="true">
+<div class="mini-track"><i style="--v:80%"></i></div>
+<div class="mini-charge__row"><span class="mono">80%</span><span class="state state--ok">已确认</span></div>
+</div>
+</article>
+
+<article class="card card--light reveal">
+<div class="card__text">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-keys"/></svg></span>
+<h3>键盘与灯带灯效</h3>
+<p>自带软件灯效；机型不支持时，自动交给官方 GCU 灯效。</p>
+</div>
+<figure class="card__shot">
+<img src="assets/img/color-picker.webp" width="616" height="418" loading="lazy" decoding="async" alt="L-Mechrevo 灯效取色窗口截图：色域、色相条、十六进制输入与预设色板">
+</figure>
+<div class="lightbar" aria-hidden="true"></div>
+</article>
+
+<article class="card card--monitor reveal">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-pulse"/></svg></span>
+<h3>硬件监控与游戏内悬浮窗</h3>
+<p>CPU / GPU 温度、功耗与风扇转速一目了然，打游戏时也能随时看到。</p>
+<div class="hud" aria-hidden="true">
+<div class="hud__row hud__row--gpu"><span class="hud__k">GPU:64°C 1950MHz</span><span class="hud__rpm">2400<small>RPM</small></span><svg class="hud__spark" viewBox="0 0 120 24" preserveAspectRatio="none"><path class="spark" data-seed="3"/></svg><span class="hud__w">98.4W</span></div>
+<div class="hud__row hud__row--cpu"><span class="hud__k">CPU:72°C 4.8GHz</span><span class="hud__rpm">2600<small>RPM</small></span><svg class="hud__spark" viewBox="0 0 120 24" preserveAspectRatio="none"><path class="spark" data-seed="7"/></svg><span class="hud__w">65.2W</span></div>
+</div>
+</article>
+
+<article class="card card--display reveal">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg></span>
+<h3>刷新率与亮度</h3>
+<p>刷新率可随性能模式自动切换，亮度随手调。</p>
+<div class="mini-rr" aria-hidden="true">
+<div class="rr"><span>静音</span><i></i><b>60 Hz</b></div>
+<div class="rr rr--hot"><span>狂暴</span><i></i><b>240 Hz</b></div>
+</div>
+</article>
+
+<article class="card card--liquid reveal">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-drop"/></svg></span>
+<h3>蓝牙水冷直连</h3>
+<p>机械革命蓝牙水冷的泵速、风扇与灯光，直接在这里调。</p>
+<div class="mini-chips" aria-hidden="true"><span><svg class="ico"><use href="#i-bt"/></svg>泵速</span><span>风扇</span><span>灯光</span></div>
+</article>
+
+<article class="card card--tray reveal">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-power"/></svg></span>
+<h3>托盘与开机自启</h3>
+<p>开机自动启动，右键托盘图标即可切换模式。</p>
+<div class="tray" aria-hidden="true">
+<span>打开主界面</span>
+<span class="tray__sep"></span>
+<span>静音模式</span>
+<span class="is-on">平衡模式</span>
+<span>狂暴</span>
+</div>
+</article>
+
+<article class="card card--update reveal">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg></span>
+<h3>软件内一键更新</h3>
+<p>有新版本时在软件里直接更新，不用再找下载地址。</p>
+<div class="mini-update" aria-hidden="true"><span>发现新版本 <b data-rel="label">beta20</b></span><span class="mini-btn">更新</span></div>
+</article>
+
+<article class="card card--diag reveal">
+<div class="card__text">
+<span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-toolbox"/></svg></span>
+<h3>一键导出诊断包</h3>
+<p>遇到问题，在软件里点「诊断」导出诊断包，附在 GitHub 反馈里，定位更快。</p>
+</div>
+<div class="diag" aria-hidden="true">
+<span class="diag__node"><svg class="ico"><use href="#i-box"/></svg>诊断包</span>
+<span class="diag__line"><i></i></span>
+<span class="diag__node"><svg class="ico"><use href="#i-github"/></svg>GitHub Issues</span>
+</div>
+</article>
+</div>
+<p class="bento__note">卡片中的界面为示意，数值为示例；截图来自 L-Mechrevo 真实窗口。</p>
+</div>
+</section>
+
+<section class="stats" aria-label="数字一览">
+<div class="container">
+<ul class="stats__list">
+<li class="reveal"><strong><span data-count="5">5</span></strong><span>种性能模式</span></li>
+<li class="reveal"><strong><span data-count="12">12</span></strong><span>自定义模式上限</span></li>
+<li class="reveal"><strong><span data-count="16">16</span></strong><span>点风扇曲线</span></li>
+<li class="reveal"><strong><span>10</span><em>–</em><span data-series="10,16,20,30,40,50">50</span></strong><span>GTX 10 到 RTX 50 系</span></li>
+</ul>
+</div>
+</section>
+
+<div class="beam" aria-hidden="true"><i></i></div>
+
+<section class="section section--compat" id="compat" aria-labelledby="compat-title">
+<div class="container">
+<header class="sec-head reveal">
+<p class="eyebrow"><span>03</span>适配</p>
+<h2 class="sec-title" id="compat-title">从 GTX&nbsp;10 到 RTX&nbsp;50，一套软件</h2>
+<p class="sec-lead">面向 Uniwill / AiStone 平台的机械革命游戏本。安装器按显卡代际自动选择对应的官方 GCU 服务，界面只显示你的机型真正支持的功能。</p>
+</header>
+
+<div class="gens reveal">
+<div class="gens__group gens__group--legacy">
+<ul class="gens__list">
+<li class="gen"><small>GTX</small><b>10</b></li>
+<li class="gen"><small>GTX</small><b>16</b></li>
+<li class="gen"><small>RTX</small><b>20</b></li>
+</ul>
+<p class="gens__cap"><span>旧版 GCU 服务</span>GamingCenterU 时代</p>
+</div>
+<div class="gens__group gens__group--new">
+<ul class="gens__list">
+<li class="gen"><small>RTX</small><b>30</b></li>
+<li class="gen"><small>RTX</small><b>40</b></li>
+<li class="gen gen--verified"><small>RTX</small><b>50</b><em>已真机验证</em></li>
+</ul>
+<p class="gens__cap"><span>新版 GCU 服务</span>30–50 系</p>
+</div>
+</div>
+
+<div class="compat-cards">
+<article class="compat-card compat-card--verified reveal">
+<p class="compat-card__tag"><svg class="ico" aria-hidden="true"><use href="#i-verified"/></svg>已真机验证</p>
+<h3>机械革命耀世 16 Ultra</h3>
+<p class="compat-card__spec">Intel Core Ultra 9 275HX · NVIDIA RTX 5080 Laptop</p>
+<p>已完成真机验证；本页的出厂默认功耗也来自这台机器的 EC 实测。</p>
+</article>
+<article class="compat-card reveal">
+<p class="compat-card__tag compat-card__tag--muted"><svg class="ico" aria-hidden="true"><use href="#i-github"/></svg>欢迎反馈</p>
+<h3>你的机型也想用上？</h3>
+<p>其他机型欢迎到 GitHub 反馈使用情况，附上软件内导出的诊断包，帮助把适配做得更完整。</p>
+<a class="link" href="https://github.com/LiangyuLu-lly/L-Mechrevo/issues" target="_blank" rel="noopener">到 GitHub 反馈<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+</article>
+</div>
+</div>
+</section>
+
+<div class="beam" aria-hidden="true"><i></i></div>
+
+<section class="section section--secure" id="secure" aria-labelledby="secure-title">
+<div class="container secure">
+<div class="secure__lead reveal">
+<p class="eyebrow"><span>04</span>轻量与安全</p>
+<h2 class="sec-title" id="secure-title">本地控制，开源可查</h2>
+<p class="sec-lead"><span class="nb">L-Mechrevo</span> 通过本机的官方 GCU 服务控制硬件，所有硬件控制都在你的电脑上完成。</p>
+<div class="loop" aria-hidden="true">
+<div class="loop__row">
+<span class="loop__node loop__node--app"><svg class="ico"><use href="#logo"/></svg>L-Mechrevo</span>
+<span class="loop__link"><em>127.0.0.1 · MQTT</em><i></i></span>
+<span class="loop__node"><svg class="ico"><use href="#i-layers"/></svg>官方 GCU 服务</span>
+<span class="loop__link loop__link--short"><i></i></span>
+<span class="loop__node"><svg class="ico"><use href="#i-chip"/></svg>硬件</span>
+</div>
+<div class="loop__block">
+<span class="loop__lan">局域网设备</span>
+<span class="loop__x"><i></i><b>✕</b></span>
+<span class="loop__port">13688 端口 · 入站已阻止</span>
+</div>
+</div>
+</div>
+<ul class="secure__list">
+<li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-chip"/></svg></span><div><h3>硬件控制在本机完成</h3><p>通过本机官方 GCU 服务（本地 MQTT，127.0.0.1）下发指令，硬件控制全部在你的电脑上完成。</p></div></li>
+<li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-wall"/></svg></span><div><h3>防火墙规则</h3><p>安装器为 13688 端口添加入站防火墙规则，阻止局域网访问。</p></div></li>
+<li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-seal"/></svg></span><div><h3>签名校验</h3><p>安装器会校验厂商组件的数字签名。</p></div></li>
+<li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-code"/></svg></span><div><h3>开源可审计</h3><p>源码以 <span class="nb">GPL-3.0</span> 协议公开在 GitHub，任何人都可以审阅。</p></div></li>
+<li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-pulse"/></svg></span><div><h3>匿名统计，可以关闭</h3><p>只发送匿名心跳（版本、机型、显卡代际等），用于统计适配情况，可在设置里关闭；日志只在你主动反馈时上传。</p></div></li>
+</ul>
+</div>
+</section>
+
+<div class="beam" aria-hidden="true"><i></i></div>
+
+<section class="section section--download" id="download" aria-labelledby="download-title">
+<div class="container">
+<div class="dl reveal">
+<div class="dl__main">
+<p class="eyebrow"><span>05</span>下载</p>
+<h2 class="sec-title" id="download-title">下载 L-Mechrevo</h2>
+<p class="dl__sub">免费、开源、无广告。</p>
+<p class="dl__ver">
+<span class="dl__chip" data-rel="version">0.289.0-beta20</span>
+<span>发布于 <time data-rel="date" datetime="2026-09-28">2026-09-28</time></span>
+<span data-rel="size">46.3 MB</span>
+</p>
+<div class="dl__cta">
+<a class="btn btn--flow" data-dl href="https://stats.l-mechrevo.cn/download/L-Mechrevo-beta20-setup.exe">
+<svg class="ico" aria-hidden="true"><use href="#i-download"/></svg>
+<span>下载安装包</span>
+<span class="btn__meta">Windows · x64</span>
+</a>
+<a class="btn btn--ghost" href="https://github.com/LiangyuLu-lly/L-Mechrevo" target="_blank" rel="noopener">
+<svg class="ico" aria-hidden="true"><use href="#i-github"/></svg>
+<span>源码</span>
+</a>
+</div>
+<p class="dl__keep"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>安装时会自动移除官方控制台，并保留你的模式参数与风扇曲线数据。</p>
+<div class="hash">
+<div class="hash__top"><span>SHA-256</span><span class="hash__file" data-rel="filename">L-Mechrevo-beta20-setup.exe</span></div>
+<div class="hash__row">
+<code class="hash__val" data-rel="sha">7121DE4B5E6A2532BA897F88A2F8E146A2C3067560403AE9780245D80FAA2226</code>
+<button class="copy" type="button" id="copy-sha"><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg><span>复制</span></button>
+</div>
+<p class="sr" id="copy-status" aria-live="polite"></p>
+</div>
+</div>
+<div class="dl__side">
+<div class="dl__block">
+<h3>更新说明</h3>
+<ul class="notes" data-rel="notes">
+<li class="has-tag"><span class="tag">新增</span>内置模式二级自定义，可按模式单独设置 Windows 电源模式、睿频、风扇增强与屏幕刷新率</li>
+<li class="has-tag"><span class="tag">新增</span>充电上限重新开放，并自动确认硬件是否真正执行</li>
+<li class="has-tag"><span class="tag tag--fix">修复</span>多项「假成功」，失败或 GCU 未连接时回滚到真实状态并提示</li>
+<li class="has-tag"><span class="tag tag--fix">修复</span>从内置模式首次切到自定义偶尔不生效，未确认时自动重发一次</li>
+<li class="has-tag"><span class="tag tag--opt">优化</span>底栏改为图标加两字标签，100%–200% 缩放下不再裁字</li>
+</ul>
+</div>
+<div class="dl__block">
+<h3>系统要求</h3>
+<ul class="req">
+<li><svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg>Windows 10 2004 及以上 / Windows 11，x64</li>
+<li><svg class="ico" aria-hidden="true"><use href="#i-layers"/></svg>.NET 桌面运行时 10（缺失时安装器会自动从微软官方下载）</li>
+<li><svg class="ico" aria-hidden="true"><use href="#i-gpu"/></svg>GTX 10 到 RTX 50 系机械革命游戏本（Uniwill / AiStone 平台）</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<div class="beam" aria-hidden="true"><i></i></div>
+
+<section class="section section--faq" id="faq" aria-labelledby="faq-title">
+<div class="container faq">
+<header class="faq__head reveal">
+<p class="eyebrow"><span>06</span>常见问题</p>
+<h2 class="sec-title" id="faq-title">常见问题</h2>
+<p class="sec-lead">没找到答案？到 <a class="link" href="https://github.com/LiangyuLu-lly/L-Mechrevo/issues" target="_blank" rel="noopener">GitHub Issues</a> 提问。</p>
+</header>
+<div class="faq__list reveal">
+<details class="qa" open>
+<summary>需要先卸载官方控制台吗？</summary>
+<div class="qa__a"><p>不需要。安装时会自动识别并移除官方控制台，同时保留你的模式参数与风扇曲线数据。硬件控制依然通过本机的官方 GCU 服务完成，安装器会按显卡代际自动选择对应版本。</p></div>
+</details>
+<details class="qa">
+<summary>我的机型能用吗？</summary>
+<div class="qa__a"><p>支持 GTX 10、GTX 16、RTX 20、30、40、50 系的机械革命游戏本（Uniwill / AiStone 平台），界面只显示你的机型真正支持的功能。目前已在机械革命耀世 16 Ultra（RTX 5080 Laptop）上完成真机验证，其他机型欢迎到 GitHub 反馈。</p></div>
+</details>
+<details class="qa">
+<summary>会上传我的数据吗？</summary>
+<div class="qa__a"><p>只有匿名心跳（版本、机型、显卡代际等），用于统计适配情况，可以在设置里关闭。日志只在你主动反馈时才会上传。硬件控制全部在本机完成。</p></div>
+</details>
+<details class="qa">
+<summary>和 G-Helper 是什么关系？</summary>
+<div class="qa__a"><p><span class="nb">L-Mechrevo</span> 的设计理念借鉴了 <span class="nb">G-Helper</span>（华硕笔记本的轻量控制工具）：小巧、常驻托盘、替代厚重的官方软件。<span class="nb">L-Mechrevo</span> 是专为机械革命游戏本开发的独立项目，同样以 <span class="nb">GPL-3.0</span> 协议开源。</p></div>
+</details>
+<details class="qa">
+<summary>出现问题怎么反馈？</summary>
+<div class="qa__a"><p>在软件内点击「诊断」导出诊断包，然后到 <a class="link" href="https://github.com/LiangyuLu-lly/L-Mechrevo/issues" target="_blank" rel="noopener">GitHub Issues</a> 描述问题并附上诊断包。</p></div>
+</details>
+</div>
+</div>
+</section>
+</main>
+
+<footer class="foot">
+<div class="container foot__inner">
+<div class="foot__brand">
+<svg class="brand__mark" aria-hidden="true"><use href="#logo"/></svg>
+<div><b>L-Mechrevo</b><span>机械革命游戏本开源轻量控制中心</span></div>
+</div>
+<nav class="foot__links" aria-label="页脚链接">
+<a href="https://github.com/LiangyuLu-lly/L-Mechrevo" target="_blank" rel="noopener">GitHub</a>
+<a href="https://github.com/LiangyuLu-lly/L-Mechrevo/issues" target="_blank" rel="noopener">问题反馈</a>
+<a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GPL-3.0 许可证</a>
+<a href="#download">下载</a>
+</nav>
+<div class="foot__legal">
+<p>© 2026 L-Mechrevo contributors · 以 GPL-3.0 协议开源</p>
+<p>L-Mechrevo 为社区开源项目，非机械革命（MECHREVO）官方产品，与机械革命官方无关联。「机械革命」「MECHREVO」等商标归其权利人所有。</p>
+</div>
+</div>
+</footer>
+</body>
+</html>

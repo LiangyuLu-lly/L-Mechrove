@@ -114,7 +114,8 @@ public class KeyboardControllerProbeTests
 
         Assert.Equal(FeatureAvailability.Supported, scope.Keyboard.ControllerAvailability);
         Assert.Equal(1, scope.ResolveCount);
-        Assert.Equal(2, device.SetFeatureCount);      // step1 + step2 都被接受
+        // step1 + step2 都被接受，随后一次只读 0x88 查询（回读确认固件已进入自定义帧模式）。
+        Assert.Equal(3, device.SetFeatureCount);
         Assert.True(scope.Keyboard.IsConnected);
     }
 

@@ -13,13 +13,13 @@
   #define AppPublisher "L-Mechrevo contributors"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.289.0-beta20"
+  #define AppVersion "0.289.0-beta21"
 #endif
 #ifndef AppVersionNumeric
   #define AppVersionNumeric "0.289.0.0"
 #endif
 #ifndef AppLabel
-  #define AppLabel "beta20"
+  #define AppLabel "beta21"
 #endif
 #ifndef RepoRoot
   #define RepoRoot AddBackslash(SourcePath) + ".."
@@ -80,6 +80,7 @@ Source: "Select-GcuPayload.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
 Source: "Install-Gcu.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
 Source: "Uninstall-Gcu.ps1"; DestDir: "{app}\GCU"; Flags: ignoreversion
 Source: "{#RepoRoot}\release\GCU-only\*"; DestDir: "{app}\GCU\payload\50"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#RepoRoot}\release\GCU-1020\*"; DestDir: "{app}\GCU\payload\1020"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\GCU\Install-Gcu.ps1"" -StagingRoot ""{app}\GCU"" -TargetDir ""{app}\GCU"" -Variant Auto -InstallerVersion ""{#AppVersionNumeric}"" -LogDir ""{commonappdata}\L-Mechrevo\logs"" -AppExe ""{app}\L-Mechrevo.exe"""; StatusMsg: "{cm:GcuStatus}"; Flags: runhidden waituntilterminated
@@ -91,10 +92,22 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile
 Type: filesandordirs; Name: "{app}\GCU\AiStoneService"
 Type: filesandordirs; Name: "{app}\GCU\UniwillService"
 Type: filesandordirs; Name: "{app}\GCU\UWACPIDriver"
+Type: filesandordirs; Name: "{app}\GCU\ACPIDriver"
+Type: filesandordirs; Name: "{app}\GCU\state-backup"
+Type: files; Name: "{app}\GCU\gcu-registry-*.reg"
 Type: filesandordirs; Name: "{app}\GCU\payload"
 
 [Code]
 function NeedRestart(): Boolean;
+var
+  Flag: Cardinal;
 begin
-  Result := True;
+  // Only when Install-Gcu.ps1 recorded a reason (driver install asked for a reboot, or locked
+  // official-console components); consumed here so the next install does not ask again.
+  Result := False;
+  if RegQueryDWordValue(HKLM64, 'SOFTWARE\L-Mechrevo', 'RebootRequired', Flag) and (Flag <> 0) then
+  begin
+    RegDeleteValue(HKLM64, 'SOFTWARE\L-Mechrevo', 'RebootRequired');
+    Result := True;
+  end;
 end;

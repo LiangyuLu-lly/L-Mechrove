@@ -16,8 +16,12 @@ public class InstallerPayloadSingleTests
     const string Selector = @"installer\Select-GcuPayload.ps1";
     const string Iss = @"installer\L-Mechrevo.iss";
 
+    /// <summary>
+    /// beta21 (owner decision): GTX 10/16 + RTX 20 keep the GamingCenterU legacy service, so the
+    /// bundle is the newest payload plus that one legacy tree - never the retired 40-series trees.
+    /// </summary>
     [Fact]
-    public void SinglePayloadBundle_StagesOnlyGcuOnly()
+    public void PayloadBundle_StagesTheNewestPayloadAndTheLegacy1020Service()
     {
         PsResult result = GcuInstallerHarness.RunDotSourced(Selector,
             "ConvertTo-Json -InputObject @(Get-GcuPayloadBundle) -Depth 4");
@@ -25,9 +29,29 @@ public class InstallerPayloadSingleTests
         using JsonDocument doc = JsonDocument.Parse(result.StdOut.Trim());
         JsonElement root = doc.RootElement;
         Assert.Equal(JsonValueKind.Array, root.ValueKind);
-        Assert.Equal(1, root.GetArrayLength());
-        JsonElement only = root[0];
-        Assert.Equal("release\\GCU-only", only.GetProperty("RepoPayload").GetString());
+        Assert.Equal(2, root.GetArrayLength());
+        Assert.Equal("release\\GCU-only", root[0].GetProperty("RepoPayload").GetString());
+        Assert.Equal("release\\GCU-1020", root[1].GetProperty("RepoPayload").GetString());
+    }
+
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 2060", "PCI\\VEN_10DE&DEV_1F15")]
+    [InlineData("NVIDIA GeForce GTX 1660 Ti", "PCI\\VEN_10DE&DEV_2191")]
+    [InlineData("NVIDIA GeForce GTX 1060", "PCI\\VEN_10DE&DEV_1C20")]
+    public void Legacy1020Generations_SelectTheGamingCenterUServiceWithItsOwnDriver(string gpuName, string deviceId)
+    {
+        PsResult result = GcuInstallerHarness.RunScript(Selector,
+            "-GpuName", gpuName, "-DeviceId", deviceId, "-AsJson");
+        Assert.Equal(0, result.ExitCode);
+        using JsonDocument doc = JsonDocument.Parse(result.StdOut.Trim());
+        JsonElement r = doc.RootElement;
+        Assert.Equal("1020", r.GetProperty("Variant").GetString());
+        Assert.Equal("release\\GCU-1020", r.GetProperty("RepoPayload").GetString());
+        Assert.Equal("payload\\1020", r.GetProperty("StagedDir").GetString());
+        Assert.Equal("UniwillService", r.GetProperty("ServiceDir").GetString());
+        Assert.Equal("ACPIDriver", r.GetProperty("DriverDir").GetString());
+        Assert.Equal("ACPIDriver.inf", r.GetProperty("DriverInf").GetString());
+        Assert.True(r.GetProperty("Legacy").GetBoolean());
     }
 
     [Theory]
@@ -58,7 +82,7 @@ public class InstallerPayloadSingleTests
     }
 
     [Fact]
-    public void Iss_StagesOnlyTheGcuOnlyTree()
+    public void Iss_StagesTheNewestAndTheLegacy1020TreesOnly()
     {
         string iss = GcuInstallerHarness.Read("installer", "L-Mechrevo.iss");
         int files = iss.IndexOf("[Files]", StringComparison.Ordinal);
@@ -72,7 +96,8 @@ public class InstallerPayloadSingleTests
             .Where(l => l.StartsWith("Source:", StringComparison.Ordinal))
             .ToArray();
 
-        Assert.Contains(sources, l => l.Contains("release\\GCU-only", StringComparison.Ordinal));
+        Assert.Contains(sources, l => l.Contains("release\\GCU-only", StringComparison.Ordinal) && l.Contains("payload\\50", StringComparison.Ordinal));
+        Assert.Contains(sources, l => l.Contains("release\\GCU-1020", StringComparison.Ordinal) && l.Contains("payload\\1020", StringComparison.Ordinal));
         Assert.DoesNotContain(sources, l => l.Contains("GCU-40-", StringComparison.Ordinal));
         Assert.DoesNotContain(sources, l => l.Contains("GCU-common", StringComparison.Ordinal));
     }

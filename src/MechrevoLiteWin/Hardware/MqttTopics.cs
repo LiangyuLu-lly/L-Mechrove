@@ -44,6 +44,29 @@ internal static class MqttTopics
     /// <summary>订阅过滤器：Logo 子灯带，不匹配 <c>HidLightbar/#</c>。</summary>
     internal const string LogoLightFilter = "HidLightbar_Logo/#";
 
+    // ---- 铰链灯 / 同步灯带（Lighbar4 子通道，独立主题；HIDLightbar_hinge.cs:21-23、HIDLightbar_sync.cs:22-24）----
+
+    internal const string HingeLightCtrl = "HidLightbar_Hinge/Ctrl";
+    internal const string HingeLightStatus = "HidLightbar_Hinge/Status";
+    internal const string HingeLightFilter = "HidLightbar_Hinge/#";
+
+    internal const string SyncLightCtrl = "HidLightbar_Sync/Ctrl";
+    internal const string SyncLightStatus = "HidLightbar_Sync/Status";
+    internal const string SyncLightFilter = "HidLightbar_Sync/#";
+
+    // ---- 旧机型 EC 灯带（MyRgbLightbarManager；注意控制主题是 /Control 不是 /Ctrl）----
+
+    internal const string EcLightbarControl = "MyRgbLightbar/Control";
+    internal const string EcLightbarStatus = "MyRgbLightbar/Status";
+    internal const string EcLightbarFilter = "MyRgbLightbar/#";
+
+    // ---- 官方能力广播（CustomizeCtrl.PublishSupportAll / MqttClientCtrl.RegistryBuilder）----
+
+    internal const string CustomizeControl = "Customize/Control";
+    internal const string CustomizeInfo = "Customize/Info";
+    internal const string CustomizeSupportControl = "Customize/SupportControl";
+    internal const string CustomizeSupportInfo = "Customize/SupportInfo";
+
     // ---- 设置 ----
 
     internal const string SettingControl = "Setting/Control";

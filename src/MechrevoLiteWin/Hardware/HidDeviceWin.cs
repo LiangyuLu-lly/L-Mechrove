@@ -67,6 +67,9 @@ public class HidDeviceWin : IDisposable
     [DllImport("hid.dll", SetLastError = true)]
     static extern bool HidD_SetFeature(SafeFileHandle hidDeviceObject, byte[] reportBuffer, int reportBufferLength);
 
+    [DllImport("hid.dll", SetLastError = true)]
+    static extern bool HidD_GetFeature(SafeFileHandle hidDeviceObject, byte[] reportBuffer, int reportBufferLength);
+
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern SafeFileHandle CreateFile(string fileName, uint desiredAccess, uint shareMode, IntPtr securityAttributes, uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
 
@@ -206,6 +209,13 @@ public class HidDeviceWin : IDisposable
     /// <summary>发送 feature report（buffer[0] = report ID）。virtual：测试可注入失败/断线设备。</summary>
     public virtual bool SetFeature(byte[] report)
         => _handle is not null && HidD_SetFeature(_handle, report, report.Length);
+
+    /// <summary>
+    /// 读 feature report（buffer[0] = report ID）。ITE 控制器的回读是「先 SetFeature 查询号，再 GetFeature」，
+    /// 与官方服务的 0x80（版本）/0x88（当前效果）同一用法。virtual：测试可注入回读。
+    /// </summary>
+    public virtual bool GetFeature(byte[] report)
+        => _handle is not null && HidD_GetFeature(_handle, report, report.Length);
 
     /// <summary>发送 output report（buffer[0] = report ID；65B = ID0 + 64 数据）。virtual：测试可注入失败设备。</summary>
     public virtual bool Write(byte[] report)
