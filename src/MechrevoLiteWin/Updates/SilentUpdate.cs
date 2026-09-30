@@ -39,11 +39,18 @@ internal static class SilentUpdate
     /// <summary>
     /// Pure: the watcher (Windows PowerShell). It is not an L-Mechrevo.exe process, so setup's
     /// "stop the running app" step cannot take it down. On a failed setup it starts the app again.
+    /// <para>It waits for the setup process itself, never for its process tree: <c>Start-Process -Wait</c>
+    /// waits for every descendant, and the app that setup relaunches (<c>--after-update</c>) is one of them
+    /// when the update runs elevated (the normal case) - the watcher would then stay alive for the whole
+    /// session and record the exit code only when the app quits. Reading <c>Handle</c> first keeps
+    /// <c>ExitCode</c> available after the exit on Windows PowerShell 5.1.</para>
     /// </summary>
     internal static string WatcherScript(string setupPath, string setupArguments, string exitCodeFile, string appExe) =>
         "$ErrorActionPreference = 'SilentlyContinue'\n"
-        + "$p = Start-Process -FilePath " + PsQuote(setupPath) + " -ArgumentList " + PsQuote(setupArguments) + " -PassThru -Wait\n"
+        + "$p = Start-Process -FilePath " + PsQuote(setupPath) + " -ArgumentList " + PsQuote(setupArguments) + " -PassThru\n"
+        + "if ($p) { $null = $p.Handle; $p.WaitForExit() }\n"
         + "$code = if ($p) { $p.ExitCode } else { -1 }\n"
+        + "if ($null -eq $code) { $code = -1 }\n"
         + "Set-Content -LiteralPath " + PsQuote(exitCodeFile) + " -Value $code -Encoding ASCII\n"
         + "if ($code -ne 0) { Start-Process -FilePath " + PsQuote(appExe) + " -ArgumentList '--after-update' }\n";
 

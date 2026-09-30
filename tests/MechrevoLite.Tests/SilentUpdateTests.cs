@@ -27,7 +27,10 @@ public class SilentUpdateTests
     {
         string script = SilentUpdate.WatcherScript(@"C:\Users\o'neil\setup.exe", "/VERYSILENT", @"C:\x\log.exit", @"C:\Program Files\L-Mechrevo\L-Mechrevo.exe");
         Assert.Contains("-FilePath 'C:\\Users\\o''neil\\setup.exe'", script, StringComparison.Ordinal);
-        Assert.Contains("-PassThru -Wait", script, StringComparison.Ordinal);
+        // Waits for setup itself, never with -Wait (that waits for the relaunched app too).
+        Assert.Contains("-PassThru\n", script, StringComparison.Ordinal);
+        Assert.Contains("$null = $p.Handle; $p.WaitForExit()", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Wait", script, StringComparison.Ordinal);
         Assert.Contains("Set-Content -LiteralPath 'C:\\x\\log.exit' -Value $code", script, StringComparison.Ordinal);
         Assert.Contains("if ($code -ne 0) { Start-Process -FilePath 'C:\\Program Files\\L-Mechrevo\\L-Mechrevo.exe' -ArgumentList '--after-update' }", script, StringComparison.Ordinal);
     }
@@ -57,6 +60,66 @@ public class SilentUpdateTests
         {
             try { Directory.Delete(temp, recursive: true); } catch { /* best effort */ }
         }
+    }
+
+    /// <summary>
+    /// Regression (beta21 release check): setup relaunches the app before it exits, and in an elevated
+    /// in-app update the relaunched app is part of setup's process tree. <c>Start-Process -Wait</c> on
+    /// Windows PowerShell 5.1 waits for every descendant, so the watcher stayed alive until the user quit
+    /// the app. It must finish when setup finishes. Stand-in: a "setup" that leaves a 25 s child behind.
+    /// </summary>
+    [Fact]
+    public void WatcherScript_DoesNotWaitForTheAppThatSetupLeavesRunning()
+    {
+        string temp = Path.Combine(Path.GetTempPath(), "L-Mechrevo-tests", "silent-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+        string exitFile = Path.Combine(temp, "setup.log.exit");
+        string marker = "lmechrevo-watcher-child-" + Guid.NewGuid().ToString("N");
+        string powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+        try
+        {
+            // The child's command line carries the marker (a comment), so cleanup can find exactly it.
+            string fakeSetup = "-NoProfile -WindowStyle Hidden -Command \"Start-Process -WindowStyle Hidden -FilePath powershell.exe "
+                + "-ArgumentList '-NoProfile -Command Start-Sleep -Seconds 25 #" + marker + "'; exit 0\"";
+            string script = SilentUpdate.WatcherScript(powershell, fakeSetup, exitFile, Path.Combine(Environment.SystemDirectory, "cmd.exe"));
+            var psi = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script)))
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using Process process = Process.Start(psi)!;
+            Assert.True(process.WaitForExit(15_000), "the watcher waited for the child that setup left running");
+            Assert.Equal("0", File.ReadAllText(exitFile).Trim());
+        }
+        finally
+        {
+            KillProcessesWithMarker(marker);
+            try { Directory.Delete(temp, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    static void KillProcessesWithMarker(string marker)
+    {
+        try
+        {
+            using var searcher = new System.Management.ManagementObjectSearcher(
+                "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name = 'powershell.exe'");
+            foreach (System.Management.ManagementBaseObject item in searcher.Get())
+            {
+                using (item)
+                {
+                    if (item["CommandLine"] is not string line || !line.Contains(marker, StringComparison.Ordinal)) continue;
+                    try
+                    {
+                        using Process child = Process.GetProcessById(Convert.ToInt32(item["ProcessId"]));
+                        child.Kill();
+                    }
+                    catch { /* already gone */ }
+                }
+            }
+        }
+        catch { /* WMI unavailable: the child ends by itself after 25 s */ }
     }
 
     [Fact]
