@@ -75,9 +75,18 @@
 
 | 代际 | 控制台侧协议 | 服务侧写路径 | iGPU-only | RESTART | 热切换 |
 |---|---|---|---|---|---|
-| 30 | INFERRED（`Setting/Control`；动作仅 `..._TOGGLE_ON/OFF`；.NET Native 无 IL，仅元数据+PDB 符号级） | UNKNOWN | PROVEN_ABSENT | PROVEN_ABSENT | PROVEN_ABSENT（`HOTSWAP` 0 命中） |
-| 40 | PROVEN（`Setting/Control`；含 `..._IGPU`/`..._RESTART`/`IGPU_ONLY_*`） | PROVEN | PROVEN（40A WMI 0x30000000x） | PROVEN（`shutdown /r /t 0`） | UNKNOWN（0 命中） |
-| 50 | PROVEN（`Setting/Control`；含 `..._RESTART`/`IGPU_ONLY_*`/`GPU_HOTSWAP_*`） | UNKNOWN | PROVEN（每 2 s 重发 / count>60 / 每第 4 次） | PROVEN（`Task.Delay(800)` 后发） | INFERRED（处理器 no-op） |
+| 10/16/20 | INFERRED（`Setting/Control`；只有 `NV_CTRL_PANEL_AUTOSELECT/HIGHPERFORMANCE`；GamingCenterU 方法体被破坏，动作名来自声明） | INFERRED（`NVControlSetting.dll` → NVIDIA DRS 全局首选 GPU，字节扫描） | PROVEN_ABSENT | PROVEN_ABSENT（驱动配置，不需要重启） | PROVEN_ABSENT |
+| 30 | INFERRED（`Setting/Control`；动作仅 `..._TOGGLE_ON/OFF`；.NET Native 无 IL，仅元数据+PDB 符号级） | UNKNOWN | PROVEN_ABSENT | PROVEN_ABSENT（官方由用户手动重启） | PROVEN_ABSENT（`HOTSWAP` 0 命中） |
+| 40 三模 | PROVEN（服务词汇：`..._TOGGLE_ON/OFF/IGPU`、`..._RESTART`） | PROVEN | PROVEN_ABSENT（`IGPU_ONLY_CONNECT_RB_*` 只写注册表，死路径；核显走 `TOGGLE_IGPU` + 重启） | PROVEN（`shutdown /r /t 0`） | PROVEN_ABSENT（0 命中） |
+| 40 两模 | PROVEN（服务只声明 `..._TOGGLE_ON/OFF`） | PROVEN | PROVEN_ABSENT | PROVEN_ABSENT（未声明 RESTART） | PROVEN_ABSENT（0 命中） |
+| 50 | PROVEN（`Setting/Control`；含 `..._RESTART`/`IGPU_ONLY_*`/`GPU_HOTSWAP_*`） | UNKNOWN | PROVEN（热切换卡片：每 2 s 重发 / count>60 / 每第 4 次） | PROVEN（`Task.Delay(800)` 后发） | INFERRED（处理器 no-op） |
+
+**我方能发什么由服务档位决定**（beta21，`Gpu\GcuServiceTier.cs` + `DisplayRoutePolicy`）：
+我方 1.0.2.47 只放 10/20 行的 `NV_CTRL_PANEL_*`；我方 1.2 放行各行词汇、`DGPU_DIRECT_CONNECT_RESTART`
+（行含 `TOGGLE_ON` 时）与 50 系热切换机型的 `IGPU_ONLY_CONNECT_RB_*`；厂商服务只放 `TOGGLE_ON/OFF`，
+重启由我方在用户确认后发起；档位读不到时一个都不放。生效判据只认硬件回读：内屏接在哪块显卡上（CCD）、
+NVIDIA 显示设备是否在位（CfgMgr）、10/20 的 NVIDIA 驱动首选 GPU（DRS），见
+`docs\hardware\gpu-modes-implementation-plan.md`。
 
 30 系控制台侧标 **INFERRED**：厂商程序集为 .NET Native（无 IL，无 C# 可反编译），依据是
 `.omo\evidence\g30-console-decompile.md` 的**元数据标识符堆 + 完整 PDB 符号表 + 全载荷 0 命中**
@@ -124,9 +133,10 @@
     "k16": 6
   },
   "dgpuGenerations": {
+    "1020": { "consoleProtocol": "INFERRED", "serviceWritePath": "INFERRED", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
     "30": { "consoleProtocol": "INFERRED", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
-    "40": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN", "restart": "PROVEN" },
-  "40-no3mode": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN" },
+    "40": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN" },
+    "40-no3mode": { "consoleProtocol": "PROVEN", "serviceWritePath": "PROVEN", "igpuOnly": "PROVEN_ABSENT", "restart": "PROVEN_ABSENT" },
     "50": { "consoleProtocol": "PROVEN", "serviceWritePath": "UNKNOWN", "igpuOnly": "PROVEN", "restart": "PROVEN" }
   },
   "vendorSysPowerModes": {

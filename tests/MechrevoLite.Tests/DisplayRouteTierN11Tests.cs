@@ -26,23 +26,29 @@ public class DisplayRouteTierN11Tests
             "the 40-series must have two rows: with and without 双显三模");
     }
 
+    /// <summary>
+    /// 三模档的核显是 NVRAM 目标（TOGGLE_IGPU + 重启）。IGPU_ONLY_CONNECT_RB_* 在 S40 只写
+    /// MySetting\IGPUonly 注册表、不落硬件（死路径）——不在我方词汇内，事实格标 PROVEN_ABSENT。
+    /// </summary>
     [Fact]
-    public void TheThreeModeFortyTierCarriesIgpuOnly()
+    public void TheThreeModeFortyTierCarriesTheIgpuMuxTargetButNotTheRegistryOnlyRbPath()
     {
         GenerationRouteFacts tier = DisplayRouteMatrix.FindTier(DgpuGenerationKind.Gen40, threeMode: true)!;
-        Assert.Contains(DisplayRouteMatrix.IgpuOnlyOn, tier.Actions);
-        Assert.Contains(DisplayRouteMatrix.IgpuOnlyOff, tier.Actions);
+        Assert.Contains(DisplayRouteMatrix.ToggleIgpu, tier.Actions);
+        Assert.DoesNotContain(DisplayRouteMatrix.IgpuOnlyOn, tier.Actions);
+        Assert.DoesNotContain(DisplayRouteMatrix.IgpuOnlyOff, tier.Actions);
+        Assert.Equal(EvidenceMark.ProvenAbsent, tier.IgpuOnly.Mark);
+        Assert.Contains("注册表", tier.IgpuOnly.Detail, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void TheNonThreeModeFortyTierDoesNotCarryIgpuOnly()
+    public void TheNonThreeModeFortyTierHasOnlyTheDirectConnectPair()
     {
         GenerationRouteFacts tier = DisplayRouteMatrix.FindTier(DgpuGenerationKind.Gen40, threeMode: false)!;
         Assert.DoesNotContain(DisplayRouteMatrix.IgpuOnlyOn, tier.Actions);
         Assert.DoesNotContain(DisplayRouteMatrix.IgpuOnlyOff, tier.Actions);
-        // It still has the direct-connect toggle pair.
-        Assert.Contains(DisplayRouteMatrix.ToggleOn, tier.Actions);
-        Assert.Contains(DisplayRouteMatrix.ToggleOff, tier.Actions);
+        Assert.DoesNotContain(DisplayRouteMatrix.ToggleIgpu, tier.Actions);
+        Assert.Equal(new[] { DisplayRouteMatrix.ToggleOn, DisplayRouteMatrix.ToggleOff }, tier.Actions);
     }
 
     [Fact]
@@ -63,7 +69,7 @@ public class DisplayRouteTierN11Tests
     }
 
     [Fact]
-    public void FortyWithoutThreeModeCannotAllowIgpuOnlyActions()
+    public void FortyNeverAllowsIgpuOnlyRbActionsOnEitherTier()
     {
         Assert.False(DisplayRoutePolicy.AllowsAction(
             DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOn, threeMode: false));
@@ -71,7 +77,11 @@ public class DisplayRouteTierN11Tests
             DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOff, threeMode: false));
         Assert.True(DisplayRoutePolicy.AllowsAction(
             DgpuGenerationKind.Gen40, DisplayRouteMatrix.ToggleOn, threeMode: false));
-        Assert.True(DisplayRoutePolicy.AllowsAction(
+        Assert.False(DisplayRoutePolicy.AllowsAction(
             DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOn, threeMode: true));
+        Assert.True(DisplayRoutePolicy.AllowsAction(
+            DgpuGenerationKind.Gen40, DisplayRouteMatrix.ToggleIgpu, threeMode: true));
+        Assert.False(DisplayRoutePolicy.AllowsAction(
+            DgpuGenerationKind.Gen40, DisplayRouteMatrix.ToggleIgpu, threeMode: false));
     }
 }

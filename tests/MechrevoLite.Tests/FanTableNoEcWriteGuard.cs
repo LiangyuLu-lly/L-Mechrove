@@ -86,7 +86,7 @@ internal static class EcWriteGuard
     internal sealed record IlScanResult(IReadOnlyList<int> Immediates, IReadOnlyList<MethodBase> Calls);
 
     /// <summary>最小 IL 解码器：只取 <c>ldc.i4*</c> 立即数与 <c>call/callvirt</c> 目标。</summary>
-    static class IlScan
+    internal static class IlScan
     {
         static readonly Dictionary<ushort, OpCode> Opcodes = Build();
 

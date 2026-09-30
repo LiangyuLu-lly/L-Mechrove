@@ -61,23 +61,67 @@ public class GpuGenerationMatrixFailTests
     }
 
     /// <summary>
-    /// 仓库没有 10/20 系的 PCI 区间或控制台事实行。不得发明编码：营销名与 device-id 都留在 Unknown，
-    /// 并且 Unknown 不解锁任何代际动作。
+    /// 10/16/20 系是独立代际（Gen1020），但它的词汇里只有 NVIDIA 首选 GPU：
+    /// 任何 MUX / 核显 / 重启动作都不放行，换哪个服务档位都一样。
     /// </summary>
     [Fact]
-    public void TenAndTwentySeriesStayUnknownAndUnlockNoGpuAction()
+    public void TenAndTwentySeriesUnlockNoMuxAction()
     {
-        Assert.Null(DgpuGenerationProbe.FromMarketingName("NVIDIA GeForce GTX 1080"));
-        Assert.Null(DgpuGenerationProbe.FromMarketingName("NVIDIA GeForce RTX 2060 Laptop GPU"));
-        Assert.Null(DgpuGenerationProbe.FromDeviceId("1E90"));
-        Assert.Equal(
-            DgpuGenerationKind.Unknown,
-            DgpuGenerationProbe.Resolve(
-                new[] { new GpuAdapter("NVIDIA GeForce RTX 2060 Laptop GPU", "10DE", "1E90") },
-                true).Generation);
+        Assert.Equal(DgpuGenerationKind.Gen1020, DgpuGenerationProbe.FromMarketingName("NVIDIA GeForce GTX 1080"));
+        Assert.Equal(DgpuGenerationKind.Gen1020, DgpuGenerationProbe.FromMarketingName("NVIDIA GeForce RTX 2060 Laptop GPU"));
+        Assert.Equal(DgpuGenerationKind.Gen1020, DgpuGenerationProbe.FromDeviceId("1E90"));
 
-        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Unknown, DisplayRouteMatrix.ToggleOn));
-        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Unknown, DisplayRouteMatrix.Restart, true));
+        foreach (GcuServiceTier tier in Enum.GetValues<GcuServiceTier>())
+        {
+            foreach (string action in new[]
+            {
+                DisplayRouteMatrix.ToggleOn, DisplayRouteMatrix.ToggleOff, DisplayRouteMatrix.ToggleIgpu,
+                DisplayRouteMatrix.Restart, DisplayRouteMatrix.IgpuOnlyOn, DisplayRouteMatrix.IgpuOnlyOff,
+            })
+                Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen1020, action, false, tier, hotSwap: true),
+                    $"{action} must stay closed on 10/20 ({tier})");
+        }
+        // 首选 GPU 只在我方 1.0.2.47 服务（Legacy1020）上放行。
+        Assert.True(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen1020,
+            DisplayRouteMatrix.NvCtrlPanelHighPerformance, false, GcuServiceTier.Legacy1020, hotSwap: false));
+        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen1020,
+            DisplayRouteMatrix.NvCtrlPanelHighPerformance, false, GcuServiceTier.Modern12, hotSwap: false));
+        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen1020,
+            DisplayRouteMatrix.NvCtrlPanelHighPerformance, false, GcuServiceTier.Foreign, hotSwap: false));
+        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen50,
+            DisplayRouteMatrix.NvCtrlPanelHighPerformance, false, GcuServiceTier.Legacy1020, hotSwap: false));
+    }
+
+    /// <summary>规则 1 的错误结果（GTX 1660 Ti 判成 30 系）持久化在配置里：规则版本变了必须重判。</summary>
+    [Fact]
+    public void APersistedResultFromTheOldRulesIsReResolved()
+    {
+        var storage = new MemoryStorage();
+        storage.Set(DgpuGenerationStore.GenerationKey, DgpuGenerationKind.Gen30.ToString());
+        storage.Set(DgpuGenerationStore.SourceKey, DgpuProbeSource.PciDeviceId.ToString());
+        storage.Set(DgpuGenerationStore.HasDgpuKey, "1");
+        storage.Set(DgpuGenerationStore.FingerprintKey,
+            DgpuGenerationStore.Fingerprint(new[] { new GpuAdapter("NVIDIA GeForce GTX 1660 Ti", "10DE", "2191") }));
+        // 没有规则版本键 = 规则 1 写下的。
+        Assert.False(DgpuGenerationStore.IsCurrentRules(storage));
+
+        Func<IReadOnlyList<GpuAdapter>>? previousAdapters = GpuGenerationProvider.AdapterOverride;
+        IDgpuGenerationStorage previousStorage = GpuGenerationProvider.Storage;
+        try
+        {
+            GpuGenerationProvider.AdapterOverride = () => new[] { new GpuAdapter("NVIDIA GeForce GTX 1660 Ti", "10DE", "2191") };
+            GpuGenerationProvider.Storage = storage;
+            GpuGenerationProvider.Invalidate();
+
+            Assert.Equal(DgpuGenerationKind.Gen1020, GpuGenerationProvider.Current().Generation);
+            Assert.True(DgpuGenerationStore.IsCurrentRules(storage));
+        }
+        finally
+        {
+            GpuGenerationProvider.AdapterOverride = previousAdapters;
+            GpuGenerationProvider.Storage = previousStorage;
+            GpuGenerationProvider.Invalidate();
+        }
     }
 
     [Fact]
@@ -143,7 +187,7 @@ public class GpuGenerationMatrixFailTests
     {
         Assert.All(DisplayRouteMatrix.Rows, row =>
         {
-            Assert.True(row.Generation is DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50,
+            Assert.True(DgpuGenerationProbe.IsConcrete(row.Generation),
                 $"{row.Generation} must not be a matrix row");
             Assert.NotEqual(EvidenceMark.Unknown, row.ConsoleProtocol.Mark);
         });

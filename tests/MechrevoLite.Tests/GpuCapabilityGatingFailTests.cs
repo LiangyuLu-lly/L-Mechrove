@@ -30,10 +30,11 @@ public class GpuCapabilityGatingFailTests
     }
 
     /// <summary>
-    /// 30 系官方控制台没有切卡入口，Toggle 点了也不生效。整段不得提供。
+    /// 30 系官方控制台有「独显直连 开/关」（关 = 混合），改完要重启；没有核显、没有热切换。
+    /// 我方 1.2 服务用它的 RESTART，厂商服务由我方重启 Windows。
     /// </summary>
     [Fact]
-    public void Gen30DoesNotOfferGpuModeSwitch()
+    public void Gen30OffersDirectOnOffButNoIgpu()
     {
         using var generation = GpuCapabilityGatingHarness.Generation(GpuCapabilityGatingHarness.Gen30);
         using MechrevoHw hardware = GpuCapabilityGatingHarness.Hardware(new MechrevoDeviceCapabilities
@@ -43,13 +44,18 @@ public class GpuCapabilityGatingFailTests
         });
 
         Assert.True(hardware.SupportsDgpuDirect);
-        Assert.False(hardware.CanOfferGpuModeSwitch);
+        Assert.True(hardware.CanOfferGpuModeSwitch);
         Assert.False(hardware.CanOfferIgpuOnly);
+        Assert.Equal(GpuRowLayout.Mux2, hardware.GpuRowLayout);
+        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuDgpu));
+        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuStandard));
+        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
+        Assert.True(hardware.GpuServiceRestartAvailable, "我方 1.2 服务有 DGPU_DIRECT_CONNECT_RESTART。");
     }
 
     /// <summary>
-    /// 30 系事实表：无 IGPU_ONLY_* / TOGGLE_IGPU / RESTART（ProvenAbsent）。
-    /// iGPU↔hybrid 在硬件层不存在；CanSwitchGpuMode 不得因画像位把这条路打开。
+    /// 30 系事实表：无 IGPU_ONLY_* / TOGGLE_IGPU（ProvenAbsent）。核显方向在硬件层不存在；
+    /// 画像位与服务位都声称支持也不得打开。
     /// </summary>
     [Fact]
     public void Gen30_IgpuHybrid_BlockedHw()
@@ -61,6 +67,7 @@ public class GpuCapabilityGatingFailTests
             IgpuOnly = true,
             DgpuDirect = true,
             GpuHotSwap = true,
+            NvidiaGpu = true,
         });
         hardware.SetIgpuOnlyStatusSupportForTests(true);
 
@@ -68,14 +75,13 @@ public class GpuCapabilityGatingFailTests
         Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen30, DisplayRouteMatrix.ToggleIgpu));
         Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen30, DisplayRouteMatrix.IgpuOnlyOn));
         Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen30, DisplayRouteMatrix.IgpuOnlyOff));
-        Assert.Null(GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuIGpu, true, true, false, DgpuGenerationKind.Gen30));
-        Assert.Null(GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuStandard, true, true, false, DgpuGenerationKind.Gen30));
+        GpuRouteContext context = GpuRouteContext.From(hardware);
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(MechrevoService.GpuIGpu, context));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(MechrevoService.GpuStandard, context));
+        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuIGpu, context));
         Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu),
-            "30 系无 iGPU↔hybrid 硬件路径，CanSwitchGpuMode(iGPU) 必须关。");
-        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuStandard),
-            "30 系无切卡入口，CanSwitchGpuMode(hybrid) 必须关。");
+            "30 系无核显路径，CanSwitchGpuMode(iGPU) 必须关。");
+        Assert.False(hardware.CanOfferGpuHotSwap);
     }
 
     [Fact]
@@ -92,24 +98,29 @@ public class GpuCapabilityGatingFailTests
         Assert.False(hardware.CanOfferGpuHotSwap);
     }
 
-    /// <summary>30 系整段切卡隐藏；40 系直连入口照常出现。</summary>
+    /// <summary>30/40 系有 MUX 就出显卡行；服务档位读不到（未注册 / 版本不明）时整行不出现。</summary>
     [Fact]
-    public void Gen30HidesTheGpuSectionWhileGen40StillOffersIt()
+    public void Gen30AndGen40OfferTheGpuSectionButAnUnknownServiceTierHidesIt()
     {
         string? previousModel = Environment.GetEnvironmentVariable(ModelOverrideStateMachine.OverrideVariable);
         bool previousAudit = Program.UiAuditMode;
         MechrevoHw? previousHardware = Program.hw;
+        Func<GcuServiceTier>? previousTier = GcuServiceTierProbe.Override;
         Environment.SetEnvironmentVariable(ModelOverrideStateMachine.OverrideVariable, "PH4TRX1");
         Program.UiAuditMode = false;
         try
         {
-            Assert.False(RefreshGpuSectionOffered(GpuCapabilityGatingHarness.Gen30),
-                "30 系官方没有切卡入口，整段不得出现。");
+            Assert.True(RefreshGpuSectionOffered(GpuCapabilityGatingHarness.Gen30),
+                "30 系官方有独显直连开关，整行必须出现。");
             Assert.True(RefreshGpuSectionOffered(GpuCapabilityGatingHarness.Gen40),
                 "40 系直连入口必须照常出现。");
+            GcuServiceTierProbe.Override = static () => GcuServiceTier.Unknown;
+            Assert.False(RefreshGpuSectionOffered(GpuCapabilityGatingHarness.Gen40),
+                "服务档位未知时一个显卡动作都不能发，整行不得出现。");
         }
         finally
         {
+            GcuServiceTierProbe.Override = previousTier;
             Program.hw = previousHardware!;
             Program.UiAuditMode = previousAudit;
             Environment.SetEnvironmentVariable(ModelOverrideStateMachine.OverrideVariable, previousModel);

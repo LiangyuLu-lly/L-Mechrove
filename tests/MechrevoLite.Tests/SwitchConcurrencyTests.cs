@@ -215,7 +215,7 @@ public class SwitchConcurrencyTests
                 }
                 return Task.CompletedTask;
             },
-            new MechrevoDeviceCapabilities { GpuHotSwap = true, IgpuOnly = true, NvidiaGpu = true });
+            new MechrevoDeviceCapabilities { GpuHotSwap = true, IgpuOnly = true, NvidiaGpu = true, DgpuDirect = true });
         hardware.HandleMessage("Setting/Status",
             "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}");
         var service = new MechrevoService(hardware);

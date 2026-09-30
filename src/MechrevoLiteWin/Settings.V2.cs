@@ -159,11 +159,29 @@ public partial class SettingsForm
         int duty = isCpu ? hw.CpuFanDuty : hw.GpuFanDuty;
         float? power = isCpu ? HardwareControl.cpuPower : HardwareControl.gpuPower;
         string name = isCpu ? "CPU" : "GPU";
+        return (name, TelemetryTemp(temp, hw.IsSensorInfoFresh(isCpu, MechrevoHw.FanInfoMaximumAge)),
+            TelemetryRest(power, rpm, duty, hw.IsFanInfoFresh(MechrevoHw.FanInfoMaximumAge), hw.FanZeroIsMeaningful));
+    }
+
+    /// <summary>温度段：没收到过（-1）、读数为 0 或帧已过期都显示「—」，不显示 <c>-1°C</c> 或停在旧值上的温度。</summary>
+    internal static string TelemetryTemp(int temp, bool fresh) => fresh && temp > 0 ? $"{temp}°C" : "—";
+
+    /// <summary>
+    /// 「功耗 转速 占空比」段（纯函数）。风扇读数过期（6 s 没有新帧）时转速与占空比一起隐藏，
+    /// 不显示停在旧值上的数字；新鲜时 0 = 停转，照实显示 <c>0rpm 0%</c>（服务读法不明的 10/20 除外）。
+    /// 缺字段（-1）永远不显示。
+    /// </summary>
+    internal static string TelemetryRest(float? power, int rpm, int duty, bool fanFresh, bool zeroIsMeaningful)
+    {
         var rest = new List<string>(3);
         if (power is > 0) rest.Add($"{(int)Math.Round(power.Value)}W");
-        if (rpm > 0) rest.Add($"{rpm}rpm");
-        if (duty > 0) rest.Add($"{(int)Math.Round((double)duty)}%");
-        return (name, $"{temp}°C", string.Join(" ", rest));
+        if (fanFresh)
+        {
+            int floor = zeroIsMeaningful ? 0 : 1;
+            if (rpm >= floor) rest.Add($"{rpm}rpm");
+            if (duty >= floor) rest.Add($"{duty}%");
+        }
+        return string.Join(" ", rest);
     }
 
     /// <summary>

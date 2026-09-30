@@ -54,47 +54,28 @@ public class GpuSwitchRouteGuardTests
     }
 
     /// <summary>
-    /// 自动重启路径（<see cref="MechrevoService.SwitchGpuMode"/> 的 <c>autoRestart</c> 分支）
-    /// 过去绕过空路由守卫，直接发布 DGPU_DIRECT_CONNECT_RESTART：真机上这就是「空路由白重启」。
-    /// 与手动路径同一条契约——空路由必须放弃重启、报告失败，绝不发布重启指令。
+    /// 热切换路径（<see cref="MechrevoService.SwitchGpuMode"/>）永远不发 RESTART：过去它有一个
+    /// <c>autoRestart</c> 分支绕过空路由守卫直接发重启，真机上就是「空路由白重启」。分支已删除；
+    /// 没有 MUX 的机器上它连 RB_ON 都不发。
     /// </summary>
     [Fact]
-    public async Task EmptyRestartRoute_AutoRestartPath_NeverPublishesRestart()
+    public async Task TheHotSwitchPathNeverPublishesRestart()
     {
         var actions = new List<string>();
-        Func<int, bool, IReadOnlyList<Dictionary<string, object>>> empty =
-            (_, _) => Array.Empty<Dictionary<string, object>>();
-        MechrevoHw? hardware = null;
-        hardware = new MechrevoHw((topic, payload) =>
+        using var hardware = new MechrevoHw((topic, payload) =>
         {
             if (topic == "Setting/Control" && payload is IDictionary<string, object> values &&
                 values.TryGetValue("Action", out object? action))
-            {
-                string name = action?.ToString() ?? "";
-                actions.Add(name);
-                if (name == "IGPU_ONLY_CONNECT_RB_ON")
-                    hardware!.HandleMessage("Setting/Status",
-                        "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_ON\"}");
-            }
+                actions.Add(action?.ToString() ?? "");
             return Task.CompletedTask;
         }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = false });
+        hardware.HandleMessage("Setting/Status",
+            "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}");
+        var service = new MechrevoService(hardware);
 
-        try
-        {
-            MechrevoService.GpuRestartRouteOverride = empty;
-            using (hardware)
-            {
-                hardware.HandleMessage("Setting/Status",
-                    "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}");
-                var service = new MechrevoService(hardware);
-
-                bool confirmed = await service.SwitchGpuMode(MechrevoService.GpuIGpu, autoRestart: true);
-
-                Assert.False(confirmed);
-                Assert.DoesNotContain("DGPU_DIRECT_CONNECT_RESTART", actions);
-            }
-        }
-        finally { MechrevoService.GpuRestartRouteOverride = null; }
+        Assert.False(await service.SwitchGpuMode(MechrevoService.GpuIGpu));
+        Assert.DoesNotContain("DGPU_DIRECT_CONNECT_RESTART", actions);
+        Assert.DoesNotContain("IGPU_ONLY_CONNECT_RB_ON", actions);
     }
 
     /// <summary>完整路由：目标写入齐全，重启指令恰好一次且位于最后。</summary>

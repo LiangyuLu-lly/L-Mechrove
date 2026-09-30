@@ -96,7 +96,7 @@ public class IgpuOnlyRetryTests
     }
 
     [Fact]
-    public async Task ConfirmedHotSwitchSucceedsOnAResultOfTwo()
+    public async Task ConfirmedHotSwitchSucceedsOnAResultOfTwoAndTheDeviceLeaving()
     {
         var published = new List<(string Topic, Dictionary<string, object> Payload)>();
         using MechrevoHw hardware = NewHardware(published,
@@ -106,6 +106,10 @@ public class IgpuOnlyRetryTests
         hardware.HandleMessage("Setting/Status", StandardEcho);
         Assert.Equal(MechrevoService.GpuStandard, service.CurrentGpuMode);
 
+        using var route = TestGpuRoute.Use(() =>
+            published.Any(entry => entry.Payload["Action"] as string == "IGPU_ONLY_CONNECT_RB_ON")
+                ? TestGpuRoute.IgpuOnly
+                : TestGpuRoute.Hybrid);
         bool confirmed = await service.SwitchGpuMode(MechrevoService.GpuIGpu);
 
         Assert.True(confirmed);
@@ -140,12 +144,13 @@ public class IgpuOnlyRetryTests
         Assert.Contains(published, entry => entry.Payload["Action"] as string == "GETSTATUS");
     }
 
+    /// <summary>自动档插电：期望运行态 1（混合），独显在位即确认（默认回读 = 混合）。</summary>
     [Fact]
     public async Task AutomaticSwitchUsesTheAcDependentRuntime()
     {
         var published = new List<(string Topic, Dictionary<string, object> Payload)>();
         using MechrevoHw hardware = NewHardware(published,
-            new MechrevoDeviceCapabilities { IgpuOnly = true },
+            new MechrevoDeviceCapabilities { IgpuOnly = true, DgpuDirect = true, GpuHotSwap = true, NvidiaGpu = true },
             action => action == "GETSTATUS"
                 ? """{"IGpuOnlyConnectionSwitch_Status":"IGPU_ONLY_CONNECT_RB_AUTO","CheckDGpuStatusforIGpuOnlyOnSuccess":"1"}"""
                 : null);
@@ -157,5 +162,19 @@ public class IgpuOnlyRetryTests
 
         Assert.True(confirmed);
         Assert.Contains(published, entry => entry.Payload["Action"] as string == "IGPU_ONLY_CONNECT_RB_AUTO");
+    }
+
+    /// <summary>自动档只在 50 系热切换机型上有：没有热切换的机器一条指令都不发。</summary>
+    [Fact]
+    public async Task AutomaticSwitchIsRefusedWithoutAHotSwapMachine()
+    {
+        var published = new List<(string Topic, Dictionary<string, object> Payload)>();
+        using MechrevoHw hardware = NewHardware(published,
+            new MechrevoDeviceCapabilities { IgpuOnly = true, DgpuDirect = true },
+            _ => null);
+        var service = new MechrevoService(hardware);
+
+        Assert.False(await service.SwitchAutomaticGpuMode(plugged: true));
+        Assert.Empty(published);
     }
 }

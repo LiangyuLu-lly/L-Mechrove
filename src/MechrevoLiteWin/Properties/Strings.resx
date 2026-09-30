@@ -1295,4 +1295,178 @@ Continue?</value>
   <data name="UpdateFailedKept" xml:space="preserve">
     <value>The update to {0} did not finish (setup exit code {1}); {2} is still installed. Details: {3}</value>
   </data>
+  <data name="GpuPrefAuto" xml:space="preserve">
+    <value>Auto-select</value>
+  </data>
+  <data name="GpuPrefHighPerf" xml:space="preserve">
+    <value>Prefer NVIDIA</value>
+  </data>
+  <data name="GpuPrefTip" xml:space="preserve">
+    <value>NVIDIA Control Panel global preferred GPU. Applies to apps started afterwards; no restart needed.</value>
+  </data>
+  <data name="GpuPrefNotApplied" xml:space="preserve">
+    <value>The NVIDIA driver did not report the change; it is still &quot;{0}&quot;.</value>
+  </data>
+  <data name="GpuPrefApplied" xml:space="preserve">
+    <value>Preferred GPU set to &quot;{0}&quot; (confirmed by the NVIDIA driver).</value>
+  </data>
+  <data name="GpuPrefUnknown" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="GpuRestartPendingTag" xml:space="preserve">
+    <value>Restart to apply</value>
+  </data>
+  <data name="GpuRestartConfirm" xml:space="preserve">
+    <value>Switching to &quot;{0}&quot; requires a restart.
+
+Yes: send the command and restart now. No: cancel without changes.</value>
+  </data>
+  <data name="GpuRouteApplied" xml:space="preserve">
+    <value>GPU mode is now &quot;{0}&quot; (confirmed from the display wiring).</value>
+  </data>
+  <data name="GpuRouteNotApplied" xml:space="preserve">
+    <value>After the restart the GPU mode is still &quot;{0}&quot;; the switch did not apply.</value>
+  </data>
+  <data name="GpuHotSwitchNotApplied" xml:space="preserve">
+    <value>The dGPU did not power off; iGPU mode was not applied and the previous mode is restored.</value>
+  </data>
+  <data name="GpuHotSwitchRestoreNotApplied" xml:space="preserve">
+    <value>The dGPU did not come back; Standard mode was not applied and iGPU mode is kept.</value>
+  </data>
+  <data name="GpuRouteUnknown" xml:space="preserve">
+    <value>Unable to confirm the current GPU mode (internal display not found or readback failed).</value>
+  </data>
+  <data name="GpuRouteUnknownTag" xml:space="preserve">
+    <value>Unconfirmed</value>
+  </data>
+  <data name="GpuIgpuNeedsStandard" xml:space="preserve">
+    <value>Switch to Standard first (restart), then iGPU.</value>
+  </data>
+  <data name="GpuRestartBySelf" xml:space="preserve">
+    <value>Command sent. Restarting in 5 seconds.</value>
+  </data>
+  <data name="GpuRestartUnsupported" xml:space="preserve">
+    <value>This machine or GCU version has no command for &quot;{0}&quot;. Cancelled; nothing was restarted.</value>
+  </data>
+  <data name="GpuRestartSendFailed" xml:space="preserve">
+    <value>GCU could not send the switch command; the GPU mode is unchanged.</value>
+  </data>
+  <data name="GpuRestartNotHappened" xml:space="preserve">
+    <value>GCU did not restart the system. The GPU mode command is written and applies after a restart.
+
+Click OK to restart Windows in 5 seconds.</value>
+  </data>
+  <data name="GpuSwitchUnavailable" xml:space="preserve">
+    <value>This machine or GCU version does not report support for this GPU mode.</value>
+  </data>
+  <data name="GpuStatusUnavailable" xml:space="preserve">
+    <value>Could not read the current GPU mode. Try again later so the switch is not based on stale state.</value>
+  </data>
+  <data name="GpuHotSwitchPreflightUnknown" xml:space="preserve">
+    <value>Cannot tell which programs are using the dGPU, so the hot switch may fail.
+
+Try the switch anyway?</value>
+  </data>
+  <data name="GpuHotSwitchPreflightApps" xml:space="preserve">
+    <value>These programs are using the dGPU:
+
+{0}
+
+Yes: ask them to close, then switch. No: keep the current mode.</value>
+  </data>
+  <data name="GpuHotSwitchPreflightRecheckFailed" xml:space="preserve">
+    <value>Could not re-read dGPU usage after closing the programs; the switch was cancelled.</value>
+  </data>
+  <data name="GpuHotSwitchPreflightForce" xml:space="preserve">
+    <value>These programs are still using the dGPU:
+
+{0}
+
+Force them to exit and continue? Unsaved work may be lost.</value>
+  </data>
+  <data name="GpuHotSwitchPreflightElevate" xml:space="preserve">
+    <value>These programs could not be ended with normal rights:
+
+{0}
+
+End them with administrator rights? (A UAC prompt appears.)</value>
+  </data>
+  <data name="GpuHotSwitchPreflightGaveUp" xml:space="preserve">
+    <value>Some programs still use the dGPU; the switch was cancelled.</value>
+  </data>
+  <data name="GpuHotSwitchMoreApps" xml:space="preserve">
+    <value>{0} more</value>
+  </data>
+  <data name="PowerSourceBattery" xml:space="preserve">
+    <value>On battery</value>
+  </data>
+  <data name="PowerSourceBarrel" xml:space="preserve">
+    <value>DC adapter</value>
+  </data>
+  <data name="PowerSourceBarrelWatts" xml:space="preserve">
+    <value>{0} W adapter</value>
+  </data>
+  <data name="PowerSourceTypeC" xml:space="preserve">
+    <value>USB-C power</value>
+  </data>
+  <data name="PowerSourceBarrelAndTypeC" xml:space="preserve">
+    <value>DC + USB-C</value>
+  </data>
+  <data name="PowerSourceExternal" xml:space="preserve">
+    <value>AC power</value>
+  </data>
+  <data name="BatteryStateCharging" xml:space="preserve">
+    <value>Charging {0} W</value>
+  </data>
+  <data name="BatteryStateChargingNoRate" xml:space="preserve">
+    <value>Charging</value>
+  </data>
+  <data name="BatteryStateDischarging" xml:space="preserve">
+    <value>Discharging {0} W</value>
+  </data>
+  <data name="BatteryStateDischargingNoRate" xml:space="preserve">
+    <value>Discharging</value>
+  </data>
+  <data name="BatteryStateFull" xml:space="preserve">
+    <value>Full</value>
+  </data>
+  <data name="BatteryStateHeldAtLimit" xml:space="preserve">
+    <value>Held at limit</value>
+  </data>
+  <data name="BatteryStateIdle" xml:space="preserve">
+    <value>Not charging</value>
+  </data>
+  <data name="BatteryAbnormalTag" xml:space="preserve">
+    <value>Battery fault</value>
+  </data>
+  <data name="BatteryCycleCountLine" xml:space="preserve">
+    <value>Cycle count: {0}</value>
+  </data>
+  <data name="BatteryCapacityLine" xml:space="preserve">
+    <value>Design capacity: {0}</value>
+  </data>
+  <data name="BatteryLevelLine" xml:space="preserve">
+    <value>Charge: {0}%</value>
+  </data>
+  <data name="BatteryVoltageLine" xml:space="preserve">
+    <value>Voltage: {0} V</value>
+  </data>
+  <data name="PowerTipSource" xml:space="preserve">
+    <value>Power: {0} (EC 0x7CC=0x{1:X2})</value>
+  </data>
+  <data name="PowerTipSourcePlain" xml:space="preserve">
+    <value>Power: {0}</value>
+  </data>
+  <data name="PowerTipAdapter" xml:space="preserve">
+    <value>Adapter rating: {0} W (vendor table)</value>
+  </data>
+  <data name="PowerTipAdapterUnknown" xml:space="preserve">
+    <value>Adapter rating: unknown (code 0x{0:X2} not in the vendor table)</value>
+  </data>
+  <data name="PowerTipSourceUnknown" xml:space="preserve">
+    <value>Power source type unknown (EC read failed)</value>
+  </data>
+  <data name="PowerTipDualUnverified" xml:space="preserve">
+    <value>DC and USB-C both connected (not verified on this model; shown as DC)</value>
+  </data>
 </root>

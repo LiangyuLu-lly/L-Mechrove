@@ -154,33 +154,40 @@ public class GpuModeSwitchHotfixTests
             .GetMethod("HasPendingGpuRestart", BindingFlags.Static | BindingFlags.NonPublic)!
             .Invoke(null, null)!;
 
-    static void InvokeMarkGpuRestartPending() =>
-        typeof(SettingsForm)
-            .GetMethod("MarkGpuRestartPending", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, null);
-
-    /// <summary>待重启标记：同一次开机内保持；检测到真实重启（TickCount64 归零）后清理。</summary>
+    /// <summary>
+    /// 待重启标记：同一次开机内保持；检测到真实重启（TickCount64 归零）后不再显示「重启生效」，
+    /// 标记留给开机核对取走（取走后清理），目标一并记下。
+    /// </summary>
     [Fact]
-    public void PendingGpuRestart_SurvivesWithinTheSameBoot_AndClearsAfterARealRestart()
+    public void PendingGpuRestart_SurvivesWithinTheSameBoot_AndIsTakenAfterARealRestart()
     {
-        string? previousPending = AppConfig.GetString("gpu_restart_pending");
-        string? previousTick = AppConfig.GetString("gpu_restart_tick");
+        string? previousPending = AppConfig.GetString(MechrevoLite.Gpu.GpuRestartVerifier.PendingKey);
+        string? previousTick = AppConfig.GetString(MechrevoLite.Gpu.GpuRestartVerifier.TickKey);
+        string? previousTarget = AppConfig.GetString(MechrevoLite.Gpu.GpuRestartVerifier.TargetKey);
         try
         {
-            InvokeMarkGpuRestartPending();
+            MechrevoLite.Gpu.GpuRestartVerifier.MarkPending(MechrevoService.GpuDgpu);
             Assert.True(InvokeHasPendingGpuRestart(), "同一次开机内，待重启标记必须保持。");
+            Assert.False(MechrevoLite.Gpu.GpuRestartVerifier.TryTakeRebootTarget(out _), "还没重启过，不能被开机核对取走。");
 
-            // 真机重启后 TickCount64 归零：旧 boot 记下的 tick 会远大于当前 TickCount64 → 必须清理。
-            AppConfig.Set("gpu_restart_tick", (Environment.TickCount64 + 60_000).ToString());
-            Assert.False(InvokeHasPendingGpuRestart(), "检测到真实重启后必须清理待重启标记。");
-            Assert.False(AppConfig.Is("gpu_restart_pending"));
+            // 真机重启后 TickCount64 归零：旧 boot 记下的 tick 会远大于当前 TickCount64。
+            AppConfig.Set(MechrevoLite.Gpu.GpuRestartVerifier.TickKey, (Environment.TickCount64 + 60_000).ToString());
+            Assert.False(InvokeHasPendingGpuRestart(), "重启过之后不再显示「重启生效」。");
+            Assert.True(MechrevoLite.Gpu.GpuRestartVerifier.TryTakeRebootTarget(out int target));
+            Assert.Equal(MechrevoService.GpuDgpu, target);
+            Assert.False(AppConfig.Is(MechrevoLite.Gpu.GpuRestartVerifier.PendingKey), "取走后必须清理。");
         }
         finally
         {
-            if (previousPending is null) AppConfig.Set("gpu_restart_pending", 0);
-            else AppConfig.Set("gpu_restart_pending", int.Parse(previousPending));
-            if (previousTick is null) AppConfig.Remove("gpu_restart_tick");
-            else AppConfig.Set("gpu_restart_tick", previousTick);
+            Restore(MechrevoLite.Gpu.GpuRestartVerifier.PendingKey, previousPending);
+            Restore(MechrevoLite.Gpu.GpuRestartVerifier.TickKey, previousTick);
+            Restore(MechrevoLite.Gpu.GpuRestartVerifier.TargetKey, previousTarget);
+        }
+
+        static void Restore(string key, string? value)
+        {
+            if (value is null) AppConfig.Remove(key);
+            else AppConfig.Set(key, value);
         }
     }
 }

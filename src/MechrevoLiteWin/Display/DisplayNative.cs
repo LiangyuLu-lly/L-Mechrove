@@ -357,6 +357,19 @@ namespace MechrevoLite.Display
             public string viewGdiDeviceName;
         }
 
+        /// <summary>
+        /// <c>DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME</c> 的回包：适配器的设备接口路径
+        /// （例如 <c>\\?\PCI#VEN_8086&amp;DEV_7D67#...</c>），用来判断内屏接在哪块显卡上。
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct DISPLAYCONFIG_ADAPTER_NAME
+        {
+            public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            public string adapterDevicePath;
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         public struct DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO
         {
@@ -439,6 +452,9 @@ namespace MechrevoLite.Display
 
         [DllImport("user32.dll")]
         public static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_SOURCE_DEVICE_NAME deviceName);
+
+        [DllImport("user32.dll")]
+        public static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_ADAPTER_NAME adapterName);
 
         [DllImport("user32.dll")]
         public static extern int DisplayConfigGetDeviceInfo(ref DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO requestPacket);

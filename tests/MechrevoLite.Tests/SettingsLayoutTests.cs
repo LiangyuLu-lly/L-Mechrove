@@ -347,8 +347,12 @@ public class SettingsLayoutTests
     // ColorCalibrationButton_ReservesRightLayoutMargin 已删（2026-09-14）：
     // 校色按钮改为屏幕行头内联下拉（comboColorCalibration），布局护栏移到 Run5LcCalibTests。
 
+    /// <summary>
+    /// 只有 MUX、没有核显模式位（官方 IgpuButtonVisibility = IGPUModeSupport）：两段「标准 / 直连」，
+    /// 集显不在行里；三模布局三段全在。自动模式按钮整体移除。
+    /// </summary>
     [Fact]
-    public void MuxOnlyGpuLayout_ShowsPureIgpuButHidesAutomaticMode()
+    public void MuxOnlyGpuLayout_ShowsStandardAndDirectOnlyAndNeverAutomaticMode()
     {
         bool previousAuditMode = Program.UiAuditMode;
         MechrevoLite.Hardware.MechrevoHw? previousHardware = Program.hw;
@@ -365,12 +369,17 @@ public class SettingsLayoutTests
             using var form = new SettingsForm();
             form.CreateControl();
             form.RefreshDeviceCapabilities();
-            Button eco = form.Controls.Find("buttonEco", true).OfType<Button>().Single();
-            Button standard = form.Controls.Find("buttonStandard", true).OfType<Button>().Single();
-            Button ultimate = form.Controls.Find("buttonUltimate", true).OfType<Button>().Single();
+            Button eco = GpuButton(form, "buttonEco");
+            Button standard = GpuButton(form, "buttonStandard");
+            Button ultimate = GpuButton(form, "buttonUltimate");
             TableLayoutPanel table = form.Controls.Find("tableGPU", true).OfType<TableLayoutPanel>().Single();
 
-            form.VisualiseGPUButtons(eco: true, ultimate: true, auto: false);
+            Assert.Equal(MechrevoLite.Gpu.GpuRowLayout.Mux2, hardware.GpuRowLayout);
+            Assert.DoesNotContain(eco, table.Controls.Cast<Control>());
+            Assert.Contains(standard, table.Controls.Cast<Control>());
+            Assert.Contains(ultimate, table.Controls.Cast<Control>());
+
+            form.ApplyGpuRowLayout(MechrevoLite.Gpu.GpuRowLayout.Mux3);
 
             Assert.Contains(eco, table.Controls.Cast<Control>());
             Assert.Contains(standard, table.Controls.Cast<Control>());
@@ -384,6 +393,43 @@ public class SettingsLayoutTests
             Program.UiAuditMode = previousAuditMode;
         }
     }
+
+    /// <summary>GTX 10/16、RTX 20：同一行两段改成「自动选择 / 独显优先」，没有集显。</summary>
+    [Fact]
+    public void NvPreferenceLayout_RelabelsTheTwoSegments()
+    {
+        bool previousAuditMode = Program.UiAuditMode;
+        MechrevoLite.Hardware.MechrevoHw? previousHardware = Program.hw;
+        Program.UiAuditMode = false;
+        Program.hw = null!;
+        try
+        {
+            using var form = new SettingsForm();
+            form.CreateControl();
+            form.ApplyGpuRowLayout(MechrevoLite.Gpu.GpuRowLayout.NvPreference);
+            // 没有硬件时显卡卡片不在仪表盘里（Controls.Find 找不到），直接取字段。
+            var table = (TableLayoutPanel)typeof(SettingsForm)
+                .GetField("tableGPU", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(form)!;
+
+            Assert.Equal(Properties.Strings.GpuPrefAuto, GpuButton(form, "buttonStandard").Text);
+            Assert.Equal(Properties.Strings.GpuPrefHighPerf, GpuButton(form, "buttonUltimate").Text);
+            Assert.DoesNotContain(GpuButton(form, "buttonEco"), table.Controls.Cast<Control>());
+
+            form.ApplyGpuRowLayout(MechrevoLite.Gpu.GpuRowLayout.Mux2);
+            Assert.Equal(Properties.Strings.GpuRouteStandard, GpuButton(form, "buttonStandard").Text);
+            Assert.Equal(Properties.Strings.GpuRouteDirect, GpuButton(form, "buttonUltimate").Text);
+        }
+        finally
+        {
+            Program.hw = previousHardware!;
+            Program.UiAuditMode = previousAuditMode;
+        }
+    }
+
+    static Button GpuButton(SettingsForm form, string name) =>
+        (Button)typeof(SettingsForm).GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(form)!;
 
     [Theory]
     [InlineData(null, true)]

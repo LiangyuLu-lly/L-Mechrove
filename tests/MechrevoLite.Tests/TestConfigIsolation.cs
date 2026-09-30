@@ -32,6 +32,46 @@ internal static class TestConfigIsolation
             new GpuAdapter("NVIDIA GeForce RTX 5090 Laptop GPU", GpuAdapter.NvidiaVendorId, "2C02"),
         };
         GpuGenerationProvider.Storage = new InMemoryDgpuGenerationStorage();
+
+        // 服务档位同理：生产读真实的 GCUBridge 服务注册表与文件版本。未钉档位的测试按我方 1.2 载荷
+        // （30/40/50 的安装结果）；测 10/20 或厂商服务的用例自行设置 GcuServiceTierProbe.Override。
+        GcuServiceTierProbe.Override = static () => GcuServiceTier.Modern12;
+
+        // 显卡路由回读（CCD + CfgMgr）也不能读真机：默认内屏接在核显、独显在位（= 混合）。
+        // 热切换用例自行注入「断开 / 恢复」序列。
+        GpuRouteProbe.Override = static () => TestGpuRoute.Hybrid;
+        NvPreferredGpuReader.DriverOverride = static () => NvPreferredGpu.AutoSelect;
+        GpuRestartVerifier.NotifyOverride = static (_, _) => { };
+
+        // 供电采样（EC 0x7CC/0x49F）同理：默认不读真机 EC——交流在线、EC 不可读（= 外接电源）。
+        // 测供电解码的用例自行换采样器并在结束时还原。
+        HardwareControl.ReplacePowerInputSamplerForTests(new MechrevoLite.Hardware.PowerInputSampler(
+            static () => null, static () => true, static () => true));
+    }
+}
+
+/// <summary>测试用的路由回读常量。</summary>
+internal static class TestGpuRoute
+{
+    internal static readonly GpuRouteReadback Hybrid = new(PanelAdapterKind.Integrated, DgpuPresence.Present);
+    internal static readonly GpuRouteReadback IgpuOnly = new(PanelAdapterKind.Integrated, DgpuPresence.Absent);
+    internal static readonly GpuRouteReadback Direct = new(PanelAdapterKind.Discrete, DgpuPresence.Present);
+
+    /// <summary>临时替换回读，Dispose 时恢复默认（混合）并清缓存。</summary>
+    internal static IDisposable Use(Func<GpuRouteReadback> readback)
+    {
+        GpuRouteProbe.Override = readback;
+        GpuRouteMonitor.ResetForTests();
+        return new Restore();
+    }
+
+    sealed class Restore : IDisposable
+    {
+        public void Dispose()
+        {
+            GpuRouteProbe.Override = static () => Hybrid;
+            GpuRouteMonitor.ResetForTests();
+        }
     }
 }
 

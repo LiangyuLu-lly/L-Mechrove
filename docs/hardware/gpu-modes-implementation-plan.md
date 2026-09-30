@@ -1,6 +1,12 @@
 # 显卡模式多代适配：实现方案（GTX 10/16 · RTX 20 → RTX 50）
 
-状态：方案，未实现。调研时间 2026-09-29，分支 `beta21-wip` @ `5f104a3`。
+状态：beta21 已实现（G1–G10、G12；G11 随安装器任务完成）。与方案的出入：
+① 热切换的服务侧判据改看热切换寄存器 `IGpuOnlyConnectionSwitch_Status`（`MechrevoHw.IgpuOnlyRegister`），
+不看合成后的 `GpuMode`——后者以独显通路为准，TOGGLE_OFF 下 RB_ON 仍显示混合，永远到不了「集显」；
+② G6⑨（`IGPU_CANNOT_BE_SWITCH_NOW_VISIBILITY` 查询）未做：1.2.0.0 的行为 UNKNOWN，界面也不依赖它；
+③ NVRAM `OemDisplayMode` 读取（§4.3）只写诊断日志（开机一行），偏移未在硬件上核对前不参与任何判定；
+④ 自动档（§10 第 13 条）仍无按钮，服务自己处于 RB_AUTO 时的客户端路径只在 50 系热切换机型上放行，并同样要求设备在位。
+调研时间 2026-09-29，分支 `beta21-wip` @ `5f104a3`。
 调研全程只读：没有发布任何 MQTT 控制命令，没有写 EC / NVRAM / 注册表，没有切换显卡模式。
 厂商行为的完整证据链见 `docs/hardware/gpu-switching-per-generation.md`（下称「逐代调研」），
 本文只保留实现要用到的结论与出处，并补充本次新增的只读核对。

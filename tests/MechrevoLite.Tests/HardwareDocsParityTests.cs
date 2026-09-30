@@ -193,6 +193,7 @@ internal sealed record HardwareDocsParity(
             {
                 string key = row.Generation switch
                 {
+                    DgpuGenerationKind.Gen1020 => "1020",
                     DgpuGenerationKind.Gen30 => "30",
                     DgpuGenerationKind.Gen40 => row.ThreeMode == false ? "40-no3mode" : "40",
                     DgpuGenerationKind.Gen50 => "50",

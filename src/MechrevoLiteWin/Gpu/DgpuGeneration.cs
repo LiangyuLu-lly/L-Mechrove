@@ -10,11 +10,17 @@ namespace MechrevoLite.Gpu;
 /// </summary>
 public enum DgpuGenerationKind
 {
-    /// <summary>判据缺失或不在取值域 {30,40,50}（含 20 系及更早）。</summary>
+    /// <summary>判据缺失或不在取值域 {10/16/20,30,40,50}。</summary>
     Unknown,
 
     /// <summary>枚举可用且没有任何 NVIDIA 独显。</summary>
     NoDgpu,
+
+    /// <summary>
+    /// GTX 10 / GTX 16 / RTX 20（Pascal、Turing；RTX 2050 虽是 GA107，按营销名也归这里）。
+    /// 这一代机器没有 MUX，官方只有 NVIDIA 控制面板的全局首选图形处理器（GamingCenterU + 1.0.2.47 服务）。
+    /// </summary>
+    Gen1020,
 
     Gen30,
     Gen40,
@@ -65,8 +71,7 @@ public sealed record DgpuIdentity(
         new(DgpuGenerationKind.NoDgpu, DgpuProbeSource.None, false, null, null);
 
     /// <summary>是否判到了取值域内的代际。</summary>
-    public bool IsResolved => Generation is DgpuGenerationKind.Gen30
-        or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50;
+    public bool IsResolved => DgpuGenerationProbe.IsConcrete(Generation);
 }
 
 /// <summary>
@@ -110,10 +115,25 @@ public static class DgpuGenerationProbe
         return new DgpuIdentity(DgpuGenerationKind.Unknown, DgpuProbeSource.None, true, first.Name, first.DeviceId);
     }
 
-    /// <summary>营销名 -&gt; 代际；只有 30/40/50 在取值域内，其余（含 20 系）返回 <c>null</c>。</summary>
+    /// <summary>具体代际（不是 Unknown/NoDgpu）。持久化与「已判出」都用这一处口径。</summary>
+    public static bool IsConcrete(DgpuGenerationKind generation) => generation is
+        DgpuGenerationKind.Gen1020 or DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50;
+
+    /// <summary>
+    /// GTX 10/16、RTX 20 的营销名。与安装器选 1.0.2.47 载荷的正则同源
+    /// （<c>installer/Select-GcuPayload.ps1</c>）：机器拿到哪套服务，这里就判哪一代。
+    /// </summary>
+    static readonly Regex Legacy1020Name = new(
+        @"GTX\s*1[06][5-8]0|RTX\s*20[5-8]0|MX\s*[1-3][1-5]0",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>营销名 -&gt; 代际；不在取值域内（含 A5000 之类工作站型号）返回 <c>null</c>。</summary>
     public static DgpuGenerationKind? FromMarketingName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
+
+        // 先认 10/16/20：RTX 2050 是 GA107（device-id 落在 Ampere 区间），名字说它是 20 系。
+        if (Legacy1020Name.IsMatch(name)) return DgpuGenerationKind.Gen1020;
 
         // "GeForce RTX 4060 Laptop GPU" -> 4060；A5000 之类字母型号不匹配。
         Match match = Regex.Match(name, @"\bRTX\s*(\d{4})\b", RegexOptions.IgnoreCase);
@@ -136,9 +156,13 @@ public static class DgpuGenerationProbe
         int high = (value >> 8) & 0xFF;
         return high switch
         {
-            // Ampere GA10x（0x20..0x25）/ Ada AD10x（0x26..0x28）/ Blackwell GB20x（0x2B..0x30）。
+            // Pascal GP10x（0x1B..0x1D）/ Turing TU10x（0x1E..0x1F）/ Turing TU116（0x21，GTX 1650/1660）。
+            // 0x20 是数据中心 GA100，不在笔记本取值域内。
+            >= 0x1B and <= 0x1F => DgpuGenerationKind.Gen1020,
+            0x21 => DgpuGenerationKind.Gen1020,
+            // Ampere GA10x（0x22..0x25）/ Ada AD10x（0x26..0x28）/ Blackwell GB20x（0x2B..0x30）。
             // 区间是 INFERRED：名称可用时名称优先（见 Resolve）。
-            >= 0x20 and <= 0x25 => DgpuGenerationKind.Gen30,
+            >= 0x22 and <= 0x25 => DgpuGenerationKind.Gen30,
             >= 0x26 and <= 0x28 => DgpuGenerationKind.Gen40,
             >= 0x2B and <= 0x30 => DgpuGenerationKind.Gen50,
             _ => null,

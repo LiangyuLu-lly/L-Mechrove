@@ -78,7 +78,7 @@ internal static class FirmwareWriteGuard
     internal sealed record IlScan(IReadOnlyList<string> Strings, IReadOnlyList<MethodBase> Calls);
 
     /// <summary>最小 IL 解码器：只取 <c>ldstr</c> 字符串与 <c>call/callvirt</c> 目标。</summary>
-    static class IlScanner
+    internal static class IlScanner
     {
         static readonly Dictionary<ushort, OpCode> Opcodes = Build();
 

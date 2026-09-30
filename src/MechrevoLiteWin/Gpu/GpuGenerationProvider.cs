@@ -27,6 +27,22 @@ public static class DgpuGenerationStore
     public const string HasDgpuKey = "dgpu_has_dgpu";
     public const string FingerprintKey = "dgpu_generation_fingerprint";
 
+    /// <summary>
+    /// 判定规则版本。规则变了而硬件没变时，指纹比较永远说「不用重判」，旧规则的错误结果就会
+    /// 一直留在配置里（例如规则 1 把 GTX 1660 Ti 的 <c>DEV_2191</c> 判成 30 系）。版本不等即重判。
+    /// </summary>
+    public const string RulesVersionKey = "dgpu_generation_rules";
+
+    /// <summary>规则 2：新增 Gen1020；Ampere 区间收窄到 0x22..0x25。</summary>
+    public const string CurrentRulesVersion = "2";
+
+    /// <summary>持久化结果是否出自当前规则。</summary>
+    public static bool IsCurrentRules(IDgpuGenerationStorage storage)
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+        return string.Equals(storage.Get(RulesVersionKey), CurrentRulesVersion, StringComparison.Ordinal);
+    }
+
     /// <summary>显卡集合的稳定指纹：排序后拼接名称/厂商/device-id。</summary>
     public static string Fingerprint(IReadOnlyList<GpuAdapter> adapters)
     {
@@ -50,7 +66,7 @@ public static class DgpuGenerationStore
 
         string? raw = storage.Get(GenerationKey);
         if (!Enum.TryParse(raw, out DgpuGenerationKind generation)) return null;
-        if (generation is not (DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50))
+        if (!DgpuGenerationProbe.IsConcrete(generation))
             return null;
 
         DgpuProbeSource source = Enum.TryParse(storage.Get(SourceKey), out DgpuProbeSource parsed)
@@ -70,6 +86,7 @@ public static class DgpuGenerationStore
         storage.Set(SourceKey, identity.Source.ToString());
         storage.Set(HasDgpuKey, identity.HasDgpu ? "1" : "0");
         storage.Set(FingerprintKey, fingerprint ?? "");
+        storage.Set(RulesVersionKey, CurrentRulesVersion);
     }
 }
 
@@ -193,6 +210,7 @@ public static class GpuGenerationProvider
 
         string fingerprint = DgpuGenerationStore.Fingerprint(adapters);
         if (DgpuGenerationStore.Load(Storage) is { } stored &&
+            DgpuGenerationStore.IsCurrentRules(Storage) &&
             !DgpuGenerationStore.ShouldReResolve(Storage.Get(DgpuGenerationStore.FingerprintKey), fingerprint))
         {
             return stored;

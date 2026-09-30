@@ -26,9 +26,82 @@ internal static class DiagnosticSystemInfo
         AppendCpu(sb);
         AppendGpus(sb);
         AppendLiquidCooling(sb);
+        AppendPowerAndBattery(sb, MechrevoLite.Hardware.MechrevoService.EcReadTransportFactory, HardwareControl.PowerInputDecodeEnabled);
         AppendCapabilities(sb);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 供电 / 电池只读原始值诊断段读取的 EC 地址（hidden-readonly-info-plan §8 P7）：
+    /// 0x7CC 供电状态、0x49F 适配器码、0x490 ecPowSource、0x400–0x40F _BIF 镜像、0x434–0x439 _BST 镜像、
+    /// 0x4A2–0x4AB 电池温度 / 循环次数 / 电量。给以后补适配器表、核对电池健康用，不做任何解读。
+    /// </summary>
+    internal static readonly (int Start, int Count)[] PowerDiagnosticEcRanges =
+    {
+        (0x7CC, 1), (0x49F, 1), (0x490, 1), (0x400, 16), (0x434, 6), (0x4A2, 10),
+    };
+
+    /// <summary>
+    /// 「供电 / 电池原始值」段。只走只读 EC 接口（<paramref name="transportFactory"/>，唯一的 IOCTL 就是读）
+    /// 与 Windows 电池 IOCTL；10/20（<paramref name="decodeEnabled"/> 为 false）不读 EC。
+    /// </summary>
+    internal static void AppendPowerAndBattery(StringBuilder sb, Func<Probe.IEcReadTransport?> transportFactory, Func<bool> decodeEnabled)
+    {
+        sb.AppendLine("[供电 / 电池原始值]");
+        PowerStatus? power = Safe(() => SystemInformation.PowerStatus);
+        if (power is not null)
+            sb.AppendLine($"Windows: 交流 {power.PowerLineStatus} · 电量 {power.BatteryLifePercent * 100:0}% · 充电状态 {power.BatteryChargeStatus}");
+
+        MechrevoLite.Battery.BatteryStatusReading? status = Safe(MechrevoLite.Battery.BatteryRateReader.ReadStatus);
+        sb.AppendLine(status is null
+            ? "BATTERY_STATUS: 读不到"
+            : $"BATTERY_STATUS: PowerState=0x{status.PowerState:X} Rate={(status.RateMilliwatts is int rate ? rate + " mW" : "未知")} " +
+              $"Capacity={status.CapacityMilliwattHours} mWh Voltage={status.VoltageMillivolts} mV");
+        MechrevoLite.Battery.BatteryInformationReading? info = Safe(MechrevoLite.Battery.BatteryRateReader.ReadInformation);
+        sb.AppendLine(info is null
+            ? "BATTERY_INFORMATION: 读不到"
+            : $"BATTERY_INFORMATION: Designed={info.DesignedCapacity} mWh FullCharged={info.FullChargedCapacity} mWh " +
+              $"CycleCount={info.CycleCount} SystemBattery={YesNo(info.IsSystemBattery)}");
+
+        MechrevoLite.Hardware.PowerInputSample? sample = Safe(() => HardwareControl.PowerInput);
+        sb.AppendLine(sample is null
+            ? "供电采样: 尚未采样"
+            : $"供电采样: {sample.Kind} · 适配器 {(sample.AdapterWatts is int watts ? watts + " W" : "未知")}");
+
+        if (!(Safe(decodeEnabled)))
+        {
+            sb.AppendLine("EC: 本机（10/20 服务或独显）不读供电寄存器");
+            sb.AppendLine();
+            return;
+        }
+        Probe.IEcReadTransport? transport = Safe(transportFactory);
+        if (transport is null)
+        {
+            sb.AppendLine("EC: 只读通道打不开");
+            sb.AppendLine();
+            return;
+        }
+        try
+        {
+            foreach ((int start, int count) in PowerDiagnosticEcRanges)
+            {
+                var bytes = new List<string>(count);
+                for (int offset = 0; offset < count; offset++)
+                {
+                    int value;
+                    try { value = transport.ReadByte(start + offset); }
+                    catch { value = -1; }   // 传输层异常 = 该地址读不到，继续导出其余字节
+                    bytes.Add(value is >= 0 and <= 0xFF ? value.ToString("X2") : "??");
+                }
+                sb.AppendLine($"EC 0x{start:X3}: {string.Join(' ', bytes)}");
+            }
+        }
+        finally
+        {
+            (transport as IDisposable)?.Dispose();
+        }
+        sb.AppendLine();
     }
 
     static void AppendApp(StringBuilder sb)

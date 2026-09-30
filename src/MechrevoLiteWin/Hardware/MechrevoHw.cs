@@ -111,6 +111,7 @@ public class MechrevoHw : IDisposable
     long _lcStatusReceivedAt;
     long _cpuInfoReceivedAt;
     long _gpuInfoReceivedAt;
+    long _fanInfoReceivedAt;
     int _lcConsecutiveMeterFaults;
 
     /// <summary>
@@ -385,8 +386,9 @@ public class MechrevoHw : IDisposable
     public bool? DisplayFeatureOn { get; private set; }
     /// <summary>
     /// DGpu，值是 NVIDIA 控制面板的全局首选显卡（NV_CTRL_PANEL_AUTOSELECT /
-    /// NV_CTRL_PANEL_HIGHPERFORMANCE）。只读：这台机器的显卡模式由本程序自己那套
-    /// Eco/标准/独显直连管理，再叠一层全局首选项会让两边的状态互相打架。
+    /// NV_CTRL_PANEL_HIGHPERFORMANCE）。只有 GTX 10/16、RTX 20（我方 1.0.2.47 服务）才把它当显卡选项下发
+    /// （<see cref="CanOfferNvPreferredGpu"/>）；30/40/50 的显卡模式走 MUX，这里只读，
+    /// 再叠一层全局首选项会让两边的状态互相打架。
     /// </summary>
     public string NvControlPanelPreference { get; private set; } = "";
     /// <summary>
@@ -442,6 +444,7 @@ public class MechrevoHw : IDisposable
         DescribeResolvedCapabilities()
         + $"|set={SettingStatusSeen} bright={ScreenBrightnessSeen} gpuDev={GpuDeviceStatusSeen}"
         + $"|dgpu={SupportsDgpuDirect} igpu={SupportsIgpuOnly}"
+        + $"|nvpref={NvPreferredGpuReader.FromServiceStatus(NvControlPanelPreference) != NvPreferredGpu.Unknown}"
         + $"|dim={SupportsLocalDimming} od={SupportsLcdOverdrive}"
         + $"|ocMenu={SupportsOverclockMenu} hwoc={LchwocSupportReported}"
         + $"|wifi={WifiSeen} bt={BluetoothSeen} webcam={WebcamSeen} winkey={WinKeySeen}"
@@ -533,6 +536,13 @@ public class MechrevoHw : IDisposable
     public bool? IgpuSwitchBlocked { get; private set; }
     public bool? LchwocSupportReported { get; private set; }
     public int GpuSwitchResult { get; private set; } = -1; // 1=混合/标准已落地，2=核显-only 已落地
+
+    /// <summary>
+    /// 热切换寄存器（<c>IGpuOnlyConnectionSwitch_Status</c>）：RB_ON = 集显、RB_OFF = 标准、RB_AUTO = 自动，
+    /// 未上报为 -1。它只是服务存的目标值——<see cref="GpuMode"/> 以独显通路为准（TOGGLE_OFF 下 RB_ON 仍显示混合），
+    /// 热切换的确认与回滚看这个寄存器，是否真的生效看 NVIDIA 设备在位（<see cref="GpuRouteProbe"/>）。
+    /// </summary>
+    public int IgpuOnlyRegister { get; private set; } = -1;
     public bool GpuSwitchResultReported { get; private set; }
     public long GpuSwitchResultVersion => Interlocked.Read(ref _gpuSwitchResultVersion);
     internal int ConnectionGeneration => Volatile.Read(ref _connectionGeneration);
@@ -572,33 +582,78 @@ public class MechrevoHw : IDisposable
     /// </summary>
     public DgpuGenerationKind DgpuGeneration => GpuGenerationProvider.Current().Generation;
 
-    /// <summary>该显示路由动作是否被代际事实表允许。<c>Unknown</c>/<c>NoDgpu</c> 没有事实行，一律不允许。</summary>
-    public bool IsGpuActionAllowedByGeneration(string action) =>
-        DisplayRoutePolicy.AllowsAction(DgpuGeneration, action, ThreeModeCapability);
-
-    // 能力级供货判据（UI 可见性）：机型/服务说支持 **且** 本代际控制台确实有这个动作。
-    // Supports* 保留"命令族是否存在"的语义（服务层据此选载荷）；本组谓词叠上轴 2 事实表，
-    // 供 UI 决定要不要把控制项交给用户——否则 30 系的按钮点了只会失败（ProvenAbsent 的动作）。
-
-    /// <summary>iGPU-only 是否可提供给用户（30 系 <c>IGPU_ONLY_*</c> = ProvenAbsent）。</summary>
-    public bool CanOfferIgpuOnly =>
-        SupportsIgpuOnly && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyOn);
-
-    /// <summary>热切换是否可提供给用户（30/40 系无 <c>GPU_HOTSWAP_*</c> 词汇）。</summary>
-    public bool CanOfferGpuHotSwap =>
-        SupportsGpuHotSwap && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.HotSwapOn);
+    /// <summary>
+    /// 本机 GCU 服务档位（见 <see cref="GcuServiceTierProbe"/>）：能发哪些显卡动作由它决定，
+    /// 连接成功时重新探测。
+    /// </summary>
+    public GcuServiceTier ServiceTier => GcuServiceTierProbe.Current();
 
     /// <summary>
-    /// 手动显卡模式切换是否可提供给用户。有 TOGGLE_ON / TOGGLE_OFF / RESTART 任一即可。
-    /// 30 系官方控制台没有切卡入口，Toggle 点了也不生效，整段不得提供。
-    /// <c>Unknown</c>/<c>NoDgpu</c> 没有事实行，同样不得提供——否则画像位会放出 40/50 系按钮。
+    /// 该显示路由动作在本机能不能发：代际词汇 × 40 系分档 × 服务档位 × 热切换。
+    /// <c>Unknown</c>/<c>NoDgpu</c> 没有事实行，一律不允许。
+    /// </summary>
+    public bool IsGpuActionAllowedByGeneration(string action) =>
+        DisplayRoutePolicy.AllowsAction(DgpuGeneration, action, ThreeModeCapability, ServiceTier, SupportsGpuHotSwap);
+
+    // 能力级供货判据（UI 可见性）：机型/服务说支持 **且** 本代际 × 服务档位确实有这个动作。
+    // Supports* 保留"命令族是否存在"的语义；本组谓词决定要不要把控制项交给用户——
+    // 点了只会失败、或只改服务寄存器不改硬件的入口，一律不给。
+
+    /// <summary>
+    /// 显卡模式行（MUX）是否可提供：30/40/50 ∧ 有 MUX ∧ 服务档位能发 <c>TOGGLE_ON/OFF</c>。
+    /// 与官方 50 系控制台同口径：没有独显直连就没有显卡页。
     /// </summary>
     public bool CanOfferGpuModeSwitch =>
-        DgpuGeneration is DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50 &&
-        (SupportsDgpuDirect || SupportsIgpuOnly) &&
-        (IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOn) ||
-         IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOff) ||
-         IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart));
+        DgpuGeneration is DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50 &&
+        SupportsDgpuDirect &&
+        ServiceTier is GcuServiceTier.Modern12 or GcuServiceTier.Foreign &&
+        IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOn) &&
+        IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOff);
+
+    /// <summary>
+    /// 「集显」作为 NVRAM 目标（<c>TOGGLE_IGPU</c> + 重启）是否可提供：40 三模档，或 50 系有核显模式且不是热切换机型
+    /// （热切换机型的官方界面隐藏 NVRAM 核显按钮，只留热切换卡片）。40 两模档、30 系没有这一档。
+    /// </summary>
+    public bool CanOfferIgpuMuxTarget =>
+        SupportsDgpuDirect &&
+        IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleIgpu) &&
+        ((DgpuGeneration == DgpuGenerationKind.Gen40 && ThreeModeCapability) ||
+         (DgpuGeneration == DgpuGenerationKind.Gen50 && SupportsIgpuOnly && !HotSwapMachine));
+
+    bool HotSwapMachine => SupportsGpuHotSwap && Capabilities.NvidiaGpu;
+
+    /// <summary>
+    /// 集显↔标准热切换是否可提供：50 系 ∧ 我方 1.2 服务 ∧ 热切换机型（<c>GpuConfig</c> 两键 + 核显模式 + NVIDIA）。
+    /// 是否真的切过去由设备在位回读确认（<see cref="GpuRouteProbe"/>），不只看服务回报。
+    /// </summary>
+    public bool CanOfferGpuHotSwap =>
+        DgpuGeneration == DgpuGenerationKind.Gen50 &&
+        ServiceTier == GcuServiceTier.Modern12 &&
+        HotSwapMachine &&
+        IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyOn) &&
+        IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyOff);
+
+    /// <summary>「集显」分段是否出现（NVRAM 目标或热切换，二者之一）。</summary>
+    public bool CanOfferIgpuOnly => CanOfferIgpuMuxTarget || CanOfferGpuHotSwap;
+
+    /// <summary>
+    /// GTX 10/16、RTX 20 的 NVIDIA 全局首选 GPU 是否可提供：我方 1.0.2.47 服务 ∧ 10/20 代 ∧ 服务报告了
+    /// 可识别的 <c>DGpu</c> 状态（证明这套命令族在本机存在）。
+    /// </summary>
+    public bool CanOfferNvPreferredGpu =>
+        ServiceTier == GcuServiceTier.Legacy1020 &&
+        DgpuGeneration == DgpuGenerationKind.Gen1020 &&
+        NvPreferredGpuReader.FromServiceStatus(NvControlPanelPreference) != NvPreferredGpu.Unknown &&
+        IsGpuActionAllowedByGeneration(DisplayRouteMatrix.NvCtrlPanelHighPerformance) &&
+        IsGpuActionAllowedByGeneration(DisplayRouteMatrix.NvCtrlPanelAutoSelect);
+
+    /// <summary>显卡行布局（主界面与托盘共用）。</summary>
+    public GpuRowLayout GpuRowLayout => GpuRowLayouts.Resolve(
+        CanOfferNvPreferredGpu, CanOfferGpuModeSwitch, CanOfferGpuModeSwitch && CanOfferGpuHotSwap, CanOfferIgpuMuxTarget);
+
+    /// <summary>MUX 路由重启能否交给服务的 <c>DGPU_DIRECT_CONNECT_RESTART</c>（否则由我方重启 Windows）。</summary>
+    public bool GpuServiceRestartAvailable =>
+        DisplayRoutePolicy.AllowsServiceRestart(DgpuGeneration, ThreeModeCapability, ServiceTier);
 
     /// <summary>
     /// 键盘灯入口：按官方分型判定本机真有可控的键盘灯（逐键/四区/单区/单色背光）。
@@ -795,20 +850,17 @@ public class MechrevoHw : IDisposable
         }
     }
 
-    public bool CanSwitchGpuMode(int mode) => mode switch
+    /// <summary>
+    /// 该目标模式在本机有没有一条真实的切换路径（§7）。整行不可提供时一律 false：
+    /// 标准/直连走 MUX 目标 + 重启；集显走 NVRAM 目标 + 重启，或 50 系热切换；自动只在热切换机型上有。
+    /// </summary>
+    public bool CanSwitchGpuMode(int mode) => CanOfferGpuModeSwitch && mode switch
     {
-        // 40 系常规机型只暴露 MUX 直连能力，原厂仍支持纯核显目标（TOGGLE_IGPU）。
-        // 30 系事实表无 IGPU_ONLY_* / TOGGLE_IGPU：iGPU↔hybrid 不得因画像位打开。
-        MechrevoService.GpuIGpu =>
-            (SupportsDgpuDirect && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleIgpu)) ||
-            CanOfferIgpuOnly,
-        MechrevoService.GpuStandard =>
-            (SupportsDgpuDirect && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleIgpu)) ||
-            CanOfferIgpuOnly,
-        MechrevoService.GpuDgpu =>
-            SupportsDgpuDirect && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOn),
+        MechrevoService.GpuIGpu => CanOfferIgpuMuxTarget || CanOfferGpuHotSwap,
+        MechrevoService.GpuStandard => true,
+        MechrevoService.GpuDgpu => true,
         MechrevoService.GpuAuto =>
-            SupportsIgpuOnly && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyAuto),
+            CanOfferGpuHotSwap && IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyAuto),
         _ => false,
     };
 
@@ -855,6 +907,16 @@ public class MechrevoHw : IDisposable
         foreach (string token in tokens)
             if (text.Contains(token, StringComparison.Ordinal)) return true;
         return false;
+    }
+
+    /// <summary>热切换寄存器串 → 模式值（RB_ON 集显 / RB_OFF 标准 / RB_AUTO 自动）；不认识为 -1。</summary>
+    internal static int ResolveIgpuOnlyRegister(string? igpuStatus)
+    {
+        string igpu = igpuStatus?.ToUpperInvariant() ?? "";
+        if (igpu.Contains("IGPU_ONLY_CONNECT_RB_ON") || igpu.Contains("IGPU_ONLY_ON")) return MechrevoService.GpuIGpu;
+        if (igpu.Contains("IGPU_ONLY_CONNECT_RB_AUTO") || igpu.Contains("IGPU_ONLY_AUTO")) return MechrevoService.GpuAuto;
+        if (igpu.Contains("IGPU_ONLY_CONNECT_RB_OFF") || igpu.Contains("IGPU_ONLY_OFF")) return MechrevoService.GpuStandard;
+        return -1;
     }
 
     internal static int ResolveGpuModeStatus(int currentMode, string? directStatus, string? igpuStatus)
@@ -1022,6 +1084,40 @@ public class MechrevoHw : IDisposable
         bool Within(long receivedAt) =>
             receivedAt != 0 && current - receivedAt <= maximumAge.TotalMilliseconds;
     }
+
+    /// <summary>
+    /// 风扇读数的有效期：服务每 2 s 推一次 <c>System/FanInfo</c>，三帧没来就当读数过期
+    /// （界面隐藏转速与占空比，不显示停在旧值上的数字）。
+    /// </summary>
+    public static readonly TimeSpan FanInfoMaximumAge = TimeSpan.FromSeconds(6);
+
+    /// <summary>
+    /// CPU（<c>System/CpuInfo</c>）或 GPU（<c>System/GpuInfo</c>）温度帧是否还在有效期内，两路各自判断。
+    /// 服务断开或独显断开后不再有新帧，界面显示「—」而不是停在旧温度上。
+    /// </summary>
+    public bool IsSensorInfoFresh(bool cpu, TimeSpan maximumAge, long now = -1)
+    {
+        long receivedAt = cpu ? Interlocked.Read(ref _cpuInfoReceivedAt) : Interlocked.Read(ref _gpuInfoReceivedAt);
+        if (receivedAt == 0) return false;
+        long current = now >= 0 ? now : Environment.TickCount64;
+        return current - receivedAt <= maximumAge.TotalMilliseconds;
+    }
+
+    /// <summary>最近一次 <c>System/FanInfo</c> 是否还在有效期内（从没收到过为 false）。</summary>
+    public bool IsFanInfoFresh(TimeSpan maximumAge, long now = -1)
+    {
+        long receivedAt = Interlocked.Read(ref _fanInfoReceivedAt);
+        if (receivedAt == 0) return false;
+        long current = now >= 0 ? now : Environment.TickCount64;
+        return current - receivedAt <= maximumAge.TotalMilliseconds;
+    }
+
+    /// <summary>
+    /// 占空比 / 转速为 0 能不能照实显示（= 风扇停转）。我方 1.2 服务与厂商 30/40/50 服务读 EC
+    /// <c>0x75B/0x75C</c> ÷2，停转时就是 0；10/20 旧版服务的读法看不到（方法体被破坏），0 可能只是没读到，
+    /// 保持旧口径不显示 0。
+    /// </summary>
+    public bool FanZeroIsMeaningful => ServiceTier is GcuServiceTier.Modern12 or GcuServiceTier.Foreign;
 
     // ---- 键盘灯官方状态（Keyboard/Status）----
     public string KeyboardEffect { get; private set; } = "";
@@ -1400,7 +1496,12 @@ public class MechrevoHw : IDisposable
     /// 服务画像可能已变更（MQTT 连接就绪/重连）。调用方是 <see cref="NotifyConnectionReady"/>，
     /// 每次成功连接都会走到；测试直接调用这个接缝证明快照会在配置变更后重建。
     /// </summary>
-    internal static void OnServiceProfileMayHaveChanged() => MechrevoDeviceCapabilities.Invalidate();
+    internal static void OnServiceProfileMayHaveChanged()
+    {
+        MechrevoDeviceCapabilities.Invalidate();
+        // 服务也可能在离线期间被重装/换成另一套载荷：档位跟着重新探测。
+        GcuServiceTierProbe.Invalidate();
+    }
 
     internal int NotifyConnectionReady()
     {
@@ -1679,6 +1780,7 @@ public class MechrevoHw : IDisposable
         GpuFanDuty = Int(o, "GpuFanDuty");
         CpuFanRpm = Int(o, "CpuFanRpm");
         GpuFanRpm = Int(o, "GpuFanRpm");
+        Interlocked.Exchange(ref _fanInfoReceivedAt, Environment.TickCount64);
         // 这个主题只有这四个字段，没有第三颗风扇。
         //
         // 曾经在这里加过一段「第三颗风扇解析」，用了五个自己编的字段名
@@ -2318,14 +2420,12 @@ public class MechrevoHw : IDisposable
         // 显式上报为 false 的支持位已经在上面写入，?? = 不会覆盖它。
         if (IsRecognizedDgpuDirectStatus(dgpuStatus)) DgpuDirectStatusSupport ??= true;
         if (IsRecognizedIgpuOnlyStatus(igpuStatus)) IgpuOnlyStatusSupport ??= true;
-        // N16：iGPU-only 的确认信号有两代编码，我们此前只懂一代。
-        //   5.56（50 系）控制台读 CheckDGpuStatusforIGpuOnlyOnSuccess，按 Contains("1")/("2") 解析
-        //     （CCUWinUI.decompiled.cs:54637-54640）。
-        //   40 系控制台发 CheckDGpuStatusforIGpuOnlySwitch，值是 EC 字节：85=成功、170=失败
-        //     （MySettingManager.cs:842, 1292/1297/1306/1311/1316）。
-        // 5.56 控制台的状态 DTO 两个字段都声明了（137930/137932），所以服务端可能发任一个。
-        // 只读 OnSuccess 时，发 Switch=85 的机器解析成 0，确认永不成功——这就是五台机器
-        // iGPU 切换失败的共同原因。
+        // iGPU-only 热切换的服务回报：5.56（50 系）控制台读 CheckDGpuStatusforIGpuOnlyOnSuccess，
+        // 按 Contains("1")/("2") 解析（CCUWinUI.decompiled.cs:54637-54640）。
+        // CheckDGpuStatusforIGpuOnlySwitch（S40 的 85/170 EC 字节）**不是**切换结果：S40 只在
+        // IGPU_ONLY_CHECK_DGPU_SUPPORT 之后才发它，是「独显能否断开」的就绪字节
+        // （gpu-switching-per-generation.md §6 #7）。把它映射成成功会让从未发生的切换被判成功，已删除。
+        // 服务回报也只是一半证据：热切换是否生效最终看 NVIDIA 设备是否真的断开（GpuRouteProbe）。
         string? gpuSwitchResult = o.GetValue("CheckDGpuStatusforIGpuOnlyOnSuccess", StringComparison.OrdinalIgnoreCase)?.ToString();
         bool gpuSwitchResultPresent = !string.IsNullOrWhiteSpace(gpuSwitchResult);
         if (gpuSwitchResultPresent)
@@ -2341,19 +2441,8 @@ public class MechrevoHw : IDisposable
             // 目前它靠谓词里 `if (CurrentGpuMode != mode) return false;` 短路兜住，
             // 但 Setting/Status 应该只有一个 release 点。
         }
-        else
-        {
-            // N16：40 系编码回退。OnSuccess 缺席时读 Switch，把 EC 字节映射到同一套 1/2 语义：
-            // 85 = iGPU-only 已生效（成功），170 = 未就绪/不支持（失败）。
-            string? switchResult = o.GetValue("CheckDGpuStatusforIGpuOnlySwitch", StringComparison.OrdinalIgnoreCase)?.ToString();
-            if (!string.IsNullOrWhiteSpace(switchResult) &&
-                int.TryParse(switchResult!.Trim(), out int ecByte))
-            {
-                GpuSwitchResult = ecByte == 85 ? 2 : ecByte == 170 ? 1 : 0;
-                GpuSwitchResultReported = true;
-            }
-        }
         int newGpu = ResolveGpuModeStatus(GpuMode, dgpuStatus, igpuStatus);
+        if (!string.IsNullOrWhiteSpace(igpuStatus)) IgpuOnlyRegister = ResolveIgpuOnlyRegister(igpuStatus);
         string? cannotSwitch = FirstField(o, "IGpuCannotBeSwitchNowVisibility")?.ToString();
         if (!string.IsNullOrWhiteSpace(cannotSwitch))
             IgpuSwitchBlocked = newGpu != MechrevoService.GpuDgpu &&
@@ -2882,64 +2971,10 @@ public class MechrevoHw : IDisposable
         finally { _controlLock.Release(); }
     }
 
-    public async Task<bool> SetGpuMode(int mode)
-    {
-        if (mode is < MechrevoService.GpuIGpu or > MechrevoService.GpuAuto) throw new ArgumentOutOfRangeException(nameof(mode));
-        if (!CanSwitchGpuMode(mode))
-        {
-            Logger.WriteLine($"SetGpuMode({mode}) rejected: unsupported by this device");
-            return false;
-        }
-        bool useHotSwitch = mode == MechrevoService.GpuIGpu && SupportsGpuHotSwap;
-        bool useMuxTarget = mode == MechrevoService.GpuIGpu && SupportsDgpuDirect &&
-            !SupportsIgpuOnly && !useHotSwitch;
-        GpuRouteCommand? switchCommand = GpuRouteCommandLayer.BuildSwitchCommand(
-            mode, SupportsDgpuDirect, SupportsIgpuOnly, useHotSwitch, DgpuGeneration);
-        if (switchCommand is null)
-        {
-            Logger.WriteLine($"SetGpuMode({mode}) rejected: action not in dGPU generation {DgpuGeneration} vocabulary");
-            return false;
-        }
-        Dictionary<string, object> payload = switchCommand.Payload;
-        string action = switchCommand.Action;
-        Logger.WriteLine($"SetGpuMode({mode}) -> {action}");
-        await _controlLock.WaitAsync();
-        try
-        {
-            long gpuModeVersion = GpuModeStatusVersion;
-            bool leavingDirect = GpuMode == MechrevoService.GpuDgpu && mode != MechrevoService.GpuDgpu;
-            if (mode == MechrevoService.GpuDgpu)
-            {
-                await Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" });
-                await Task.Delay(300);
-            }
-            await Publish(MqttTopics.SettingControl, payload);
-            if (leavingDirect && !useMuxTarget)
-            {
-                await Task.Delay(300);
-                await Publish(MqttTopics.SettingControl, new Dictionary<string, object>
-                {
-                    ["Action"] = mode == MechrevoService.GpuIGpu
-                        ? "DGPU_DIRECT_CONNECT_TOGGLE_IGPU"
-                        : "DGPU_DIRECT_CONNECT_TOGGLE_OFF",
-                });
-            }
-            bool TargetReached() => GpuMode == mode &&
-                (!useMuxTarget || GpuModeStatusVersion > gpuModeVersion);
-            if (await WaitForStateAsync(TargetReached, TimeSpan.FromMilliseconds(1200))) return true;
-            for (int attempt = 0; attempt < 7; attempt++)
-            {
-                await Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                if (await WaitForStateAsync(
-                    TargetReached,
-                    TimeSpan.FromMilliseconds(1800))) return true;
-                if (attempt is 1 or 3 or 5) await Publish(MqttTopics.SettingControl, payload);
-            }
-            Logger.WriteLine($"SetGpuMode not confirmed: expected={mode} actual={GpuMode}");
-            return false;
-        }
-        finally { _controlLock.Release(); }
-    }
+    // SetGpuMode(int) 已删除（beta21）：它是 GPUModeControl.SetGPUMode 的旧直连路径，
+    // 在非热切换机型上对「集显」发 IGPU_ONLY_CONNECT_RB_ON、按服务回显判成功——40 系三模档上
+    // 服务只把它写进注册表，硬件什么都没变。显卡切换只剩两条路：MechrevoService 的重启路由
+    // （MUX 目标 + 重启）与热切换（50 系热切换机型，设备在位回读确认）。
 
     public async Task SetFanCurve(int type, int[] duties)
     {

@@ -58,6 +58,7 @@ internal sealed record UsageSnapshot(
 
     internal static string GpuGenToken(DgpuGenerationKind kind) => kind switch
     {
+        DgpuGenerationKind.Gen1020 => "1020",
         DgpuGenerationKind.Gen30 => "30",
         DgpuGenerationKind.Gen40 => "40",
         DgpuGenerationKind.Gen50 => "50",

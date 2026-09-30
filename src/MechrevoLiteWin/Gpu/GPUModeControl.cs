@@ -25,17 +25,17 @@ namespace MechrevoLite.Gpu
         {
             if (Program.hw is not null && (Program.hw.Capabilities.ProfileAvailable || Program.hw.SettingStatusSeen))
             {
-                bool switchSupported = Program.hw.CanOfferGpuModeSwitch;
-                bool ecoSupported = switchSupported && Program.hw.CanOfferIgpuOnly;
-                bool muxSupported = switchSupported && Program.hw.SupportsDgpuDirect;
-                settings.VisualiseGPUButtons(ecoSupported || muxSupported, muxSupported, ecoSupported);
+                // 与主界面、托盘同一个布局判定（代际 × 服务档位 × 能力位，§7）。
+                GpuRowLayout layout = Program.hw.GpuRowLayout;
+                bool ecoSupported = GpuRowLayouts.HasIgpuSegment(layout);
+                settings.ApplyGpuRowLayout(layout);
                 settings.RefreshDeviceCapabilities();
                 if (!ecoSupported && AppConfig.Is("gpu_auto"))
                 {
                     AppConfig.Set("gpu_auto", 0);
                     AppConfig.Set("gpu_mode", MechrevoService.GpuStandard);
                 }
-                if (!ecoSupported && !muxSupported)
+                if (layout == GpuRowLayout.Hidden)
                 {
                     settings.HideGPUModes(false);
                     return;
@@ -104,160 +104,28 @@ namespace MechrevoLite.Gpu
 
 
 
-        public async Task SetGPUMode(int GPUMode, int auto = 0)
+        // SetGPUMode(int, int) 已删除（beta21）：没有调用方的旧切换入口。它的机械革命分支在非热切换机型上
+        // 对「集显」发 RB_ON、超时后让用户「重启生效」——而 RB 寄存器重启后并不生效（2026-09-10 实测）；
+        // ASUS 分支读的是恒 -1 的 ACPI 设备码。界面切换只走 SettingsForm.SwitchGpuModeFromUi。
+
+        /// <summary>
+        /// 手动显卡切换在途（热切换最长约两分钟）：自动档流程见到它必须让位，否则会用 RB_AUTO
+        /// 取消用户刚点的切换。返回的租约 Dispose 时清除。
+        /// </summary>
+        internal static IDisposable BeginManualSwitch()
         {
-            int CurrentGPU = Program.hw?.GpuMode is >= MechrevoService.GpuIGpu and <= MechrevoService.GpuAuto
-                ? Program.hw.GpuMode
-                : AppConfig.Get("gpu_mode");
+            Interlocked.Exchange(ref _manualGpuSwitchInFlight, 1);
+            return new ManualSwitchLease();
+        }
 
-            if (CurrentGPU == GPUMode)
+        sealed class ManualSwitchLease : IDisposable
+        {
+            int _disposed;
+
+            public void Dispose()
             {
-                settings.VisualiseGPUMode();
-                return;
+                if (Interlocked.Exchange(ref _disposed, 1) == 0) Interlocked.Exchange(ref _manualGpuSwitchInFlight, 0);
             }
-
-            // Mechrevo：MUX 切换走 MQTT（Setting/Control IGPU_ONLY_CONNECT_RB_*），切换后回读确认
-            if (Program.hw is { IsConnected: true })
-            {
-                var target = GPUMode;
-                try
-                {
-                    // 手动选具体模式必须先退出自动：gpu_auto=1 时 Program 的回显处理器会把
-                    // 标准/核显回显重新标注成「自动」，gpu_auto 永远清不掉；二十秒后电源事件
-                    // 触发的自动流程还会取消这次手动切换——用户点了核显，软件自己又切回去。
-                    // 原来只在确认成功后才写 gpu_auto，而失败/被取消时永远走不到那里。
-                    if (auto == 0) AppConfig.Set("gpu_auto", 0);
-
-                    // 与 MechrevoService 同一条热切换判定：只有「标准→核显」且机型声明支持
-                    // 热切换时，独显占用才会挡住 EC 断电，才需要预检和重启生效兜底。
-                    int modeBeforeSwitch = Program.hw.GpuMode;
-                    bool hotIgpuSwitch = target == MechrevoService.GpuIGpu &&
-                        Program.hw.CanOfferGpuHotSwap &&
-                        (modeBeforeSwitch == MechrevoService.GpuStandard ||
-                         (modeBeforeSwitch == MechrevoService.GpuAuto && Program.hw.GpuSwitchResult == 1));
-                    if (hotIgpuSwitch && !await CloseDgpuApplicationsForManualSwitchAsync().ConfigureAwait(false))
-                    {
-                        settings.VisualiseGPUMode(modeBeforeSwitch);
-                        return;   // 用户取消关闭独显程序，保持现状
-                    }
-
-                    Interlocked.Exchange(ref _manualGpuSwitchInFlight, 1);
-                    bool confirmed;
-                    try
-                    {
-                        confirmed = Program.service is not null
-                            ? await Program.service.SwitchGpuMode(
-                                target, keepRegisterOnHotSwitchTimeout: hotIgpuSwitch)
-                            : await Program.hw.SetGpuMode(target);
-                    }
-                    finally { Interlocked.Exchange(ref _manualGpuSwitchInFlight, 0); }
-                    if (confirmed)
-                    {
-                        AppConfig.Set("gpu_mode", target);
-                        AppConfig.Set("gpu_auto", auto);
-                        settings.VisualiseGPUMode(target);
-                    }
-                    else if (hotIgpuSwitch)
-                    {
-                        // 实时切换失败：寄存器已保留（服务层未回滚），把「重启生效」的决定权交给用户。
-                        // 这是不支持实时核显切换的机型上唯一 100% 可行的路径。
-                        Logger.WriteLine($"Manual hot switch to iGPU not confirmed; offering reboot-to-apply (expected={target} actual={Program.hw.GpuMode})");
-                        await OfferRebootFallbackAsync(modeBeforeSwitch, target).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        // 失败必须让用户看见：过去这里只写日志，而界面此前已被 GCU 的
-                        // 状态回显画成了目标模式，用户看到的就是「切换成功」。
-                        // 服务层在热切换超时后已经回滚，这里的 GpuMode 是回滚后的真实状态。
-                        settings.VisualiseGPUMode(Program.hw.GpuMode);
-                        Logger.WriteLine($"Legacy SetGPUMode not confirmed: expected={target} actual={Program.hw.GpuMode}");
-                        try { Program.toast?.RunToast("显卡模式切换失败，已恢复切换前模式。"); }
-                        catch (Exception tex) { Logger.WriteLine("GPU switch failure toast failed: " + tex.Message); }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.WriteLine("Legacy SetGPUMode failed: " + ex.Message);
-                    if (Program.hw is not null)
-                        settings.VisualiseGPUMode(Program.hw.GpuMode);
-                    try { Program.toast?.RunToast("显卡模式切换失败，已恢复切换前模式。"); }
-                    catch (Exception tex) { Logger.WriteLine("GPU switch failure toast failed: " + tex.Message); }
-                }
-                return;
-            }
-
-            var restart = false;
-            var changed = false;
-
-            if (CurrentGPU == AsusACPI.GPUModeUltimate)
-            {
-                DialogResult dialogResult = MessageBox.Show(Properties.Strings.AlertUltimateOff, Properties.Strings.AlertUltimateTitle, MessageBoxButtons.YesNo);
-                if (dialogResult == DialogResult.Yes)
-                {
-                    // 确认框刚点过，立刻捕获重启凭证（此时确有新鲜输入），
-                    // 重启请求不会因 500ms 窗口过期被守卫丢掉。
-                    SystemRestart.CaptureUserConfirmation();
-                    restart = true;
-                    changed = true;
-                }
-            }
-            else if (GPUMode == AsusACPI.GPUModeUltimate)
-            {
-                if (Program.acpi.DeviceGet(AsusACPI.GPUMux) < 0)
-                {
-                    Logger.WriteLine("Mux not supported");
-                    settings.VisualiseGPUMode();
-                    return;
-                }
-
-                DialogResult dialogResult = MessageBox.Show(Properties.Strings.AlertUltimateOn, Properties.Strings.AlertUltimateTitle, MessageBoxButtons.YesNo);
-                if (dialogResult == DialogResult.Yes)
-                {
-                    // 必须在 await Task.Delay(500) 之前捕获：确认后的这 500ms 会吃掉
-                    // GetLastInputInfo 的 500ms 窗口，过去导致这里请求的重启永远被守卫拒绝。
-                    SystemRestart.CaptureUserConfirmation();
-                    Program.acpi.SetGPUEco(0);
-                    await Task.Delay(500);
-
-                    int eco = Program.acpi.DeviceGet(AsusACPI.GPUEco);
-                    Logger.WriteLine("Eco flag : " + eco);
-                    if (eco == 1)
-                    {
-                        settings.VisualiseGPUMode();
-                        return;
-                    }
-
-                    restart = true;
-                    changed = true;
-                }
-
-            }
-            else if (GPUMode == AsusACPI.GPUModeEco)
-            {
-                settings.VisualiseGPUMode(GPUMode);
-                SetGPUEco(1);
-                changed = true;
-            }
-            else if (GPUMode == AsusACPI.GPUModeStandard)
-            {
-                settings.VisualiseGPUMode(GPUMode);
-                SetGPUEco(0);
-                changed = true;
-            }
-
-            if (changed)
-            {
-                AppConfig.Set("gpu_mode", GPUMode);
-            }
-
-            if (restart)
-            {
-                settings.VisualiseGPUMode();
-                // 不可逆动作走统一入口（真实输入或确认凭证 + 后台线程），
-                // 程序化路径两者皆无 → 拒绝，绝不静默重启。
-                SystemRestart.RequestRestart("legacy GPU mode switch", SystemRestart.RebootNowArguments);
-            }
-
         }
 
 
@@ -397,7 +265,7 @@ namespace MechrevoLite.Gpu
 
             if (mux == 0)
             {
-                if (optimized) _ = SetGPUMode(AsusACPI.GPUModeStandard, 1);
+                // ASUS 残留：独显直连时自动档不动 MUX（机械革命上 DeviceGet 恒为 -1，到不了这里）。
                 return false;
             }
             else
@@ -448,105 +316,6 @@ namespace MechrevoLite.Gpu
             Logger.WriteLine("Automatic GPU hot switch: " + message);
             try { Program.toast?.RunToast(message); }
             catch (Exception ex) { Logger.WriteLine("Automatic GPU hot switch notification failed: " + ex.Message); }
-        }
-
-        /// <summary>
-        /// 手动热切换到核显前的独显占用预检。有程序占用时先征求同意，优雅关闭→强杀；
-        /// 杀不掉的（通常是权限更高的进程）不阻塞切换，但明确告知可能失败。
-        /// 返回 false 表示用户取消。
-        /// </summary>
-        async Task<bool> CloseDgpuApplicationsForManualSwitchAsync()
-        {
-            DgpuApplicationSnapshot snapshot = DgpuApplicationCoordinator.Snapshot();
-            if (!snapshot.IsAvailable || snapshot.Applications.Count == 0) return true;
-
-            string listing = string.Join("\n", snapshot.Applications.Select(a =>
-                "· " + a.ProcessName + "  (PID " + a.ProcessId + ")"));
-            if (MessageBox.Show(
-                    "以下程序正在占用独显，需要先关闭才能完成核显切换：\n\n" + listing +
-                    "\n\n关闭这些程序并继续切换？",
-                    "切换到核显模式", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK)
-                return false;
-
-            Logger.WriteLine("Manual iGPU preflight: closing dGPU applications: " +
-                string.Join(", ", snapshot.Applications.Select(a => a.ProcessName + "#" + a.ProcessId)));
-            snapshot = await DgpuApplicationCoordinator.RequestGracefulCloseAsync(snapshot.Applications).ConfigureAwait(false);
-            if (snapshot.Applications.Count > 0)
-                snapshot = await DgpuApplicationCoordinator.ForceCloseAsync(snapshot.Applications).ConfigureAwait(false);
-
-            if (snapshot.Applications.Count > 0)
-            {
-                string leftover = string.Join(", ", snapshot.Applications.Select(a => a.ProcessName + "#" + a.ProcessId));
-                Logger.WriteLine("Manual iGPU preflight: unclosable dGPU applications remain: " + leftover);
-                DialogResult elevate = MessageBox.Show(
-                    "以下程序无法以普通权限结束（可能以管理员身份运行）：\n\n" +
-                    string.Join("\n", snapshot.Applications.Select(a => "· " + a.ProcessName)) +
-                    "\n\n是否授权使用管理员权限强制结束？（会弹出 UAC 确认框）",
-                    "需要管理员权限", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (elevate == DialogResult.Yes)
-                {
-                    (bool clean, string message) = await ElevatedProcessKiller
-                        .KillWithElevationAsync(snapshot.Applications).ConfigureAwait(false);
-                    Logger.WriteLine($"Manual iGPU preflight: elevated kill clean={clean}, {message}");
-
-                    snapshot = DgpuApplicationCoordinator.Snapshot();
-                    if (snapshot.IsAvailable && snapshot.Applications.Count > 0)
-                    {
-                        Logger.WriteLine("Manual iGPU preflight: dGPU still occupied after elevated kill: " +
-                            string.Join(", ", snapshot.Applications.Select(a => a.ProcessName + "#" + a.ProcessId)));
-                        try { Program.toast?.RunToast("仍有独显程序占用，切换可能失败"); }
-                        catch (Exception ex) { Logger.WriteLine("Preflight toast failed: " + ex.Message); }
-                    }
-                }
-                else
-                {
-                    try { Program.toast?.RunToast("部分独显程序无法关闭，切换可能失败"); }
-                    catch (Exception ex) { Logger.WriteLine("Preflight toast failed: " + ex.Message); }
-                }
-            }
-
-            await Task.Delay(1000).ConfigureAwait(false);   // 给驱动一点释放句柄的时间
-            return true;
-        }
-
-        /// <summary>
-        /// 热切换超时后的兜底询问。寄存器此时仍是核显（服务层未回滚）：
-        /// [是] 立即重启生效；[否] 保持设置稍后自行重启；[取消] 回滚到切换前的模式。
-        /// </summary>
-        async Task OfferRebootFallbackAsync(int modeBeforeSwitch, int target)
-        {
-            DialogResult choice = MessageBox.Show(
-                "实时切换未能在两分钟内完成，已停止切换。\n\n" +
-                "核显模式支持「重启生效」：现在保持核显设置，重启后将以核显模式启动。\n\n" +
-                "[是] 立即重启并生效\n[否] 保持设置，稍后自行重启\n[取消] 放弃并恢复原模式",
-                "核显模式", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
-
-            // 选 [是] 的用户刚点过按钮，立刻捕获重启凭证；后面的 AppConfig.Flush()/Toast 即使
-            // 超过 500ms，也不会把这次「重启生效」请求判成陈旧而丢掉。
-            if (choice == DialogResult.Yes) SystemRestart.CaptureUserConfirmation();
-
-            if (choice == DialogResult.Cancel)
-            {
-                if (Program.service is not null)
-                    await Program.service.RollbackFailedHotSwitchAsync(modeBeforeSwitch, CancellationToken.None).ConfigureAwait(false);
-                try { Program.toast?.RunToast("已恢复切换前模式"); }
-                catch (Exception ex) { Logger.WriteLine("Rollback toast failed: " + ex.Message); }
-                return;
-            }
-
-            AppConfig.Set("gpu_mode", target);
-            AppConfig.Flush();
-            Logger.WriteLine($"Reboot-to-apply accepted (restartNow={choice == DialogResult.Yes}); gpu_mode={target}");
-            if (choice == DialogResult.Yes)
-            {
-                try { Program.toast?.RunToast("5 秒后重启以应用核显模式"); } catch { }
-                // 用户刚点过 [是] → 新鲜输入放行；后台线程发起，不占用 UI 线程。
-                SystemRestart.RequestRestart("iGPU reboot-to-apply", SystemRestart.RebootAfterFiveSecondsArguments);
-            }
-            else
-            {
-                try { Program.toast?.RunToast("核显模式将在下次重启后生效"); } catch { }
-            }
         }
 
         private void ScheduleGpuEco(int eco, int delay)

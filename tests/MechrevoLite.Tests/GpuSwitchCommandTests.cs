@@ -24,11 +24,16 @@ public class GpuSwitchCommandTests
         }, capabilities);
     }
 
+    static GpuRouteContext Context(DgpuGenerationKind generation,
+        GcuServiceTier tier = GcuServiceTier.Modern12, bool threeMode = true, bool hotSwap = false,
+        bool igpuMuxTarget = true) =>
+        new(generation, tier, SupportsDgpuDirect: true, threeMode, hotSwap, igpuMuxTarget);
+
     [Fact]
     public void EveryDisplayRouteCommandGoesOutOnSettingControl()
     {
         IReadOnlyList<GpuRouteCommand> commands =
-            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuDgpu, true, DgpuGenerationKind.Gen40);
+            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuDgpu, Context(DgpuGenerationKind.Gen40));
 
         Assert.NotEmpty(commands);
         Assert.All(commands, command => Assert.Equal("Setting/Control", command.Topic));
@@ -38,7 +43,7 @@ public class GpuSwitchCommandTests
     public void RestartRouteMatchesTheVendorSequenceAndDelaysOnlyBeforeRestart()
     {
         IReadOnlyList<GpuRouteCommand> commands =
-            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuIGpu, true, DgpuGenerationKind.Gen40);
+            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen40));
 
         Assert.Equal(
             new[] { "DGPU_DIRECT_CONNECT_TOGGLE_IGPU", "DGPU_DIRECT_CONNECT_RESTART" },
@@ -51,7 +56,7 @@ public class GpuSwitchCommandTests
     public void EnteringDirectKeepsTheOfficialThreeActionRouteThenRestart()
     {
         IReadOnlyList<GpuRouteCommand> commands =
-            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuDgpu, true, DgpuGenerationKind.Gen50);
+            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuDgpu, Context(DgpuGenerationKind.Gen50));
 
         Assert.Equal(
             new[]
@@ -64,13 +69,25 @@ public class GpuSwitchCommandTests
             commands.Select(command => command.Action).ToArray());
     }
 
-    [Fact]
-    public void TheIgpuOnlySwitchPayloadsCarrySetToWmiecOk()
+    /// <summary>30/40 系进入直连只发 TOGGLE_ON：三连里的 RB_OFF 是 50 系控制台自己的写法。</summary>
+    [Theory]
+    [InlineData(DgpuGenerationKind.Gen30)]
+    [InlineData(DgpuGenerationKind.Gen40)]
+    public void EnteringDirectOnThirtyAndFortyIsASingleToggle(DgpuGenerationKind generation)
     {
-        GpuRouteCommand on = GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuIGpu, false, true, false, DgpuGenerationKind.Gen40)!;
-        GpuRouteCommand off = GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuStandard, false, true, false, DgpuGenerationKind.Gen40)!;
+        IReadOnlyList<GpuRouteCommand> commands =
+            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuDgpu, Context(generation));
+
+        Assert.Equal(new[] { "DGPU_DIRECT_CONNECT_TOGGLE_ON", "DGPU_DIRECT_CONNECT_RESTART" },
+            commands.Select(command => command.Action).ToArray());
+    }
+
+    [Fact]
+    public void TheHotSwitchPayloadsCarrySetToWmiecOk()
+    {
+        GpuRouteContext hotSwap = Context(DgpuGenerationKind.Gen50, hotSwap: true, igpuMuxTarget: false);
+        GpuRouteCommand on = GpuRouteCommandLayer.BuildHotSwitchCommand(MechrevoService.GpuIGpu, hotSwap)!;
+        GpuRouteCommand off = GpuRouteCommandLayer.BuildHotSwitchCommand(MechrevoService.GpuStandard, hotSwap)!;
 
         Assert.Equal("IGPU_ONLY_CONNECT_RB_ON", on.Action);
         Assert.Equal("OK", on.Payload["SetToWMIEC"]);
@@ -78,24 +95,30 @@ public class GpuSwitchCommandTests
         Assert.Equal("OK", off.Payload["SetToWMIEC"]);
     }
 
+    /// <summary>30 系：TOGGLE_ON/OFF + 服务重启（我方 1.2 服务）；集显方向与自动方向没有路由。</summary>
     [Fact]
-    public void Gen30HasNoRestartRouteAtAllBecauseRestartIsProvenAbsent()
+    public void Gen30HasDirectAndHybridRoutesButNoIgpuRoute()
     {
-        // 30 系载荷里 IGPU_ONLY_* 与 *_RESTART 都是 0 命中（T16 事实表：ProvenAbsent）。
-        // 重启路由的契约是"应用后重启"，缺 RESTART 就等于没有可用路由 -> fail closed。
-        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuStandard, true, DgpuGenerationKind.Gen30));
-        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuIGpu, true, DgpuGenerationKind.Gen30));
-        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuAuto, true, DgpuGenerationKind.Gen30));
+        GpuRouteContext gen30 = Context(DgpuGenerationKind.Gen30, threeMode: false, igpuMuxTarget: false);
+        Assert.Equal(new[] { "DGPU_DIRECT_CONNECT_TOGGLE_OFF", "DGPU_DIRECT_CONNECT_RESTART" },
+            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuStandard, gen30).Select(c => c.Action).ToArray());
+        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuIGpu, gen30));
+        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuAuto, gen30));
     }
 
     [Fact]
-    public void Gen30RefusesTheIgpuOnlySwitchActionOutright()
+    public void OnlyTheFiftySeriesHotSwapMachineGetsTheHotSwitchAction()
     {
-        Assert.Null(GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuIGpu, false, true, false, DgpuGenerationKind.Gen30));
-        // 同一请求在 40 系是被允许的（负面对照）。
-        Assert.NotNull(GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuIGpu, false, true, false, DgpuGenerationKind.Gen40));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen30, hotSwap: true)));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen40, hotSwap: true)));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen50, hotSwap: false)));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen50, GcuServiceTier.Foreign, hotSwap: true)));
+        Assert.NotNull(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen50, hotSwap: true)));
     }
 
     /// <summary>
@@ -111,7 +134,7 @@ public class GpuSwitchCommandTests
             GpuGenerationProvider.Override = () => new DgpuIdentity(
                 DgpuGenerationKind.Gen30, DgpuProbeSource.MarketingName, true, "RTX 3050", "25A2");
             using MechrevoHw hardware = NewHardware(published,
-                new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true });
+                new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true });
             hardware.SetIgpuOnlyStatusSupportForTests(true);
             var service = new MechrevoService(hardware);
 
@@ -128,7 +151,7 @@ public class GpuSwitchCommandTests
         }
     }
 
-    /// <summary>同一请求在 Gen40 仍然发完整路由并在最后发 RESTART——换代际确实改变被门控行为。</summary>
+    /// <summary>同一请求在 Gen40 三模档发完整路由并在最后发 RESTART——换代际确实改变被门控行为。</summary>
     [Fact]
     public async Task E2EWiring_Gen40GenerationStillEmitsTheFullRestartRoute()
     {
@@ -138,7 +161,7 @@ public class GpuSwitchCommandTests
             GpuGenerationProvider.Override = () => new DgpuIdentity(
                 DgpuGenerationKind.Gen40, DgpuProbeSource.MarketingName, true, "RTX 4060", "2882");
             using MechrevoHw hardware = NewHardware(published,
-                new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true });
+                new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true, IgpuOnly = true });
             var service = new MechrevoService(hardware);
 
             GpuRestartRequestOutcome outcome =
@@ -154,9 +177,9 @@ public class GpuSwitchCommandTests
         }
     }
 
-    /// <summary>SetGpuMode 同一道门：Gen30 上 refused，且不发任何 iGPU-only 载荷。</summary>
+    /// <summary>热切换入口同一道门：Gen30 上 refused，且不发任何 iGPU-only 载荷。</summary>
     [Fact]
-    public async Task E2EWiring_Gen30SetGpuModeRefusesTheIgpuOnlyAction()
+    public async Task E2EWiring_Gen30HotSwitchRefusesTheIgpuOnlyAction()
     {
         var published = new List<(string Topic, Dictionary<string, object> Payload)>();
         try
@@ -164,10 +187,11 @@ public class GpuSwitchCommandTests
             GpuGenerationProvider.Override = () => new DgpuIdentity(
                 DgpuGenerationKind.Gen30, DgpuProbeSource.MarketingName, true, "RTX 3050", "25A2");
             using MechrevoHw hardware = NewHardware(published,
-                new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true });
+                new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true, GpuHotSwap = true, NvidiaGpu = true });
             hardware.SetIgpuOnlyStatusSupportForTests(true);
+            var service = new MechrevoService(hardware);
 
-            bool ok = await hardware.SetGpuMode(MechrevoService.GpuIGpu);
+            bool ok = await service.SwitchGpuMode(MechrevoService.GpuIGpu);
 
             Assert.False(ok);
             Assert.DoesNotContain(published, entry => entry.Payload["Action"] as string == "IGPU_ONLY_CONNECT_RB_ON");
@@ -175,6 +199,42 @@ public class GpuSwitchCommandTests
         finally
         {
             GpuGenerationProvider.Override = null;
+        }
+    }
+
+    /// <summary>
+    /// 本机回归：50 系热切换机型在混合模式下（寄存器 RB_OFF）点集显 → RB_ON，
+    /// 服务回报成功 + NVIDIA 设备离开总线 → 确认。
+    /// </summary>
+    [Fact]
+    public async Task E2EWiring_Gen50HotSwapMachineSwitchesToIgpuOnlyWhenTheDeviceLeaves()
+    {
+        var published = new List<(string Topic, Dictionary<string, object> Payload)>();
+        MechrevoHw hardware = null!;
+        hardware = new MechrevoHw((topic, payload) =>
+        {
+            var dict = (Dictionary<string, object>)payload;
+            published.Add((topic, dict));
+            if (dict["Action"] as string == "GETSTATUS" &&
+                published.Any(entry => entry.Payload["Action"] as string == "IGPU_ONLY_CONNECT_RB_ON"))
+                hardware.HandleMessage("Setting/Status",
+                    """{"DiscreteGpuDirectConnectionSwitch_Status":"DGPU_DIRECT_CONNECT_TOGGLE_OFF","IGpuOnlyConnectionSwitch_Status":"IGPU_ONLY_CONNECT_RB_ON","CheckDGpuStatusforIGpuOnlyOnSuccess":"2"}""");
+            return Task.CompletedTask;
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true, GpuHotSwap = true, NvidiaGpu = true });
+        using (hardware)
+        using (TestGpuRoute.Use(() =>
+            published.Any(entry => entry.Payload["Action"] as string == "IGPU_ONLY_CONNECT_RB_ON")
+                ? TestGpuRoute.IgpuOnly
+                : TestGpuRoute.Hybrid))
+        {
+            hardware.HandleMessage("Setting/Status",
+                """{"DiscreteGpuDirectConnectionSwitch_Status":"DGPU_DIRECT_CONNECT_TOGGLE_OFF","IGpuOnlyConnectionSwitch_Status":"IGPU_ONLY_CONNECT_RB_OFF","CheckDGpuStatusforIGpuOnlyOnSuccess":"1"}""");
+            var service = new MechrevoService(hardware);
+
+            Assert.Equal(GpuRowLayout.HotSwap, hardware.GpuRowLayout);
+            Assert.True(await service.SwitchGpuMode(MechrevoService.GpuIGpu));
+            Assert.Equal(MechrevoService.GpuIGpu, hardware.IgpuOnlyRegister);
+            Assert.DoesNotContain(published, entry => entry.Payload["Action"] as string == "DGPU_DIRECT_CONNECT_RESTART");
         }
     }
 }

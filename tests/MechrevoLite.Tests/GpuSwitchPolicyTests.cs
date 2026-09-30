@@ -2,46 +2,58 @@ using MechrevoLite.Hardware;
 
 namespace MechrevoLite.Tests;
 
+/// <summary>
+/// 切换路由（G8）：直连、NVRAM 核显目标一律重启；标准 ↔ 集显只有 50 系热切换机型能不重启。
+/// 过去的「Direct」路由（非热切换机型上直接发 RB_*、按服务回显判成功）已删除：
+/// 40 系三模档上那条路只改服务寄存器，硬件什么都没变。
+/// </summary>
 public class GpuSwitchPolicyTests
 {
     [Theory]
     [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuIGpu, true, "HotSwitch")]
-    [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuIGpu, false, "Direct")]
+    [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuIGpu, false, "Restart")]
     [InlineData(MechrevoService.GpuAuto, 1, MechrevoService.GpuIGpu, true, "HotSwitch")]
-    [InlineData(MechrevoService.GpuAuto, 2, MechrevoService.GpuStandard, true, "Direct")]
+    [InlineData(MechrevoService.GpuAuto, 2, MechrevoService.GpuStandard, true, "HotSwitch")]
+    [InlineData(MechrevoService.GpuIGpu, 2, MechrevoService.GpuStandard, false, "Restart")]
     [InlineData(MechrevoService.GpuDgpu, -1, MechrevoService.GpuIGpu, true, "Restart")]
     [InlineData(MechrevoService.GpuDgpu, -1, MechrevoService.GpuStandard, true, "Restart")]
     [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuDgpu, true, "Restart")]
-    public void GpuRoute_FollowsTheVendorResolveTable(
-        int reportedMode, int automaticRuntime, int targetMode, bool supported, string expected)
+    public void GpuRoute_FollowsTheOfficialLayouts(
+        int currentMode, int automaticRuntime, int targetMode, bool hotSwap, string expected)
     {
-        // D4: mux/Dgpu → Restart; Standard→iGPU + hotswap → HotSwitch; else Direct.
-        // 旧断言（一切模式变更 Restart）编码的是被推翻的恒重启契约，故更新为厂商表。
         Assert.Equal(expected, GpuSwitchPolicy.Resolve(
-            reportedMode, automaticRuntime, targetMode, supported).Route.ToString());
+            currentMode, automaticRuntime, targetMode, hotSwap).Route.ToString());
     }
 
     [Fact]
-    public void GpuRoute_NeverRequiresDgpuProcessPreflight()
+    public void GpuRoute_HasNoDirectRouteAnyMore()
     {
-        GpuSwitchPlan plan = GpuSwitchPolicy.Resolve(
-            MechrevoService.GpuStandard,
-            automaticRuntime: 1,
-            MechrevoService.GpuIGpu,
-            supportsHotSwap: true);
+        Assert.DoesNotContain("Direct", Enum.GetNames<GpuSwitchRoute>());
+    }
 
-        Assert.False(plan.RequiresDgpuProcessPreflight);
+    /// <summary>断开独显前要先看谁占着它（RB_ON 断不开被占用的独显）；恢复独显和重启路由不需要。</summary>
+    [Fact]
+    public void OnlyTheHotSwitchIntoIgpuNeedsTheDgpuProcessPreflight()
+    {
+        Assert.True(GpuSwitchPolicy.Resolve(
+            MechrevoService.GpuStandard, 1, MechrevoService.GpuIGpu, supportsHotSwap: true).RequiresDgpuProcessPreflight);
+        Assert.False(GpuSwitchPolicy.Resolve(
+            MechrevoService.GpuIGpu, 2, MechrevoService.GpuStandard, supportsHotSwap: true).RequiresDgpuProcessPreflight);
+        Assert.False(GpuSwitchPolicy.Resolve(
+            MechrevoService.GpuStandard, 1, MechrevoService.GpuDgpu, supportsHotSwap: true).RequiresDgpuProcessPreflight);
     }
 
     [Theory]
-    [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuStandard, true, "NoChange")]
-    [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuStandard, false, "Direct")]
-    [InlineData(MechrevoService.GpuIGpu, 2, MechrevoService.GpuIGpu, false, "Direct")]
+    [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuStandard, true, true, "NoChange")]
+    [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuStandard, false, true, "HotSwitch")]
+    [InlineData(MechrevoService.GpuIGpu, 2, MechrevoService.GpuIGpu, false, true, "HotSwitch")]
+    [InlineData(MechrevoService.GpuStandard, 1, MechrevoService.GpuStandard, false, false, "Restart")]
+    [InlineData(MechrevoService.GpuDgpu, -1, MechrevoService.GpuDgpu, false, true, "Restart")]
     public void CachedGpuStatus_NeverTurnsARequestedSwitchIntoANoOp(
-        int reportedMode, int automaticRuntime, int targetMode, bool fresh, string expected)
+        int currentMode, int automaticRuntime, int targetMode, bool fresh, bool hotSwap, string expected)
     {
         Assert.Equal(expected, GpuSwitchPolicy.Resolve(
-            reportedMode, automaticRuntime, targetMode, supportsHotSwap: true,
+            currentMode, automaticRuntime, targetMode, supportsHotSwap: hotSwap,
             currentStateFresh: fresh).Route.ToString());
     }
 

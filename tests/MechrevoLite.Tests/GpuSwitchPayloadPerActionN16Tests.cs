@@ -65,8 +65,10 @@ public class GpuSwitchPayloadPerActionN16Tests
     [Fact]
     public void TheDirectConnectIgpuToggleDoesNotCarryTheWmiecField()
     {
-        Dictionary<string, object> payload = MechrevoService.CreateGpuSwitchPayload(
-            MechrevoService.GpuIGpu, supportsDgpuDirect: true, supportsIgpuOnly: false, useHotSwitch: false);
+        var context = new GpuRouteContext(DgpuGenerationKind.Gen40, GcuServiceTier.Modern12,
+            SupportsDgpuDirect: true, ThreeMode: true, HotSwap: false, IgpuMuxTarget: true);
+        Dictionary<string, object> payload = Assert.Single(
+            MechrevoService.CreateGpuRestartRoute(MechrevoService.GpuIGpu, context).Payloads);
 
         Assert.Equal("DGPU_DIRECT_CONNECT_TOGGLE_IGPU", payload["Action"]);
         Assert.False(payload.ContainsKey("SetToWMIEC"));
@@ -80,8 +82,10 @@ public class GpuSwitchPayloadPerActionN16Tests
     [Fact]
     public void TheDirectConnectRestartRouteMatchesTheVendorSequence()
     {
-        IReadOnlyList<Dictionary<string, object>> route = MechrevoService.CreateGpuRestartTargetPayloads(
-            MechrevoService.GpuDgpu, supportsDgpuDirect: true, DgpuGenerationKind.Gen50);
+        var context = new GpuRouteContext(DgpuGenerationKind.Gen50, GcuServiceTier.Modern12,
+            SupportsDgpuDirect: true, ThreeMode: true, HotSwap: false, IgpuMuxTarget: true);
+        IReadOnlyList<Dictionary<string, object>> route =
+            MechrevoService.CreateGpuRestartRoute(MechrevoService.GpuDgpu, context).Payloads;
 
         Assert.Equal(3, route.Count);
         Assert.Equal("DGPU_DIRECT_CONNECT_TOGGLE_ON", route[0]["Action"]);

@@ -21,35 +21,46 @@ public class GpuSwitchCommandFailTests
         }, capabilities);
     }
 
+    static GpuRouteContext Context(DgpuGenerationKind generation,
+        GcuServiceTier tier = GcuServiceTier.Modern12, bool mux = true, bool threeMode = true,
+        bool hotSwap = true, bool igpuMuxTarget = true) =>
+        new(generation, tier, mux, threeMode, hotSwap, igpuMuxTarget);
+
     [Fact]
     public void UnresolvedGenerationEmitsNoRestartOrSwitchCommand()
     {
         Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(
-            MechrevoService.GpuStandard, true, DgpuGenerationKind.Unknown));
+            MechrevoService.GpuStandard, Context(DgpuGenerationKind.Unknown)));
         Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(
-            MechrevoService.GpuIGpu, true, DgpuGenerationKind.NoDgpu));
-        Assert.Empty(MechrevoService.CreateGpuRestartTargetPayloads(
-            MechrevoService.GpuStandard, true, DgpuGenerationKind.Unknown));
-        Assert.Empty(MechrevoService.CreateGpuRestartTargetPayloads(
-            MechrevoService.GpuIGpu, true, DgpuGenerationKind.NoDgpu));
-        Assert.Null(GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuIGpu, true, true, false, DgpuGenerationKind.Unknown));
-        Assert.Null(GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuDgpu, true, true, true, DgpuGenerationKind.NoDgpu));
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.NoDgpu)));
+        Assert.Empty(MechrevoService.CreateGpuRestartRoute(
+            MechrevoService.GpuStandard, Context(DgpuGenerationKind.Unknown)).Payloads);
+        Assert.Empty(MechrevoService.CreateGpuRestartRoute(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.NoDgpu)).Payloads);
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Unknown)));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuStandard, Context(DgpuGenerationKind.NoDgpu)));
     }
 
     [Fact]
-    public void AnUnknownGenerationDoesNotEmitTheFortySeriesRestartRoute()
+    public void AnUnknownServiceTierEmitsNothingEvenOnAResolvedGeneration()
     {
         Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(
-            MechrevoService.GpuStandard, true, DgpuGenerationKind.Unknown));
+            MechrevoService.GpuStandard, Context(DgpuGenerationKind.Gen40, GcuServiceTier.Unknown)));
+        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(
+            MechrevoService.GpuDgpu, Context(DgpuGenerationKind.Gen50, GcuServiceTier.Unknown)));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen50, GcuServiceTier.Unknown)));
     }
 
     [Fact]
-    public void NoDgpuDoesNotEmitADiscreteGpuRestartRoute()
+    public void NoMuxEmitsNoRestartRoute()
     {
         Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(
-            MechrevoService.GpuIGpu, true, DgpuGenerationKind.NoDgpu));
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen50, mux: false)));
+        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(
+            MechrevoService.GpuStandard, Context(DgpuGenerationKind.Gen40, mux: false)));
     }
 
     [Theory]
@@ -73,13 +84,27 @@ public class GpuSwitchCommandFailTests
     public void TheRestartCommandCarriesOnlyTheActionField()
     {
         IReadOnlyList<GpuRouteCommand> commands =
-            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuStandard, true, DgpuGenerationKind.Gen40);
+            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuStandard, Context(DgpuGenerationKind.Gen40));
         GpuRouteCommand restart = commands[^1];
 
         Assert.Equal("DGPU_DIRECT_CONNECT_RESTART", restart.Action);
         Assert.Equal("Setting/Control", restart.Topic);
         Assert.Single(restart.Payload);
         Assert.Equal("DGPU_DIRECT_CONNECT_RESTART", restart.Payload["Action"]);
+    }
+
+    /// <summary>厂商服务（Foreign）：只发 TOGGLE_ON/OFF，绝不发服务的 RESTART——重启由我方发起。</summary>
+    [Theory]
+    [InlineData(MechrevoService.GpuDgpu, "DGPU_DIRECT_CONNECT_TOGGLE_ON")]
+    [InlineData(MechrevoService.GpuStandard, "DGPU_DIRECT_CONNECT_TOGGLE_OFF")]
+    public void AForeignServiceNeverGetsTheServiceRestart(int mode, string expected)
+    {
+        IReadOnlyList<GpuRouteCommand> commands = GpuRouteCommandLayer.BuildRestartCommands(
+            mode, Context(DgpuGenerationKind.Gen40, GcuServiceTier.Foreign));
+
+        Assert.Equal(new[] { expected }, commands.Select(command => command.Action).ToArray());
+        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(
+            MechrevoService.GpuIGpu, Context(DgpuGenerationKind.Gen40, GcuServiceTier.Foreign)));
     }
 
     [Fact]
@@ -94,7 +119,7 @@ public class GpuSwitchCommandFailTests
             var service = new MechrevoService(hardware);
 
             GpuRestartRequestOutcome outcome =
-                await service.RequestGpuModeRestartOutcomeAsync(MechrevoService.GpuIGpu);
+                await service.RequestGpuModeRestartOutcomeAsync(MechrevoService.GpuDgpu);
 
             Assert.Equal(GpuRestartRequestOutcome.Failed, outcome);
         }
@@ -104,6 +129,7 @@ public class GpuSwitchCommandFailTests
         }
     }
 
+    /// <summary>30 系没有核显目标：集显方向是空路由，报 Unsupported，一条指令都不发。</summary>
     [Fact]
     public async Task AnEmptyRouteIsUnsupportedAndPublishesNothing()
     {
@@ -113,17 +139,46 @@ public class GpuSwitchCommandFailTests
             GpuGenerationProvider.Override = () => new DgpuIdentity(
                 DgpuGenerationKind.Gen30, DgpuProbeSource.MarketingName, true, "RTX 3050", "25A2");
             using MechrevoHw hardware = NewHardware(published,
-                new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true });
+                new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true, IgpuOnly = true });
             var service = new MechrevoService(hardware);
 
             GpuRestartRequestOutcome outcome =
-                await service.RequestGpuModeRestartOutcomeAsync(MechrevoService.GpuStandard);
+                await service.RequestGpuModeRestartOutcomeAsync(MechrevoService.GpuIGpu);
 
             Assert.Equal(GpuRestartRequestOutcome.Unsupported, outcome);
             Assert.Empty(published);
         }
         finally
         {
+            GpuGenerationProvider.Override = null;
+        }
+    }
+
+    /// <summary>厂商服务：目标照发，但不发 RESTART，结果是 RequiresAppRestart（界面在用户确认下重启 Windows）。</summary>
+    [Fact]
+    public async Task AForeignServiceRouteAsksTheAppToRestart()
+    {
+        var published = new List<(string Topic, Dictionary<string, object> Payload)>();
+        Func<GcuServiceTier>? previousTier = GcuServiceTierProbe.Override;
+        try
+        {
+            GpuGenerationProvider.Override = () => new DgpuIdentity(
+                DgpuGenerationKind.Gen30, DgpuProbeSource.MarketingName, true, "RTX 3050", "25A2");
+            GcuServiceTierProbe.Override = static () => GcuServiceTier.Foreign;
+            using MechrevoHw hardware = NewHardware(published,
+                new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true });
+            var service = new MechrevoService(hardware);
+
+            GpuRestartRequestOutcome outcome =
+                await service.RequestGpuModeRestartOutcomeAsync(MechrevoService.GpuDgpu);
+
+            Assert.Equal(GpuRestartRequestOutcome.RequiresAppRestart, outcome);
+            Assert.Equal(new[] { "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
+                published.Select(entry => entry.Payload["Action"] as string).ToArray());
+        }
+        finally
+        {
+            GcuServiceTierProbe.Override = previousTier;
             GpuGenerationProvider.Override = null;
         }
     }
@@ -139,16 +194,29 @@ public class GpuSwitchCommandFailTests
         Assert.False(GpuRouteCommandLayer.IsAllowedByGeneration(DgpuGenerationKind.Gen30, "DGPU_DIRECT_CONNECT_TOGGLE_IGPU"));
     }
 
+    /// <summary>40 两模档（5.17.49.19 服务只声明 TOGGLE_ON/OFF）：没有核显目标，也没有热切换。</summary>
     [Fact]
-    public void FortyWithoutThreeModeCannotEmitIgpuOnlySwitchCommands()
+    public void FortyWithoutThreeModeCannotEmitIgpuCommands()
     {
-        Assert.Null(GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuIGpu, supportsDgpuDirect: false, supportsIgpuOnly: false,
-            useHotSwitch: false, DgpuGenerationKind.Gen40));
-        GpuRouteCommand? muxIgpu = GpuRouteCommandLayer.BuildSwitchCommand(
-            MechrevoService.GpuIGpu, supportsDgpuDirect: true, supportsIgpuOnly: false,
-            useHotSwitch: false, DgpuGenerationKind.Gen40);
-        Assert.NotNull(muxIgpu);
-        Assert.Equal("DGPU_DIRECT_CONNECT_TOGGLE_IGPU", muxIgpu.Action);
+        GpuRouteContext twoMode = Context(DgpuGenerationKind.Gen40, threeMode: false, igpuMuxTarget: false);
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(MechrevoService.GpuIGpu, twoMode));
+        Assert.Empty(GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuIGpu, twoMode));
+        Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen40, DisplayRouteMatrix.ToggleIgpu, threeMode: false));
+    }
+
+    /// <summary>40 三模档：RB_* 在 S40 只写注册表（死路径），任何档位都不放行；集显只走 TOGGLE_IGPU + 重启。</summary>
+    [Fact]
+    public void FortyThreeModeNeverEmitsTheRegistryOnlyRbPath()
+    {
+        GpuRouteContext threeMode = Context(DgpuGenerationKind.Gen40);
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(MechrevoService.GpuIGpu, threeMode));
+        Assert.Null(GpuRouteCommandLayer.BuildHotSwitchCommand(MechrevoService.GpuStandard, threeMode));
+        Assert.Equal(new[] { "DGPU_DIRECT_CONNECT_TOGGLE_IGPU", "DGPU_DIRECT_CONNECT_RESTART" },
+            GpuRouteCommandLayer.BuildRestartCommands(MechrevoService.GpuIGpu, threeMode).Select(c => c.Action).ToArray());
+        foreach (GcuServiceTier tier in Enum.GetValues<GcuServiceTier>())
+        {
+            Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOn, true, tier, hotSwap: true));
+            Assert.False(DisplayRoutePolicy.AllowsAction(DgpuGenerationKind.Gen40, DisplayRouteMatrix.IgpuOnlyOff, true, tier, hotSwap: true));
+        }
     }
 }

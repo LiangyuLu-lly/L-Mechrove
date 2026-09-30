@@ -503,6 +503,8 @@ namespace MechrevoLite
                 StartLightingIdleMonitor();
                 if (AppConfig.IsOverlay()) hardwareOverlay?.StartOverlay();
                 ReportUpdateOutcome();
+                // MUX 切换重启后核对是否真的生效（硬件回读，不看服务状态串）；没有挂起项时只记一次回读日志。
+                _ = MechrevoLite.Gpu.GpuRestartVerifier.RunAfterBootAsync(TimeSpan.FromSeconds(8));
             };
             Application.Idle += deferredInitialization;
 
@@ -1507,6 +1509,10 @@ namespace MechrevoLite
 
         private static void OnPowerSettled(object? sender, System.Timers.ElapsedEventArgs e)
         {
+            // 供电方式 / 充电状态只做展示：插拔后立刻重采一次。放在「来源没变就返回」之前——
+            // 圆口 ↔ Type-C 在 ReadPowerSource 眼里都是「插电」，等它变化就永远等不到。
+            RefreshPowerDisplayAfterPowerEvent();
+
             PowerSource source = ReadPowerSource();
             if (source == currentSource) return;
 
@@ -1514,6 +1520,28 @@ namespace MechrevoLite
             currentSource = source;
             SetAutoModes(powerChanged: true);
             _ = ReconcileLightingPowerAsync();
+        }
+
+        static int _powerDisplayRefreshInFlight;
+
+        /// <summary>
+        /// 插拔后强制重读供电（EC 0x7CC）与电池状态，再刷新一次界面文本。后台线程执行：
+        /// 电池 IOCTL 最多等 1 s，不能压在界面线程上；同一时间只跑一个。
+        /// </summary>
+        static void RefreshPowerDisplayAfterPowerEvent()
+        {
+            if (Interlocked.CompareExchange(ref _powerDisplayRefreshInFlight, 1, 0) != 0) return;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    HardwareControl.RefreshPowerInput(force: true);
+                    HardwareControl.RefreshBatteryRate(force: true);
+                    if (settingsForm is { IsDisposed: false } form) form.RefreshSensors(true);
+                }
+                catch (Exception ex) { Logger.WriteLine("Power display refresh failed: " + ex.Message); }
+                finally { Interlocked.Exchange(ref _powerDisplayRefreshInFlight, 0); }
+            });
         }
 
         private static void SystemEvents_PowerModeChanged(object sender, PowerModeChangedEventArgs e)

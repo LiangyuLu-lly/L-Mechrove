@@ -16,9 +16,49 @@ public enum GpuModeStatusReadback
 /// </summary>
 internal enum GpuRestartRequestOutcome
 {
+    /// <summary>目标已下发，服务的 <c>DGPU_DIRECT_CONNECT_RESTART</c> 已发出（服务自己重启）。</summary>
     Requested,
     Unsupported,
     Failed,
+
+    /// <summary>目标已下发，但服务档位没有可用的重启动作：需要本程序在用户确认下重启 Windows。</summary>
+    RequiresAppRestart,
+}
+
+/// <summary>热切换 / 首选 GPU 这类「当场确认」的切换结果。</summary>
+internal enum GpuApplyResult
+{
+    /// <summary>硬件回读与目标一致。</summary>
+    Confirmed,
+
+    /// <summary>指令已发，回读在时限内没有变成目标（已回滚或保持原状）。</summary>
+    NotApplied,
+
+    /// <summary>本机没有这条路径，一条指令都没发。</summary>
+    Unsupported,
+
+    /// <summary>未连接 / 发送失败 / 被取代。</summary>
+    Failed,
+}
+
+/// <summary>重启路由：要发的 MUX 目标载荷 + 重启是否交给服务。</summary>
+internal sealed record GpuRestartRoute(IReadOnlyList<Dictionary<string, object>> Payloads, bool ServiceRestart)
+{
+    public static readonly GpuRestartRoute None = new(Array.Empty<Dictionary<string, object>>(), false);
+}
+
+/// <summary>构建显卡路由所需的机器事实（代际 × 服务档位 × 能力位）。</summary>
+public readonly record struct GpuRouteContext(
+    DgpuGenerationKind Generation,
+    GcuServiceTier Tier,
+    bool SupportsDgpuDirect,
+    bool ThreeMode,
+    bool HotSwap,
+    bool IgpuMuxTarget)
+{
+    public static GpuRouteContext From(MechrevoHw hw) => new(
+        hw.DgpuGeneration, hw.ServiceTier, hw.SupportsDgpuDirect, hw.SupportsIgpuOnly,
+        hw.SupportsGpuHotSwap, hw.CanOfferIgpuMuxTarget);
 }
 
 /// <summary>
@@ -1112,16 +1152,7 @@ public class MechrevoService
         _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
 
-    internal static Dictionary<string, object> CreateGpuSwitchPayload(
-        int mode,
-        bool supportsDgpuDirect,
-        bool supportsIgpuOnly,
-        bool useHotSwitch) => mode == GpuIGpu && supportsDgpuDirect && !useHotSwitch
-            && !supportsIgpuOnly
-            ? new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_IGPU" }
-            : CreateGpuModePayload(mode);
-
-    /// <summary>切换显卡模式：使用核显-only 与 MUX 两套独立协议，随后回读确认。</summary>
+    /// <summary>自动档（RB_AUTO，服务按 AC/DC 自己切）：只在 50 系热切换机型上有，成功按电源看设备在位。</summary>
     public Task<bool> SwitchAutomaticGpuMode(bool plugged) =>
         SwitchGpuMode(GpuAuto, pluggedForAuto: plugged);
 
@@ -1175,87 +1206,142 @@ public class MechrevoService
         }
     }
 
-    /// <summary>构建 GPU 重启路由：手动与自动两条重启路径共用同一序列来源（测试接缝只覆盖它）。</summary>
-    IReadOnlyList<Dictionary<string, object>> BuildGpuRestartRoute(int mode) =>
+    /// <summary>
+    /// 硬件已经处在 <paramref name="currentMode"/>，但 NVRAM 里还挂着另一个重启目标（切换后没有重启）：
+    /// 把目标改回当前模式即可，不重启——下次开机也不会切到那个被放弃的目标。
+    /// </summary>
+    internal async Task<bool> CancelPendingGpuRestartAsync(int currentMode)
+    {
+        var requestCts = new CancellationTokenSource();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref _gpuSwitchCts, requestCts);
+        previous?.Cancel();
+        bool lockTaken = false;
+        try
+        {
+            if (_hw is not { IsConnected: true } || !_hw.CanSwitchGpuMode(currentMode)) return false;
+            GpuRestartRoute route = BuildGpuRestartRoute(currentMode);
+            if (route.Payloads.Count == 0) return false;
+            lockTaken = await AcquireSwitchLockAsync($"CancelPendingGpuRestart({currentMode})", requestCts.Token).ConfigureAwait(false);
+            if (!lockTaken) return false;
+            foreach (Dictionary<string, object> payload in route.Payloads)
+            {
+                requestCts.Token.ThrowIfCancellationRequested();
+                await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
+            }
+            Logger.WriteLine($"Pending GPU restart target reverted to the current mode {currentMode} without a restart " +
+                $"[{string.Join(" -> ", route.Payloads.Select(ActionOf))}]");
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine("CancelPendingGpuRestart failed: " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            if (lockTaken) _switchLock.Release();
+            Interlocked.CompareExchange(ref _gpuSwitchCts, null, requestCts);
+            requestCts.Dispose();
+        }
+    }
+
+    /// <summary>构建 GPU 重启路由：手动与自动两条重启路径共用同一序列来源（测试接缝只覆盖载荷序列）。</summary>
+    GpuRestartRoute BuildGpuRestartRoute(int mode) =>
         GpuRestartRouteOverride is { } factory
-            ? factory(mode, _hw.SupportsDgpuDirect)
-            : CreateGpuRestartTargetPayloads(mode, _hw.SupportsDgpuDirect, _hw.DgpuGeneration);
+            ? new GpuRestartRoute(factory(mode, _hw.SupportsDgpuDirect), _hw.GpuServiceRestartAvailable)
+            : CreateGpuRestartRoute(mode, GpuRouteContext.From(_hw));
 
     /// <summary>
-    /// GPU 重启的唯一发布出口。Fail closed：空路由意味着没有任何模式会被写进 EC，
+    /// GPU 重启的唯一发布出口。Fail closed：空路由意味着没有任何模式会被写进 NVRAM，
     /// 此时发布 DGPU_DIRECT_CONNECT_RESTART 只会让 GCU 把机器白重启一次、模式却没变
     /// （真机证据：`GPU restart route payloads [] sent for target=0/1` 后照样重启）。
     /// 守卫放在发布点，任何调用方都绕不过去。调用方必须已持有 _switchLock。
+    /// <para>服务档位没有可用的 RESTART（厂商服务 / 30 系、40 两模档的服务）时，载荷照发，
+    /// 返回 <see cref="GpuRestartRequestOutcome.RequiresAppRestart"/>，由界面在用户确认下重启 Windows。</para>
     /// </summary>
     async Task<GpuRestartRequestOutcome> PublishGpuRestartAsync(
         int mode,
-        IReadOnlyList<Dictionary<string, object>> route,
+        GpuRestartRoute route,
         CancellationToken token)
     {
-        if (route.Count == 0)
+        if (route.Payloads.Count == 0)
         {
             Logger.WriteLine(
                 $"GPU restart route is empty for target={mode} " +
-                $"(supportsDgpuDirect={_hw.SupportsDgpuDirect}, supportsIgpuOnly={_hw.SupportsIgpuOnly}); " +
+                $"(generation={_hw.DgpuGeneration}, tier={_hw.ServiceTier}, supportsDgpuDirect={_hw.SupportsDgpuDirect}, supportsIgpuOnly={_hw.SupportsIgpuOnly}); " +
                 "refusing to publish DGPU_DIRECT_CONNECT_RESTART so the machine is not rebooted for nothing.");
             return GpuRestartRequestOutcome.Unsupported;
         }
 
-        List<string> sentActions = new(route.Count);
-        foreach (Dictionary<string, object> payload in route)
+        List<string> sentActions = new(route.Payloads.Count);
+        foreach (Dictionary<string, object> payload in route.Payloads)
         {
             token.ThrowIfCancellationRequested();
             sentActions.Add(payload["Action"].ToString() ?? "?");
             await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
         }
-        Logger.WriteLine($"GPU restart route applied for target={mode}: {sentActions.Count} payload(s) [{string.Join(" -> ", sentActions)}]");
+        Logger.WriteLine($"GPU restart route applied for target={mode}: {sentActions.Count} payload(s) [{string.Join(" -> ", sentActions)}] serviceRestart={route.ServiceRestart}");
 
-        await Task.Delay(800, token).ConfigureAwait(false);
+        await Task.Delay(GpuRouteCommandLayer.RestartDelayMilliseconds, token).ConfigureAwait(false);
         AppConfig.Flush();
         token.ThrowIfCancellationRequested();
+        if (!route.ServiceRestart)
+        {
+            Logger.WriteLine($"GPU restart route for target={mode}: service tier {_hw.ServiceTier} has no usable RESTART; the app restarts Windows.");
+            return GpuRestartRequestOutcome.RequiresAppRestart;
+        }
         await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
         {
-            ["Action"] = "DGPU_DIRECT_CONNECT_RESTART",
+            ["Action"] = DisplayRouteMatrix.Restart,
         }).ConfigureAwait(false);
         Logger.WriteLine($"Requested GCU GPU restart route for target={mode}");
         return GpuRestartRequestOutcome.Requested;
     }
 
-    internal static IReadOnlyList<Dictionary<string, object>> CreateGpuRestartTargetPayloads(
-        int mode,
-        bool supportsDgpuDirect,
-        DgpuGenerationKind generation = DgpuGenerationKind.Unknown)
+    /// <summary>
+    /// MUX 目标路由（§5）。只有有 MUX 的 30/40/50 才有：
+    /// <list type="bullet">
+    /// <item>直连：50 系 + 我方 1.2 服务 = 官方三连（TOGGLE_ON → RB_OFF[SetToWMIEC] → TOGGLE_ON，CCUWinUI GpuSettingPage.cs:1534-1573）；
+    ///   30/40 系与厂商服务只发 TOGGLE_ON；</item>
+    /// <item>标准（混合）：TOGGLE_OFF；</item>
+    /// <item>集显：TOGGLE_IGPU，仅 40 三模档 / 50 非热切换机型（<see cref="GpuRouteContext.IgpuMuxTarget"/>）；</item>
+    /// <item>自动：没有 MUX 目标（过去自创的「重启前发 RB_AUTO」已删除）。</item>
+    /// </list>
+    /// 服务档位能用 RESTART 时 <see cref="GpuRestartRoute.ServiceRestart"/> 为真，否则由我方重启。
+    /// </summary>
+    internal static GpuRestartRoute CreateGpuRestartRoute(int mode, GpuRouteContext context)
     {
-        // 重启路由的契约是"应用目标 + 重启"。该代际没有 RESTART 动作（30 系 = ProvenAbsent）时
-        // 整条路由不可用：绝不半应用（那会留下一个未验证的 MUX 半状态），由调用方报 Unsupported。
-        if (!DisplayRoutePolicy.AllowsAction(generation, DisplayRouteMatrix.Restart))
-            return Array.Empty<Dictionary<string, object>>();
+        if (mode is < GpuIGpu or > GpuAuto) throw new ArgumentOutOfRangeException(nameof(mode));
+        if (!context.SupportsDgpuDirect) return GpuRestartRoute.None;
+        if (context.Generation is not (DgpuGenerationKind.Gen30 or DgpuGenerationKind.Gen40 or DgpuGenerationKind.Gen50))
+            return GpuRestartRoute.None;
+        if (context.Tier is not (GcuServiceTier.Modern12 or GcuServiceTier.Foreign)) return GpuRestartRoute.None;
 
-        IReadOnlyList<Dictionary<string, object>> route = mode switch
+        bool Allowed(string action) => DisplayRoutePolicy.AllowsAction(
+            context.Generation, action, context.ThreeMode, context.Tier, context.HotSwap);
+
+        Dictionary<string, object>[] payloads = mode switch
         {
-            GpuDgpu =>
+            GpuDgpu when !Allowed(DisplayRouteMatrix.ToggleOn) => Array.Empty<Dictionary<string, object>>(),
+            GpuDgpu when context.Generation == DgpuGenerationKind.Gen50 && context.Tier == GcuServiceTier.Modern12 =>
             [
-                new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
+                new() { ["Action"] = DisplayRouteMatrix.ToggleOn },
                 CreateGpuModePayload(GpuStandard),
-                new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_ON" },
+                new() { ["Action"] = DisplayRouteMatrix.ToggleOn },
             ],
-            GpuStandard => supportsDgpuDirect
-                ? [new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF" }]
-                : [CreateGpuModePayload(GpuStandard)],
-            GpuIGpu => supportsDgpuDirect
-                ? [new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_IGPU" }]
-                : [CreateGpuModePayload(GpuIGpu)],
-            GpuAuto => supportsDgpuDirect
-                ? [
-                    new() { ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF" },
-                    CreateGpuModePayload(GpuAuto),
-                ]
-                : [CreateGpuModePayload(GpuAuto)],
-            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+            GpuDgpu => [new() { ["Action"] = DisplayRouteMatrix.ToggleOn }],
+            GpuStandard when Allowed(DisplayRouteMatrix.ToggleOff) => [new() { ["Action"] = DisplayRouteMatrix.ToggleOff }],
+            GpuIGpu when context.IgpuMuxTarget && Allowed(DisplayRouteMatrix.ToggleIgpu) =>
+                [new() { ["Action"] = DisplayRouteMatrix.ToggleIgpu }],
+            _ => Array.Empty<Dictionary<string, object>>(),
         };
-
-        // 逐动作再收窄一次：事实表里没有的动作一律不发。Unknown/NoDgpu 没有行，结果为空。
-        return route.Where(payload => DisplayRoutePolicy.AllowsAction(generation, ActionOf(payload))).ToArray();
+        if (payloads.Length == 0) return GpuRestartRoute.None;
+        return new GpuRestartRoute(payloads,
+            DisplayRoutePolicy.AllowsServiceRestart(context.Generation, context.ThreeMode, context.Tier));
     }
 
     static string ActionOf(Dictionary<string, object> payload) =>
@@ -1290,168 +1376,119 @@ public class MechrevoService
     }
 
     /// <summary>
-    /// keepRegisterOnHotSwitchTimeout：热切换确认超时后保留寄存器不回滚。
-    /// 2026-09-10 实测证伪旧结论：RB_ON 热载荷只翻转 GCU 的软件寄存器，本机硬件
-    /// 既不热切换、重启后也不按该寄存器应用（重启后仍为混合模式）。手动切换已
-    /// 全部改走 RequestGpuModeRestartAsync 重启路径，此参数仅剩自动路径默认 false
-    /// （超时即回滚，与官方一致）。
+    /// 热切换：50 系热切换机型上的集显 ↔ 标准，以及服务自动档。MUX 目标（直连 / 混合 / NVRAM 核显）
+    /// 不走这里，走 <see cref="RequestGpuModeRestartOutcomeAsync"/>。
+    ///
+    /// <para>「生效」分两步判（§4.2）：服务回报（<c>CheckDGpuStatusforIGpuOnlyOnSuccess</c>，官方同款判据）
+    /// **加** NVIDIA 显示设备真的断开 / 恢复（CfgMgr 回读）。2026-09-10 本机实测 RB_ON 只翻转了服务的软件寄存器、
+    /// 独显没有断开——只看服务回报就会把这种「切换」报成成功。</para>
+    ///
+    /// <para>节奏与官方 IgpuOnlyOn/OffCommand 一致：每 2 s 查一次，count&gt;60 放弃，每第 4 次重发；
+    /// 超时发 <c>IGPUONLYCONNECTIONSWITCH_STATUS</c> 回滚到切换前的开关值
+    /// （CCUWinUI GpuSettingPageViewModel.cs:276-440）。</para>
     /// </summary>
-    public async Task<bool> SwitchGpuMode(int mode, bool autoRestart = false, bool? pluggedForAuto = null, bool keepRegisterOnHotSwitchTimeout = false)
+    public async Task<bool> SwitchGpuMode(int mode, bool? pluggedForAuto = null)
     {
         var requestCts = new CancellationTokenSource();
         CancellationTokenSource? previous = Interlocked.Exchange(ref _gpuSwitchCts, requestCts);
         previous?.Cancel();
         bool lockTaken = false;
+        IDisposable? releasedHandles = null;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             if (_hw is not { IsConnected: true } || mode is < GpuIGpu or > GpuAuto || !_hw.CanSwitchGpuMode(mode)) return false;
+            if (mode == GpuDgpu || !_hw.CanOfferGpuHotSwap)
+            {
+                Logger.WriteLine($"SwitchGpuMode({mode}) refused: no hot-switch path here (hotSwap={_hw.CanOfferGpuHotSwap}); MUX targets use the restart route.");
+                return false;
+            }
+            GpuRouteCommand? command = GpuRouteCommandLayer.BuildHotSwitchCommand(mode, GpuRouteContext.From(_hw));
+            if (command is null)
+            {
+                Logger.WriteLine($"SwitchGpuMode({mode}) refused: not allowed for generation {_hw.DgpuGeneration} / tier {_hw.ServiceTier}");
+                return false;
+            }
             lockTaken = await AcquireSwitchLockAsync($"SwitchGpuMode({mode})", requestCts.Token).ConfigureAwait(false);
             if (!lockTaken) return false;
             requestCts.Token.ThrowIfCancellationRequested();
-            // 回滚基准必须取自发布之前：热切换期间 GCU 会把目标模式回显进 GpuMode，
-            // 超时后从这里已经读不到「切换前是什么」。
-            int modeBeforeSwitch = CurrentGpuMode;
 
-            bool leavingDirect = CurrentGpuMode == GpuDgpu && mode != GpuDgpu;
-            int expectedAutoRuntime = mode == GpuAuto && pluggedForAuto.HasValue
-                ? IgpuOnlySemantics.AutomaticRuntime(pluggedForAuto.Value)
-                : -1;
-            bool hotSwitchRequest = mode == GpuIGpu && _hw.SupportsGpuHotSwap &&
-                (CurrentGpuMode == GpuStandard ||
-                 (CurrentGpuMode == GpuAuto && _hw.GpuSwitchResult == 1));
-            bool muxTargetRequest = mode == GpuIGpu && _hw.SupportsDgpuDirect &&
-                !_hw.SupportsIgpuOnly && !hotSwitchRequest;
-            long gpuModeStatusVersion = _hw.GpuModeStatusVersion;
-            long hotSwitchResultVersion = _hw.GpuSwitchResultVersion;
-            bool requiresFreshHotSwitchResult = hotSwitchRequest && _hw.GpuSwitchResultReported;
-            // 热切换的确认可以长达约两分钟（61 次轮询 × 2 秒）。登记为可让位的长操作，
-            // 让其它切换意图能把它请下来，而不是在 _switchLock 上排队两分钟。
-            if (hotSwitchRequest) Volatile.Write(ref _longRunningSwitchCts, requestCts);
-            bool TargetReached()
+            // 回滚基准必须取自发布之前：热切换期间 GCU 会把目标值回显进寄存器，
+            // 超时后从这里已经读不到「切换前是什么」。回滚的是热切换寄存器本身（官方 preIGPUOnlyConnectionSwitch）。
+            if (CurrentGpuMode == GpuDgpu)
             {
-                if (expectedAutoRuntime >= 0)
-                    return CurrentGpuMode == GpuAuto && _hw.GpuSwitchResult == expectedAutoRuntime &&
-                        (_hw.GpuModeStatusVersion > gpuModeStatusVersion ||
-                         _hw.GpuSwitchResultVersion > hotSwitchResultVersion);
-
-                if (CurrentGpuMode != mode) return false;
-                if (!hotSwitchRequest && _hw.GpuModeStatusVersion <= gpuModeStatusVersion) return false;
-                return !requiresFreshHotSwitchResult ||
-                    (_hw.GpuSwitchResultVersion > hotSwitchResultVersion &&
-                     IgpuOnlySemantics.IsSuccess(_hw.GpuSwitchResult, turningOn: true));
-            }
-            GpuRouteCommand? switchCommand = GpuRouteCommandLayer.BuildSwitchCommand(
-                mode, _hw.SupportsDgpuDirect, _hw.SupportsIgpuOnly, hotSwitchRequest, _hw.DgpuGeneration);
-            if (switchCommand is null)
-            {
-                // 该代际动作词汇里没有这个动作（例如 30 系上的 iGPU-only）：fail closed，不发。
-                Logger.WriteLine(
-                    $"SwitchGpuMode({mode}) rejected: action not in dGPU generation {_hw.DgpuGeneration} vocabulary");
+                Logger.WriteLine($"SwitchGpuMode({mode}) refused: the machine is in dGPU-direct; leaving it needs the restart route.");
                 return false;
             }
-            Dictionary<string, object> payload = switchCommand.Payload;
-            string action = switchCommand.Action;
-            bool leavingIgpuOnly = modeBeforeSwitch == GpuIGpu && mode != GpuIGpu;
-            Logger.WriteLine($"MechrevoService.SwitchGpuMode({mode}) -> {action}, leavingDirect={leavingDirect}, leavingIgpuOnly={leavingIgpuOnly}");
-            if (mode == GpuDgpu)
-            {
-                // 直连是独立 MUX 层；进入直连前先退出核显-only。
-                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "IGPU_ONLY_CONNECT_RB_OFF", ["SetToWMIEC"] = "OK" }).ConfigureAwait(false);
-                await Task.Delay(300, requestCts.Token).ConfigureAwait(false);
-            }
-            requestCts.Token.ThrowIfCancellationRequested();
-            gpuModeStatusVersion = _hw.GpuModeStatusVersion;
-            hotSwitchResultVersion = _hw.GpuSwitchResultVersion;
-            await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
-            if (leavingDirect && !muxTargetRequest)
-            {
-                await Task.Delay(300, requestCts.Token).ConfigureAwait(false);
-                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
-                {
-                    ["Action"] = mode == GpuIGpu
-                        ? "DGPU_DIRECT_CONNECT_TOGGLE_IGPU"
-                        : "DGPU_DIRECT_CONNECT_TOGGLE_OFF",
-                }).ConfigureAwait(false);
-            }
-            if (leavingIgpuOnly && _hw.SupportsDgpuDirect)
-            {
-                // 从纯集显离开时，MUX 需要重新启用独显通路（官方流程：发 DGPU_DIRECT_CONNECT_TOGGLE_OFF）
-                await Task.Delay(300, requestCts.Token).ConfigureAwait(false);
-                await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object>
-                {
-                    ["Action"] = "DGPU_DIRECT_CONNECT_TOGGLE_OFF",
-                }).ConfigureAwait(false);
-            }
+            int modeBeforeSwitch = _hw.IgpuOnlyRegister >= 0 ? _hw.IgpuOnlyRegister : CurrentGpuMode;
 
-            bool confirmed = !hotSwitchRequest && await _hw.WaitForStateAsync(
-                TargetReached,
-                TimeSpan.FromMilliseconds(1200),
-                requestCts.Token).ConfigureAwait(false);
-            int confirmationAttempts = hotSwitchRequest
-                ? HotSwitchStatusPollLimit
-                : expectedAutoRuntime >= 0 ? 2 : 7;
-            TimeSpan confirmationPollDelay = hotSwitchRequest
-                ? TimeSpan.FromMilliseconds(IgpuOnlySemantics.PollIntervalMilliseconds)
-                : TimeSpan.FromMilliseconds(1800);
-            for (int attempt = 0; attempt < confirmationAttempts && !confirmed; attempt++)
+            int expectedRuntime = mode switch
+            {
+                GpuIGpu => IgpuOnlySemantics.SuccessOn,
+                GpuStandard => IgpuOnlySemantics.SuccessOff,
+                _ => pluggedForAuto is bool plugged ? IgpuOnlySemantics.AutomaticRuntime(plugged) : -1,
+            };
+            long statusVersion = _hw.GpuModeStatusVersion;
+            long resultVersion = _hw.GpuSwitchResultVersion;
+            bool requireResult = _hw.GpuSwitchResultReported;
+            // 服务侧到位：寄存器是目标值（不是合成后的 GpuMode——TOGGLE_OFF 下 RB_ON 仍显示混合），
+            // 且发令之后来过新状态；服务报过运行态时还要运行态等于期望值（官方判据）。
+            bool ServiceReached()
+            {
+                if (_hw.IgpuOnlyRegister != mode) return false;
+                if (_hw.GpuModeStatusVersion <= statusVersion && _hw.GpuSwitchResultVersion <= resultVersion) return false;
+                if (!requireResult || expectedRuntime < 0) return true;
+                return _hw.GpuSwitchResultVersion > resultVersion && _hw.GpuSwitchResult == expectedRuntime;
+            }
+            bool PresenceMatches(DgpuPresence presence) => expectedRuntime switch
+            {
+                IgpuOnlySemantics.SuccessOn => presence is DgpuPresence.Disabled or DgpuPresence.Absent,
+                IgpuOnlySemantics.SuccessOff => presence == DgpuPresence.Present,
+                _ => true,
+            };
+
+            // 我方自己也会占住独显：悬浮窗开着时 LHM 打开 GPU 传感器、NVML 持有句柄，断开前先放掉。
+            if (expectedRuntime == IgpuOnlySemantics.SuccessOn)
+                releasedHandles = HardwareControl.SuspendDgpuHandles($"hot switch to mode {mode}");
+            // 热切换的确认可以长达约两分钟（61 次轮询 × 2 秒）。登记为可让位的长操作，
+            // 让其它切换意图能把它请下来，而不是在 _switchLock 上排队两分钟。
+            Volatile.Write(ref _longRunningSwitchCts, requestCts);
+            Logger.WriteLine($"MechrevoService.SwitchGpuMode({mode}) -> {command.Action}, before={modeBeforeSwitch}, expectedRuntime={expectedRuntime}");
+            await _hw.Publish(MqttTopics.SettingControl, command.Payload).ConfigureAwait(false);
+
+            TimeSpan pollDelay = TimeSpan.FromMilliseconds(IgpuOnlySemantics.PollIntervalMilliseconds);
+            bool confirmed = false;
+            DgpuPresence presence = DgpuPresence.Unknown;
+            for (int attempt = 0; attempt < HotSwitchStatusPollLimit && !confirmed; attempt++)
             {
                 requestCts.Token.ThrowIfCancellationRequested();
                 await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
-                confirmed = await _hw.WaitForStateAsync(
-                    TargetReached,
-                    confirmationPollDelay,
-                    requestCts.Token).ConfigureAwait(false);
-                bool retryTarget = hotSwitchRequest
-                    ? ShouldRetryHotSwitchPoll(attempt)
-                    : expectedAutoRuntime >= 0 ? attempt == 0 : attempt is 1 or 3 or 5;
-                if (!confirmed && retryTarget)
+                bool serviceReached = await _hw.WaitForStateAsync(ServiceReached, pollDelay, requestCts.Token).ConfigureAwait(false);
+                if (serviceReached)
                 {
-                    // The official console retries the iGPU request every fourth poll.
-                    await _hw.Publish(MqttTopics.SettingControl, payload).ConfigureAwait(false);
+                    presence = GpuRouteProbe.ReadPresence();
+                    confirmed = PresenceMatches(presence);
+                    if (!confirmed)
+                    {
+                        Logger.WriteLineThrottled("hot-switch-presence",
+                            $"Hot switch: the service reports mode {mode} but the NVIDIA device is {presence}; waiting for the hardware.", 10_000);
+                        await Task.Delay(pollDelay, requestCts.Token).ConfigureAwait(false);
+                    }
                 }
+                // The official console re-sends the request every fourth poll.
+                if (!confirmed && ShouldRetryHotSwitchPoll(attempt))
+                    await _hw.Publish(MqttTopics.SettingControl, command.Payload).ConfigureAwait(false);
             }
 
-            // 官方 IgpuOnlyOnCommand 超时（count>60）后的动作是回滚：发
+            // 官方 IgpuOnlyOn/OffCommand 超时（count>60）后的动作是回滚：发
             // IGPUONLYCONNECTIONSWITCH_STATUS 把开关退回切换前的值，再刷新状态。
-            // 不回滚的话寄存器停留在 RB_ON——界面显示目标模式、用户却没真的得到它，
-            // 而且下次重启会以这个从未生效的模式启动。CCUWinUI L53562-53580。
-            // 例外：手动切换路径传 keepRegisterOnHotSwitchTimeout=true，把回滚决定
-            // 交给 UI 的「重启生效」询问——用户选放弃才在这里补回滚。
-            if (!confirmed && hotSwitchRequest)
-            {
-                if (keepRegisterOnHotSwitchTimeout)
-                    Logger.WriteLine("Hot switch not confirmed; register kept for the reboot-to-apply prompt.");
-                else
-                    await RollbackFailedHotSwitchAsync(modeBeforeSwitch, requestCts.Token).ConfigureAwait(false);
-            }
+            // 不回滚的话寄存器停留在目标值——界面按回显显示目标模式、硬件却没变。
+            if (!confirmed)
+                await RollbackFailedHotSwitchAsync(modeBeforeSwitch, requestCts.Token).ConfigureAwait(false);
 
-            // 自动模式的runtime验证：某些机型GCU在热切换场景下runtime状态切换较慢，
-            // 但模式寄存器已正确设置。如果GpuMode已经是AUTO，接受当前runtime而不强制fallback。
-            // 这避免了从纯集显切换到自动模式时错误地降级到标准模式。
-            if (!confirmed && expectedAutoRuntime >= 0 && CurrentGpuMode == GpuAuto)
-            {
-                // 自动模式寄存器已确认，runtime可能稍后更新
-                Logger.WriteLine($"Auto mode confirmed with runtime {_hw.GpuSwitchResult} (expected {expectedAutoRuntime}), accepting current state.");
-                confirmed = true;
-            }
-
-            Logger.WriteLine($"SwitchGpuMode confirmed={confirmed}: expected={mode} actual={CurrentGpuMode} runtime={_hw.GpuSwitchResult}/{expectedAutoRuntime} hotSwitch={hotSwitchRequest} action={action} elapsed={elapsed.ElapsedMilliseconds}ms");
-            if (!confirmed) return false;
-
-            if (autoRestart)
-            {
-                // 与手动路径走同一个发布出口：空路由时绝不发布 DGPU_DIRECT_CONNECT_RESTART，
-                // 否则自动流程一样会把机器白重启一次。
-                GpuRestartRequestOutcome restartOutcome = await PublishGpuRestartAsync(
-                    mode, BuildGpuRestartRoute(mode), requestCts.Token).ConfigureAwait(false);
-                if (restartOutcome != GpuRestartRequestOutcome.Requested)
-                {
-                    Logger.WriteLine($"SwitchGpuMode auto-restart refused: target={mode} outcome={restartOutcome}");
-                    return false;
-                }
-            }
-            return true;
+            Logger.WriteLine($"SwitchGpuMode confirmed={confirmed}: expected={mode} actual={CurrentGpuMode} runtime={_hw.GpuSwitchResult}/{expectedRuntime} dgpu={presence} action={command.Action} elapsed={elapsed.ElapsedMilliseconds}ms");
+            GpuRouteMonitor.Refresh();
+            return confirmed;
         }
         catch (OperationCanceledException)
         {
@@ -1465,6 +1502,7 @@ public class MechrevoService
         }
         finally
         {
+            releasedHandles?.Dispose();
             if (lockTaken) _switchLock.Release();
             Interlocked.CompareExchange(ref _longRunningSwitchCts, null, requestCts);
             Interlocked.CompareExchange(ref _gpuSwitchCts, null, requestCts);
@@ -1473,9 +1511,9 @@ public class MechrevoService
     }
 
     /// <summary>
-    /// 热切换确认超时后的回滚。逐字对齐官方 IgpuOnlyOnCommand 的超时分支：
+    /// 热切换确认超时后的回滚。逐字对齐官方 IgpuOnlyOn/OffCommand 的超时分支：
     /// IGPUONLYCONNECTIONSWITCH_STATUS 携带切换前的开关值（RB_OFF=0 / RB_ON=1 / RB_AUTO=2），
-    /// 随后 GETSTATUS 刷新，并短暂等待状态离开目标值——让调用方拿到 false 时
+    /// 随后 GETSTATUS 刷新，并短暂等待状态回到切换前——让调用方拿到 false 时
     /// <see cref="CurrentGpuMode"/> 已经是真实回到的旧模式，而不是目标的回显。
     /// 回滚是清理动作：任何失败只记日志，绝不能从这里抛出打断 SwitchGpuMode 的收尾。
     /// </summary>
@@ -1491,13 +1529,78 @@ public class MechrevoService
                 ["Status"] = rollbackStatus,
             }).ConfigureAwait(false);
             await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            bool knownBefore = modeBeforeSwitch is GpuIGpu or GpuStandard or GpuAuto;
             await _hw.WaitForStateAsync(
-                () => CurrentGpuMode != GpuIGpu,
+                () => knownBefore ? _hw.IgpuOnlyRegister == modeBeforeSwitch : _hw.IgpuOnlyRegister != GpuIGpu,
                 TimeSpan.FromMilliseconds(2500),
                 token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { Logger.WriteLine("Hot switch rollback failed: " + ex.Message); }
+    }
+
+    /// <summary>NVIDIA 首选 GPU 回读节奏：每 500 ms 读一次驱动，5 s 内一致才算生效（测试可压缩）。</summary>
+    internal static int NvPreferencePollIntervalMilliseconds { get; set; } = 500;
+    internal static int NvPreferencePollLimit { get; set; } = 10;
+
+    /// <summary>
+    /// GTX 10/16、RTX 20：设置 NVIDIA 全局首选 GPU（官方设置页的「独立显卡」开关）。
+    /// 只在 <see cref="MechrevoHw.CanOfferNvPreferredGpu"/> 时发 <c>NV_CTRL_PANEL_*</c>；
+    /// 是否生效只认 NVIDIA 驱动 DRS 里读回来的值（<see cref="NvPreferredGpuReader"/>）。
+    /// </summary>
+    internal async Task<GpuApplyResult> SetNvPreferredGpuAsync(NvPreferredGpu target)
+    {
+        if (target is not (NvPreferredGpu.AutoSelect or NvPreferredGpu.HighPerformance)) return GpuApplyResult.Unsupported;
+        var requestCts = new CancellationTokenSource();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref _gpuSwitchCts, requestCts);
+        previous?.Cancel();
+        bool lockTaken = false;
+        try
+        {
+            if (_hw is not { IsConnected: true }) return GpuApplyResult.Failed;
+            if (!_hw.CanOfferNvPreferredGpu)
+            {
+                Logger.WriteLine($"SetNvPreferredGpu({target}) refused: generation={_hw.DgpuGeneration} tier={_hw.ServiceTier} status={_hw.NvControlPanelPreference}");
+                return GpuApplyResult.Unsupported;
+            }
+            string action = target == NvPreferredGpu.HighPerformance
+                ? DisplayRouteMatrix.NvCtrlPanelHighPerformance
+                : DisplayRouteMatrix.NvCtrlPanelAutoSelect;
+            lockTaken = await AcquireSwitchLockAsync($"SetNvPreferredGpu({target})", requestCts.Token).ConfigureAwait(false);
+            if (!lockTaken) return GpuApplyResult.Failed;
+
+            NvPreferredGpu before = await Task.Run(NvPreferredGpuReader.ReadFromDriver, requestCts.Token).ConfigureAwait(false);
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = action }).ConfigureAwait(false);
+            NvPreferredGpu now = before;
+            for (int poll = 0; poll < NvPreferencePollLimit; poll++)
+            {
+                await Task.Delay(NvPreferencePollIntervalMilliseconds, requestCts.Token).ConfigureAwait(false);
+                now = await Task.Run(NvPreferredGpuReader.ReadFromDriver, requestCts.Token).ConfigureAwait(false);
+                if (now == target) break;
+            }
+            // 服务的 DGpu 回显只作辅助：刷新一次，让状态与驱动对齐。
+            await _hw.Publish(MqttTopics.SettingControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+            NvPreferredGpuMonitor.Store(now);
+            bool confirmed = now == target;
+            Logger.WriteLine($"SetNvPreferredGpu({target}) -> {action}: driver before={before} after={now} confirmed={confirmed}");
+            return confirmed ? GpuApplyResult.Confirmed : GpuApplyResult.NotApplied;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.WriteLine($"SetNvPreferredGpu({target}) superseded");
+            return GpuApplyResult.Failed;
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLine($"SetNvPreferredGpu({target}) failed: {ex.Message}");
+            return GpuApplyResult.Failed;
+        }
+        finally
+        {
+            if (lockTaken) _switchLock.Release();
+            Interlocked.CompareExchange(ref _gpuSwitchCts, null, requestCts);
+            requestCts.Dispose();
+        }
     }
 
     /// <summary>

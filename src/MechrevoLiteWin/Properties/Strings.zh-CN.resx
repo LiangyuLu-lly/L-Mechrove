@@ -1295,4 +1295,178 @@
   <data name="UpdateFailedKept" xml:space="preserve">
     <value>更新到 {0} 没有完成（安装程序退出码 {1}），当前仍是 {2}。详情见：{3}</value>
   </data>
+  <data name="GpuPrefAuto" xml:space="preserve">
+    <value>自动选择</value>
+  </data>
+  <data name="GpuPrefHighPerf" xml:space="preserve">
+    <value>独显优先</value>
+  </data>
+  <data name="GpuPrefTip" xml:space="preserve">
+    <value>NVIDIA 控制面板的全局首选图形处理器，对之后启动的程序生效，无需重启。</value>
+  </data>
+  <data name="GpuPrefNotApplied" xml:space="preserve">
+    <value>NVIDIA 驱动未回读到首选显卡变更，当前仍为「{0}」。</value>
+  </data>
+  <data name="GpuPrefApplied" xml:space="preserve">
+    <value>首选显卡已设为「{0}」（已由 NVIDIA 驱动确认）。</value>
+  </data>
+  <data name="GpuPrefUnknown" xml:space="preserve">
+    <value>未知</value>
+  </data>
+  <data name="GpuRestartPendingTag" xml:space="preserve">
+    <value>重启生效</value>
+  </data>
+  <data name="GpuRestartConfirm" xml:space="preserve">
+    <value>切换到「{0}」需要重启电脑。
+
+「是」：发送指令并立即重启；「否」：取消，不做任何更改。</value>
+  </data>
+  <data name="GpuRouteApplied" xml:space="preserve">
+    <value>显卡模式已是「{0}」（已由屏幕连接确认）。</value>
+  </data>
+  <data name="GpuRouteNotApplied" xml:space="preserve">
+    <value>重启后显卡模式仍是「{0}」，切换没有生效。</value>
+  </data>
+  <data name="GpuHotSwitchNotApplied" xml:space="preserve">
+    <value>独显没有断开，未切到集显，已恢复原模式。</value>
+  </data>
+  <data name="GpuHotSwitchRestoreNotApplied" xml:space="preserve">
+    <value>独显没有重新接入，未切回标准，已保持集显模式。</value>
+  </data>
+  <data name="GpuRouteUnknown" xml:space="preserve">
+    <value>无法确认当前显卡模式（内屏未连接或读取失败）。</value>
+  </data>
+  <data name="GpuRouteUnknownTag" xml:space="preserve">
+    <value>未确认</value>
+  </data>
+  <data name="GpuIgpuNeedsStandard" xml:space="preserve">
+    <value>先切到标准（需重启），再切集显。</value>
+  </data>
+  <data name="GpuRestartBySelf" xml:space="preserve">
+    <value>指令已发送，5 秒后重启电脑。</value>
+  </data>
+  <data name="GpuRestartUnsupported" xml:space="preserve">
+    <value>当前机型或 GCU 版本没有切换到「{0}」的指令，已取消，未重启。</value>
+  </data>
+  <data name="GpuRestartSendFailed" xml:space="preserve">
+    <value>GCU 未能发送切换指令，显卡模式未改变。</value>
+  </data>
+  <data name="GpuRestartNotHappened" xml:space="preserve">
+    <value>GCU 未自动重启系统。显卡模式指令已写入，重启后才会生效。
+
+点击「确定」5 秒后重启 Windows 完成切换。</value>
+  </data>
+  <data name="GpuSwitchUnavailable" xml:space="preserve">
+    <value>当前机型或当前 GCU 版本未报告支持此显卡模式。</value>
+  </data>
+  <data name="GpuStatusUnavailable" xml:space="preserve">
+    <value>未能读取当前显卡模式。为避免依据旧状态切换，请稍后重试。</value>
+  </data>
+  <data name="GpuHotSwitchPreflightUnknown" xml:space="preserve">
+    <value>无法读取正在使用独显的程序，热切换可能失败。
+
+仍然尝试切换？</value>
+  </data>
+  <data name="GpuHotSwitchPreflightApps" xml:space="preserve">
+    <value>以下程序正在使用独显：
+
+{0}
+
+「是」：先请求关闭这些程序再切换；「否」：保持当前模式。</value>
+  </data>
+  <data name="GpuHotSwitchPreflightRecheckFailed" xml:space="preserve">
+    <value>关闭程序后无法重新读取独显占用状态，已取消切换。</value>
+  </data>
+  <data name="GpuHotSwitchPreflightForce" xml:space="preserve">
+    <value>以下程序仍在使用独显：
+
+{0}
+
+是否强制结束这些程序并继续？未保存的工作可能丢失。</value>
+  </data>
+  <data name="GpuHotSwitchPreflightElevate" xml:space="preserve">
+    <value>以下程序无法以普通权限结束：
+
+{0}
+
+是否使用管理员权限强制结束？（会弹出 UAC 确认框）</value>
+  </data>
+  <data name="GpuHotSwitchPreflightGaveUp" xml:space="preserve">
+    <value>仍有独显程序无法关闭，已取消切换。</value>
+  </data>
+  <data name="GpuHotSwitchMoreApps" xml:space="preserve">
+    <value>另有 {0} 个程序</value>
+  </data>
+  <data name="PowerSourceBattery" xml:space="preserve">
+    <value>电池供电</value>
+  </data>
+  <data name="PowerSourceBarrel" xml:space="preserve">
+    <value>圆口供电</value>
+  </data>
+  <data name="PowerSourceBarrelWatts" xml:space="preserve">
+    <value>圆口 {0}W</value>
+  </data>
+  <data name="PowerSourceTypeC" xml:space="preserve">
+    <value>Type-C 供电</value>
+  </data>
+  <data name="PowerSourceBarrelAndTypeC" xml:space="preserve">
+    <value>圆口 + Type-C</value>
+  </data>
+  <data name="PowerSourceExternal" xml:space="preserve">
+    <value>外接电源</value>
+  </data>
+  <data name="BatteryStateCharging" xml:space="preserve">
+    <value>充电 {0}W</value>
+  </data>
+  <data name="BatteryStateChargingNoRate" xml:space="preserve">
+    <value>充电中</value>
+  </data>
+  <data name="BatteryStateDischarging" xml:space="preserve">
+    <value>放电 {0}W</value>
+  </data>
+  <data name="BatteryStateDischargingNoRate" xml:space="preserve">
+    <value>放电中</value>
+  </data>
+  <data name="BatteryStateFull" xml:space="preserve">
+    <value>已充满</value>
+  </data>
+  <data name="BatteryStateHeldAtLimit" xml:space="preserve">
+    <value>已到充电上限</value>
+  </data>
+  <data name="BatteryStateIdle" xml:space="preserve">
+    <value>未充电</value>
+  </data>
+  <data name="BatteryAbnormalTag" xml:space="preserve">
+    <value>电池异常</value>
+  </data>
+  <data name="BatteryCycleCountLine" xml:space="preserve">
+    <value>循环次数：{0}</value>
+  </data>
+  <data name="BatteryCapacityLine" xml:space="preserve">
+    <value>设计容量：{0}</value>
+  </data>
+  <data name="BatteryLevelLine" xml:space="preserve">
+    <value>电量：{0}%</value>
+  </data>
+  <data name="BatteryVoltageLine" xml:space="preserve">
+    <value>电压：{0}V</value>
+  </data>
+  <data name="PowerTipSource" xml:space="preserve">
+    <value>供电：{0}（EC 0x7CC=0x{1:X2}）</value>
+  </data>
+  <data name="PowerTipSourcePlain" xml:space="preserve">
+    <value>供电：{0}</value>
+  </data>
+  <data name="PowerTipAdapter" xml:space="preserve">
+    <value>适配器额定功率：{0}W（按官方表）</value>
+  </data>
+  <data name="PowerTipAdapterUnknown" xml:space="preserve">
+    <value>适配器额定功率：未知（编码 0x{0:X2} 不在官方表内）</value>
+  </data>
+  <data name="PowerTipSourceUnknown" xml:space="preserve">
+    <value>供电类型未知（EC 读取失败）</value>
+  </data>
+  <data name="PowerTipDualUnverified" xml:space="preserve">
+    <value>圆口与 Type-C 同时在插（本机型未核实，先按圆口显示）</value>
+  </data>
 </root>

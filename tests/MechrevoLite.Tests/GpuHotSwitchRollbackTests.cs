@@ -88,39 +88,67 @@ public class GpuHotSwitchRollbackTests
         Assert.Contains(published, p => p.Payload["Action"] as string == "IGPUONLYCONNECTIONSWITCH_STATUS");
     }
 
+    const string IgpuSuccessEcho =
+        """{"IGpuOnlyConnectionSwitch_Status":"IGPU_ONLY_CONNECT_RB_ON","DiscreteGpuDirectConnectionSwitch_Status":"DGPU_DIRECT_CONNECT_TOGGLE_OFF","CheckDGpuStatusforIGpuOnlyOnSuccess":"2"}""";
+
     /// <summary>
-    /// 手动路径（keepRegisterOnHotSwitchTimeout=true）超时后必须保留寄存器：
-    /// 回滚决定权在 UI 的「重启生效」询问，服务层不能抢先把 RB_ON 洗掉，
-    /// 否则「重启生效」这条 100% 兜底路径就断了。
+    /// 本机 2026-09-10 的实况：服务回报 RB_ON 成功（寄存器翻了），NVIDIA 设备却一直在位。
+    /// 只看服务回报就会报成功；设备在位回读必须让它判失败并按官方超时分支回滚。
     /// </summary>
     [Fact]
-    public async Task SwitchGpuMode_KeepRegisterOnTimeout_DoesNotRollBack()
+    public async Task HotSwitch_ServiceReportsSuccessButTheDgpuStaysPresent_IsNotConfirmedAndRollsBack()
     {
         var published = new List<(string Topic, Dictionary<string, object> Payload)>();
         MechrevoHw hw = NewHardware(published,
             new MechrevoDeviceCapabilities { NvidiaGpu = true, GpuHotSwap = true, IgpuOnly = true, DgpuDirect = true },
-            StandardEcho);
+            IgpuSuccessEcho);
         hw.SetIgpuOnlyStatusSupportForTests(true);
         var service = new MechrevoService(hw);
-
         hw.HandleMessage("Setting/Status", StandardEcho);
-        Assert.Equal(MechrevoService.GpuStandard, service.CurrentGpuMode);
 
+        using var route = TestGpuRoute.Use(() => TestGpuRoute.Hybrid);   // 独显始终在位
         int originalLimit = MechrevoService.HotSwitchStatusPollLimit;
         MechrevoService.HotSwitchStatusPollLimit = 1;
         try
         {
-            bool confirmed = await service.SwitchGpuMode(
-                MechrevoService.GpuIGpu, keepRegisterOnHotSwitchTimeout: true);
-
-            Assert.False(confirmed);
+            Assert.False(await service.SwitchGpuMode(MechrevoService.GpuIGpu));
         }
         finally
         {
             MechrevoService.HotSwitchStatusPollLimit = originalLimit;
         }
 
-        Assert.Contains(published, p => p.Payload["Action"] as string == "IGPU_ONLY_CONNECT_RB_ON");
+        var rollback = published.Single(p => p.Payload["Action"] as string == "IGPUONLYCONNECTIONSWITCH_STATUS");
+        Assert.Equal(0, rollback.Payload["Status"]);   // 切换前是标准 → RB_OFF = 0
+    }
+
+    /// <summary>服务回报成功且 NVIDIA 设备真的离开总线：确认成功，不回滚。</summary>
+    [Fact]
+    public async Task HotSwitch_ServiceSuccessAndTheDgpuLeaves_IsConfirmed()
+    {
+        var published = new List<(string Topic, Dictionary<string, object> Payload)>();
+        MechrevoHw hw = NewHardware(published,
+            new MechrevoDeviceCapabilities { NvidiaGpu = true, GpuHotSwap = true, IgpuOnly = true, DgpuDirect = true },
+            IgpuSuccessEcho);
+        hw.SetIgpuOnlyStatusSupportForTests(true);
+        var service = new MechrevoService(hw);
+        hw.HandleMessage("Setting/Status", StandardEcho);
+
+        using var route = TestGpuRoute.Use(() =>
+            published.Any(p => p.Payload["Action"] as string == "IGPU_ONLY_CONNECT_RB_ON")
+                ? TestGpuRoute.IgpuOnly
+                : TestGpuRoute.Hybrid);
+
+        Assert.True(await service.SwitchGpuMode(MechrevoService.GpuIGpu));
         Assert.DoesNotContain(published, p => p.Payload["Action"] as string == "IGPUONLYCONNECTIONSWITCH_STATUS");
+    }
+
+    /// <summary>热切换失败一律回滚（官方同款）；不再有「保留寄存器、重启生效」——RB 寄存器重启后并不生效。</summary>
+    [Fact]
+    public void TheKeepRegisterEscapeHatchIsGone()
+    {
+        System.Reflection.MethodInfo method = typeof(MechrevoService).GetMethod(nameof(MechrevoService.SwitchGpuMode))!;
+        Assert.DoesNotContain(method.GetParameters(), p => p.Name == "keepRegisterOnHotSwitchTimeout");
+        Assert.DoesNotContain(method.GetParameters(), p => p.Name == "autoRestart");
     }
 }

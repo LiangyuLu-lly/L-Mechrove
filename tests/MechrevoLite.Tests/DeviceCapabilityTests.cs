@@ -3,6 +3,7 @@ using MechrevoLite.Hardware;
 
 namespace MechrevoLite.Tests;
 
+[Collection(nameof(SerialGpuSwitchCollection))]
 public class DeviceCapabilityTests
 {
     [Fact]
@@ -10,8 +11,11 @@ public class DeviceCapabilityTests
     {
         string source = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Settings.cs");
         Assert.DoesNotContain("CanOfferGpuModeSwitch ?? true", source, StringComparison.Ordinal);
-        int first = source.IndexOf("CanOfferGpuModeSwitch ?? false", StringComparison.Ordinal);
-        int second = source.IndexOf("CanOfferGpuModeSwitch ?? false", first + 1, StringComparison.Ordinal);
+        Assert.DoesNotContain("GpuRowLayout ?? GpuRowLayout.Mux", source, StringComparison.Ordinal);
+        // 主界面与托盘都读同一个布局值，没有硬件时都退回「整行隐藏」。
+        const string failClosed = "GpuRowLayout ?? GpuRowLayout.Hidden";
+        int first = source.IndexOf(failClosed, StringComparison.Ordinal);
+        int second = source.IndexOf(failClosed, first + 1, StringComparison.Ordinal);
         Assert.True(first >= 0 && second > first, "dashboard and tray must both fail-closed when hw is null");
     }
 
@@ -261,21 +265,29 @@ public class DeviceCapabilityTests
         Assert.Equal(0, publishCount);
     }
 
+    /// <summary>
+    /// 没有独显直连（MUX）就没有显卡行——与官方 50 系控制台同口径（显卡页可见 = IsNvGpu ∧ DGpuDirectConnectionSupport）。
+    /// 服务说支持核显-only 也一样：没有 MUX 的机器上 RB 寄存器没有可验证的硬件路径。
+    /// </summary>
     [Fact]
-    public async Task UnsupportedMuxMode_IsRejectedBeforePublishing()
+    public async Task NoMux_OffersNoGpuSwitchAndPublishesNothing()
     {
         int publishCount = 0;
         using var hardware = new MechrevoHw((_, _) => { publishCount++; return Task.CompletedTask; },
             new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = false });
-        // T1: SupportsIgpuOnly is MQTT overlay only, not Capabilities.IgpuOnly.
         hardware.HandleMessage("Setting/Status", "{\"IGpuOnlyConnectionSwitch_Support\":true,\"DiscreteGpuDirectConnectionSwitch_Support\":false}");
+        publishCount = 0;
         var service = new MechrevoService(hardware);
 
-        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
-        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuStandard));
-        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuAuto));
+        Assert.False(hardware.CanOfferGpuModeSwitch);
+        Assert.Equal(MechrevoLite.Gpu.GpuRowLayout.Hidden, hardware.GpuRowLayout);
+        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
+        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuStandard));
+        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuAuto));
         Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuDgpu));
-        Assert.False(await service.SwitchGpuMode(MechrevoService.GpuDgpu));
+        Assert.False(await service.SwitchGpuMode(MechrevoService.GpuIGpu));
+        Assert.Equal(GpuRestartRequestOutcome.Unsupported,
+            await service.RequestGpuModeRestartOutcomeAsync(MechrevoService.GpuDgpu));
         Assert.Equal(0, publishCount);
     }
 
@@ -303,59 +315,64 @@ public class DeviceCapabilityTests
 
         Assert.Null(hardware.DgpuDirectStatusSupport);
         Assert.True(hardware.IgpuOnlyStatusSupport);
-        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
-        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuAuto));
+        // 命令族存在 ≠ 有显卡行：这台机器没有 MUX，官方也不显示显卡页。
+        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
+        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuAuto));
     }
 
+    /// <summary>
+    /// 只有 MUX、没有核显模式位的 50 系：官方 IgpuButtonVisibility = IGPUModeSupport，
+    /// 所以只有「标准 / 直连」两段（过去这里把 TOGGLE_IGPU 当成 MUX 机器的默认核显，是自创）。
+    /// </summary>
     [Fact]
-    public void MuxOnlyProfile_AllowsPureIgpuMode()
+    public void MuxOnlyProfile_OffersStandardAndDirectButNoIgpu()
     {
         using var hardware = new MechrevoHw(null,
             new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true, IgpuOnly = false });
 
-        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
+        Assert.Equal(MechrevoLite.Gpu.GpuRowLayout.Mux2, hardware.GpuRowLayout);
+        Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuIGpu));
         Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuStandard));
+        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuDgpu));
         Assert.False(hardware.CanSwitchGpuMode(MechrevoService.GpuAuto));
     }
 
+    /// <summary>
+    /// MUX 目标一律走重启路由：非热切换机型上 SwitchGpuMode 一条指令都不发，
+    /// 集显 NVRAM 目标是 TOGGLE_IGPU + RESTART。
+    /// </summary>
     [Fact]
-    public async Task MuxOnlyGpuMode_UsesOfficialMuxPayloadAndFreshReadback()
+    public async Task MuxTargets_NeverUseTheHotSwitchPath()
     {
         var actions = new List<string>();
-        MechrevoHw? hardware = null;
-        hardware = new MechrevoHw((topic, payload) =>
+        using var hardware = new MechrevoHw((topic, payload) =>
         {
             if (topic == "Setting/Control" && payload is IDictionary<string, object> values)
-            {
-                string action = values.TryGetValue("Action", out object? actionValue)
-                    ? actionValue?.ToString() ?? ""
-                    : "";
-                actions.Add(action);
-                if (action == "DGPU_DIRECT_CONNECT_TOGGLE_IGPU")
-                    hardware!.HandleMessage("Setting/Status",
-                        "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_IGPU\"}");
-            }
+                actions.Add(values.TryGetValue("Action", out object? action) ? action?.ToString() ?? "" : "");
             return Task.CompletedTask;
-        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true, IgpuOnly = false });
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, DgpuDirect = true, IgpuOnly = true });
+        hardware.HandleMessage("Setting/Status",
+            "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\"}");
+        var service = new MechrevoService(hardware);
 
-        using (hardware)
-        {
-            hardware.HandleMessage("Setting/Status",
-                "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\"}");
-            var service = new MechrevoService(hardware);
+        Assert.Equal(MechrevoLite.Gpu.GpuRowLayout.Mux3, hardware.GpuRowLayout);
+        Assert.False(await service.SwitchGpuMode(MechrevoService.GpuIGpu));
+        Assert.Empty(actions);
 
-            Assert.True(await service.SwitchGpuMode(MechrevoService.GpuIGpu));
-            Assert.Contains("DGPU_DIRECT_CONNECT_TOGGLE_IGPU", actions);
-            Assert.DoesNotContain("IGPU_ONLY_CONNECT_RB_ON", actions);
-            Assert.Equal(MechrevoService.GpuIGpu, service.CurrentGpuMode);
-        }
+        Assert.Equal(GpuRestartRequestOutcome.Requested,
+            await service.RequestGpuModeRestartOutcomeAsync(MechrevoService.GpuIGpu));
+        Assert.Equal(new[] { "DGPU_DIRECT_CONNECT_TOGGLE_IGPU", "DGPU_DIRECT_CONNECT_RESTART" }, actions);
     }
 
+    /// <summary>
+    /// 服务自动档（仅 50 系热切换机型）：电池下期望运行态 2（核显），且 NVIDIA 设备真的断开才算成功。
+    /// </summary>
     [Fact]
-    public async Task AutomaticGpuMode_WaitsForConcreteBatteryRuntimeState()
+    public async Task AutomaticGpuMode_WaitsForTheBatteryRuntimeAndTheDeviceToLeave()
     {
         MechrevoHw? hardware = null;
         var actions = new List<string>();
+        bool autoSent = false;
         hardware = new MechrevoHw((topic, payload) =>
         {
             if (topic == "Setting/Control" && payload is IDictionary<string, object> values)
@@ -364,23 +381,19 @@ public class DeviceCapabilityTests
                     ? actionValue?.ToString() ?? ""
                     : "";
                 actions.Add(action);
-                if (action == "IGPU_ONLY_CONNECT_RB_AUTO")
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        await Task.Delay(30);
-                        hardware!.HandleMessage("Setting/Status",
-                            "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_AUTO\",\"CheckDGpuStatusforIGpuOnlyOnSuccess\":\"2\"}");
-                    });
-                }
+                if (action == "IGPU_ONLY_CONNECT_RB_AUTO") autoSent = true;
+                if (action == "GETSTATUS" && autoSent)
+                    hardware!.HandleMessage("Setting/Status",
+                        "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_AUTO\",\"CheckDGpuStatusforIGpuOnlyOnSuccess\":\"2\"}");
             }
             return Task.CompletedTask;
-        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true });
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true, GpuHotSwap = true, NvidiaGpu = true });
 
+        using var route = TestGpuRoute.Use(() => autoSent ? TestGpuRoute.IgpuOnly : TestGpuRoute.Hybrid);
         using (hardware)
         {
             hardware.HandleMessage("Setting/Status",
-                "{\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_AUTO\",\"CheckDGpuStatusforIGpuOnlyOnSuccess\":\"1\"}");
+                "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\",\"CheckDGpuStatusforIGpuOnlyOnSuccess\":\"1\"}");
             var service = new MechrevoService(hardware);
 
             Assert.True(await service.SwitchAutomaticGpuMode(plugged: false));
@@ -436,15 +449,15 @@ public class DeviceCapabilityTests
         Assert.True(hardware.SupportsQuickSwitch("numpad"));
     }
 
-    [Theory]
-    // 集显/自动经由 RB 层的请求已从产品移除（UI 一律走重启路径，见
-    // GpuRestartRoute_UsesOfficialTargetActions）；RB_ON 只翻寄存器不代表物理切换，
-    // 独显通路权威下无法确认成功，该行为不再作为受支持能力测试。
-    [InlineData(MechrevoService.GpuStandard, "IGPU_ONLY_CONNECT_RB_OFF", true)]
-    [InlineData(MechrevoService.GpuDgpu, "DGPU_DIRECT_CONNECT_TOGGLE_ON", false)]
-    public async Task GpuModeSwitch_UsesOfficialCommandAndConfirmsStatus(int targetMode, string expectedAction, bool expectsWmiFlag)
+    /// <summary>
+    /// 热切换回标准（集显 → 标准）：官方 IgpuOnlyOffCommand 的载荷（RB_OFF + SetToWMIEC=OK），
+    /// 服务回报运行态 1 **且** NVIDIA 设备重新在位才算成功。
+    /// </summary>
+    [Fact]
+    public async Task HotSwitchBackToStandard_UsesOfficialCommandAndWaitsForTheDevice()
     {
         var published = new List<Dictionary<string, object>>();
+        bool offSent = false;
         MechrevoHw? hardware = null;
         hardware = new MechrevoHw((topic, payload) =>
         {
@@ -454,28 +467,45 @@ public class DeviceCapabilityTests
             var copy = new Dictionary<string, object>(values);
             published.Add(copy);
             string action = copy.GetValueOrDefault("Action")?.ToString() ?? "";
-            string status = action switch
-            {
-                "IGPU_ONLY_CONNECT_RB_ON" => "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_ON\"}",
-                "IGPU_ONLY_CONNECT_RB_OFF" => "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}",
-                "IGPU_ONLY_CONNECT_RB_AUTO" => "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_AUTO\"}",
-                "DGPU_DIRECT_CONNECT_TOGGLE_ON" => "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_ON\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}",
-                _ => "",
-            };
-            if (status.Length > 0) hardware!.HandleMessage("Setting/Status", status);
+            if (action == "IGPU_ONLY_CONNECT_RB_OFF") offSent = true;
+            if (action == "GETSTATUS" && offSent)
+                hardware!.HandleMessage("Setting/Status",
+                    "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\",\"CheckDGpuStatusforIGpuOnlyOnSuccess\":\"1\"}");
             return Task.CompletedTask;
-        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true });
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true, GpuHotSwap = true, NvidiaGpu = true });
 
+        using var route = TestGpuRoute.Use(() => offSent ? TestGpuRoute.Hybrid : TestGpuRoute.IgpuOnly);
         using (hardware)
         {
-            hardware.HandleMessage("Setting/Status", "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}");
+            hardware.HandleMessage("Setting/Status",
+                "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_ON\",\"CheckDGpuStatusforIGpuOnlyOnSuccess\":\"2\"}");
+            // 合成模式以独显通路为准（TOGGLE_OFF 下仍是混合）；热切换看的是寄存器本身。
+            Assert.Equal(MechrevoService.GpuIGpu, hardware.IgpuOnlyRegister);
             var service = new MechrevoService(hardware);
 
-            Assert.True(await service.SwitchGpuMode(targetMode));
-            Dictionary<string, object> command = Assert.Single(published, item => item.GetValueOrDefault("Action")?.ToString() == expectedAction);
-            Assert.Equal(expectsWmiFlag, command.ContainsKey("SetToWMIEC"));
-            Assert.Equal(targetMode, service.CurrentGpuMode);
+            Assert.True(await service.SwitchGpuMode(MechrevoService.GpuStandard));
+            Dictionary<string, object> command = Assert.Single(published,
+                item => item.GetValueOrDefault("Action")?.ToString() == "IGPU_ONLY_CONNECT_RB_OFF");
+            Assert.Equal("OK", command["SetToWMIEC"]);
+            Assert.Equal(MechrevoService.GpuStandard, service.CurrentGpuMode);
+            Assert.DoesNotContain(published, item => item.GetValueOrDefault("Action")?.ToString() == "IGPUONLYCONNECTIONSWITCH_STATUS");
         }
+    }
+
+    /// <summary>直连永远是重启路由：SwitchGpuMode 拒绝，一条指令都不发。</summary>
+    [Fact]
+    public async Task DirectIsNeverAHotSwitch()
+    {
+        int publishCount = 0;
+        using var hardware = new MechrevoHw((_, _) => { publishCount++; return Task.CompletedTask; },
+            new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true, GpuHotSwap = true, NvidiaGpu = true });
+        hardware.HandleMessage("Setting/Status",
+            "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}");
+        var service = new MechrevoService(hardware);
+
+        Assert.True(hardware.CanSwitchGpuMode(MechrevoService.GpuDgpu));
+        Assert.False(await service.SwitchGpuMode(MechrevoService.GpuDgpu));
+        Assert.Equal(0, publishCount);
     }
 
     [Fact]
@@ -515,18 +545,25 @@ public class DeviceCapabilityTests
         }
     }
 
+    /// <summary>
+    /// 50 系（我方 1.2 服务）重启路由与官方 GpuSettingPage.RestartDialog_PrimaryButtonClick 一致；
+    /// 没有 MUX 时没有路由（过去的 RB_ON 兜底与「重启前发 RB_AUTO」都是自创，已删除）。
+    /// </summary>
     [Theory]
     [InlineData(MechrevoService.GpuDgpu, true, "DGPU_DIRECT_CONNECT_TOGGLE_ON|IGPU_ONLY_CONNECT_RB_OFF|DGPU_DIRECT_CONNECT_TOGGLE_ON")]
     [InlineData(MechrevoService.GpuStandard, true, "DGPU_DIRECT_CONNECT_TOGGLE_OFF")]
     [InlineData(MechrevoService.GpuIGpu, true, "DGPU_DIRECT_CONNECT_TOGGLE_IGPU")]
-    [InlineData(MechrevoService.GpuIGpu, false, "IGPU_ONLY_CONNECT_RB_ON")]
-    [InlineData(MechrevoService.GpuAuto, true, "DGPU_DIRECT_CONNECT_TOGGLE_OFF|IGPU_ONLY_CONNECT_RB_AUTO")]
+    [InlineData(MechrevoService.GpuIGpu, false, "")]
+    [InlineData(MechrevoService.GpuAuto, true, "")]
     public void GpuRestartRoute_UsesOfficialTargetActions(int targetMode, bool supportsDgpuDirect, string expected)
     {
-        string actions = string.Join('|', MechrevoService.CreateGpuRestartTargetPayloads(
-            targetMode, supportsDgpuDirect, DgpuGenerationKind.Gen50).Select(payload => payload["Action"]));
+        var context = new GpuRouteContext(DgpuGenerationKind.Gen50, GcuServiceTier.Modern12,
+            supportsDgpuDirect, ThreeMode: true, HotSwap: false, IgpuMuxTarget: supportsDgpuDirect);
+        GpuRestartRoute route = MechrevoService.CreateGpuRestartRoute(targetMode, context);
+        string actions = string.Join('|', route.Payloads.Select(payload => payload["Action"]));
 
         Assert.Equal(expected, actions);
+        Assert.Equal(expected.Length > 0, route.ServiceRestart);
     }
 
     [Fact]
@@ -602,7 +639,7 @@ public class DeviceCapabilityTests
                 }
             }
             return Task.CompletedTask;
-        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true });
+        }, new MechrevoDeviceCapabilities { ProfileAvailable = true, IgpuOnly = true, DgpuDirect = true, GpuHotSwap = true, NvidiaGpu = true });
 
         using (hardware)
         {
@@ -610,6 +647,7 @@ public class DeviceCapabilityTests
                 "{\"DiscreteGpuDirectConnectionSwitch_Status\":\"DGPU_DIRECT_CONNECT_TOGGLE_OFF\",\"IGpuOnlyConnectionSwitch_Status\":\"IGPU_ONLY_CONNECT_RB_OFF\"}");
             var service = new MechrevoService(hardware);
 
+            // 缓存里已经是目标值：不能拿旧状态当确认，必须等发令之后的新回读（GETSTATUS 回包）。
             Assert.True(await service.SwitchGpuMode(MechrevoService.GpuStandard));
             Assert.Contains("IGPU_ONLY_CONNECT_RB_OFF", actions);
             Assert.Contains("GETSTATUS", actions);

@@ -352,8 +352,13 @@ namespace MechrevoLite
         {
             Continue,
             Cancelled,
-            RestartRequested,
         }
+
+        /// <summary>当前显卡行布局（RefreshDeviceCapabilities 决定；点击分派与高亮都看它）。</summary>
+        GpuRowLayout _gpuRowLayout = GpuRowLayout.Hidden;
+
+        /// <summary>热切换 / 首选 GPU 切换进行中：标题行右侧显示「切换中」。</summary>
+        bool _gpuSwitchInProgress;
         DateTime _lastQuickSwitchUi = DateTime.MinValue;   // 快捷开关最近一次用户点击：抑制回显弹回（命令生效/回读有延迟）
         bool _syncingSwitches;   // 回显同步中：不触发命令/弹窗（防深度睡眠 pending 状态翻转误触发）
         // 深度睡眠：最后一次用户选择的值（-1=无待生效改动，0=已请求关，1=已请求开）。
@@ -2874,11 +2879,12 @@ namespace MechrevoLite
             bool turbo = Show(caps.TurboMode || (!caps.TurboModeVetoed && hw?.FanStatusSeen == true));
             bool silentTurbo = Show(caps.SilentTurboAvailability == FeatureAvailability.Supported);
             bool custom = Show(caps.CpuPerformanceTuning || caps.FanSettings || hw?.HasAnyCustomRange == true);
-            bool gpuSwitchOffered = audit || (hw?.CanOfferGpuModeSwitch ?? false);
-            bool eco = gpuSwitchOffered && Show(hw?.CanOfferIgpuOnly ?? false);
-            bool ultimate = gpuSwitchOffered && Show(hw?.SupportsDgpuDirect ?? caps.DgpuDirect);
+            // 显卡行布局（§7）：代际 × 服务档位 × 能力位，主界面与托盘同一个值。审计模式画三段全开。
+            GpuRowLayout gpuLayout = audit ? GpuRowLayout.Mux3 : hw?.GpuRowLayout ?? GpuRowLayout.Hidden;
+            bool eco = GpuRowLayouts.HasIgpuSegment(gpuLayout);
+            bool ultimate = GpuRowLayouts.HasPrimarySegments(gpuLayout);
             bool gpuCapabilitiesKnown = caps.ProfileAvailable || hw?.SettingStatusSeen == true;
-            bool gpu = audit || eco || ultimate;
+            bool gpu = gpuLayout != GpuRowLayout.Hidden;
             bool miniled = Show(hw is not null ? hw.SupportsLocalDimming : caps.LocalDimming);
             bool brightnessSection = display || refresh;
             bool controllerUnsupported = Program.rgb?.ControllerAvailability == FeatureAvailability.Unsupported;
@@ -2894,7 +2900,7 @@ namespace MechrevoLite
             {
                 true, true, true, true, gpu, brightnessSection, true, liquidCooling, lightEnabled, quick,
             }) + '|' +
-                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{hinge}|{sync}|{ecLightbar}|{lighting.Keyboard}|{lighting.LightbarGeneration}|{lighting.Logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{miniled}|{unsupportedModel}|{controllerUnsupported}|{generationRouteHidden}|{hw?.DgpuGeneration}";
+                string.Join('|', quickVisibility) + $"|{keyboard}|{lightbar}|{logo}|{hinge}|{sync}|{ecLightbar}|{lighting.Keyboard}|{lighting.LightbarGeneration}|{lighting.Logo}|{refresh}|{turbo}|{silentTurbo}|{custom}|{eco}|{ultimate}|{gpuLayout}|{miniled}|{unsupportedModel}|{controllerUnsupported}|{generationRouteHidden}|{hw?.DgpuGeneration}";
             if (fingerprint == _lastCapabilityLayout)
             {
                 ApplyChargeLimitSliderGating(unsupportedModel);
@@ -2956,7 +2962,7 @@ namespace MechrevoLite
             ReflowPerformanceButtons(silentTurbo, turbo, custom);
 
             panelGPU.Visible = gpu;
-            VisualiseGPUButtons(eco || ultimate, ultimate, eco);
+            ApplyGpuRowLayout(gpuLayout);
             MiniledOffered = miniled;
             buttonMiniled.Visible = miniled;
 
@@ -3706,6 +3712,32 @@ namespace MechrevoLite
             // The window runs elevated; a second launch from a filtered token is lower integrity and
             // UIPI would drop its "show the window" message without this per-window exception.
             SingleInstanceSignal.AllowFromLowerIntegrity(Handle);
+            // 显卡行高亮跟着硬件回读走：回读变化（后台线程）时切回 UI 线程重画。
+            GpuRouteMonitor.Changed += OnGpuReadbackChanged;
+            NvPreferredGpuMonitor.Changed += OnGpuReadbackChanged;
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            GpuRouteMonitor.Changed -= OnGpuReadbackChanged;
+            NvPreferredGpuMonitor.Changed -= OnGpuReadbackChanged;
+            base.OnHandleDestroyed(e);
+        }
+
+        void OnGpuReadbackChanged()
+        {
+            try
+            {
+                if (IsDisposed || !IsHandleCreated) return;
+                BeginInvoke(() =>
+                {
+                    if (IsDisposed || _gpuSwitchInProgress) return;
+                    VisualiseGPUMode();
+                    RequestContextMenuRefresh();
+                });
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
         }
 
         protected override void WndProc(ref Message m)
@@ -3946,39 +3978,40 @@ namespace MechrevoLite
             contextMenuStrip.Items.Add("-");
             }
 
-            bool gpuSwitchOffered = trayWritable && (trayAudit || (trayHw?.CanOfferGpuModeSwitch ?? false));
-            bool eco = gpuSwitchOffered && TrayShow(trayHw?.CanOfferIgpuOnly ?? false);
-            bool ultimate = gpuSwitchOffered && TrayShow(trayHw?.SupportsDgpuDirect ?? trayCaps.DgpuDirect);
-            if (eco || ultimate)
+            // 与主界面同一个布局值（hw.GpuRowLayout 汇总了 CanOfferGpuModeSwitch / CanOfferIgpuOnly /
+            // CanOfferNvPreferredGpu），托盘不再自己拼一套可见性。
+            GpuRowLayout trayGpuLayout = !trayWritable
+                ? GpuRowLayout.Hidden
+                : trayAudit ? GpuRowLayout.Mux3 : trayHw?.GpuRowLayout ?? GpuRowLayout.Hidden;
+            if (trayGpuLayout != GpuRowLayout.Hidden)
             {
+                bool nvPreference = trayGpuLayout == GpuRowLayout.NvPreference;
                 var titleGPU = new ToolStripMenuItem(Properties.Strings.GPUMode);
                 titleGPU.Margin = padding;
                 titleGPU.Enabled = false;
                 contextMenuStrip.Items.Add(titleGPU);
 
-                if (eco)
+                if (GpuRowLayouts.HasIgpuSegment(trayGpuLayout))
                 {
                     menuEco = new ToolStripMenuItem(Properties.Strings.EcoMode);
                     menuEco.Click += ButtonEco_Click;
                     menuEco.Margin = padding;
                     menuEco.Checked = buttonEco.Activated;
+                    menuEco.Enabled = buttonEco.Enabled;
                     contextMenuStrip.Items.Add(menuEco);
                 }
 
-                menuStandard = new ToolStripMenuItem(Properties.Strings.StandardMode);
+                menuStandard = new ToolStripMenuItem(nvPreference ? Properties.Strings.GpuPrefAuto : Properties.Strings.StandardMode);
                 menuStandard.Click += ButtonStandard_Click;
                 menuStandard.Margin = padding;
                 menuStandard.Checked = buttonStandard.Activated;
                 contextMenuStrip.Items.Add(menuStandard);
 
-                if (ultimate)
-                {
-                    menuUltimate = new ToolStripMenuItem(Properties.Strings.UltimateMode);
-                    menuUltimate.Click += ButtonUltimate_Click;
-                    menuUltimate.Margin = padding;
-                    menuUltimate.Checked = buttonUltimate.Activated;
-                    contextMenuStrip.Items.Add(menuUltimate);
-                }
+                menuUltimate = new ToolStripMenuItem(nvPreference ? Properties.Strings.GpuPrefHighPerf : Properties.Strings.UltimateMode);
+                menuUltimate.Click += ButtonUltimate_Click;
+                menuUltimate.Margin = padding;
+                menuUltimate.Checked = buttonUltimate.Activated;
+                contextMenuStrip.Items.Add(menuUltimate);
 
                 contextMenuStrip.Items.Add("-");
             }
@@ -4517,82 +4550,173 @@ namespace MechrevoLite
 
         private async void ButtonUltimate_Click(object? sender, EventArgs e)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuDgpu, Properties.Strings.GpuRouteDirectTip);
+            if (_gpuRowLayout == GpuRowLayout.NvPreference)
+                await SetNvPreferredGpuFromUi(NvPreferredGpu.HighPerformance);
+            else
+                await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuDgpu);
         }
 
         private async void ButtonStandard_Click(object? sender, EventArgs e)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuStandard, Properties.Strings.GpuRouteStandard);
+            if (_gpuRowLayout == GpuRowLayout.NvPreference)
+                await SetNvPreferredGpuFromUi(NvPreferredGpu.AutoSelect);
+            else
+                await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuStandard);
         }
 
         private async void ButtonEco_Click(object? sender, EventArgs e)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuIGpu, Properties.Strings.GpuSwitchIgpu);
+            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuIGpu);
         }
 
-
-        private async void ButtonOptimized_Click(object? sender, EventArgs e)
+        /// <summary>
+        /// 显卡模式切换的界面入口（§7）。确认框之前不发任何指令；当前模式以硬件回读为准
+        /// （服务状态串是目标值，重启前就会变）。
+        /// </summary>
+        private async Task SwitchGpuModeFromUi(int targetMode)
         {
-            await SwitchGpuModeFromUi(MechrevoLite.Hardware.MechrevoService.GpuAuto, Properties.Strings.AutoMode);
-        }
-
-        private async Task SwitchGpuModeFromUi(int targetMode, string modeName)
-        {
+            string modeName = GpuRestartVerifier.ModeName(targetMode);
             if (Program.service is null || Program.hw is not { IsConnected: true })
             {
-                MessageBox.Show("GCU 硬件服务尚未连接，请稍后再试。", "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(Properties.Strings.GcuNotConnectedAction, "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            if (Program.hw is not null && !Program.hw.CanSwitchGpuMode(targetMode))
+            MechrevoHw hw = Program.hw;
+            if (!hw.CanSwitchGpuMode(targetMode))
             {
-                Logger.WriteLine($"GPU mode UI request rejected as unsupported: {targetMode}");
+                Logger.WriteLine($"GPU mode UI request rejected as unsupported: target={targetMode} layout={_gpuRowLayout} generation={hw.DgpuGeneration} tier={hw.ServiceTier}");
                 RefreshDeviceCapabilities();
-                MessageBox.Show("当前机型或当前 GCU 版本未报告支持此显卡模式。", "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(Properties.Strings.GpuSwitchUnavailable, "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
             GpuModeStatusReadback statusReadback = await RefreshGpuModeUiStateAsync();
-            if (statusReadback == GpuModeStatusReadback.Unavailable)
+            int actual = GpuRouteInference.ToGpuMode(GpuRouteMonitor.Last.Route);
+            if (statusReadback == GpuModeStatusReadback.Unavailable && actual < 0)
             {
-                MessageBox.Show("未能读取当前显卡模式。为避免依据旧状态切换，请稍后重试。",
-                    "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(Properties.Strings.GpuStatusUnavailable, "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
+            int current = actual >= 0 ? actual : Program.service.CurrentGpuMode;
             GpuSwitchPlan plan = GpuSwitchPolicy.Resolve(
-                Program.service.CurrentGpuMode,
-                Program.hw.GpuSwitchResult,
+                current,
+                hw.GpuSwitchResult,
                 targetMode,
-                Program.hw.CanOfferIgpuOnly,
-                currentStateFresh: statusReadback == GpuModeStatusReadback.Fresh);
-            if (plan.Route == GpuSwitchRoute.NoChange)
-            {
-                if (HasPendingGpuRestart()) await ShowGpuRestartPromptAsync(targetMode, modeName);
-                return;
-            }
+                hw.CanOfferGpuHotSwap,
+                currentStateFresh: actual >= 0 || statusReadback == GpuModeStatusReadback.Fresh);
+            Logger.WriteLine($"GPU mode UI request: target={targetMode} current={current} (readback={GpuRouteMonitor.Last}, service={Program.service.CurrentGpuMode}) route={plan.Route}");
             switch (plan.Route)
             {
-                case GpuSwitchRoute.Direct:
-                case GpuSwitchRoute.HotSwitch:
-                    if (!await Program.service.SwitchGpuMode(targetMode))
-                        ToastForm.ShowFailure(string.Format(Properties.Strings.GpuModeSwitchFailed, modeName));
+                case GpuSwitchRoute.NoChange:
+                    int pending = GpuRestartVerifier.HasPendingThisBoot() ? GpuRestartVerifier.PendingTarget : -1;
+                    if (pending >= 0 && pending != targetMode)
+                    {
+                        // 已经是这个模式，只是还挂着另一个重启目标：把 NVRAM 目标改回当前模式即可，不用重启。
+                        if (await Program.service.CancelPendingGpuRestartAsync(targetMode))
+                            GpuRestartVerifier.Clear();
+                        else
+                            ToastForm.ShowFailure(Properties.Strings.GpuRestartSendFailed);
+                    }
                     await RefreshGpuModeUiStateAsync();
                     return;
-                case GpuSwitchRoute.Restart:
-                    if (DisplayRouteMatrix.AllowsRestart(Program.hw.DgpuGeneration))
-                        await ShowGpuRestartPromptAsync(targetMode, modeName);
-                    else
-                    {
-                        if (!await Program.service.SwitchGpuMode(targetMode))
-                            ToastForm.ShowFailure(string.Format(Properties.Strings.GpuModeSwitchFailed, modeName));
-                        await RefreshGpuModeUiStateAsync();
-                    }
+                case GpuSwitchRoute.HotSwitch:
+                    await HotSwitchFromUi(targetMode, plan.RequiresDgpuProcessPreflight);
                     return;
-                default:
+                case GpuSwitchRoute.Restart:
+                    if (targetMode == MechrevoLite.Hardware.MechrevoService.GpuIGpu && !hw.CanOfferIgpuMuxTarget)
+                    {
+                        // 热切换机型没有 NVRAM 核显目标：直连下要先回到标准（重启），再热切到集显。
+                        MessageBox.Show(Properties.Strings.GpuIgpuNeedsStandard, "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+                    await ShowGpuRestartPromptAsync(targetMode, modeName);
                     return;
             }
         }
 
+        /// <summary>热切换（50 系热切换机型）：独显占用预检 → RB_ON/RB_OFF → 服务回报 + 设备在位确认。</summary>
+        private async Task HotSwitchFromUi(int targetMode, bool preflight)
+        {
+            if (preflight && await PrepareDgpuApplicationsForHotSwitchAsync() != DgpuPreflightResult.Continue)
+            {
+                await RefreshGpuModeUiStateAsync();
+                return;
+            }
+            // 手动选具体模式先退出服务自动档：否则回显处理器会把标准/集显回显重新标成「自动」，
+            // 电源事件触发的自动流程还会用 RB_AUTO 取消这次切换。
+            AppConfig.Set("gpu_auto", 0);
+            _gpuSwitchInProgress = true;
+            LockGPUModes();
+            bool confirmed;
+            try
+            {
+                using IDisposable manual = GPUModeControl.BeginManualSwitch();
+                confirmed = await Program.service!.SwitchGpuMode(targetMode);
+            }
+            finally
+            {
+                _gpuSwitchInProgress = false;
+            }
+            if (!confirmed)
+                ToastForm.ShowFailure(targetMode == MechrevoLite.Hardware.MechrevoService.GpuIGpu
+                    ? Properties.Strings.GpuHotSwitchNotApplied
+                    : Properties.Strings.GpuHotSwitchRestoreNotApplied);
+            await RefreshGpuModeUiStateAsync();
+        }
+
+        /// <summary>GTX 10/16、RTX 20：NVIDIA 全局首选 GPU（自动选择 / 独显优先），驱动回读确认，不重启。</summary>
+        private async Task SetNvPreferredGpuFromUi(NvPreferredGpu target)
+        {
+            if (Program.service is null || Program.hw is not { IsConnected: true })
+            {
+                MessageBox.Show(Properties.Strings.GcuNotConnectedAction, "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (NvPreferredGpuMonitor.Last == target) return;
+            _gpuSwitchInProgress = true;
+            LockGPUModes();
+            GpuApplyResult result;
+            try
+            {
+                result = await Program.service.SetNvPreferredGpuAsync(target);
+            }
+            finally
+            {
+                _gpuSwitchInProgress = false;
+            }
+            NvPreferredGpu now = NvPreferredGpuMonitor.Last;
+            switch (result)
+            {
+                case GpuApplyResult.Confirmed:
+                    ToastForm.ShowNotice(string.Format(Properties.Strings.GpuPrefApplied, NvPreferenceName(target)));
+                    break;
+                case GpuApplyResult.NotApplied:
+                    ToastForm.ShowFailure(string.Format(Properties.Strings.GpuPrefNotApplied, NvPreferenceName(now)));
+                    break;
+                case GpuApplyResult.Unsupported:
+                    RefreshDeviceCapabilities();
+                    MessageBox.Show(Properties.Strings.GpuSwitchUnavailable, "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    break;
+                default:
+                    ToastForm.ShowFailure(Properties.Strings.GpuRestartSendFailed);
+                    break;
+            }
+            VisualiseGPUMode();
+            RequestContextMenuRefresh();
+        }
+
+        static string NvPreferenceName(NvPreferredGpu value) => value switch
+        {
+            NvPreferredGpu.AutoSelect => Properties.Strings.GpuPrefAuto,
+            NvPreferredGpu.HighPerformance => Properties.Strings.GpuPrefHighPerf,
+            _ => Properties.Strings.GpuPrefUnknown,
+        };
+
+        /// <summary>
+        /// 热切换到集显前的独显占用预检：有程序占着独显时 RB_ON 断不开它。这里只在热切换机型上用，
+        /// RB 路径重启后并不生效（2026-09-10 实测），所以没有「改用重启」——放弃即保持原模式。
+        /// </summary>
         private async Task<DgpuPreflightResult> PrepareDgpuApplicationsForHotSwitchAsync()
         {
             DgpuApplicationSnapshot snapshot = DgpuApplicationCoordinator.Snapshot();
@@ -4600,66 +4724,56 @@ namespace MechrevoLite
                 (snapshot.IsAvailable ? string.Join(",", snapshot.Applications.Select(a => a.ProcessName + "#" + a.ProcessId)) : "n/a"));
             if (!snapshot.IsAvailable)
             {
-                return MessageBox.Show(this,
-                    "无法读取正在使用独显的程序，不能安全保证热切换。\n\n是否改用重启切换？",
+                // 读不到占用也可以试：切不过去会按官方节奏超时回滚，不会留下半状态。
+                return MessageBox.Show(this, Properties.Strings.GpuHotSwitchPreflightUnknown,
                     "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes
-                    ? DgpuPreflightResult.RestartRequested
+                    ? DgpuPreflightResult.Continue
                     : DgpuPreflightResult.Cancelled;
             }
             if (snapshot.Applications.Count == 0) return DgpuPreflightResult.Continue;
 
-            DialogResult choice = MessageBox.Show(this,
-                "检测到以下程序正在使用独显：\n\n" + DescribeDgpuApplications(snapshot.Applications) +
-                "\n\n“是”：先请求关闭程序后热切换\n“否”：改用重启切换\n“取消”：保持当前状态",
-                "L-Mechrevo", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-            if (choice == DialogResult.Cancel) return DgpuPreflightResult.Cancelled;
-            if (choice == DialogResult.No) return DgpuPreflightResult.RestartRequested;
+            if (MessageBox.Show(this,
+                    string.Format(Properties.Strings.GpuHotSwitchPreflightApps, DescribeDgpuApplications(snapshot.Applications)),
+                    "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return DgpuPreflightResult.Cancelled;
 
             snapshot = await DgpuApplicationCoordinator.RequestGracefulCloseAsync(snapshot.Applications);
             if (!snapshot.IsAvailable)
             {
-                MessageBox.Show("关闭程序后无法重新读取独显占用状态，已取消热切换。", "L-Mechrevo",
+                MessageBox.Show(this, Properties.Strings.GpuHotSwitchPreflightRecheckFailed, "L-Mechrevo",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return DgpuPreflightResult.Cancelled;
             }
             if (snapshot.Applications.Count == 0) return DgpuPreflightResult.Continue;
 
-            DialogResult forceClose = MessageBox.Show(this,
-                "以下程序仍在使用独显：\n\n" + DescribeDgpuApplications(snapshot.Applications) +
-                "\n\n是否强制结束这些程序并继续？未保存的工作可能丢失。",
-                "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            if (forceClose != DialogResult.Yes) return DgpuPreflightResult.Cancelled;
+            if (MessageBox.Show(this,
+                    string.Format(Properties.Strings.GpuHotSwitchPreflightForce, DescribeDgpuApplications(snapshot.Applications)),
+                    "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return DgpuPreflightResult.Cancelled;
 
             snapshot = await DgpuApplicationCoordinator.ForceCloseAsync(snapshot.Applications);
             Logger.WriteLine("DGPU preflight: after force close, remaining=" +
                 (snapshot.IsAvailable ? snapshot.Applications.Count.ToString() : "unknown (enumeration failed)"));
             if (snapshot.IsAvailable && snapshot.Applications.Count == 0) return DgpuPreflightResult.Continue;
 
-            // 普通权限杀不掉的（典型：以管理员身份运行的占卡进程）给一次提权强杀机会，
-            // 而不是直接放弃热切换。提权通道内部会重新核对进程身份再动手。
-            if (snapshot.IsAvailable && snapshot.Applications.Count > 0)
+            // 普通权限杀不掉的（典型：以管理员身份运行的占卡进程）给一次提权强杀机会。
+            // 提权通道内部会重新核对进程身份再动手。
+            if (snapshot.IsAvailable && snapshot.Applications.Count > 0 &&
+                MessageBox.Show(this,
+                    string.Format(Properties.Strings.GpuHotSwitchPreflightElevate, DescribeDgpuApplications(snapshot.Applications)),
+                    "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
             {
-                DialogResult elevate = MessageBox.Show(this,
-                    "以下程序无法以普通权限结束：\n\n" + DescribeDgpuApplications(snapshot.Applications) +
-                    "\n\n是否使用管理员权限强制结束？（会弹出 UAC 确认框）\n选择“否”将转用重启切换。",
-                    "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (elevate == DialogResult.Yes)
-                {
-                    (bool clean, string message) = await ElevatedProcessKiller
-                        .KillWithElevationAsync(snapshot.Applications).ConfigureAwait(true);
-                    Logger.WriteLine($"DGPU preflight: elevated kill clean={clean}, {message}");
-                    snapshot = DgpuApplicationCoordinator.Snapshot();
-                    if (snapshot.IsAvailable && snapshot.Applications.Count == 0)
-                        return DgpuPreflightResult.Continue;
-                }
+                (bool clean, string message) = await ElevatedProcessKiller
+                    .KillWithElevationAsync(snapshot.Applications).ConfigureAwait(true);
+                Logger.WriteLine($"DGPU preflight: elevated kill clean={clean}, {message}");
+                snapshot = DgpuApplicationCoordinator.Snapshot();
+                if (snapshot.IsAvailable && snapshot.Applications.Count == 0)
+                    return DgpuPreflightResult.Continue;
             }
 
-            DialogResult fallback = MessageBox.Show(this,
-                "仍有独显程序无法关闭，已取消热切换。\n\n是否改用重启切换？",
-                "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            return fallback == DialogResult.Yes
-                ? DgpuPreflightResult.RestartRequested
-                : DgpuPreflightResult.Cancelled;
+            MessageBox.Show(this, Properties.Strings.GpuHotSwitchPreflightGaveUp, "L-Mechrevo",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return DgpuPreflightResult.Cancelled;
         }
 
         private static string DescribeDgpuApplications(IReadOnlyList<DgpuApplication> applications)
@@ -4668,61 +4782,42 @@ namespace MechrevoLite
             string lines = string.Join(Environment.NewLine, applications.Take(maxLines)
                 .Select(application => $"{application.ProcessName} (PID {application.ProcessId})"));
             return applications.Count > maxLines
-                ? lines + Environment.NewLine + $"另有 {applications.Count - maxLines} 个程序"
+                ? lines + Environment.NewLine + string.Format(Properties.Strings.GpuHotSwitchMoreApps, applications.Count - maxLines)
                 : lines;
         }
 
+        /// <summary>
+        /// 刷新显卡行：服务状态（GETSTATUS）+ 硬件回读（MUX 布局读内屏接线与独显在位，10/20 布局读驱动首选 GPU）。
+        /// 返回服务状态的新鲜度；高亮由 <see cref="VisualiseGPUMode"/> 按硬件回读决定。
+        /// </summary>
         private async Task<GpuModeStatusReadback> RefreshGpuModeUiStateAsync()
         {
             if (Program.service is null) return GpuModeStatusReadback.Unavailable;
 
             GpuModeStatusReadback readback = await Program.service.RefreshGpuModeStatus();
-            if (readback == GpuModeStatusReadback.Unavailable || IsDisposed)
-                return GpuModeStatusReadback.Unavailable;
+            if (GpuRowLayouts.UsesRouteReadback(_gpuRowLayout))
+                await GpuRouteMonitor.RefreshAsync();
+            else if (_gpuRowLayout == GpuRowLayout.NvPreference)
+                NvPreferredGpuMonitor.Store(await Task.Run(NvPreferredGpuReader.ReadFromDriver));
+            if (IsDisposed) return GpuModeStatusReadback.Unavailable;
 
             VisualiseGPUMode(Program.service.CurrentGpuMode);
             RequestContextMenuRefresh();
             return readback;
         }
 
-        private static void MarkGpuRestartPending()
-        {
-            AppConfig.Set("gpu_restart_pending", 1);
-            AppConfig.Set("gpu_restart_tick", Environment.TickCount64.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        }
-
-        private static bool HasPendingGpuRestart()
-        {
-            if (!AppConfig.Is("gpu_restart_pending")) return false;
-            if (long.TryParse(AppConfig.GetString("gpu_restart_tick"), out long markedTick) &&
-                Environment.TickCount64 + 10_000 < markedTick)
-            {
-                // TickCount64 only moves backwards after a real Windows restart.
-                AppConfig.Set("gpu_restart_pending", 0);
-                AppConfig.Remove("gpu_restart_tick");
-                return false;
-            }
-            return true;
-        }
-
-        private static void ClearGpuRestartPending()
-        {
-            AppConfig.Set("gpu_restart_pending", 0);
-            AppConfig.Remove("gpu_restart_tick");
-        }
+        /// <summary>本次开机内是否还挂着一次显卡重启（标题行「重启生效」）。</summary>
+        private static bool HasPendingGpuRestart() => GpuRestartVerifier.HasPendingThisBoot();
 
         private async Task<bool> ShowGpuRestartPromptAsync(int targetMode, string modeName)
         {
             DialogResult result = MessageBox.Show(
-                $"切换到{modeName}模式必须重启电脑才能生效。\n\n「是」= 发送切换指令并立即重启；「否」= 取消，不做任何更改。",
+                string.Format(Properties.Strings.GpuRestartConfirm, modeName),
                 "L-Mechrevo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            if (result != DialogResult.Yes)
-            {
-                await RefreshGpuModeUiStateAsync();
-                return false;
-            }
-
-            if (Program.service is null)
+            // 确认框刚点过：立刻捕获重启凭证。由我方重启 Windows 的档位要在发完指令、等过 800 ms 之后
+            // 才调 SystemRestart，那时 500 ms 的新鲜输入窗口早已过去。
+            if (result == DialogResult.Yes) SystemRestart.CaptureUserConfirmation();
+            if (result != DialogResult.Yes || Program.service is null)
             {
                 await RefreshGpuModeUiStateAsync();
                 return false;
@@ -4730,56 +4825,57 @@ namespace MechrevoLite
 
             int previousMode = AppConfig.Get("gpu_mode");
             bool previousAuto = AppConfig.Is("gpu_auto");
-            bool hadPendingRestart = HasPendingGpuRestart();
-            string previousRestartTick = AppConfig.GetString("gpu_restart_tick") ?? "";
+            bool hadPendingRestart = GpuRestartVerifier.HasPendingThisBoot();
+            int previousTarget = GpuRestartVerifier.PendingTarget;
             AppConfig.Set("gpu_mode", targetMode);
             AppConfig.Set("gpu_auto", 0);
-            MarkGpuRestartPending();
+            GpuRestartVerifier.MarkPending(targetMode);
             AppConfig.Flush();
             GpuRestartRequestOutcome outcome = await Program.service.RequestGpuModeRestartOutcomeAsync(targetMode);
-            if (outcome != GpuRestartRequestOutcome.Requested)
+            if (outcome is not (GpuRestartRequestOutcome.Requested or GpuRestartRequestOutcome.RequiresAppRestart))
             {
                 AppConfig.Set("gpu_mode", previousMode);
                 AppConfig.Set("gpu_auto", previousAuto ? 1 : 0);
-                if (hadPendingRestart)
-                {
-                    AppConfig.Set("gpu_restart_pending", 1);
-                    AppConfig.Set("gpu_restart_tick", previousRestartTick);
-                }
-                else
-                {
-                    ClearGpuRestartPending();
-                }
+                if (hadPendingRestart && previousTarget >= 0) GpuRestartVerifier.MarkPending(previousTarget);
+                else GpuRestartVerifier.Clear();
                 AppConfig.Flush();
                 await RefreshGpuModeUiStateAsync();
                 // 「该方向没有可用指令」与一般发送失败是两回事：前者是机型/固件不支持，
                 // 说清楚用户才不会反复点同一次必然白重启的切换。
                 MessageBox.Show(
                     outcome == GpuRestartRequestOutcome.Unsupported
-                        ? $"当前机型或当前 GCU 版本不支持「{modeName}」方向的显卡切换：没有可用的切换指令，已取消且未重启。"
-                        : "GCU 未能发送重启切换请求，显卡模式未被标记为已切换。",
+                        ? string.Format(Properties.Strings.GpuRestartUnsupported, modeName)
+                        : Properties.Strings.GpuRestartSendFailed,
                     "L-Mechrevo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
 
-            VisualiseGPUMode(targetMode);
+            VisualiseGPUMode();
             RequestContextMenuRefresh();
-            _ = WatchGcuRestartFallbackAsync();
+            if (outcome == GpuRestartRequestOutcome.RequiresAppRestart)
+            {
+                // 服务档位没有可用的 RESTART（厂商服务 / 30 系、40 两模档的服务）：目标已写入，由我方重启。
+                ToastForm.ShowNotice(Properties.Strings.GpuRestartBySelf);
+                if (!SystemRestart.RequestRestart("GPU route " + targetMode, SystemRestart.RebootAfterFiveSecondsArguments))
+                    _ = WatchGcuRestartFallbackAsync(TimeSpan.Zero);
+                return true;
+            }
+            _ = WatchGcuRestartFallbackAsync(TimeSpan.FromSeconds(15));
             return true;
         }
 
         // GCU 收到 DGPU_DIRECT_CONNECT_RESTART 后应自行重启系统；若 15 秒后本进程
-        // 仍在运行，说明这次重启没有发生——寄存器已写入但不会生效，退回 Windows 重启兜底。
-        private async Task WatchGcuRestartFallbackAsync()
+        // 仍在运行，说明这次重启没有发生——目标已写入但不会生效，退回 Windows 重启兜底。
+        private async Task WatchGcuRestartFallbackAsync(TimeSpan delay)
         {
-            await Task.Delay(15000);
+            if (delay > TimeSpan.Zero) await Task.Delay(delay);
             if (IsDisposed || !IsHandleCreated) return;
             try
             {
                 BeginInvoke(() =>
                 {
                     DialogResult reboot = MessageBox.Show(this,
-                        "GCU 未自动重启系统。显卡模式指令已写入，重启后才会生效。\n\n点击「确定」5 秒后重启 Windows 完成切换。",
+                        Properties.Strings.GpuRestartNotHappened,
                         "L-Mechrevo", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
                     if (reboot == DialogResult.OK)
                     {
@@ -4817,7 +4913,10 @@ namespace MechrevoLite
 
             HardwareControl.ReadSensors();
 
-            if (HardwareControl.cpuTemp > 0)
+            // 温度帧过期（服务断开 / 独显断开）就不进托盘提示，与遥测行同一口径。
+            MechrevoLite.Hardware.MechrevoHw? sensorHw = Program.hw;
+            TimeSpan sensorAge = MechrevoLite.Hardware.MechrevoHw.FanInfoMaximumAge;
+            if (HardwareControl.cpuTemp > 0 && sensorHw?.IsSensorInfoFresh(true, sensorAge) == true)
                 cpuTemp = ": " + TempHelper.FormatTemp((double)HardwareControl.cpuTemp);
 
             if (HardwareControl.batteryCapacity > 0)
@@ -4825,21 +4924,29 @@ namespace MechrevoLite
                 charge = Properties.Strings.BatteryCharge + ": " + HardwareControl.batteryCharge;
             }
 
-            battery = BatteryRateText(HardwareControl.batteryRate);
+            // 电池行右列：「供电 · 状态」（供电来自 EC 0x7CC 只读 + Windows，状态来自电池 IOCTL）；
+            // 循环次数、电压、适配器额定功率等明细放 tooltip。
+            BatteryDisplayInput batteryInput = CurrentBatteryDisplayInput();
+            battery = BatteryHeadlineText(batteryInput);
+            string batteryTip = BatteryDetailsTooltip(batteryInput);
+            bool batteryAbnormal = batteryInput.Abnormal;
 
-
-            if (HardwareControl.gpuTemp > 0)
+            if (HardwareControl.gpuTemp > 0 && sensorHw?.IsSensorInfoFresh(false, sensorAge) == true)
             {
                 gpuTemp = ": " + TempHelper.FormatTemp((double)HardwareControl.gpuTemp);
             }
 
-            if (HardwareControl.cpuFan is not null) cpuFan = Strings.FanSpeed + ": " + HardwareControl.cpuFan + "% (" + HardwareControl.cpuFanRPM + " rpm)";
-            if (HardwareControl.gpuFan is not null) gpuFan = Strings.FanSpeed + ": " + HardwareControl.gpuFan + "% (" + HardwareControl.gpuFanRPM + " rpm)";
+            // 风扇读数过期（6 s 没有新帧）就不进托盘提示，不显示停在旧值上的数字。
+            bool fanFresh = sensorHw?.IsFanInfoFresh(sensorAge) == true;
+            if (fanFresh && HardwareControl.cpuFan is >= 0) cpuFan = Strings.FanSpeed + ": " + HardwareControl.cpuFan + "% (" + HardwareControl.cpuFanRPM + " rpm)";
+            if (fanFresh && HardwareControl.gpuFan is >= 0) gpuFan = Strings.FanSpeed + ": " + HardwareControl.gpuFan + "% (" + HardwareControl.gpuFanRPM + " rpm)";
             if (HardwareControl.midFan is not null) midFan = Strings.FanSpeed + ": " + HardwareControl.midFan;
 
             string trayTip = "CPU" + cpuTemp + " " + cpuFan;
             if (gpuTemp.Length > 0) trayTip += "\nGPU" + gpuTemp + " " + gpuFan;
             if (battery.Length > 0) trayTip += "\n" + battery;
+            // NotifyIcon.Text 上限 127 字符，超出会抛异常。
+            if (trayTip.Length > 127) trayTip = trayTip[..127];
             
             if (!IsHandleCreated || IsDisposed) return;
             void ApplySnapshot()
@@ -4848,7 +4955,10 @@ namespace MechrevoLite
                 // 「重启生效」常驻提示（本机 MUX 切换重启后才生效）。旧实现把遥测摘要塞进这两处，
                 // 与下方遥测行完全重复（真机验收暴露）。
                 UpdatePerfRowStatus();
-                string gpuStatus = HasPendingGpuRestart() ? "重启生效" : "";
+                // 显卡行跟着硬件走：回读过期（3 s）时后台再读一次，变了由 GpuRouteMonitor.Changed 重画高亮。
+                // 这个节拍只在主窗可见时运行。
+                if (GpuRowLayouts.UsesRouteReadback(_gpuRowLayout)) GpuRouteMonitor.Snapshot();
+                string gpuStatus = GpuRowStatusText();
                 if (labelGPUFan.Text != gpuStatus) labelGPUFan.Text = gpuStatus;
                 UpdateTelemetryText();
                 UpdateGcuStatus();   // 复用既有传感器节拍（≤2s），不新增轮询机制
@@ -4864,9 +4974,15 @@ namespace MechrevoLite
                     if (labelMidFan.Text != midText) labelMidFan.Text = midText;
                 }
 
-                // 充电状态为空时，右侧退化显示电池健康摘要（循环/容量）——预览电池行右列形态。
-                if (labelBattery.Text != battery)
-                    labelBattery.Text = battery.Length > 0 ? battery : BatteryHealthText(Program.hw);
+                // 只在变化时写（文本、颜色、tooltip），避免每 2 s 重画整行。
+                if (labelBattery.Text != battery) labelBattery.Text = battery;
+                Color batteryFore = batteryAbnormal ? UiVisualStyle.Danger : UiVisualStyle.Muted;
+                if (labelBattery.ForeColor != batteryFore) labelBattery.ForeColor = batteryFore;
+                if (!string.Equals(_lastBatteryTip, batteryTip, StringComparison.Ordinal))
+                {
+                    _lastBatteryTip = batteryTip;
+                    toolTip.SetToolTip(labelBattery, batteryTip.Length > 0 ? batteryTip : null);
+                }
                 if (!batteryMouseOver && !batteryFullMouseOver && labelCharge.Text != charge) labelCharge.Text = charge;
                 if (Program.trayIcon is not null && Program.trayIcon.Text != trayTip) Program.trayIcon.Text = trayTip;
             }
@@ -5058,20 +5174,84 @@ namespace MechrevoLite
         }
 
 
-        public void LockGPUModes(string text = null)
+        public void LockGPUModes(string? text = null)
         {
             if (InvokeRequired) { BeginInvoke(() => LockGPUModes(text)); return; }
-            if (text is null) text = Properties.Strings.GPUMode + ": " + Properties.Strings.GPUChanging + " ...";
 
             ButtonEnabled(buttonOptimized, false);
             ButtonEnabled(buttonEco, false);
             ButtonEnabled(buttonStandard, false);
             ButtonEnabled(buttonUltimate, false);
 
-            // v2：标题固定；切换中的状态说明放进 tip 行（labelTipGPU 随内容显隐）。
+            // 标题固定；切换中的状态放在标题行右侧的 muted 状态位（与「重启生效」同一处），
+            // 不再展开 tip 行——显卡卡片是定高的，多出一行会把按钮挤出卡片。
             labelGPU.Text = Properties.Strings.GPUMode;
-            labelTipGPU.Text = Properties.Strings.GPUChanging + " ...";
-            labelTipGPU.Visible = true;
+            labelGPUFan.Text = text ?? Properties.Strings.GPUChanging;
+        }
+
+        /// <summary>
+        /// 按布局设置显卡行的文案、提示与可见性（§7）。10/20 布局把「标准 / 直连」两段换成
+        /// 「自动选择 / 独显优先」；托盘在 SetContextMenu 里读同一个布局。
+        /// </summary>
+        internal void ApplyGpuRowLayout(GpuRowLayout layout)
+        {
+            if (InvokeRequired) { BeginInvoke(() => ApplyGpuRowLayout(layout)); return; }
+            bool changed = _gpuRowLayout != layout;
+            _gpuRowLayout = layout;
+            bool nvPreference = layout == GpuRowLayout.NvPreference;
+            buttonStandard.Text = nvPreference ? Properties.Strings.GpuPrefAuto : Properties.Strings.GpuRouteStandard;
+            buttonUltimate.Text = nvPreference ? Properties.Strings.GpuPrefHighPerf : Properties.Strings.GpuRouteDirect;
+            toolTip.SetToolTip(buttonStandard, nvPreference ? Properties.Strings.GpuPrefTip : Properties.Strings.GpuRouteStandardTip);
+            toolTip.SetToolTip(buttonUltimate, nvPreference ? Properties.Strings.GpuPrefTip : Properties.Strings.GpuRouteDirectTip);
+            VisualiseGPUButtons(GpuRowLayouts.HasIgpuSegment(layout), GpuRowLayouts.HasPrimarySegments(layout), false);
+            if (!changed) return;
+            Logger.WriteLine($"GPU row layout: {layout}");
+            if (nvPreference) NvPreferredGpuMonitor.RefreshInBackground();
+            VisualiseGPUMode();
+        }
+
+        /// <summary>标题行右侧的显卡状态：切换中 &gt; 重启生效 &gt; 回读未确认。</summary>
+        string GpuRowStatusText()
+        {
+            if (_gpuSwitchInProgress) return Properties.Strings.GPUChanging;
+            if (!GpuRowLayouts.UsesRouteReadback(_gpuRowLayout)) return "";
+            if (HasPendingGpuRestart()) return Properties.Strings.GpuRestartPendingTag;
+            if (GpuRouteMonitor.Last.Route == GpuRoute.Unknown) return Properties.Strings.GpuRouteUnknownTag;
+            return "";
+        }
+
+        int _lastGpuModeHint = int.MinValue;
+
+        /// <summary>
+        /// 该高亮哪一段：MUX 布局看硬件回读出的**实际**路由（服务状态串是目标值，重启前就会变）；
+        /// 10/20 布局看 NVIDIA 驱动里的首选 GPU；读不到就不高亮。行不可见时沿用传入值。
+        /// </summary>
+        int ResolveHighlightedGpuMode(int hint)
+        {
+            switch (_gpuRowLayout)
+            {
+                case GpuRowLayout.NvPreference:
+                    return NvPreferredGpuMonitor.Last switch
+                    {
+                        NvPreferredGpu.AutoSelect => MechrevoLite.Hardware.MechrevoService.GpuStandard,
+                        NvPreferredGpu.HighPerformance => MechrevoLite.Hardware.MechrevoService.GpuDgpu,
+                        _ => -1,
+                    };
+                case GpuRowLayout.Mux2 or GpuRowLayout.Mux3 or GpuRowLayout.HotSwap:
+                    // 服务回显变了（刚切换 / 外部切换）：马上再读一次硬件，变化会经 Changed 重画。
+                    if (hint >= 0 && hint != _lastGpuModeHint)
+                    {
+                        _lastGpuModeHint = hint;
+                        _ = GpuRouteMonitor.RefreshAsync();
+                    }
+                    return GpuRouteInference.ToGpuMode(GpuRouteMonitor.Snapshot().Route);
+                default:
+                    if (hint >= 0) return hint;
+                    int configured = AppConfig.Get("gpu_mode");
+                    return configured == MechrevoLite.Hardware.MechrevoService.GpuAuto
+                        ? Program.service?.CurrentGpuMode ?? MechrevoLite.Hardware.MechrevoService.GpuStandard
+                        : configured;
+            }
         }
 
         public void VisualiseGPUMode(int GPUMode = -1)
@@ -5088,61 +5268,48 @@ namespace MechrevoLite
             // 这里曾经有一段 ROG Ally 掌机的特殊分支（隐藏整个 GPU 表格、把 XGM 按钮
             // 挪到 tableAMD 里）。它的门禁是 `!IsMechrevo && AppConfig.IsAlly()`——
             // 前半在目标硬件上恒 false、后半靠 SMBIOS 机型串含 "RC7" 匹配，双重恒假。
-            ButtonEnabled(buttonOptimized, true);
-            ButtonEnabled(buttonEco, true);
-            ButtonEnabled(buttonStandard, true);
-            ButtonEnabled(buttonUltimate, true);
+            int highlighted = ResolveHighlightedGpuMode(GPUMode);
+            // 热切换机型在直连下没有集显路径（官方同样置灰）：先回到标准（重启）再热切。
+            bool ecoBlocked = _gpuRowLayout == GpuRowLayout.HotSwap &&
+                highlighted == MechrevoLite.Hardware.MechrevoService.GpuDgpu;
 
-            if (GPUMode == -1)
-            {
-                GPUMode = AppConfig.Get("gpu_mode");
-                // 已移除自动模式：如果配置中是自动模式(3)，需要根据实际硬件状态映射
-                if (GPUMode == MechrevoLite.Hardware.MechrevoService.GpuAuto)
-                {
-                    // 从GCU读取实际模式
-                    GPUMode = Program.service?.CurrentGpuMode ?? MechrevoLite.Hardware.MechrevoService.GpuStandard;
-                }
-            }
+            // 只读降级（机型不被厂商服务服务）下写入口保持禁用：回读变化触发的重画不能把它们重新打开。
+            bool writable = !IsReadOnlyDegraded;
+            ButtonEnabled(buttonOptimized, writable);
+            ButtonEnabled(buttonEco, writable && !ecoBlocked);
+            ButtonEnabled(buttonStandard, writable);
+            ButtonEnabled(buttonUltimate, writable);
+            toolTip.SetToolTip(buttonEco, ecoBlocked ? Properties.Strings.GpuIgpuNeedsStandard : Properties.Strings.GpuRouteIgpuTip);
 
-            buttonEco.Activated = false;
-            buttonStandard.Activated = false;
-            buttonUltimate.Activated = false;
-            // buttonOptimized.Activated = false; // 已移除自动模式
+            buttonEco.Activated = highlighted == MechrevoLite.Hardware.MechrevoService.GpuIGpu;
+            buttonStandard.Activated = highlighted == MechrevoLite.Hardware.MechrevoService.GpuStandard;
+            buttonUltimate.Activated = highlighted == MechrevoLite.Hardware.MechrevoService.GpuDgpu;
 
-            switch (GPUMode)
-            {
-                case MechrevoLite.Hardware.MechrevoService.GpuIGpu:
-                    // buttonOptimized.BorderColor = colorEco; // 已移除自动模式
-                    buttonEco.Activated = true;
-                    labelGPU.Text = Properties.Strings.GPUMode;
-                    panelGPU.AccessibleName = Properties.Strings.GPUMode + " - " + Properties.Strings.EcoMode;
-                    break;
-                case MechrevoLite.Hardware.MechrevoService.GpuDgpu:
-                    buttonUltimate.Activated = true;
-                    labelGPU.Text = Properties.Strings.GPUMode;
-                    panelGPU.AccessibleName = Properties.Strings.GPUMode + " - " + Properties.Strings.UltimateMode;
-                    break;
-                // case MechrevoLite.Hardware.MechrevoService.GpuAuto: // 已移除自动模式
-                //     buttonOptimized.BorderColor = colorStandard;
-                //     buttonOptimized.Activated = true;
-                //     labelGPU.Text = Properties.Strings.GPUMode + ": " + Properties.Strings.Optimized;
-                //     panelGPU.AccessibleName = Properties.Strings.GPUMode + " - " + Properties.Strings.Optimized;
-                //     break;
-                default: // 标准/混合
-                    // buttonOptimized.BorderColor = colorStandard; // 已移除自动模式
-                    buttonStandard.Activated = true;
-                    labelGPU.Text = Properties.Strings.GPUMode;
-                    panelGPU.AccessibleName = Properties.Strings.GPUMode + " - " + Properties.Strings.StandardMode;
-                    break;
-            }
+            labelGPU.Text = Properties.Strings.GPUMode;
+            string highlightedName = highlighted < 0
+                ? (_gpuRowLayout == GpuRowLayout.NvPreference ? Properties.Strings.GpuPrefUnknown : Properties.Strings.GpuRouteUnknownTag)
+                : _gpuRowLayout == GpuRowLayout.NvPreference
+                    ? highlighted == MechrevoLite.Hardware.MechrevoService.GpuDgpu ? Properties.Strings.GpuPrefHighPerf : Properties.Strings.GpuPrefAuto
+                    : GpuRestartVerifier.ModeName(highlighted);
+            panelGPU.AccessibleName = Properties.Strings.GPUMode + " - " + highlightedName;
+            if (highlighted < 0 && GpuRowLayouts.UsesRouteReadback(_gpuRowLayout))
+                toolTip.SetToolTip(panelGPU, Properties.Strings.GpuRouteUnknown);
+            else
+                toolTip.SetToolTip(panelGPU, null);
 
             VisualiseIcon();
             labelTipGPU.Text = "";
             labelTipGPU.Visible = false;
+            string gpuStatus = GpuRowStatusText();
+            if (labelGPUFan.Text != gpuStatus) labelGPUFan.Text = gpuStatus;
 
             if (isGpuSection)
             {
-                if (menuEco is not null) menuEco.Checked = buttonEco.Activated;
+                if (menuEco is not null)
+                {
+                    menuEco.Checked = buttonEco.Activated;
+                    menuEco.Enabled = !ecoBlocked;
+                }
                 if (menuStandard is not null) menuStandard.Checked = buttonStandard.Activated;
                 if (menuUltimate is not null) menuUltimate.Checked = buttonUltimate.Activated;
             }
@@ -5395,6 +5562,139 @@ namespace MechrevoLite
             if (hw.BatteryCycleCount >= 0) parts.Add($"循环 {hw.BatteryCycleCount} 次");
             if (HasMeaningfulCapacity(hw.BatteryCapacityText)) parts.Add(hw.BatteryCapacityText);
             return string.Join(" · ", parts);
+        }
+
+        string? _lastBatteryTip;
+
+        /// <summary>
+        /// 电池行右列与 tooltip 的全部输入（纯数据）。<see cref="Percent"/> / <see cref="Limit"/> /
+        /// <see cref="CycleCount"/> 为 -1 表示未知。
+        /// </summary>
+        internal readonly record struct BatteryDisplayInput(
+            MechrevoLite.Hardware.PowerInputSample? Power,
+            bool AcOnline,
+            MechrevoLite.Battery.BatteryStatusReading? Status,
+            decimal? RateWatts,
+            int Percent,
+            int Limit,
+            bool Abnormal,
+            int CycleCount,
+            string? CapacityText);
+
+        /// <summary>收集当前读数：全是缓存值，不做任何 I/O（EC / 电池 IOCTL 在 ReadSensors 里限频读）。</summary>
+        static BatteryDisplayInput CurrentBatteryDisplayInput()
+        {
+            PowerStatus power = SystemInformation.PowerStatus;
+            float windowsPercent = power.BatteryLifePercent;   // 0..1；未知时是 255/100
+            int percent = windowsPercent is >= 0 and <= 1
+                ? (int)Math.Round(windowsPercent * 100)
+                : HardwareControl.batteryCharge > 0 ? HardwareControl.batteryCharge : -1;
+            MechrevoLite.Hardware.MechrevoHw? hw = Program.hw;
+            return new BatteryDisplayInput(
+                HardwareControl.PowerInput,
+                power.PowerLineStatus == PowerLineStatus.Online,
+                HardwareControl.BatteryStatus,
+                HardwareControl.batteryRate,
+                percent,
+                BatteryControl.KnownLimit,
+                hw?.BatteryAbnormal == true,
+                hw?.BatteryCycleCount ?? -1,
+                hw?.BatteryCapacityText);
+        }
+
+        static string Watts(decimal watts) =>
+            Math.Round(Math.Abs(watts), 1).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>供电段：圆口瓦数只在厂商表内时出现；双插先按圆口显示（语义未实测，tooltip 标注）。</summary>
+        internal static string PowerSourceHeadline(MechrevoLite.Hardware.PowerInputKind kind, int? adapterWatts) => kind switch
+        {
+            MechrevoLite.Hardware.PowerInputKind.Battery => Properties.Strings.PowerSourceBattery,
+            MechrevoLite.Hardware.PowerInputKind.Barrel or MechrevoLite.Hardware.PowerInputKind.BarrelAndTypeC =>
+                adapterWatts is int watts
+                    ? string.Format(Properties.Strings.PowerSourceBarrelWatts, watts)
+                    : Properties.Strings.PowerSourceBarrel,
+            MechrevoLite.Hardware.PowerInputKind.TypeC => Properties.Strings.PowerSourceTypeC,
+            _ => Properties.Strings.PowerSourceExternal,
+        };
+
+        /// <summary>
+        /// 状态段（hidden-readonly-info-plan §2.5）：有功率先看功率符号；功率为 0 / 未知时看
+        /// <c>PowerState</c>；接通且未充电时按电量区分已充满 / 已到充电上限 / 未充电。什么都读不到返回空串。
+        /// </summary>
+        internal static string BatteryStateText(in BatteryDisplayInput input)
+        {
+            if (input.RateWatts is > 0) return string.Format(Properties.Strings.BatteryStateCharging, Watts(input.RateWatts.Value));
+            if (input.RateWatts is < 0) return string.Format(Properties.Strings.BatteryStateDischarging, Watts(input.RateWatts.Value));
+            if (input.Status is not { } status) return "";
+            if (status.IsCharging) return Properties.Strings.BatteryStateChargingNoRate;
+            if (status.IsDischarging || !input.AcOnline) return Properties.Strings.BatteryStateDischargingNoRate;
+            if (input.Percent >= 99) return Properties.Strings.BatteryStateFull;
+            if (input.Percent >= 0 && input.Limit is > 0 and < 100 &&
+                input.Percent >= input.Limit - EcChargeLimit.RechargeHysteresis)
+                return Properties.Strings.BatteryStateHeldAtLimit;
+            return Properties.Strings.BatteryStateIdle;
+        }
+
+        /// <summary>电池行右列一行：「供电 · 状态」，电池异常时尾随「电池异常」。</summary>
+        internal static string BatteryHeadlineText(in BatteryDisplayInput input)
+        {
+            MechrevoLite.Hardware.PowerInputKind kind = MechrevoLite.Hardware.PowerInputDecoder.Reconcile(input.Power, input.AcOnline);
+            var parts = new List<string>(3) { PowerSourceHeadline(kind, input.Power?.AdapterWatts) };
+            string state = BatteryStateText(input);
+            if (state.Length > 0) parts.Add(state);
+            if (input.Abnormal) parts.Add(Properties.Strings.BatteryAbnormalTag);
+            return string.Join(" · ", parts);
+        }
+
+        /// <summary>
+        /// tooltip 明细：供电方式与原始 0x7CC、适配器额定功率（官方表 / 未知 + 编码）、电量与电压、循环次数、
+        /// 设计容量、电池异常。未知的段整行省略，不出现 -1 或问号。
+        /// </summary>
+        internal static string BatteryDetailsTooltip(in BatteryDisplayInput input)
+        {
+            MechrevoLite.Hardware.PowerInputKind kind = MechrevoLite.Hardware.PowerInputDecoder.Reconcile(input.Power, input.AcOnline);
+            MechrevoLite.Hardware.PowerInputSample? sample = input.Power;
+            var lines = new List<string>(6);
+            if (kind != MechrevoLite.Hardware.PowerInputKind.Battery)
+            {
+                string name = kind switch
+                {
+                    MechrevoLite.Hardware.PowerInputKind.Barrel => Properties.Strings.PowerSourceBarrel,
+                    MechrevoLite.Hardware.PowerInputKind.TypeC => Properties.Strings.PowerSourceTypeC,
+                    MechrevoLite.Hardware.PowerInputKind.BarrelAndTypeC => Properties.Strings.PowerSourceBarrelAndTypeC,
+                    _ => Properties.Strings.PowerSourceExternal,
+                };
+                // 只有「显示的类型就来自这次采样」时才附原始值 / 报读取失败；插拔后采样还没跟上时
+                // 显示的是 Windows 的判断，旧采样的原始值不能拿来佐证它。
+                if (sample is not null && sample.Kind == kind && sample.EcReadable)
+                    lines.Add(string.Format(Properties.Strings.PowerTipSource, name, sample.ComplexStatusRaw));
+                else if (sample is not null && sample.Kind == kind && sample.DecodeEnabled)
+                    lines.Add(Properties.Strings.PowerTipSourceUnknown);
+                else
+                    lines.Add(string.Format(Properties.Strings.PowerTipSourcePlain, name));
+
+                if (kind == MechrevoLite.Hardware.PowerInputKind.BarrelAndTypeC)
+                    lines.Add(Properties.Strings.PowerTipDualUnverified);
+                if (kind is MechrevoLite.Hardware.PowerInputKind.Barrel or MechrevoLite.Hardware.PowerInputKind.BarrelAndTypeC &&
+                    sample is { BiosInfo3Raw: >= 0 })
+                {
+                    lines.Add(sample.AdapterWatts is int watts
+                        ? string.Format(Properties.Strings.PowerTipAdapter, watts)
+                        : string.Format(Properties.Strings.PowerTipAdapterUnknown,
+                            sample.BiosInfo3Raw & MechrevoLite.Hardware.PowerInputDecoder.AdapterCodeMask));
+                }
+            }
+
+            var level = new List<string>(2);
+            if (input.Percent >= 0) level.Add(string.Format(Properties.Strings.BatteryLevelLine, input.Percent));
+            if (input.Status is { VoltageMillivolts: > 0 and < uint.MaxValue } status)
+                level.Add(string.Format(Properties.Strings.BatteryVoltageLine,
+                    (status.VoltageMillivolts / 1000m).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)));
+            if (level.Count > 0) lines.Add(string.Join(" · ", level));
+            if (input.CycleCount >= 0) lines.Add(string.Format(Properties.Strings.BatteryCycleCountLine, input.CycleCount));
+            if (HasMeaningfulCapacity(input.CapacityText)) lines.Add(string.Format(Properties.Strings.BatteryCapacityLine, input.CapacityText!.Trim()));
+            if (input.Abnormal) lines.Add(Properties.Strings.BatteryAbnormalTag);
+            return string.Join("\n", lines);
         }
 
         /// <summary>充/放瓦数文本：未知（null 或 0）返回空串，不编数；放电为正数加「放电」前缀。</summary>

@@ -3359,6 +3359,422 @@ namespace MechrevoLite.Properties {
                 return ResourceManager.GetString("UpdateFailedKept", resourceCulture);
             }
         }
+        /// <summary>
+        ///   Looks up a localized string similar to Auto-select.
+        /// </summary>
+        internal static string GpuPrefAuto {
+            get {
+                return ResourceManager.GetString("GpuPrefAuto", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Prefer NVIDIA.
+        /// </summary>
+        internal static string GpuPrefHighPerf {
+            get {
+                return ResourceManager.GetString("GpuPrefHighPerf", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to NVIDIA Control Panel global preferred GPU. Applies to apps started afterwards; no restart needed..
+        /// </summary>
+        internal static string GpuPrefTip {
+            get {
+                return ResourceManager.GetString("GpuPrefTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The NVIDIA driver did not report the change; it is still &quot;{0}&quot;..
+        /// </summary>
+        internal static string GpuPrefNotApplied {
+            get {
+                return ResourceManager.GetString("GpuPrefNotApplied", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Preferred GPU set to &quot;{0}&quot; (confirmed by the NVIDIA driver)..
+        /// </summary>
+        internal static string GpuPrefApplied {
+            get {
+                return ResourceManager.GetString("GpuPrefApplied", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to unknown.
+        /// </summary>
+        internal static string GpuPrefUnknown {
+            get {
+                return ResourceManager.GetString("GpuPrefUnknown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Restart to apply.
+        /// </summary>
+        internal static string GpuRestartPendingTag {
+            get {
+                return ResourceManager.GetString("GpuRestartPendingTag", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Switching to &quot;{0}&quot; requires a restart. Yes: send the command and restart now. No: cancel without changes..
+        /// </summary>
+        internal static string GpuRestartConfirm {
+            get {
+                return ResourceManager.GetString("GpuRestartConfirm", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GPU mode is now &quot;{0}&quot; (confirmed from the display wiring)..
+        /// </summary>
+        internal static string GpuRouteApplied {
+            get {
+                return ResourceManager.GetString("GpuRouteApplied", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to After the restart the GPU mode is still &quot;{0}&quot;; the switch did not apply..
+        /// </summary>
+        internal static string GpuRouteNotApplied {
+            get {
+                return ResourceManager.GetString("GpuRouteNotApplied", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The dGPU did not power off; iGPU mode was not applied and the previous mode is restored..
+        /// </summary>
+        internal static string GpuHotSwitchNotApplied {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchNotApplied", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to The dGPU did not come back; Standard mode was not applied and iGPU mode is kept..
+        /// </summary>
+        internal static string GpuHotSwitchRestoreNotApplied {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchRestoreNotApplied", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Unable to confirm the current GPU mode (internal display not found or readback failed)..
+        /// </summary>
+        internal static string GpuRouteUnknown {
+            get {
+                return ResourceManager.GetString("GpuRouteUnknown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Unconfirmed.
+        /// </summary>
+        internal static string GpuRouteUnknownTag {
+            get {
+                return ResourceManager.GetString("GpuRouteUnknownTag", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Switch to Standard first (restart), then iGPU..
+        /// </summary>
+        internal static string GpuIgpuNeedsStandard {
+            get {
+                return ResourceManager.GetString("GpuIgpuNeedsStandard", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Command sent. Restarting in 5 seconds..
+        /// </summary>
+        internal static string GpuRestartBySelf {
+            get {
+                return ResourceManager.GetString("GpuRestartBySelf", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to This machine or GCU version has no command for &quot;{0}&quot;. Cancelled; nothing was restarted..
+        /// </summary>
+        internal static string GpuRestartUnsupported {
+            get {
+                return ResourceManager.GetString("GpuRestartUnsupported", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GCU could not send the switch command; the GPU mode is unchanged..
+        /// </summary>
+        internal static string GpuRestartSendFailed {
+            get {
+                return ResourceManager.GetString("GpuRestartSendFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to GCU did not restart the system. The GPU mode command is written and applies after a restart. Click OK to restart Windows in 5 seconds..
+        /// </summary>
+        internal static string GpuRestartNotHappened {
+            get {
+                return ResourceManager.GetString("GpuRestartNotHappened", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to This machine or GCU version does not report support for this GPU mode..
+        /// </summary>
+        internal static string GpuSwitchUnavailable {
+            get {
+                return ResourceManager.GetString("GpuSwitchUnavailable", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not read the current GPU mode. Try again later so the switch is not based on stale state..
+        /// </summary>
+        internal static string GpuStatusUnavailable {
+            get {
+                return ResourceManager.GetString("GpuStatusUnavailable", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Cannot tell which programs are using the dGPU, so the hot switch may fail. Try the switch anyway?.
+        /// </summary>
+        internal static string GpuHotSwitchPreflightUnknown {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchPreflightUnknown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to These programs are using the dGPU: {0} Yes: ask them to close, then switch. No: keep the current mode..
+        /// </summary>
+        internal static string GpuHotSwitchPreflightApps {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchPreflightApps", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Could not re-read dGPU usage after closing the programs; the switch was cancelled..
+        /// </summary>
+        internal static string GpuHotSwitchPreflightRecheckFailed {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchPreflightRecheckFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to These programs are still using the dGPU: {0} Force them to exit and continue? Unsaved work may be lost..
+        /// </summary>
+        internal static string GpuHotSwitchPreflightForce {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchPreflightForce", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to These programs could not be ended with normal rights: {0} End them with administrator rights? (A UAC prompt appears.).
+        /// </summary>
+        internal static string GpuHotSwitchPreflightElevate {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchPreflightElevate", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Some programs still use the dGPU; the switch was cancelled..
+        /// </summary>
+        internal static string GpuHotSwitchPreflightGaveUp {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchPreflightGaveUp", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to {0} more.
+        /// </summary>
+        internal static string GpuHotSwitchMoreApps {
+            get {
+                return ResourceManager.GetString("GpuHotSwitchMoreApps", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to On battery.
+        /// </summary>
+        internal static string PowerSourceBattery {
+            get {
+                return ResourceManager.GetString("PowerSourceBattery", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to DC adapter.
+        /// </summary>
+        internal static string PowerSourceBarrel {
+            get {
+                return ResourceManager.GetString("PowerSourceBarrel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to {0} W adapter.
+        /// </summary>
+        internal static string PowerSourceBarrelWatts {
+            get {
+                return ResourceManager.GetString("PowerSourceBarrelWatts", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to USB-C power.
+        /// </summary>
+        internal static string PowerSourceTypeC {
+            get {
+                return ResourceManager.GetString("PowerSourceTypeC", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to DC + USB-C.
+        /// </summary>
+        internal static string PowerSourceBarrelAndTypeC {
+            get {
+                return ResourceManager.GetString("PowerSourceBarrelAndTypeC", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to AC power.
+        /// </summary>
+        internal static string PowerSourceExternal {
+            get {
+                return ResourceManager.GetString("PowerSourceExternal", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Charging {0} W.
+        /// </summary>
+        internal static string BatteryStateCharging {
+            get {
+                return ResourceManager.GetString("BatteryStateCharging", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Charging.
+        /// </summary>
+        internal static string BatteryStateChargingNoRate {
+            get {
+                return ResourceManager.GetString("BatteryStateChargingNoRate", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Discharging {0} W.
+        /// </summary>
+        internal static string BatteryStateDischarging {
+            get {
+                return ResourceManager.GetString("BatteryStateDischarging", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Discharging.
+        /// </summary>
+        internal static string BatteryStateDischargingNoRate {
+            get {
+                return ResourceManager.GetString("BatteryStateDischargingNoRate", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Full.
+        /// </summary>
+        internal static string BatteryStateFull {
+            get {
+                return ResourceManager.GetString("BatteryStateFull", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Held at limit.
+        /// </summary>
+        internal static string BatteryStateHeldAtLimit {
+            get {
+                return ResourceManager.GetString("BatteryStateHeldAtLimit", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Not charging.
+        /// </summary>
+        internal static string BatteryStateIdle {
+            get {
+                return ResourceManager.GetString("BatteryStateIdle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Battery fault.
+        /// </summary>
+        internal static string BatteryAbnormalTag {
+            get {
+                return ResourceManager.GetString("BatteryAbnormalTag", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Cycle count: {0}.
+        /// </summary>
+        internal static string BatteryCycleCountLine {
+            get {
+                return ResourceManager.GetString("BatteryCycleCountLine", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Design capacity: {0}.
+        /// </summary>
+        internal static string BatteryCapacityLine {
+            get {
+                return ResourceManager.GetString("BatteryCapacityLine", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Charge: {0}%.
+        /// </summary>
+        internal static string BatteryLevelLine {
+            get {
+                return ResourceManager.GetString("BatteryLevelLine", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Voltage: {0} V.
+        /// </summary>
+        internal static string BatteryVoltageLine {
+            get {
+                return ResourceManager.GetString("BatteryVoltageLine", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Power: {0} (EC 0x7CC=0x{1:X2}).
+        /// </summary>
+        internal static string PowerTipSource {
+            get {
+                return ResourceManager.GetString("PowerTipSource", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Power: {0}.
+        /// </summary>
+        internal static string PowerTipSourcePlain {
+            get {
+                return ResourceManager.GetString("PowerTipSourcePlain", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Adapter rating: {0} W (vendor table).
+        /// </summary>
+        internal static string PowerTipAdapter {
+            get {
+                return ResourceManager.GetString("PowerTipAdapter", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Adapter rating: unknown (code 0x{0:X2} not in the vendor table).
+        /// </summary>
+        internal static string PowerTipAdapterUnknown {
+            get {
+                return ResourceManager.GetString("PowerTipAdapterUnknown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Power source type unknown (EC read failed).
+        /// </summary>
+        internal static string PowerTipSourceUnknown {
+            get {
+                return ResourceManager.GetString("PowerTipSourceUnknown", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to DC and USB-C both connected (not verified on this model; shown as DC).
+        /// </summary>
+        internal static string PowerTipDualUnverified {
+            get {
+                return ResourceManager.GetString("PowerTipDualUnverified", resourceCulture);
+            }
+        }
     }
 }
 

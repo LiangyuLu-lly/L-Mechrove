@@ -90,34 +90,66 @@ public class GpuGenerationMatrixTests
     [Fact]
     public void AnNvidiaAdapterWithNoResolvableGenerationIsUnknownButStillHasDgpu()
     {
+        // Maxwell GM204M（高字节 0x13）：不在任何笔记本代际区间里。
         DgpuIdentity identity = DgpuGenerationProbe.Resolve(
-            new[] { new GpuAdapter("NVIDIA RTX A5000 Laptop GPU", "10DE", "1FB8") }, true);
+            new[] { new GpuAdapter("NVIDIA Quadro M5000M", "10DE", "13F8") }, true);
 
         Assert.Equal(DgpuGenerationKind.Unknown, identity.Generation);
         Assert.True(identity.HasDgpu);
         Assert.False(identity.IsResolved);
     }
 
-    [Fact]
-    public void TwentySeriesIsOutsideTheAxisTwoValueDomain()
+    /// <summary>
+    /// GTX 10/16、RTX 20 是独立代际（Gen1020），名字的正则与安装器选 1.0.2.47 载荷的正则同源。
+    /// 回归：GTX 1660 Ti（TU116，DEV_2191）过去走 device-id 分支落进 0x20..0x25，被判成 30 系。
+    /// </summary>
+    [Theory]
+    [InlineData("NVIDIA GeForce GTX 1650", "1F99", DgpuGenerationKind.Gen1020)]
+    [InlineData("NVIDIA GeForce GTX 1660 Ti", "2191", DgpuGenerationKind.Gen1020)]
+    [InlineData("NVIDIA GeForce RTX 2060", "1F15", DgpuGenerationKind.Gen1020)]
+    [InlineData("NVIDIA GeForce RTX 2080 Laptop GPU", "1E90", DgpuGenerationKind.Gen1020)]
+    [InlineData("NVIDIA GeForce RTX 2050", "25A9", DgpuGenerationKind.Gen1020)]   // GA107：名字优先
+    [InlineData("NVIDIA GeForce GTX 1060", "1C20", DgpuGenerationKind.Gen1020)]
+    [InlineData("", "2191", DgpuGenerationKind.Gen1020)]   // 只有 device-id 的 TU116
+    [InlineData("", "1C20", DgpuGenerationKind.Gen1020)]   // 只有 device-id 的 GP106
+    [InlineData("", "2206", DgpuGenerationKind.Gen30)]
+    public void TenSixteenAndTwentySeriesResolveToGen1020(string name, string deviceId, DgpuGenerationKind expected)
     {
-        Assert.Null(DgpuGenerationProbe.FromMarketingName("NVIDIA GeForce RTX 2080 Laptop GPU"));
-        Assert.Equal(
-            DgpuGenerationKind.Unknown,
-            DgpuGenerationProbe.Resolve(new[] { Nvidia("NVIDIA GeForce RTX 2080", "1E90") }, true).Generation);
+        Assert.Equal(expected, DgpuGenerationProbe.Resolve(new[] { Nvidia(name, deviceId) }, true).Generation);
+    }
+
+    [Fact]
+    public void TheGen1020NameRuleMatchesTheInstallerPayloadSelector()
+    {
+        string selector = GcuInstallerHarness.Read("installer", "Select-GcuPayload.ps1");
+        Assert.Contains(@"GTX\s*1[06][5-8]0|RTX\s*20[5-8]0|MX\s*[1-3][1-5]0", selector, StringComparison.Ordinal);
+        string probe = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Gpu", "DgpuGeneration.cs");
+        Assert.Contains(@"GTX\s*1[06][5-8]0|RTX\s*20[5-8]0|MX\s*[1-3][1-5]0", probe, StringComparison.Ordinal);
     }
 
     [Fact]
     public void TheMatrixHasOneRowPerGenerationAndNeverUnknownOrNoDgpu()
     {
-        // N11: the 40-series has two capability tiers (with / without 双显三模), so there are four
-        // rows: 30, 40-with-3-mode, 40-without-3-mode, 50.
-        Assert.Equal(4, DisplayRouteMatrix.Rows.Count);
+        // 10/20、30、40（带双显三模）、40（不带）、50 —— 40 系按 N11 分两档。
+        Assert.Equal(5, DisplayRouteMatrix.Rows.Count);
         Assert.Equal(
-            new[] { DgpuGenerationKind.Gen30, DgpuGenerationKind.Gen40, DgpuGenerationKind.Gen40, DgpuGenerationKind.Gen50 },
+            new[] { DgpuGenerationKind.Gen1020, DgpuGenerationKind.Gen30, DgpuGenerationKind.Gen40, DgpuGenerationKind.Gen40, DgpuGenerationKind.Gen50 },
             DisplayRouteMatrix.Rows.Select(row => row.Generation).OrderBy(value => value).ToArray());
         Assert.Null(DisplayRouteMatrix.Find(DgpuGenerationKind.Unknown));
         Assert.Null(DisplayRouteMatrix.Find(DgpuGenerationKind.NoDgpu));
+    }
+
+    [Fact]
+    public void TheTenTwentyRowOnlyCarriesTheNvidiaPreferredGpuActions()
+    {
+        GenerationRouteFacts row = DisplayRouteMatrix.Find(DgpuGenerationKind.Gen1020)!;
+
+        Assert.Equal(new[] { DisplayRouteMatrix.NvCtrlPanelAutoSelect, DisplayRouteMatrix.NvCtrlPanelHighPerformance },
+            row.ConsoleActions);
+        Assert.Equal(EvidenceMark.ProvenAbsent, row.IgpuOnly.Mark);
+        Assert.Equal(EvidenceMark.ProvenAbsent, row.Restart.Mark);
+        Assert.Equal(EvidenceMark.ProvenAbsent, row.HotSwap.Mark);
+        Assert.False(DisplayRouteMatrix.AllowsRestart(DgpuGenerationKind.Gen1020));
     }
 
     [Fact]
@@ -159,8 +191,12 @@ public class GpuGenerationMatrixTests
         Assert.Contains(DisplayRouteMatrix.IgpuOnlyOn, row.ConsoleActions);
         Assert.Contains(DisplayRouteMatrix.IgpuOnlyOff, row.ConsoleActions);
         Assert.Contains(DisplayRouteMatrix.IgpuOnlyAuto, row.ConsoleActions);
-        Assert.Contains(DisplayRouteMatrix.Restart, row.ConsoleActions);
         Assert.Contains(DisplayRouteMatrix.HotSwapOn, row.ConsoleActions);
+        // RESTART 不在任何一行：能不能交给服务重启由服务档位决定。
+        Assert.DoesNotContain(DisplayRouteMatrix.Restart, row.ConsoleActions);
+        Assert.True(DisplayRoutePolicy.AllowsServiceRestart(DgpuGenerationKind.Gen50, true, GcuServiceTier.Modern12));
+        Assert.False(DisplayRoutePolicy.AllowsServiceRestart(DgpuGenerationKind.Gen50, true, GcuServiceTier.Foreign));
+        Assert.False(DisplayRoutePolicy.AllowsServiceRestart(DgpuGenerationKind.Gen50, true, GcuServiceTier.Unknown));
     }
 
     [Fact]
@@ -308,9 +344,25 @@ public class GpuGenerationMatrixTests
             using (var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities()))
             {
                 Assert.Equal(DgpuGenerationKind.Gen30, hardware.DgpuGeneration);
-                Assert.False(hardware.IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart));
+                // 30 系控制台没有 RESTART，但我方 1.2 服务有：重启可以交给服务。
+                Assert.True(hardware.IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart));
                 Assert.False(hardware.IsGpuActionAllowedByGeneration(DisplayRouteMatrix.IgpuOnlyOn));
+                Assert.False(hardware.IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleIgpu));
                 Assert.True(hardware.IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOn));
+            }
+
+            Func<GcuServiceTier>? previousTier = GcuServiceTierProbe.Override;
+            GcuServiceTierProbe.Override = static () => GcuServiceTier.Foreign;
+            try
+            {
+                using var hardware = new MechrevoHw((_, _) => Task.CompletedTask, new MechrevoDeviceCapabilities());
+                Assert.False(hardware.IsGpuActionAllowedByGeneration(DisplayRouteMatrix.Restart),
+                    "厂商服务的 RESTART 我们分不清是哪一版，不用；由我方重启。");
+                Assert.True(hardware.IsGpuActionAllowedByGeneration(DisplayRouteMatrix.ToggleOn));
+            }
+            finally
+            {
+                GcuServiceTierProbe.Override = previousTier;
             }
 
             GpuGenerationProvider.Override = () => new DgpuIdentity(

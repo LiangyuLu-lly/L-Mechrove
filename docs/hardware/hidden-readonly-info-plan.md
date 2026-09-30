@@ -1,6 +1,10 @@
 # 隐藏信息只读展示：实现方案（供电方式 · 适配器功率 · 风扇占空比 · 电池）
 
-状态：方案，未实现。调研时间 2026-09-29，分支 `beta21-wip` @ `5f104a3`。
+状态：已实现（beta21，P1–P7、P9；P8 `power-watch` 未做，§7 脚本代替）。调研时间 2026-09-29，分支 `beta21-wip` @ `5f104a3`。
+实现偏差：`PowerInputSample` / `BatteryStatusReading` 改为引用类型（无锁发布，驱动卡住时界面线程不等锁），样本多一个
+`DecodeEnabled`；解码开关 = 服务档位 ≠ Legacy1020 且独显代际 ≠ 10/20；充电中 / 放电中在没有功率读数时另有文案；
+双插先按圆口显示并在 tooltip 标注；温度帧同样按 6 s 新鲜度显示「—」。真机只读探针（`PowerInputMachineProbe`）在本机读回
+`0x7CC=0x81`、`0x49F=0x5A`，电池行显示「圆口供电 · 已充满」，与 §4 一致。
 本机只读核对只用了 EC 读 IOCTL `0x9C40A488` 与 Windows 标准电池接口，没有任何 EC 写入、没有发布 MQTT 命令。
 前置文档：`docs/hardware/pd-typec-power.md`（Type-C 寄存器初查）、`docs/hardware/gcu-modes-and-profiles.md` §3（风扇占空比 ×2）。
 证据键同 `docs/hardware/gpu-modes-implementation-plan.md` §1.1（`S40` = `_decompiled/gcu40-51751-27`，真实方法体；`L` = 本机实测）。

@@ -163,9 +163,13 @@ public class TrayContextMenuCapabilityTests
         Assert.True(start >= 0 && end > start);
         string body = source[start..end];
 
-        Assert.Contains("CanOfferGpuModeSwitch ?? false", body, StringComparison.Ordinal);
+        // 托盘与主界面读同一个布局值（MechrevoHw.GpuRowLayout 汇总了 CanOfferGpuModeSwitch /
+        // CanOfferIgpuOnly / CanOfferNvPreferredGpu），没有硬件时整行隐藏。
+        Assert.Contains("GpuRowLayout ?? GpuRowLayout.Hidden", body, StringComparison.Ordinal);
         Assert.DoesNotContain("CanOfferGpuModeSwitch ?? true", source, StringComparison.Ordinal);
-        Assert.Contains("CanOfferIgpuOnly", body, StringComparison.Ordinal);
+        Assert.Contains("GpuRowLayouts.HasIgpuSegment", body, StringComparison.Ordinal);
+        string hardware = GcuInstallerHarness.Read("src", "MechrevoLiteWin", "Hardware", "MechrevoHw.cs");
+        Assert.Contains("public GpuRowLayout GpuRowLayout => GpuRowLayouts.Resolve(", hardware, StringComparison.Ordinal);
         Assert.Contains("Properties.Strings.TrayActionFailed", body, StringComparison.Ordinal);
         // 托盘切模式与主界面同一入口（编排层），失败提示也在那一处。
         Assert.Contains("ActivatePerfModeAsync(", body, StringComparison.Ordinal);

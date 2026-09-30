@@ -31,15 +31,18 @@ public class GpuCapabilityGatingTests
         Assert.True(hardware.CanOfferGpuModeSwitch);
     }
 
+    /// <summary>本机这一类：50 系 + MUX + 热切换（GpuConfig 两键 + 核显模式 + NVIDIA）。</summary>
     [Fact]
-    public void Gen50StillOffersIgpuOnlyHotSwapAndTheModeSwitch()
+    public void Gen50HotSwapMachineOffersTheHotSwapLayout()
     {
         using var generation = GpuCapabilityGatingHarness.Generation(GpuCapabilityGatingHarness.Gen50);
         using MechrevoHw hardware = GpuCapabilityGatingHarness.Hardware(new MechrevoDeviceCapabilities
         {
             ProfileAvailable = true,
             IgpuOnly = true,
+            DgpuDirect = true,
             GpuHotSwap = true,
+            NvidiaGpu = true,
         });
         hardware.SetIgpuOnlyStatusSupportForTests(true);
 
@@ -47,6 +50,27 @@ public class GpuCapabilityGatingTests
         Assert.True(hardware.CanOfferIgpuOnly);
         Assert.True(hardware.CanOfferGpuHotSwap);
         Assert.True(hardware.CanOfferGpuModeSwitch);
+        // 官方热切换机型隐藏 NVRAM 的「核显」按钮：集显只走热切换。
+        Assert.False(hardware.CanOfferIgpuMuxTarget);
+        Assert.Equal(GpuRowLayout.HotSwap, hardware.GpuRowLayout);
+    }
+
+    /// <summary>50 系非热切换机型：集显是 NVRAM 目标（TOGGLE_IGPU + 重启），没有热切换。</summary>
+    [Fact]
+    public void Gen50WithoutHotSwapOffersTheThreeTargetMuxLayout()
+    {
+        using var generation = GpuCapabilityGatingHarness.Generation(GpuCapabilityGatingHarness.Gen50);
+        using MechrevoHw hardware = GpuCapabilityGatingHarness.Hardware(new MechrevoDeviceCapabilities
+        {
+            ProfileAvailable = true,
+            IgpuOnly = true,
+            DgpuDirect = true,
+            NvidiaGpu = true,
+        });
+
+        Assert.False(hardware.CanOfferGpuHotSwap);
+        Assert.True(hardware.CanOfferIgpuMuxTarget);
+        Assert.Equal(GpuRowLayout.Mux3, hardware.GpuRowLayout);
     }
 
     [Fact]
