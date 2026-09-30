@@ -1469,4 +1469,82 @@
   <data name="PowerTipDualUnverified" xml:space="preserve">
     <value>圆口与 Type-C 同时在插（本机型未核实，先按圆口显示）</value>
   </data>
+  <data name="SettingsZonePrivacy" xml:space="preserve">
+    <value>隐私与反馈</value>
+  </data>
+  <data name="UsageTelemetryToggle" xml:space="preserve">
+    <value>发送匿名统计与脱敏日志</value>
+  </data>
+  <data name="UsageTelemetryTip" xml:space="preserve">
+    <value>每 5 分钟发一次：随机安装 ID、版本、机型、BIOS、CPU/GPU 型号、GCU 状态、是否以管理员运行、Windows 版本和失败次数；启动后与出错时附带脱敏日志。不含文件、用户名、计算机名或 MAC 地址。</value>
+  </data>
+  <data name="FeedbackOpen" xml:space="preserve">
+    <value>问题反馈…</value>
+  </data>
+  <data name="FeedbackTitle" xml:space="preserve">
+    <value>问题反馈</value>
+  </data>
+  <data name="FeedbackLead" xml:space="preserve">
+    <value>说说遇到了什么问题。发送后会得到一个编号，方便之后对照。</value>
+  </data>
+  <data name="FeedbackMessageLabel" xml:space="preserve">
+    <value>问题描述</value>
+  </data>
+  <data name="FeedbackMessagePlaceholder" xml:space="preserve">
+    <value>做了什么、期望什么、实际发生了什么</value>
+  </data>
+  <data name="FeedbackContactLabel" xml:space="preserve">
+    <value>联系方式（可选）</value>
+  </data>
+  <data name="FeedbackContactPlaceholder" xml:space="preserve">
+    <value>QQ / 邮箱，方便追问</value>
+  </data>
+  <data name="FeedbackAttach" xml:space="preserve">
+    <value>附带系统信息与最近日志（已脱敏）</value>
+  </data>
+  <data name="FeedbackAttachTip" xml:space="preserve">
+    <value>包含机型、BIOS、CPU/GPU 与驱动、GCU 状态和最近的运行日志；用户目录、用户名、计算机名与设备 MAC 地址会被替换掉。</value>
+  </data>
+  <data name="FeedbackSend" xml:space="preserve">
+    <value>发送</value>
+  </data>
+  <data name="FeedbackCancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="FeedbackClose" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="FeedbackSending" xml:space="preserve">
+    <value>正在发送…</value>
+  </data>
+  <data name="FeedbackSent" xml:space="preserve">
+    <value>已发送，编号 {0}。感谢反馈。</value>
+  </data>
+  <data name="FeedbackFailed" xml:space="preserve">
+    <value>没发出去：{0}。可以稍后再试，或用「诊断」导出诊断包发给开发者。</value>
+  </data>
+  <data name="FeedbackTooShort" xml:space="preserve">
+    <value>请先写几句问题描述。</value>
+  </data>
+  <data name="FeedbackRateLimited" xml:space="preserve">
+    <value>发送太频繁，请一小时后再试</value>
+  </data>
+  <data name="FeedbackTooLarge" xml:space="preserve">
+    <value>内容太大，请取消勾选附带日志后再发</value>
+  </data>
+  <data name="FeedbackTimedOut" xml:space="preserve">
+    <value>连接超时</value>
+  </data>
+  <data name="FirstRunTelemetryTitle" xml:space="preserve">
+    <value>匿名统计与日志</value>
+  </data>
+  <data name="FirstRunTelemetryBody" xml:space="preserve">
+    <value>为了知道哪些机型在用、哪里出了问题，L-Mechrevo 会发送匿名统计（随机安装 ID、版本、机型、CPU/GPU、GCU 状态、失败次数）和脱敏日志，不含用户名、计算机名、文件或设备地址。可在「设置 → 隐私与反馈」随时关闭。</value>
+  </data>
+  <data name="FirstRunTelemetryOk" xml:space="preserve">
+    <value>好的</value>
+  </data>
+  <data name="FirstRunTelemetryStepTitle" xml:space="preserve">
+    <value>发送什么、不发送什么</value>
+  </data>
 </root>

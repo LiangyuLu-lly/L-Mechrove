@@ -1887,7 +1887,8 @@ namespace MechrevoLite
                 }
                 finally { _syncingDisplay = false; }
             };
-            if (!Program.UiAuditMode) _displayStatusTimer.Start();
+            // 只在主窗可见时计时（SettingsForm_VisibleChanged 开关）：藏在托盘时不再每 3 秒空醒一次 UI 线程。
+            if (!Program.UiAuditMode && Visible) _displayStatusTimer.Start();
         }
 
         void UpdateQuickSwitches()
@@ -2774,14 +2775,32 @@ namespace MechrevoLite
         internal void SelectDashboardPageForAudit(int index) =>
             ArgumentOutOfRangeException.ThrowIfNegative(index);
 
+        /// <summary>
+        /// 只有真正的程序主流程（<c>Program.Main</c>）才打开：测试与审计里 new 出来并 Show 的主窗绝不能弹模态引导
+        /// （模态对话框会把没有人去点的测试进程永远挂住）。
+        /// </summary>
+        internal static bool FirstRunGuideAllowed { get; set; }
+
         internal void ShowFirstRunGuideIfNeeded()
         {
             const int guideVersion = 1;
-            if (Program.UiAuditMode || IsDisposed || AppConfig.Get("onboarding_version", 0) >= guideVersion) return;
+            if (!FirstRunGuideAllowed || Program.UiAuditMode || IsDisposed) return;
+            bool guideDue = AppConfig.Get("onboarding_version", 0) < guideVersion;
+            // 匿名统计告知（beta21）：新装在首次引导里一起说明；已经看过引导的老用户单独告知一次。
+            bool noticeDue = !MechrevoLite.Usage.UsageTelemetry.NoticeShown;
+            if (!guideDue && !noticeDue) return;
+            // 启动流程与「首次显示主窗」两处都会调到这里：引导是模态的，嵌套消息循环里不能再弹第二个。
+            if (_firstRunGuideShowing || !Visible) return;
+            _firstRunGuideShowing = true;
 
-            using var guide = new FirstRunGuideForm();
-            guide.ShowDialog(this);
-            AppConfig.Set("onboarding_version", guideVersion);
+            using var guide = new FirstRunGuideForm(telemetryOnly: !guideDue);
+            try { guide.ShowDialog(this); }
+            finally { _firstRunGuideShowing = false; }
+            if (guideDue) AppConfig.Set("onboarding_version", guideVersion);
+            MechrevoLite.Usage.UsageTelemetry.MarkNoticeShown();
+            // 关窗 / 「稍后」同样按开关生效：告知已经看到了。
+            if (guide.TelemetryChecked != MechrevoLite.Usage.UsageTelemetry.Enabled)
+                MechrevoLite.Usage.UsageTelemetry.SetEnabled(guide.TelemetryChecked);
         }
 
         /// <summary>
@@ -3685,6 +3704,7 @@ namespace MechrevoLite
         {
             if (Program.UiAuditMode) return;
             _sensorTimer.Enabled = this.Visible;
+            if (!IsDisposed) _displayStatusTimer.Enabled = this.Visible;
             if (this.Visible)
             {
                 Task.Run((Action)RefreshPeripheralsBattery);
@@ -3698,8 +3718,13 @@ namespace MechrevoLite
                     if (Program.hw is { IsConnected: true }) PresentChargeLimitReadout();
                 }
                 catch (Exception ex) { Logger.WriteLine("Status resync on show failed: " + ex.Message); }
+                // 开机自启到托盘时启动流程不弹引导：第一次真正打开主窗时补上（匿名统计告知至少让用户看到一次）。
+                if (FirstRunGuideAllowed && !MechrevoLite.Usage.UsageTelemetry.NoticeShown && !_firstRunGuideShowing)
+                    BeginInvoke(ShowFirstRunGuideIfNeeded);
             }
         }
+
+        bool _firstRunGuideShowing;
 
         private void RefreshPeripheralsBattery()
         {

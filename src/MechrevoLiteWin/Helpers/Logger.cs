@@ -171,6 +171,12 @@ public static class Logger
     /// <summary>显式错误级别写入。ERROR_ONLY 下必定落盘；OFF 下仍进入崩溃环形缓冲。</summary>
     public static void WriteError(string logMessage) => Write(logMessage, LogSeverity.Error);
 
+    /// <summary>
+    /// 显式信息级别写入：不按失败词归类、不计入 <see cref="ErrorCount"/>。给「不是程序出了问题」的失败用，
+    /// 例如统计上报自己的网络失败——否则断网时它会自己把失败行数越刷越高、反复触发日志补传。
+    /// </summary>
+    public static void WriteInfo(string logMessage) => Write(logMessage, LogSeverity.Info);
+
     public static void WriteLineThrottled(string key, string logMessage, int intervalMs = 5000)
     {
         long now = Environment.TickCount64;
@@ -209,11 +215,20 @@ public static class Logger
     /// <summary>清除变化检测的记忆，让下一次写入无条件生效（重连后需要重新记录基线状态）。</summary>
     public static void ResetChangeTracking(string key) => LastMessages.TryRemove(key, out _);
 
+    static int _errorCount;
+
+    /// <summary>
+    /// 本次运行里记下的失败行数（与日志级别无关）。匿名心跳只报这个数，用来在统计页上看出
+    /// 「哪些机器在出问题」；具体内容走脱敏日志上传。
+    /// </summary>
+    internal static int ErrorCount => Volatile.Read(ref _errorCount);
+
     static void Write(string logMessage, LogSeverity severity)
     {
         string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}: {logMessage}";
         Debug.WriteLine(line);
         if (Volatile.Read(ref _closed) != 0) return;
+        if (severity == LogSeverity.Error) Interlocked.Increment(ref _errorCount);
 
         // 环形缓冲永远记录：级别只决定是否落盘，不决定是否留证。
         Ring.Append(line);
@@ -271,7 +286,9 @@ public static class Logger
             // 日志文件懒创建：OFF 级别下整条运行期不得产生任何磁盘写入（零磁盘磨损）。
             while (Volatile.Read(ref _closed) == 0 || !Queue.IsEmpty)
             {
-                Pending.WaitOne(500);
+                // 只在有行入队（Write）或关闭（Close）时醒来：OFF 级别下这条线程整个运行期零唤醒，
+                // 不再每 500 ms 空转一次。
+                Pending.WaitOne(Timeout.Infinite);
                 if (Queue.IsEmpty) continue;
 
                 if (writer is not null && !File.Exists(logFile))

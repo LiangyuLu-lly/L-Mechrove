@@ -3,19 +3,38 @@ using System.Diagnostics;
 
 namespace MechrevoLite;
 
-/// <summary>One-time setup guide shown after the main window has painted.</summary>
+/// <summary>
+/// One-time setup guide shown after the main window has painted. It also carries the
+/// anonymous-statistics notice with its switch; users who already saw the guide before the
+/// notice existed get the notice alone (<paramref name="telemetryOnly"/>) once.
+/// </summary>
 public sealed class FirstRunGuideForm : RForm
 {
+    readonly RCheckBox _telemetry;
 
-    public FirstRunGuideForm()
+    /// <summary>用户在告知里留下的选择（关窗、点「稍后」也按它生效：用户已经看到了告知）。</summary>
+    internal bool TelemetryChecked => _telemetry.Checked;
+
+    public FirstRunGuideForm() : this(telemetryOnly: false) { }
+
+    public FirstRunGuideForm(bool telemetryOnly)
     {
-        Text = Properties.Strings.FirstRunTitle;
+        _telemetry = new RCheckBox
+        {
+            Name = "checkFirstRunTelemetry",
+            Text = Properties.Strings.UsageTelemetryToggle,
+            Checked = Usage.UsageTelemetry.Enabled,
+            AutoSize = true,
+            ForeColor = UiVisualStyle.Text,
+            Margin = new Padding(0, UiVisualStyle.Space.Xs, 0, 0),
+        };
+        Text = telemetryOnly ? "L-Mechrevo" : Properties.Strings.FirstRunTitle;
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(SettingsForm.CompactDashboardLogicalClientSize.Width, 390);
+        ClientSize = new Size(SettingsForm.CompactDashboardLogicalClientSize.Width, telemetryOnly ? 300 : 470);
         MinimumSize = new Size(320, 280);
         BackColor = UiVisualStyle.Window;
         ForeColor = UiVisualStyle.Text;
@@ -48,20 +67,23 @@ public sealed class FirstRunGuideForm : RForm
         };
         header.Controls.Add(new Label
         {
-            Text = Properties.Strings.FirstRunHeadline,
+            Text = telemetryOnly ? Properties.Strings.FirstRunTelemetryTitle : Properties.Strings.FirstRunHeadline,
             AutoSize = true,
             Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Display, FontStyle.Bold),
             ForeColor = UiVisualStyle.Text,
             Margin = Padding.Empty,
         }, 0, 0);
-        header.Controls.Add(new Label
+        if (!telemetryOnly)
         {
-            Text = Properties.Strings.FirstRunLead,
-            AutoSize = true,
-            Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body),
-            ForeColor = UiVisualStyle.Muted,
-            Margin = new Padding(0, UiVisualStyle.Space.Xs, 0, 0),
-        }, 0, 1);
+            header.Controls.Add(new Label
+            {
+                Text = Properties.Strings.FirstRunLead,
+                AutoSize = true,
+                Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Body),
+                ForeColor = UiVisualStyle.Muted,
+                Margin = new Padding(0, UiVisualStyle.Space.Xs, 0, 0),
+            }, 0, 1);
+        }
         root.Controls.Add(header, 0, 0);
 
         var scroll = new Panel
@@ -84,14 +106,28 @@ public sealed class FirstRunGuideForm : RForm
             BackColor = UiVisualStyle.Window,
         };
         steps.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        // N10: the installer already set up the GCU service and removed the vendor console, so the
-        // guide must NOT send the user to download it - that would reinstall what we just removed.
-        steps.Controls.Add(CreateStep("1", "无需安装任何其他控制台",
-            "安装器已经装好 GCU 服务与驱动，本程序自带全部必要组件。厂商「官方控制台」已由安装器清理并替换为 L-Mechrevo，不需要再下载或安装它。"), 0, 0);
-        steps.Controls.Add(CreateStep("2", "直接开始使用",
-            "开机启动、性能模式、显卡模式与灯效都在这个窗口里；GCU 服务在后台运行，无需额外操作。"), 0, 1);
-        steps.Controls.Add(CreateStep("!", "退出其他灯效控制软件",
-            "不要同时运行 BetterRGB、OpenRGB 或其他厂商灯效程序，否则多个程序抢占 HID 设备可能导致灯效失效或设备访问冲突。", warning: true), 0, 2);
+        int stepRow = 0;
+        if (!telemetryOnly)
+        {
+            steps.RowCount = 4;
+            // N10: the installer already set up the GCU service and removed the vendor console, so the
+            // guide must NOT send the user to download it - that would reinstall what we just removed.
+            steps.Controls.Add(CreateStep("1", "无需安装任何其他控制台",
+                "安装器已经装好 GCU 服务与驱动，本程序自带全部必要组件。厂商「官方控制台」已由安装器清理并替换为 L-Mechrevo，不需要再下载或安装它。"), 0, stepRow++);
+            steps.Controls.Add(CreateStep("2", "直接开始使用",
+                "开机启动、性能模式、显卡模式与灯效都在这个窗口里；GCU 服务在后台运行，无需额外操作。"), 0, stepRow++);
+            steps.Controls.Add(CreateStep("!", "退出其他灯效控制软件",
+                "不要同时运行 BetterRGB、OpenRGB 或其他厂商灯效程序，否则多个程序抢占 HID 设备可能导致灯效失效或设备访问冲突。", warning: true), 0, stepRow++);
+        }
+        else
+        {
+            steps.RowCount = 1;
+        }
+        // 匿名统计告知（beta21）：说清楚发什么、不发什么、在哪里关，开关就在告知里。
+        // 单独告知时标题已经在页头，步骤标题换成「发送什么、不发送什么」，不重复三遍。
+        steps.Controls.Add(CreateStep("i",
+            telemetryOnly ? Properties.Strings.FirstRunTelemetryStepTitle : Properties.Strings.FirstRunTelemetryTitle,
+            Properties.Strings.FirstRunTelemetryBody, extra: _telemetry), 0, stepRow);
         scroll.Controls.Add(steps);
         root.Controls.Add(scroll, 0, 1);
 
@@ -113,15 +149,27 @@ public sealed class FirstRunGuideForm : RForm
         // N10: no "official download" button - the vendor console is removed by the installer.
         var later = CreateButton("稍后");
         later.DialogResult = DialogResult.Cancel;
-        var system = CreateButton("开始使用");
+        var system = CreateButton(telemetryOnly ? Properties.Strings.FirstRunTelemetryOk : "开始使用");
         system.DialogResult = DialogResult.OK;
         UiVisualStyle.ApplyPrimaryButton(system);
-        actions.Controls.Add(later, 0, 0);
-        actions.Controls.Add(system, 1, 0);
+        if (telemetryOnly)
+        {
+            // 只有告知时一个按钮就够：开关的选择随关窗生效，「稍后」没有意义（Esc 同样关窗）。
+            later.Dispose();
+            actions.Controls.Add(system, 1, 0);
+            CancelButton = system;
+        }
+        else
+        {
+            actions.Controls.Add(later, 0, 0);
+            actions.Controls.Add(system, 1, 0);
+            CancelButton = later;
+        }
         root.Controls.Add(actions, 0, 2);
 
         AcceptButton = system;
-        CancelButton = later;
+        // 初始焦点给主按钮：否则落在统计开关上，打开就带一圈焦点框，回车也不会关窗。
+        ActiveControl = system;
         UiVisualStyle.ApplyWindow(this);
         header.BackColor = UiVisualStyle.Surface;
         actions.BackColor = UiVisualStyle.Surface;
@@ -129,7 +177,7 @@ public sealed class FirstRunGuideForm : RForm
         ResponsiveLayout.ScaleFrom96(this, this);
     }
 
-    private static Control CreateStep(string marker, string title, string description, bool warning = false)
+    private static Control CreateStep(string marker, string title, string description, bool warning = false, Control? extra = null)
     {
         var row = new TableLayoutPanel
         {
@@ -137,7 +185,7 @@ public sealed class FirstRunGuideForm : RForm
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 2,
+            RowCount = extra is null ? 2 : 3,
             Margin = new Padding(0, 0, 0, UiVisualStyle.Space.Sm),
             Padding = new Padding(UiVisualStyle.Space.Xs, UiVisualStyle.Space.Sm, UiVisualStyle.Space.Xs, UiVisualStyle.Space.Sm),
             BackColor = UiVisualStyle.Window,
@@ -197,6 +245,11 @@ public sealed class FirstRunGuideForm : RForm
         row.Resize += (_, _) => ReflowDescription();
         desc.FontChanged += (_, _) => ReflowDescription();
         row.Controls.Add(desc, 1, 1);
+        if (extra is not null)
+        {
+            row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            row.Controls.Add(extra, 1, 2);
+        }
         return row;
     }
 

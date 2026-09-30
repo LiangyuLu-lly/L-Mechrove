@@ -320,7 +320,7 @@
 <article class="card card--gpu reveal">
 <span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-gpu"/></svg></span>
 <h3>显卡模式</h3>
-<p>集显、标准、直连，按机型只显示真正可用的选项。</p>
+<p>30–50 系集显、标准、直连，10–20 系 NVIDIA 首选显卡；只显示本机可用的选项，高亮跟随硬件实际状态。</p>
 <div class="mini-seg" aria-hidden="true"><span>集显</span><span class="is-on">标准</span><span>直连</span></div>
 </article>
 
@@ -396,8 +396,8 @@
 <article class="card card--diag reveal">
 <div class="card__text">
 <span class="card__icon"><svg class="ico" aria-hidden="true"><use href="#i-toolbox"/></svg></span>
-<h3>一键导出诊断包</h3>
-<p>遇到问题，在软件里点「诊断」导出诊断包，附在 GitHub 反馈里，定位更快。</p>
+<h3>问题反馈与诊断包</h3>
+<p>遇到问题，在软件里直接发送问题反馈（可附带脱敏日志），或点「诊断」导出诊断包，定位更快。</p>
 </div>
 <div class="diag" aria-hidden="true">
 <span class="diag__node"><svg class="ico"><use href="#i-box"/></svg>诊断包</span>
@@ -428,7 +428,7 @@
 <header class="sec-head reveal">
 <p class="eyebrow"><span>03</span>适配</p>
 <h2 class="sec-title" id="compat-title">从 GTX&nbsp;10 到 RTX&nbsp;50，一套软件</h2>
-<p class="sec-lead">面向 Uniwill / AiStone 平台的机械革命游戏本。通过机器上官方的 GCU 服务控制硬件，界面只显示你的机型真正支持的功能。</p>
+<p class="sec-lead">面向 Uniwill / AiStone 平台的机械革命游戏本。安装器按显卡代际自动选择对应的官方 GCU 服务，界面只显示你的机型真正支持的功能。</p>
 </header>
 
 <div class="gens reveal">
@@ -438,7 +438,7 @@
 <li class="gen"><small>GTX</small><b>16</b></li>
 <li class="gen"><small>RTX</small><b>20</b></li>
 </ul>
-<p class="gens__cap"><span>原厂控制台</span>GamingCenterU</p>
+<p class="gens__cap"><span>旧版 GCU 服务</span>GamingCenterU 时代</p>
 </div>
 <div class="gens__group gens__group--new">
 <ul class="gens__list">
@@ -446,7 +446,7 @@
 <li class="gen"><small>RTX</small><b>40</b></li>
 <li class="gen gen--verified"><small>RTX</small><b>50</b><em>已真机验证</em></li>
 </ul>
-<p class="gens__cap"><span>原厂控制台</span>Control Center</p>
+<p class="gens__cap"><span>新版 GCU 服务</span>30–50 系</p>
 </div>
 </div>
 
@@ -495,7 +495,7 @@
 <li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-wall"/></svg></span><div><h3>防火墙规则</h3><p>安装器为 13688 端口添加入站防火墙规则，阻止局域网访问。</p></div></li>
 <li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-seal"/></svg></span><div><h3>签名校验</h3><p>安装器会校验厂商组件的数字签名。</p></div></li>
 <li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-code"/></svg></span><div><h3>开源可审计</h3><p>源码以 <span class="nb">GPL-3.0</span> 协议公开在 GitHub，任何人都可以审阅。</p></div></li>
-<li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-pulse"/></svg></span><div><h3>匿名统计，可以关闭</h3><p>只发送匿名心跳（版本、机型、显卡代际等）和去掉用户名路径的运行日志片段，用于统计适配情况、排查问题，可以关闭。</p></div></li>
+<li class="reveal"><span class="secure__icon"><svg class="ico" aria-hidden="true"><use href="#i-pulse"/></svg></span><div><h3>匿名统计，可以关闭</h3><p>只发送匿名心跳（版本、机型、显卡代际、失败次数等）和脱敏的运行日志片段（去掉用户名、计算机名与设备地址），用于统计适配情况、排查问题；首次打开时会告知，可在设置里随时关闭。</p></div></li>
 </ul>
 </div>
 </section>
@@ -525,7 +525,7 @@
 <span>源码</span>
 </a>
 </div>
-<p class="dl__keep"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>直接使用官方 GCU 服务，安装前请先卸载官方控制台。</p>
+<p class="dl__keep"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>安装时会自动移除官方控制台；从旧版升级会保留你的模式参数与风扇曲线。</p>
 <div class="hash">
 <div class="hash__top"><span>SHA-256</span><span class="hash__file" data-rel="filename">L-Mechrevo-beta20-setup.exe</span></div>
 <div class="hash__row">
@@ -571,7 +571,7 @@
 <div class="faq__list reveal">
 <details class="qa" open>
 <summary>需要先卸载官方控制台吗？</summary>
-<div class="qa__a"><p>建议先卸载。L-Mechrevo 通过本机的官方 GCU 服务控制硬件，官方控制台同时运行会和它互相覆盖设置。</p></div>
+<div class="qa__a"><p>不需要。安装时会自动识别并移除官方控制台，硬件控制依然通过本机的官方 GCU 服务完成，安装器会按显卡代际自动选择对应版本；以后升级 L-Mechrevo 会保留你的模式参数与风扇曲线。</p></div>
 </details>
 <details class="qa">
 <summary>我的机型能用吗？</summary>
@@ -579,7 +579,7 @@
 </details>
 <details class="qa">
 <summary>会上传我的数据吗？</summary>
-<div class="qa__a"><p>只有匿名心跳（版本、机型、显卡代际等）和去掉用户名路径的运行日志片段，用于统计适配情况、排查问题，可以关闭。硬件控制全部在本机完成。</p></div>
+<div class="qa__a"><p>只有匿名心跳（版本、机型、显卡代际、失败次数等）和脱敏的运行日志片段（去掉用户名、计算机名与设备地址），用于统计适配情况、排查问题；首次打开时会告知，可在「设置 → 隐私与反馈」随时关闭。问题反馈只在你点「发送」时上传。硬件控制全部在本机完成。</p></div>
 </details>
 <details class="qa">
 <summary>和 G-Helper 是什么关系？</summary>
@@ -587,7 +587,7 @@
 </details>
 <details class="qa">
 <summary>出现问题怎么反馈？</summary>
-<div class="qa__a"><p>在软件内点击「诊断」导出诊断包，然后到 <a class="link" href="https://github.com/LiangyuLu-lly/L-Mechrevo/issues" target="_blank" rel="noopener">GitHub Issues</a> 描述问题并附上诊断包。</p></div>
+<div class="qa__a"><p>在软件里点「设置 → 隐私与反馈 → 问题反馈…」直接发送，发送后会得到一个编号；也可以点「诊断」导出诊断包，到 <a class="link" href="https://github.com/LiangyuLu-lly/L-Mechrevo/issues" target="_blank" rel="noopener">GitHub Issues</a> 描述问题并附上。</p></div>
 </details>
 </div>
 </div>

@@ -88,6 +88,60 @@ public class UiAuditClippingCheckTests
         }
     }
 
+    /// <summary>
+    /// 审计误报回归（beta21 b21e）：性能模式编辑器绑定到一行说明的自定义模式时，滚动宿主不限宽的
+    /// PreferredSize 把模式行（可折行 FlowLayoutPanel）压到最窄量出多一行，报「根内容溢出」，
+    /// 而实际宽度下内容恰好放得下。高度要按根控件的当前宽度量。
+    /// </summary>
+    [Fact]
+    public void WrappableContentIsMeasuredAtTheActualWidth()
+    {
+        bool audit = Program.UiAuditMode;
+        Program.UiAuditMode = true;
+        try
+        {
+            using var form = new CustomModeForm();
+            form.CreateControl();
+            form.Show();
+            Application.DoEvents();
+            foreach (string id in new[] { "balanced", "custom1" })
+            {
+                form.BindMode(id);
+                Application.DoEvents();
+                Assert.DoesNotContain(UiAuditRunner.CheckClipping(form), f => f.Kind == "docked-root-overflow");
+            }
+        }
+        finally
+        {
+            Program.UiAuditMode = audit;
+        }
+    }
+
+    /// <summary>真的放不下（按实际宽度量也超出客户区、又没有滚动条）照样要报。</summary>
+    [Fact]
+    public void AGenuinelyTooTallPanelRootIsStillFlagged()
+    {
+        using var form = new Form { Name = "TallProbe", ClientSize = new Size(300, 100) };
+        try
+        {
+            var host = new Panel { Name = "tallRoot", Dock = DockStyle.Fill, AutoScroll = false };
+            host.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 400 });
+            var column = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1 };
+            column.Controls.Add(new Label { Text = "内容", AutoSize = true, Height = 300 });
+            host.Controls.Add(column);
+            form.Controls.Add(host);
+            form.Show();
+            Application.DoEvents();
+
+            Assert.Contains(UiAuditRunner.CheckClipping(form), f =>
+                f.Kind == "docked-root-overflow" && f.Control.Contains("tallRoot", StringComparison.Ordinal));
+        }
+        finally
+        {
+            form.Hide();
+        }
+    }
+
     [Fact]
     public void CjkLabelInSlightlyTooNarrowColumn_IsFlagged()
     {

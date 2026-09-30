@@ -3775,6 +3775,214 @@ namespace MechrevoLite.Properties {
                 return ResourceManager.GetString("PowerTipDualUnverified", resourceCulture);
             }
         }
+        /// <summary>
+        ///   Looks up a localized string similar to Privacy and feedback.
+        /// </summary>
+        internal static string SettingsZonePrivacy {
+            get {
+                return ResourceManager.GetString("SettingsZonePrivacy", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Send anonymous usage stats and anonymised logs.
+        /// </summary>
+        internal static string UsageTelemetryToggle {
+            get {
+                return ResourceManager.GetString("UsageTelemetryToggle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Every 5 minutes: a random install ID, app version, model, BIOS, CPU/GPU model, GCU state, whether it runs as administrator, Windows version and the number of failures. After start-up and when failures happen, an anonymised log is added. No files, user name, computer name or MAC addresses..
+        /// </summary>
+        internal static string UsageTelemetryTip {
+            get {
+                return ResourceManager.GetString("UsageTelemetryTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Report a problem….
+        /// </summary>
+        internal static string FeedbackOpen {
+            get {
+                return ResourceManager.GetString("FeedbackOpen", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Report a problem.
+        /// </summary>
+        internal static string FeedbackTitle {
+            get {
+                return ResourceManager.GetString("FeedbackTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Tell us what went wrong. You get a ticket number after sending, so the report can be matched later..
+        /// </summary>
+        internal static string FeedbackLead {
+            get {
+                return ResourceManager.GetString("FeedbackLead", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to What happened.
+        /// </summary>
+        internal static string FeedbackMessageLabel {
+            get {
+                return ResourceManager.GetString("FeedbackMessageLabel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to What you did, what you expected, what happened.
+        /// </summary>
+        internal static string FeedbackMessagePlaceholder {
+            get {
+                return ResourceManager.GetString("FeedbackMessagePlaceholder", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Contact (optional).
+        /// </summary>
+        internal static string FeedbackContactLabel {
+            get {
+                return ResourceManager.GetString("FeedbackContactLabel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to QQ or e-mail, in case we need to ask.
+        /// </summary>
+        internal static string FeedbackContactPlaceholder {
+            get {
+                return ResourceManager.GetString("FeedbackContactPlaceholder", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Attach system info and the recent log (anonymised).
+        /// </summary>
+        internal static string FeedbackAttach {
+            get {
+                return ResourceManager.GetString("FeedbackAttach", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Includes model, BIOS, CPU/GPU and drivers, GCU state and the recent log. Your user folder, user name, computer name and device MAC addresses are replaced..
+        /// </summary>
+        internal static string FeedbackAttachTip {
+            get {
+                return ResourceManager.GetString("FeedbackAttachTip", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Send.
+        /// </summary>
+        internal static string FeedbackSend {
+            get {
+                return ResourceManager.GetString("FeedbackSend", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Cancel.
+        /// </summary>
+        internal static string FeedbackCancel {
+            get {
+                return ResourceManager.GetString("FeedbackCancel", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Close.
+        /// </summary>
+        internal static string FeedbackClose {
+            get {
+                return ResourceManager.GetString("FeedbackClose", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Sending….
+        /// </summary>
+        internal static string FeedbackSending {
+            get {
+                return ResourceManager.GetString("FeedbackSending", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Sent, ticket {0}. Thank you..
+        /// </summary>
+        internal static string FeedbackSent {
+            get {
+                return ResourceManager.GetString("FeedbackSent", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Not sent: {0}. Try again later, or export a diagnostic pack with Diagnostics and send it to the developer..
+        /// </summary>
+        internal static string FeedbackFailed {
+            get {
+                return ResourceManager.GetString("FeedbackFailed", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Please describe the problem first..
+        /// </summary>
+        internal static string FeedbackTooShort {
+            get {
+                return ResourceManager.GetString("FeedbackTooShort", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to too many reports from this network, try again in an hour.
+        /// </summary>
+        internal static string FeedbackRateLimited {
+            get {
+                return ResourceManager.GetString("FeedbackRateLimited", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to too large, untick the attachment and send again.
+        /// </summary>
+        internal static string FeedbackTooLarge {
+            get {
+                return ResourceManager.GetString("FeedbackTooLarge", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to timed out.
+        /// </summary>
+        internal static string FeedbackTimedOut {
+            get {
+                return ResourceManager.GetString("FeedbackTimedOut", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to Anonymous stats and logs.
+        /// </summary>
+        internal static string FirstRunTelemetryTitle {
+            get {
+                return ResourceManager.GetString("FirstRunTelemetryTitle", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to To learn which models are in use and where things break, L-Mechrevo sends anonymous stats (random install ID, version, model, CPU/GPU, GCU state, number of failures) and anonymised logs. No user name, computer name, files or device addresses. You can turn this off at any time in Settings → Privacy and feedback..
+        /// </summary>
+        internal static string FirstRunTelemetryBody {
+            get {
+                return ResourceManager.GetString("FirstRunTelemetryBody", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to OK.
+        /// </summary>
+        internal static string FirstRunTelemetryOk {
+            get {
+                return ResourceManager.GetString("FirstRunTelemetryOk", resourceCulture);
+            }
+        }
+        /// <summary>
+        ///   Looks up a localized string similar to What is sent and what is not.
+        /// </summary>
+        internal static string FirstRunTelemetryStepTitle {
+            get {
+                return ResourceManager.GetString("FirstRunTelemetryStepTitle", resourceCulture);
+            }
+        }
     }
 }
 

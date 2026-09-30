@@ -492,12 +492,19 @@ namespace MechrevoLite
             else
                 Logger.WriteLine("Startup task launched minimized to tray.");
 
+            // 首次引导 / 匿名统计告知只在真正的程序主流程里弹（测试与审计 new 出来的主窗不弹模态框）。
+            SettingsForm.FirstRunGuideAllowed = !UiAuditMode;
+
             // Let the first frame paint before display enumeration and compatibility initialization.
             EventHandler? deferredInitialization = null;
             deferredInitialization = (_, _) =>
             {
                 Application.Idle -= deferredInitialization;
                 if (!startMinimized) settingsForm.ShowFirstRunGuideIfNeeded();
+                // 托盘启动：启动期（连接、重放、灯效恢复、首拍心跳）过去后，主窗仍没打开就整理一次工作集。
+                if (startMinimized)
+                    MemoryHelper.TrimLater(TimeSpan.FromSeconds(45),
+                        static () => settingsForm is { IsDisposed: false, Visible: false });
                 settingsForm.InitAura();
                 SetAutoModes(init: true);
                 StartLightingIdleMonitor();

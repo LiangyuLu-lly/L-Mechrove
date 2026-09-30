@@ -116,6 +116,22 @@ internal static class SilentUpdate
         }
     }
 
+    /// <summary>
+    /// The outcome of the in-app update that led to this run, as a heartbeat token
+    /// (<c>ok-&lt;version&gt;</c> / <c>fail-&lt;exit code&gt;</c> / <c>unknown</c>; empty when no update was pending).
+    /// Lets the stats page show whether silent updates actually land on users' machines.
+    /// </summary>
+    internal static string LastOutcomeToken { get; private set; } = "";
+
+    /// <summary>Pure: outcome -> heartbeat token (only characters the stats server accepts).</summary>
+    internal static string OutcomeToken(UpdateOutcome outcome) => outcome.Kind switch
+    {
+        UpdateOutcomeKind.Succeeded => "ok-" + outcome.ToVersion,
+        UpdateOutcomeKind.Failed => "fail-" + (outcome.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "x"),
+        UpdateOutcomeKind.Unknown => "unknown",
+        _ => "",
+    };
+
     /// <summary>Reads (and, once final, clears) the pending update. Called once the UI is up.</summary>
     internal static UpdateOutcome CollectOutcome()
     {
@@ -131,6 +147,7 @@ internal static class SilentUpdate
         catch (Exception ex) { Logger.WriteLine("Cannot read the update exit code: " + ex.Message); }
 
         UpdateOutcome outcome = Evaluate(pending, Program.ReleaseVersion ?? "", exitCode, DateTimeOffset.UtcNow);
+        LastOutcomeToken = OutcomeToken(outcome);
         if (outcome.Kind != UpdateOutcomeKind.Unknown)
         {
             AppConfig.Remove(PendingKey);

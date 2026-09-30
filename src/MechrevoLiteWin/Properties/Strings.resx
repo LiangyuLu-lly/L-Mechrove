@@ -1469,4 +1469,82 @@ End them with administrator rights? (A UAC prompt appears.)</value>
   <data name="PowerTipDualUnverified" xml:space="preserve">
     <value>DC and USB-C both connected (not verified on this model; shown as DC)</value>
   </data>
+  <data name="SettingsZonePrivacy" xml:space="preserve">
+    <value>Privacy and feedback</value>
+  </data>
+  <data name="UsageTelemetryToggle" xml:space="preserve">
+    <value>Send anonymous usage stats and anonymised logs</value>
+  </data>
+  <data name="UsageTelemetryTip" xml:space="preserve">
+    <value>Every 5 minutes: a random install ID, app version, model, BIOS, CPU/GPU model, GCU state, whether it runs as administrator, Windows version and the number of failures. After start-up and when failures happen, an anonymised log is added. No files, user name, computer name or MAC addresses.</value>
+  </data>
+  <data name="FeedbackOpen" xml:space="preserve">
+    <value>Report a problem…</value>
+  </data>
+  <data name="FeedbackTitle" xml:space="preserve">
+    <value>Report a problem</value>
+  </data>
+  <data name="FeedbackLead" xml:space="preserve">
+    <value>Tell us what went wrong. You get a ticket number after sending, so the report can be matched later.</value>
+  </data>
+  <data name="FeedbackMessageLabel" xml:space="preserve">
+    <value>What happened</value>
+  </data>
+  <data name="FeedbackMessagePlaceholder" xml:space="preserve">
+    <value>What you did, what you expected, what happened</value>
+  </data>
+  <data name="FeedbackContactLabel" xml:space="preserve">
+    <value>Contact (optional)</value>
+  </data>
+  <data name="FeedbackContactPlaceholder" xml:space="preserve">
+    <value>QQ or e-mail, in case we need to ask</value>
+  </data>
+  <data name="FeedbackAttach" xml:space="preserve">
+    <value>Attach system info and the recent log (anonymised)</value>
+  </data>
+  <data name="FeedbackAttachTip" xml:space="preserve">
+    <value>Includes model, BIOS, CPU/GPU and drivers, GCU state and the recent log. Your user folder, user name, computer name and device MAC addresses are replaced.</value>
+  </data>
+  <data name="FeedbackSend" xml:space="preserve">
+    <value>Send</value>
+  </data>
+  <data name="FeedbackCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="FeedbackClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="FeedbackSending" xml:space="preserve">
+    <value>Sending…</value>
+  </data>
+  <data name="FeedbackSent" xml:space="preserve">
+    <value>Sent, ticket {0}. Thank you.</value>
+  </data>
+  <data name="FeedbackFailed" xml:space="preserve">
+    <value>Not sent: {0}. Try again later, or export a diagnostic pack with Diagnostics and send it to the developer.</value>
+  </data>
+  <data name="FeedbackTooShort" xml:space="preserve">
+    <value>Please describe the problem first.</value>
+  </data>
+  <data name="FeedbackRateLimited" xml:space="preserve">
+    <value>too many reports from this network, try again in an hour</value>
+  </data>
+  <data name="FeedbackTooLarge" xml:space="preserve">
+    <value>too large, untick the attachment and send again</value>
+  </data>
+  <data name="FeedbackTimedOut" xml:space="preserve">
+    <value>timed out</value>
+  </data>
+  <data name="FirstRunTelemetryTitle" xml:space="preserve">
+    <value>Anonymous stats and logs</value>
+  </data>
+  <data name="FirstRunTelemetryBody" xml:space="preserve">
+    <value>To learn which models are in use and where things break, L-Mechrevo sends anonymous stats (random install ID, version, model, CPU/GPU, GCU state, number of failures) and anonymised logs. No user name, computer name, files or device addresses. You can turn this off at any time in Settings → Privacy and feedback.</value>
+  </data>
+  <data name="FirstRunTelemetryOk" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="FirstRunTelemetryStepTitle" xml:space="preserve">
+    <value>What is sent and what is not</value>
+  </data>
 </root>

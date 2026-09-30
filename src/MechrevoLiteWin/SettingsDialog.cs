@@ -109,6 +109,88 @@ public sealed class SettingsDialog : UI.RForm
             _displayRow = overdriveChk;
             SetDisplayGroupAvailable(displayGroupAvailable);
         }
+
+        // 隐私与反馈（beta21）：匿名统计开关 + 问题反馈入口。都是应用自己的设置，与机型无关，恒可见。
+        AddHeader(Properties.Strings.SettingsZonePrivacy, 10);
+        AddRow(BuildPrivacyRow(D));
+    }
+
+    RCheckBox? _telemetryCheck;
+    bool _syncingTelemetry;
+    readonly ToolTip _toolTip = new() { AutoPopDelay = 20000, InitialDelay = 400, ReshowDelay = 200 };
+
+    TableLayoutPanel BuildPrivacyRow(Func<int, int> D)
+    {
+        var row = new UI.BufferedTableLayoutPanel
+        {
+            Name = "panelPrivacy",
+            ColumnCount = 1,
+            RowCount = 2,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
+            Margin = Padding.Empty,
+        };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        _telemetryCheck = new RCheckBox
+        {
+            Name = "checkUsageTelemetry",
+            Text = Properties.Strings.UsageTelemetryToggle,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            ForeColor = UI.UiVisualStyle.Text,
+            Margin = new Padding(0, D(2), 0, D(4)),
+            AccessibleDescription = Properties.Strings.UsageTelemetryTip,
+        };
+        SyncTelemetryCheck();
+        _telemetryCheck.CheckedChanged += (_, _) =>
+        {
+            if (_syncingTelemetry || _telemetryCheck is null) return;
+            Usage.UsageTelemetry.SetEnabled(_telemetryCheck.Checked);
+        };
+        _toolTip.SetToolTip(_telemetryCheck, Properties.Strings.UsageTelemetryTip);
+        // 弹窗是缓存实例：再次打开时按当前配置回显（首次引导里也能改这个开关）。
+        VisibleChanged += (_, _) => { if (Visible) SyncTelemetryCheck(); };
+
+        var feedback = new RButton
+        {
+            Name = "buttonFeedback",
+            Text = Properties.Strings.FeedbackOpen,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, D(2), 0, D(2)),
+            Padding = new Padding(D(10), D(2), D(10), D(2)),
+            Cursor = Cursors.Hand,
+            BorderRadius = 4,
+            Secondary = true,
+        };
+        // InitTheme 在这一行建好之前就跑过：按钮皮肤要自己上（底色 + 描边），否则只剩一行字，不像按钮。
+        UI.UiVisualStyle.ApplySecondaryButton(feedback);
+        feedback.BorderColor = UI.UiVisualStyle.Border;
+        feedback.Click += (_, _) =>
+        {
+            using var form = new FeedbackForm();
+            form.ShowDialog(this);
+        };
+        row.Controls.Add(_telemetryCheck, 0, 0);
+        row.Controls.Add(feedback, 0, 1);
+        return row;
+    }
+
+    void SyncTelemetryCheck()
+    {
+        if (_telemetryCheck is null) return;
+        _syncingTelemetry = true;
+        try { _telemetryCheck.Checked = Usage.UsageTelemetry.Enabled; }
+        finally { _syncingTelemetry = false; }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _toolTip.Dispose();
+        base.Dispose(disposing);
     }
 
     TableLayoutPanel BuildLanguageRow(Func<int, int> D)

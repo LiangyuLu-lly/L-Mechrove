@@ -168,6 +168,9 @@ internal static class UiAuditRunner
             }),
             // ColorCalibration 表单已删（2026-09-14：P3/AdobeRGB 不生效，弹窗改为屏幕行头内联下拉）。
             ("FirstRunGuide", () => new FirstRunGuideForm(), null),
+            // 老用户单独看到的「匿名统计」告知（beta21）与问题反馈窗口。
+            ("FirstRunTelemetry", () => new FirstRunGuideForm(telemetryOnly: true), null),
+            ("Feedback", () => new FeedbackForm(), null),
             ("KeyboardRgb", () => new RgbForm(new KeyboardRgb()), null),
             ("Lightbar", () => new LightForm(MqttTopics.LightbarCtrl, "灯条灯效", LightForm.LightbarEffects), null),
             ("LogoLight", () => new LightForm(MqttTopics.LogoLightCtrl, "Logo灯效", LightForm.LogoEffects), null),
@@ -885,7 +888,29 @@ internal static class UiAuditRunner
     private static (int Width, int Height) RequiredContentSize(Control root)
     {
         if (root is not TableLayoutPanel tlp)
-            return (root.PreferredSize.Width, root.PreferredSize.Height);
+        {
+            // 高度必须按根控件当前的宽度量：不限宽的 PreferredSize 会把可折行的内容（折行的
+            // FlowLayoutPanel、换行标签）压到最窄再量高，报出一行实际宽度下根本不会出现的折行
+            //（性能模式编辑器绑定到一行说明的自定义模式时：不限宽 627 px，实际 600 px 全部可见）。
+            Size unconstrained = root.PreferredSize;
+            int actualWidth = root.ClientSize.Width;
+            List<Control> visible = root.Controls.Cast<Control>().Where(child => child.Visible).ToList();
+            // 滚动宿主（Panel 里只有 Dock=Top 的内容块）：逐块按当前宽度量高再相加。
+            // Panel 自己的 GetPreferredSize 不把宽度约束传给停靠子控件，仍会量出那一行假折行。
+            if (actualWidth > 0 && visible.Count > 0 && visible.All(child => child.Dock == DockStyle.Top))
+            {
+                int stacked = root.Padding.Vertical;
+                foreach (Control child in visible)
+                {
+                    int childHeight = child.AutoSize
+                        ? child.GetPreferredSize(new Size(Math.Max(1, actualWidth - root.Padding.Horizontal - child.Margin.Horizontal), 0)).Height
+                        : child.Height;
+                    stacked += childHeight + child.Margin.Vertical;
+                }
+                return (unconstrained.Width, stacked);
+            }
+            return (unconstrained.Width, unconstrained.Height);
+        }
 
         int width = tlp.Padding.Horizontal;
         int height = tlp.Padding.Vertical;
