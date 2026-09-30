@@ -12,7 +12,7 @@ public static class AppConfig
 
     private static string configFile;
     private static string fallbackConfigFile;
-    // 环境旁路生效时置位：禁止把临时配置回写到机器级回退文件（ProgramData）。
+    // 环境旁路生效时置位：机器级回退文件（ProgramData）既不回写、也不读取。
     private static bool configFileOverridden;
 
     private static Dictionary<string, object> config = new Dictionary<string, object>();
@@ -56,7 +56,10 @@ public static class AppConfig
         Directory.CreateDirectory(Path.GetDirectoryName(configFile) ?? appPath);
         Directory.CreateDirectory(appPath);
 
-        if (!TryLoadConfig(configFile) && !TryRecoverConfig(configFile) && !TryLoadConfig(configFile + ".bak") && !TryLoadConfig(fallbackConfigFile)) Init();
+        // 旁路下也不从机器级回退文件读：它是真实用户配置的镜像（含统计安装编号），临时配置坏掉时
+        // 退回它，测试 / 诊断进程就会带着真实用户的设置与身份运行。
+        if (!TryLoadConfig(configFile) && !TryRecoverConfig(configFile) && !TryLoadConfig(configFile + ".bak") &&
+            (configFileOverridden || !TryLoadConfig(fallbackConfigFile))) Init();
 
         timer.Elapsed += Timer_Elapsed;
     }

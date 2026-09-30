@@ -106,8 +106,10 @@ internal static class GpuRestartVerifier
             if (!TryTakeRebootTarget(out int target))
             {
                 // 没有挂起的切换：只留一行启动时的回读，供多机型核对（内屏接线 / 独显在位 / NVRAM 字节）。
+                // 信息级：这一行是诊断回显，NVRAM 读不到（50 系根本没有这个变量）不算程序出错，
+                // 按失败词归类会让每台 50 系机器每次启动都多记一条错误、触发日志补传。
                 GpuRouteReadback atStart = GpuRouteMonitor.Refresh();
-                Logger.WriteLine($"GPU route at startup: {atStart}; {UefiDisplayModeDiagnostics.Describe()}");
+                Logger.WriteInfo($"GPU route at startup: {atStart}; {UefiDisplayModeDiagnostics.Describe()}");
                 return GpuRestartVerdict.NotPending;
             }
 
@@ -119,7 +121,10 @@ internal static class GpuRestartVerifier
                 await Task.Delay(ReadbackRetryDelay).ConfigureAwait(false);
             }
             GpuRestartVerdict verdict = Evaluate(target, readback.Route);
-            Logger.WriteLine($"GPU route verify: target={target} actual={readback.Route} ({readback}) verdict={verdict}; {UefiDisplayModeDiagnostics.Describe()}");
+            // 级别看结论而不是看字样：只有「重启后没生效」算错误；诊断尾巴里的 NVRAM 字样不参与归类。
+            string verifyLine = $"GPU route verify: target={target} actual={readback.Route} ({readback}) verdict={verdict}; {UefiDisplayModeDiagnostics.Describe()}";
+            if (verdict == GpuRestartVerdict.NotApplied) Logger.WriteError(verifyLine);
+            else Logger.WriteInfo(verifyLine);
 
             string message = verdict switch
             {
@@ -162,6 +167,7 @@ internal static class UefiDisplayModeDiagnostics
     const string VariableName = "UniWillVariable";
     const string VariableGuid = "{9f33f85c-13ca-4fd1-9c4a-96217722c593}";
     const int DisplayModeOffset = 0x62;
+    const int ErrorEnvVarNotFound = 203;
     const uint TokenAdjustPrivileges = 0x0020;
     const uint TokenQuery = 0x0008;
     const uint SePrivilegeEnabled = 0x00000002;
@@ -175,7 +181,14 @@ internal static class UefiDisplayModeDiagnostics
             if (!EnableSystemEnvironmentPrivilege()) return "NVRAM display byte: privilege unavailable";
             var buffer = new byte[4096];
             uint length = GetFirmwareEnvironmentVariableW(VariableName, VariableGuid, buffer, (uint)buffer.Length);
-            if (length == 0) return $"NVRAM display byte: read failed ({Marshal.GetLastWin32Error()})";
+            if (length == 0)
+            {
+                int error = Marshal.GetLastWin32Error();
+                // 203 = ERROR_ENVVAR_NOT_FOUND：固件里没有这个变量（50 系不走 NVRAM 路由），不是读取故障。
+                return error == ErrorEnvVarNotFound
+                    ? $"NVRAM display byte: variable absent ({error})"
+                    : $"NVRAM display byte: read failed ({error})";
+            }
             if (length <= DisplayModeOffset) return $"NVRAM display byte: variable too short ({length} B)";
             byte value = buffer[DisplayModeOffset];
             GpuRoute? intel = GpuRouteInference.DecodeOemDisplayMode(value, isAmd: false);

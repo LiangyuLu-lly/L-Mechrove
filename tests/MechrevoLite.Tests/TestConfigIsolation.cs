@@ -47,6 +47,12 @@ internal static class TestConfigIsolation
         // 测供电解码的用例自行换采样器并在结束时还原。
         HardwareControl.ReplacePowerInputSamplerForTests(new MechrevoLite.Hardware.PowerInputSampler(
             static () => null, static () => true, static () => true));
+
+        // 统计上报与问题反馈同理：测试进程绝不能把合成数据发到生产统计站。默认出口换成空实现
+        // （反馈固定回失败），个别用例换成自己的替身后还原成这里的值，而不是还原成 null。
+        MechrevoLite.Usage.UsageTelemetry.HttpPostOverride = static (_, _, _) => Task.CompletedTask;
+        MechrevoLite.Usage.FeedbackUpload.HttpPostOverride =
+            static (_, _, _) => Task.FromResult("{\"ok\":false,\"error\":\"offline in tests\"}");
     }
 }
 
