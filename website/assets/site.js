@@ -5,17 +5,19 @@
  * 发布新版时替换这个对象即可，字段与 update_check.php 的 data 一致。
  * ===================================================================== */
 const FALLBACK_RELEASE = {
-  latest_version: '0.289.0-beta20',
-  release_date: '2026-09-28',
-  notes: '- 新增：内置模式二级自定义，可按模式单独设置 Windows 电源模式、睿频、风扇增强与屏幕刷新率\r\n' +
-    '- 新增：充电上限重新开放，并自动确认硬件是否真正执行\r\n' +
-    '- 修复：多项「假成功」，失败或 GCU 未连接时回滚到真实状态并提示\r\n' +
-    '- 修复：从内置模式首次切到自定义偶尔不生效，未确认时自动重发一次\r\n' +
-    '- 优化：底栏改为图标加两字标签，100%–200% 缩放下不再裁字',
-  download_url: 'https://stats.l-mechrevo.cn/download/L-Mechrevo-beta20-setup.exe',
-  sha256: '7121DE4B5E6A2532BA897F88A2F8E146A2C3067560403AE9780245D80FAA2226',
-  size: 48597058,
-  filename: 'L-Mechrevo-beta20-setup.exe'
+  latest_version: '0.289.0-beta21',
+  release_date: '2026-09-30',
+  notes: '- 新增：性能模式重做，编辑器里新建、改名、删除模式并调全部参数，每项标注是否生效；内置模式改功耗墙、显卡功率或风扇曲线后自动改用固件自定义档\r\n' +
+    '- 新增：显卡模式按代际适配，10–20 系为 NVIDIA 首选显卡，30–50 系按官方方式切换，高亮跟随硬件实际状态\r\n' +
+    '- 新增：电池行显示供电方式（圆口 / Type-C）与充电状态；设置里新增问题反馈与匿名统计开关\r\n' +
+    '- 优化：软件内更新改为静默安装，装完自动重新打开并提示结果；始终以管理员身份运行\r\n' +
+    '- 修复：安装器真正移除官方控制台，升级保留模式参数与风扇曲线；修复 .NET 运行时自动下载失败、充电上限重启后失效的权限问题\r\n' +
+    '- 修复：温度与风扇读数过期时不再显示 -1°C 或旧数值\r\n' +
+    '- 优化：托盘常驻内存约 29 MB（原约 150 MB）',
+  download_url: 'https://stats.l-mechrevo.cn/download/L-Mechrevo-beta21-setup.exe',
+  sha256: '955BB2FBB3FC114B2BC9DF3ED9F70DDB1CAC04D27B81123C38B1F4B34A5BD0F7',
+  size: 58918455,
+  filename: 'L-Mechrevo-beta21-setup.exe'
 };
 const RELEASE_API = 'https://stats.l-mechrevo.cn/api/update_check.php';
 
