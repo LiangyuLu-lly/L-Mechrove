@@ -163,6 +163,18 @@ public class UsageTelemetryBeta21Tests
         int before = Logger.ErrorCount;
         Logger.WriteInfo("usage heartbeat failed: offline");       // 统计上报自己的网络失败不算
         Assert.Equal(before, Logger.ErrorCount);
+
+        // 真机：每次启动都会回显一帧 {"FanErrorStatus":0}，字段名里的 Error 不是失败。
+        // 计数只包住两次 HandleMessage（构造 / 释放硬件对象不在窗口内），避免别处的日志混进来。
+        using (var hardware = new MechrevoLite.Hardware.MechrevoHw())
+        {
+            int beforeFan = Logger.ErrorCount;
+            hardware.HandleMessage("System/FanErrorInfo", """{"FanErrorStatus":0}""");
+            Assert.Equal(beforeFan, Logger.ErrorCount);
+            hardware.HandleMessage("System/FanErrorInfo", """{"FanErrorStatus":1}""");
+            Assert.Equal(beforeFan + 1, Logger.ErrorCount);
+        }
+        before = Logger.ErrorCount;
         Logger.WriteLine("GPU switch failed: test");                // 失败词归类
         Logger.WriteError("explicit error");
         Assert.Equal(before + 2, Logger.ErrorCount);
@@ -190,6 +202,41 @@ public class UsageTelemetryBeta21Tests
         finally
         {
             UsageTelemetry.HttpPostOverride = previous;
+        }
+    }
+
+    /// <summary>
+    /// 告知之前什么都不发：心跳循环等到用户看过告知才发第一拍（真机：安装后 20 s 的启动心跳曾赶在告知窗口之前）。
+    /// </summary>
+    [Fact]
+    public void NothingIsSentBeforeTheNoticeHasBeenShown()
+    {
+        using var restore = new ConfigRestore(UsageTelemetry.EnabledKey, UsageTelemetry.NoticeVersionKey);
+        var posts = new List<string>();
+        Func<string, string, CancellationToken, Task>? previousPost = UsageTelemetry.HttpPostOverride;
+        TimeSpan previousDelay = UsageTelemetry.FirstDelay;
+        bool audit = Program.UiAuditMode;
+        UsageTelemetry.HttpPostOverride = (url, _, _) => { lock (posts) posts.Add(url); return Task.CompletedTask; };
+        UsageTelemetry.FirstDelay = TimeSpan.FromMilliseconds(10);
+        Program.UiAuditMode = false;
+        try
+        {
+            AppConfig.Remove(UsageTelemetry.NoticeVersionKey);
+            UsageTelemetry.ResetNoticeGateForTests();
+            UsageTelemetry.SetEnabled(true);
+            Thread.Sleep(400);
+            lock (posts) Assert.Empty(posts);
+
+            UsageTelemetry.MarkNoticeShown();
+            Assert.True(SpinWait.SpinUntil(() => { lock (posts) return posts.Any(u => u.EndsWith("/api/heartbeat.php")); }, 5000),
+                "the first heartbeat goes out once the notice has been shown");
+        }
+        finally
+        {
+            UsageTelemetry.SetEnabled(false);
+            UsageTelemetry.HttpPostOverride = previousPost;
+            UsageTelemetry.FirstDelay = previousDelay;
+            Program.UiAuditMode = audit;
         }
     }
 

@@ -202,6 +202,15 @@ public static class Logger
     }
 
     /// <summary>
+    /// 同上，但级别由调用方给出、不按失败词归类。给原样回显服务端 JSON 的状态行用：字段名里的
+    /// 「Error」（如 <c>FanErrorStatus:0</c>）不是失败，按词归类会让每台机器每次启动都多记一条错误。
+    /// </summary>
+    public static void WriteLineIfChanged(string key, string logMessage, LogSeverity severity)
+    {
+        if (TryMarkChanged(key, logMessage)) Write(logMessage, severity);
+    }
+
+    /// <summary>
     /// 去重判定本身，与文件写入分离：返回 true 表示内容相对上一次有变化（并已记下新值）。
     /// 分开是为了让语义可测——测试不必真的往用户的 log.txt 里写行。
     /// </summary>

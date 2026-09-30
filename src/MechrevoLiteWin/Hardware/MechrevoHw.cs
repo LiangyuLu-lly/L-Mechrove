@@ -1825,7 +1825,8 @@ public class MechrevoHw : IDisposable
         HardwareInfoSeen = true;
         string? ecVersion = FirstField(o, "ECVersion", "EcVersion", "EC_Version", "ECFWVersion")?.ToString();
         if (!string.IsNullOrWhiteSpace(ecVersion)) EcFirmwareVersion = ecVersion;
-        Logger.WriteLineIfChanged("hardware-info", "HardwareInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
+        Logger.WriteLineIfChanged("hardware-info", "HardwareInfo: " + o.ToString(Newtonsoft.Json.Formatting.None),
+            Logger.LogSeverity.Info);
     }
 
     private void OnSystemFanErrorInfo(JObject o)
@@ -1840,7 +1841,9 @@ public class MechrevoHw : IDisposable
             if (OptionalBool(o, property.Name) == true) anyFanError = true;
         }
         FanError = anyFanError;
-        Logger.WriteLineIfChanged("fan-error", "FanErrorInfo: " + o.ToString(Newtonsoft.Json.Formatting.None));
+        // 只有服务真的报了风扇异常才按错误记（ERROR_ONLY 落盘、计入失败次数）；0 = 正常。
+        Logger.WriteLineIfChanged("fan-error", "FanErrorInfo: " + o.ToString(Newtonsoft.Json.Formatting.None),
+            anyFanError ? Logger.LogSeverity.Error : Logger.LogSeverity.Info);
     }
 
     private void OnLightbarOrLogoLightStatus(string topic, JObject o)

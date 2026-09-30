@@ -2797,10 +2797,11 @@ namespace MechrevoLite
             try { guide.ShowDialog(this); }
             finally { _firstRunGuideShowing = false; }
             if (guideDue) AppConfig.Set("onboarding_version", guideVersion);
-            MechrevoLite.Usage.UsageTelemetry.MarkNoticeShown();
-            // 关窗 / 「稍后」同样按开关生效：告知已经看到了。
+            // 关窗 / 「稍后」同样按开关生效：告知已经看到了。先落实选择、再放行心跳——
+            // 反过来的话，在等告知的心跳循环会赶在「关闭」生效之前发出第一拍。
             if (guide.TelemetryChecked != MechrevoLite.Usage.UsageTelemetry.Enabled)
                 MechrevoLite.Usage.UsageTelemetry.SetEnabled(guide.TelemetryChecked);
+            MechrevoLite.Usage.UsageTelemetry.MarkNoticeShown();
         }
 
         /// <summary>

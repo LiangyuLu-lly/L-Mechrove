@@ -23,7 +23,8 @@ internal static class UsageTelemetry
     internal const string DefaultBaseUrl = "https://stats.l-mechrevo.cn";
     internal const int DefaultEnabled = 1;
     internal static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
-    internal static readonly TimeSpan FirstDelay = TimeSpan.FromSeconds(20);
+    /// <summary>启动后第一拍前的等待（测试接缝：可改短）。</summary>
+    internal static TimeSpan FirstDelay { get; set; } = TimeSpan.FromSeconds(20);
 
     /// <summary>日志上传的 UTF-8 字节上限（服务端 log.php 保留末尾 96 KB，这里留余量）。</summary>
     internal const int MaxLogBytes = 64 * 1024;
@@ -61,7 +62,25 @@ internal static class UsageTelemetry
     /// <summary>用户是否已经看过「匿名统计」告知。</summary>
     internal static bool NoticeShown => AppConfig.Get(NoticeVersionKey, 0) >= CurrentNoticeVersion;
 
-    internal static void MarkNoticeShown() => AppConfig.Set(NoticeVersionKey, CurrentNoticeVersion);
+    /// <summary>
+    /// 告知之前什么都不发：心跳循环在这里等到用户看过告知（首次引导 / 老用户的单独告知）为止。
+    /// 开机自启到托盘、一直没打开主窗的用户，看到告知之前不会发出任何数据。
+    /// </summary>
+    static TaskCompletionSource<bool> _noticeGate = NewNoticeGate();
+
+    static TaskCompletionSource<bool> NewNoticeGate() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>测试接缝：重新关上告知闸门（生产代码里闸门只开不关）。</summary>
+    internal static void ResetNoticeGateForTests() => Interlocked.Exchange(ref _noticeGate, NewNoticeGate());
+
+    /// <summary>本进程是否已经发过启动心跳（没发过就不发退出心跳）。</summary>
+    static int _startSent;
+
+    internal static void MarkNoticeShown()
+    {
+        AppConfig.Set(NoticeVersionKey, CurrentNoticeVersion);
+        Volatile.Read(ref _noticeGate).TrySetResult(true);
+    }
 
     /// <summary>
     /// 用户开关：打开即启动心跳循环；关闭立即停掉循环，**不再发任何东西**（包括退出心跳）。
@@ -303,6 +322,7 @@ internal static class UsageTelemetry
         lock (Gate)
         {
             if (Program.UiAuditMode || !Enabled) return;
+            if (NoticeShown) Volatile.Read(ref _noticeGate).TrySetResult(true);
             if (_loop is { IsCompleted: false }) return;
             Volatile.Write(ref _stopped, 0);
             _cts = new CancellationTokenSource();
@@ -326,7 +346,7 @@ internal static class UsageTelemetry
         try { cts?.Cancel(); } catch { /* 退出路径 */ }
         try
         {
-            if (Enabled && !Program.UiAuditMode)
+            if (Enabled && !Program.UiAuditMode && Volatile.Read(ref _startSent) != 0)
             {
                 // 退出心跳与（有新失败行时的）日志补传并行，合计最多等 2.5 s，不拖慢退出。
                 var pending = new List<Task> { Post(Capture(UsageSnapshot.EventStop), CancellationToken.None) };
@@ -357,6 +377,9 @@ internal static class UsageTelemetry
         try
         {
             await Task.Delay(FirstDelay, token).ConfigureAwait(false);
+            if (!NoticeShown) await Volatile.Read(ref _noticeGate).Task.WaitAsync(token).ConfigureAwait(false);
+            if (!Enabled) return;   // 用户在告知里关掉了
+            Interlocked.Exchange(ref _startSent, 1);
             await Post(Capture(UsageSnapshot.EventStart), token).ConfigureAwait(false);
             await PostLog(token).ConfigureAwait(false);
             while (!token.IsCancellationRequested)
