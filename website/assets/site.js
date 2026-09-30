@@ -15,8 +15,8 @@ const FALLBACK_RELEASE = {
     '- 修复：温度与风扇读数过期时不再显示 -1°C 或旧数值\r\n' +
     '- 优化：托盘常驻内存约 29 MB（原约 150 MB）',
   download_url: 'https://stats.l-mechrevo.cn/download/L-Mechrevo-beta21-setup.exe',
-  sha256: '955BB2FBB3FC114B2BC9DF3ED9F70DDB1CAC04D27B81123C38B1F4B34A5BD0F7',
-  size: 58918455,
+  sha256: 'D5986C21B503BCE96F2378A29565AD1D37995B7EC2C0675678327549793ECC5A',
+  size: 58923315,
   filename: 'L-Mechrevo-beta21-setup.exe'
 };
 const RELEASE_API = 'https://stats.l-mechrevo.cn/api/update_check.php';
