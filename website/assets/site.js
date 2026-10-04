@@ -5,19 +5,18 @@
  * 发布新版时替换这个对象即可，字段与 update_check.php 的 data 一致。
  * ===================================================================== */
 const FALLBACK_RELEASE = {
-  latest_version: '0.289.0-beta21',
-  release_date: '2026-09-30',
-  notes: '- 新增：性能模式重做，编辑器里新建、改名、删除模式并调全部参数，每项标注是否生效；内置模式改功耗墙、显卡功率或风扇曲线后自动改用固件自定义档\r\n' +
-    '- 新增：显卡模式按代际适配，10–20 系为 NVIDIA 首选显卡，30–50 系按官方方式切换，高亮跟随硬件实际状态\r\n' +
-    '- 新增：电池行显示供电方式（圆口 / Type-C）与充电状态；设置里新增问题反馈与匿名统计开关\r\n' +
-    '- 优化：软件内更新改为静默安装，装完自动重新打开并提示结果；始终以管理员身份运行\r\n' +
-    '- 修复：安装器真正移除官方控制台，升级保留模式参数与风扇曲线；修复 .NET 运行时自动下载失败、充电上限重启后失效的权限问题\r\n' +
-    '- 修复：温度与风扇读数过期时不再显示 -1°C 或旧数值\r\n' +
-    '- 优化：托盘常驻内存约 29 MB（原约 150 MB）',
-  download_url: 'https://stats.l-mechrevo.cn/download/L-Mechrevo-beta21-setup.exe',
-  sha256: 'D5986C21B503BCE96F2378A29565AD1D37995B7EC2C0675678327549793ECC5A',
-  size: 58923315,
-  filename: 'L-Mechrevo-beta21-setup.exe'
+  "update_available": true,
+  "latest_version": "0.290.6",
+  "channel": "beta",
+  "force": false,
+  "release_date": "2026-10-05",
+  "notes": "- 修复：自定义模式切换统一入口、过滤过时回包、取消旧请求，并在固件合并窗口后补发；切换失败会保留待同步参数。\n- 修复：电池档位重放、开机充电上限、旧机型 MICommonInterface 后端、主窗口图标、驱动检查与配置并发写入。\n- 新增：Intel/AMD 运行时 CPU 调整入口；缺少 PawnIO 时可校验后安装官方驱动。选项按实际型号、能力与固件开放，本机 275HX 固件拒绝降压，不承诺全系超频可用。\n- 优化：错误日志约 3 秒合并落盘、最短 15 秒上传间隔，断网自动退避重试，重启后补传；服务器确认批次、字节数和 SHA-256 后删除待传记录。\n- 修复：正常日志不再挤掉独立错误记录；崩溃同步留下待传证据；服务器保存最近故障历史、重复批次去重，并修复中文尾部截取。\n- 修复：下拉框字号变化后的文字裁切、校色框宽度，以及小分辨率高缩放下 CPU 窗口的尺寸限制。",
+  "download_url": "https://stats.l-mechrevo.cn/download/L-Mechrevo-0.290.6-setup.exe",
+  "sha256": "EF5C8B8E48B614ACB9AA7666A15D4CAFD637C1B40C12A3027511BD723604D7B3",
+  "size": 58693365,
+  "download_page": "https://l-mechrevo.cn",
+  "filename": "L-Mechrevo-0.290.6-setup.exe",
+  "is_latest": false
 };
 const RELEASE_API = 'https://stats.l-mechrevo.cn/api/update_check.php';
 
