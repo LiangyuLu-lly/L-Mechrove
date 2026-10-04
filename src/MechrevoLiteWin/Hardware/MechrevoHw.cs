@@ -105,6 +105,7 @@ public class MechrevoHw : IDisposable
     long _gpuModeStatusVersion;
     long _gpuSwitchResultVersion;
     long _fanStatusVersion;
+    long _customProfileStatusVersion;
     long _fanTableVersion;
     long _keyboardStatusVersion;
     long _lcStatusVersion;
@@ -120,18 +121,18 @@ public class MechrevoHw : IDisposable
     /// UI 线程连点两个模式按钮时，MQTT 线程可能读到「旧的期望模式 + 新的截止时刻」，
     /// 于是把真实到达的新模式当成过期包丢弃，最长 8 秒。
     /// </summary>
-    sealed record PendingModeSwitch(int ExpectedOperatingMode, long ExpiresAtTick);
+    sealed record PendingModeSwitch(int ExpectedOperatingMode, int? ExpectedCustomProfile, long ExpiresAtTick);
 
     internal const int ModeSwitchPendingWindowMs = 8000;
 
     /// <summary>服务层模式切换前调用：切换窗口内忽略旧命令的乱序模式回报。</summary>
-    public void MarkModeSwitchPending(int expectedOperatingMode) =>
+    public void MarkModeSwitchPending(int expectedOperatingMode, int? expectedCustomProfile = null) =>
         // GCU can deliver queued pre-switch Fan/Status packets for several seconds
         // on busy 50-series systems. Keep the expected mode authoritative long
         // enough to reject those stale packets after a confirmed user switch.
         Interlocked.Exchange(
             ref _pendingModeSwitch,
-            new PendingModeSwitch(expectedOperatingMode, Environment.TickCount64 + ModeSwitchPendingWindowMs));
+            new PendingModeSwitch(expectedOperatingMode, expectedCustomProfile, Environment.TickCount64 + ModeSwitchPendingWindowMs));
 
     /// <summary>
     /// 解除过期包过滤窗口。命令没能真正发出去时必须调用：
@@ -141,6 +142,13 @@ public class MechrevoHw : IDisposable
     /// 注意：确认成功后**不**清除窗口——那是有意设计，用于继续拒绝仍在途的切换前旧包。
     /// </summary>
     internal void ClearModeSwitchPending() => Interlocked.Exchange(ref _pendingModeSwitch, null);
+
+    internal bool HasConflictingModeSwitchPending(int mode, int profile)
+    {
+        PendingModeSwitch? pending = Volatile.Read(ref _pendingModeSwitch);
+        return pending is not null && Environment.TickCount64 <= pending.ExpiresAtTick &&
+            (pending.ExpectedOperatingMode != mode || pending.ExpectedCustomProfile is int expected && expected != profile);
+    }
 
     /// <summary>当前是否处于过滤窗口内，以及窗口期望的模式。两个值原子取出。</summary>
     internal (bool Active, int ExpectedOperatingMode) GetModeSwitchPendingState()
@@ -152,6 +160,7 @@ public class MechrevoHw : IDisposable
 
     public MechrevoHw() : this(null, null, null, NvidiaGpuControl.TryCreateOverclockControl)
     {
+        _allowLegacyProbe = true;
     }
 
     /// <summary>
@@ -289,7 +298,7 @@ public class MechrevoHw : IDisposable
     public event Action<int>? CloseTimerChanged;
 
     // ---- 当前机型能力：官方 ItemSupport 静态画像 + MQTT 运行时纠偏 ----
-    public MechrevoDeviceCapabilities Capabilities { get; }
+    public MechrevoDeviceCapabilities Capabilities { get; private set; }
     public bool FanStatusSeen { get; private set; }
     public bool FanCurveSeen { get; private set; }
     public bool SettingStatusSeen { get; private set; }
@@ -822,6 +831,7 @@ public class MechrevoHw : IDisposable
 
     public int ColorCalibrationMode { get; private set; }
     public long FanStatusVersion => Interlocked.Read(ref _fanStatusVersion);
+    internal long CustomProfileStatusVersion => Interlocked.Read(ref _customProfileStatusVersion);
     public long FanTableVersion => Interlocked.Read(ref _fanTableVersion);
 
     /// <summary>
@@ -1273,8 +1283,51 @@ public class MechrevoHw : IDisposable
     readonly byte[][] _defaultCpuUpT = new byte[3][];
     readonly byte[][] _defaultGpuUpT = new byte[3][];
 
-    public bool IsConnected =>
+    readonly bool _allowLegacyProbe;
+    bool _legacyProbed;
+    LegacyMifsWmi? _legacyMifs;
+    System.Threading.Timer? _legacyTimer;
+    readonly SemaphoreSlim _legacyRefreshGate = new(1, 1);
+    long _legacySnapshotVersion;
+    readonly object _legacyStateGate = new();
+    internal bool UsesLegacyMifs => _legacyMifs is not null;
+    internal bool IsGcuConnected =>
         _publishOverride is not null || (_subscriptionsReady && _client?.IsConnected == true);
+    public bool IsConnected => _legacyMifs?.Available == true || IsGcuConnected;
+
+    internal async Task<bool> RefreshLegacyModeAsync(CancellationToken ct = default)
+    {
+        if (_legacyMifs is null || _disposed) return false;
+        await _legacyRefreshGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            LegacyMifsSnapshot snapshot = await Task.Run(_legacyMifs.ReadMode, ct).ConfigureAwait(false);
+            bool changed;
+            lock (_legacyStateGate)
+            {
+                if (_disposed || snapshot.Version <= _legacySnapshotVersion) return IsConnected;
+                _legacySnapshotVersion = snapshot.Version;
+                changed = OperatingMode != snapshot.OperatingMode;
+                OperatingMode = snapshot.OperatingMode;
+                FanStatusSeen = true;
+            }
+            if (changed) RaiseIsolated(ModeChanged, nameof(ModeChanged), snapshot.OperatingMode);
+            RaiseIsolated(StateChanged, nameof(StateChanged), MqttTopics.FanStatus);
+            RaiseIsolated(DataChanged, nameof(DataChanged));
+            return true;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { Logger.WriteLineIfChanged("legacy-mifs-read", "Legacy MIFS read failed: " + ex.Message); return false; }
+        finally { _legacyRefreshGate.Release(); }
+    }
+
+    internal async Task<bool> SwitchLegacyModeAsync(int operatingMode, CancellationToken ct)
+    {
+        if (_legacyMifs is null || operatingMode is < 0 or > 2) return false;
+        bool confirmed = await _legacyMifs.SwitchModeAsync(operatingMode, ct).ConfigureAwait(false);
+        await RefreshLegacyModeAsync(ct).ConfigureAwait(false);
+        return confirmed && OperatingMode == operatingMode;
+    }
 
     public event Action? DataChanged;   // UI 刷新信号（对应 G-Helper 的 Timer 轮询，改为事件触发）
     public event Action<int>? ConnectionReady;   // 首连/重连完成订阅与初始请求后触发
@@ -1301,6 +1354,22 @@ public class MechrevoHw : IDisposable
         {
         if (_disposed) return false;
         if (_publishOverride is not null) return true;
+        if (_allowLegacyProbe && !_legacyProbed && !Program.UiAuditMode)
+        {
+            _legacyProbed = true;
+            _legacyMifs = await Task.Run(LegacyMifsWmi.TryCreate).ConfigureAwait(false);
+            if (_legacyMifs is not null)
+            {
+                Capabilities = new MechrevoDeviceCapabilities { ProjectId = "MICommonInterface", IsMechrevo = true,
+                    ProfileAvailable = true, TurboMode = true, AmdPlatform = PawnIO.CpuInfo.IsAMD };
+                Logger.WriteLine("Hardware backend: legacy MICommonInterface; built-in modes only.");
+                _legacyTimer = new System.Threading.Timer(_ => _ = RefreshLegacyModeAsync(), null, 3000, 3000);
+                await RefreshLegacyModeAsync().ConfigureAwait(false);
+                RaiseIsolated(CapabilitiesChanged, nameof(CapabilitiesChanged));
+                NotifyConnectionReady();
+            }
+        }
+        if (_legacyMifs is not null) return await RefreshLegacyModeAsync().ConfigureAwait(false);
         if (_subscriptionsReady && _client?.IsConnected == true) return true;
         if (_client is null)
         {
@@ -1349,7 +1418,7 @@ public class MechrevoHw : IDisposable
                 .Build());
             if (res.ResultCode != MqttClientConnectResultCode.Success)
             {
-                Logger.WriteLine($"MechrevoHw 首次连接未就绪: {res.ResultCode}");
+                Logger.WriteLineIfChanged("mqtt-connect:" + _clientId, $"MechrevoHw 首次连接未就绪: {res.ResultCode}");
                 if (!_disposed) _ = ReconnectLoopAsync();
                 return false;
             }
@@ -1358,7 +1427,7 @@ public class MechrevoHw : IDisposable
         {
             // 开机时 GCU/MQTT 服务通常晚于登录任务启动。连接拒绝会抛异常，
             // 不能只依赖 DisconnectedAsync，否则本次进程将永远不再尝试连接。
-            Logger.WriteLine("MechrevoHw 连接尚未就绪: " + ex.Message);
+            Logger.WriteLineIfChanged("mqtt-connect:" + _clientId, "MechrevoHw 连接尚未就绪: " + ex.Message);
             if (!_disposed) _ = ReconnectLoopAsync();
             return false;
         }
@@ -1388,7 +1457,7 @@ public class MechrevoHw : IDisposable
         catch (Exception ex)
         {
             // 订阅失败不能静默存活（TCP 已连但零订阅的"死态"）：断开触发重连
-            Logger.WriteLine("MechrevoHw 订阅失败: " + ex.Message);
+            Logger.WriteLineIfChanged("mqtt-connect:" + _clientId, "MechrevoHw 订阅失败: " + ex.Message);
             _subscriptionsReady = false;
             _reconnect.MarkDisconnectRequested();
             try { await _client.DisconnectAsync(); }
@@ -1414,7 +1483,7 @@ public class MechrevoHw : IDisposable
         }
         catch (Exception ex)
         {
-            Logger.WriteLine("MechrevoHw 初始状态请求失败: " + ex.Message);
+            Logger.WriteLineIfChanged("mqtt-connect:" + _clientId, "MechrevoHw 初始状态请求失败: " + ex.Message);
             _subscriptionsReady = false;
             _reconnect.MarkDisconnectRequested();
             try { await _client.DisconnectAsync(); }
@@ -1463,6 +1532,7 @@ public class MechrevoHw : IDisposable
     /// </summary>
     internal async Task RequestInitialStateAsync()
     {
+        if (_legacyMifs is not null) { await RefreshLegacyModeAsync().ConfigureAwait(false); return; }
         await Publish(MqttTopics.SystemControl, new Dictionary<string, object> { ["Action"] = "System_ON" });
         await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
         await Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
@@ -1510,6 +1580,8 @@ public class MechrevoHw : IDisposable
         OnServiceProfileMayHaveChanged();
         int generation = Interlocked.Increment(ref _connectionGeneration);
         Volatile.Write(ref _reconnectStartedTick, 0);
+        Logger.ResetChangeTracking("mqtt-connect:" + _clientId);
+        Logger.ResetChangeTracking("mqtt-reconnect:" + _clientId);
         Logger.WriteLine($"MechrevoHw connection ready: generation={generation}");
         // 新连接要重新记录一遍基线状态，否则「变化才记录」会因为内容与断连前相同而
         // 整段跳过，日志里就看不出这一代连接到底读到了什么。
@@ -1545,6 +1617,8 @@ public class MechrevoHw : IDisposable
     internal static int ReconnectInitialDelayMs(int quickDropStreak) =>
         quickDropStreak <= 1 ? 250 : (int)Math.Min(30_000, 250L << Math.Min(quickDropStreak, 7));
 
+    internal static int NextReconnectDelayMs(int delayMs) => (int)Math.Min(30_000L, Math.Max(250L, delayMs) * 2);
+
     async Task ReconnectLoopAsync()
     {
         _reconnect.MarkDisconnectRequested();
@@ -1555,18 +1629,19 @@ public class MechrevoHw : IDisposable
         try
         {
             int retryDelayMs = ReconnectInitialDelayMs(Volatile.Read(ref _quickDropStreak));
+            Logger.WriteLine("MQTT 断线，重连中…");
             while (_reconnect.ShouldContinue(
                        _subscriptionsReady && _client?.IsConnected == true,
                        _disposed))
             {
                 await Task.Delay(retryDelayMs).ConfigureAwait(false);
+                if (_disposed) return;
                 try
                 {
-                    Logger.WriteLine("MQTT 断线，重连中…");
                     if (await ConnectAsync()) return;
                 }
-                catch (Exception ex) { Logger.WriteLine("MQTT reconnect attempt failed: " + ex.Message); }
-                retryDelayMs = Math.Min(retryDelayMs * 2, Math.Max(2000, retryDelayMs));
+                catch (Exception ex) { Logger.WriteLineIfChanged("mqtt-reconnect:" + _clientId, "MQTT reconnect attempt failed: " + ex.Message); }
+                retryDelayMs = NextReconnectDelayMs(retryDelayMs);
             }
         }
         finally
@@ -2469,6 +2544,18 @@ public class MechrevoHw : IDisposable
 
     private void OnFanStatus(JObject o)
     {
+        int newMode = OptionalInt(o, "OperatingMode", -1);
+        int reportedProfile = OptionalInt(o, "CustomProfileIndex", -1);
+        PendingModeSwitch? pendingSwitch = Volatile.Read(ref _pendingModeSwitch);
+        if (pendingSwitch is not null && Environment.TickCount64 <= pendingSwitch.ExpiresAtTick &&
+            ((newMode >= 0 && newMode != pendingSwitch.ExpectedOperatingMode) ||
+             (pendingSwitch.ExpectedCustomProfile is { } profile && reportedProfile >= 0 &&
+              (newMode == 3 || newMode < 0) && reportedProfile != profile)))
+        {
+            Logger.WriteLineThrottled("stale-op-mode",
+                $"Ignored stale mode/profile {newMode}/{reportedProfile}; pending={pendingSwitch.ExpectedOperatingMode}/{pendingSwitch.ExpectedCustomProfile}", 500);
+            return;
+        }
         FanStatusSeen = true;
         // IsAC 过去用 Value<bool>()，是本 case 自增版本号后的第一个赋值。
         // 这个协议在同一帧里大量使用字符串型布尔（GPU_DynamicBoostSwitch=="1" 等），
@@ -2479,7 +2566,6 @@ public class MechrevoHw : IDisposable
         // 且只有真的解析出布尔值才认为看见过这项能力。
         bool? fanBoost = OptionalBool(o, "FanBoostEnable");
         if (fanBoost.HasValue) { FanBoost = fanBoost.Value; FanBoostSeen = true; }
-        var newMode = Int(o, "OperatingMode");
         // 事件延后到 case 末尾统一发。过去这里是裸 ModeChanged?.Invoke()，
         // 位置在本 case 中段——订阅者抛异常会把后面的功耗墙、温度墙、TGP、
         // 超频回读连同版本号一起丢掉，而那些字段是本帧最主要的内容。
@@ -2552,8 +2638,7 @@ public class MechrevoHw : IDisposable
         // 当前自定义档的显示名（官方 SET_CUSTOM_PROFILE_OSD_STRING 的回读；出厂为 "Mode4_Profile1" 这类内部名）。
         if (o["ProfileName"] is JToken profileName && profileName.Type == JTokenType.String)
             ProfileName = profileName.ToString();
-        var cpi = o["CustomProfileIndex"]?.ToString();
-        if (cpi is not null && int.TryParse(cpi, out int cpiV)) CustomProfileIndex = cpiV;
+        if (reportedProfile is >= 0 and < Mode.FirmwareSlotPlanner.MaxSlotCount) CustomProfileIndex = reportedProfile;
         // TGP 与 Dynamic Boost 的目标值同样只接受 > 0：GCU 在这两项关闭时
         // 会报 0，一旦写进来就被当成「用户设定的目标值 0 W」，
         // 而 Pl1/Pl2 早就用 `CpuAmdSpl > 0` 挡住了同一件事。
@@ -2719,6 +2804,8 @@ public class MechrevoHw : IDisposable
         // 外部按 FanStatusVersion 轮询的代码会认为「来了一帧新状态」，
         // 而模式、功耗墙、TCC、TGP、超频回读全是旧值。
         Interlocked.Increment(ref _fanStatusVersion);
+        if (newMode == 3 && reportedProfile is >= 0 and < Mode.FirmwareSlotPlanner.MaxSlotCount)
+            Interlocked.Increment(ref _customProfileStatusVersion);
         if (modeChangedTo is int changedMode)
             RaiseIsolated(ModeChanged, nameof(ModeChanged), changedMode);
         RaiseIsolated(CustomModeChanged, nameof(CustomModeChanged));
@@ -3821,6 +3908,8 @@ public class MechrevoHw : IDisposable
             catch (Exception ex) { Logger.WriteLine("Elevated GPU applier dispose failed: " + ex.Message); }
         }
         _client?.Dispose();
+        _legacyTimer?.Dispose();
+        _legacyMifs?.Dispose();
 
         // 清空公开事件。MQTT 客户端侧的 handler 随 _client.Dispose() 一起走，
         // 但这些是外部订阅的：UI 审计路径会反复创建/销毁实例，残留的订阅会让

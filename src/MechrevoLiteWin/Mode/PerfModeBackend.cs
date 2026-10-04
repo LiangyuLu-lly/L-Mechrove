@@ -83,17 +83,17 @@ internal sealed class PerfModeBackend : IPerfModeBackend
     }
 
     public Task<bool> SwitchBuiltInAsync(PerfModeKind kind, CancellationToken ct) =>
-        _service.SwitchMode(PerfModeMapping.ToServiceMode(kind));
+        _service.SwitchMode(PerfModeMapping.ToServiceMode(kind), ct);
 
     public Task<bool> SwitchTurboSubModeAsync(bool silent, CancellationToken ct) =>
-        _service.SwitchTurboSubMode(silent);
+        _service.SwitchTurboSubMode(silent, ct);
 
     public Task<bool> SwitchFirmwareSlotAsync(int slotIndex, CancellationToken ct) =>
-        _service.SwitchCustomProfileWithResend(slotIndex);
+        _service.SwitchCustomProfileWithResend(slotIndex, ct);
 
     public Task<bool> WriteDetailFieldAsync(string wireKey, string value, CancellationToken ct) =>
         // 逐字段一包：同包多字段只有第一个生效（厂商 UserSet_Mode_Detail 的 else-if 链）。
-        _service.SetCustomDetail(new Dictionary<string, string> { [wireKey] = value });
+        _service.SetCustomDetail(new Dictionary<string, string> { [wireKey] = value }, ct);
 
     public async Task<bool> WriteFanCurveAsync(bool cpu, int[] duty, CancellationToken ct)
     {
@@ -113,7 +113,7 @@ internal sealed class PerfModeBackend : IPerfModeBackend
         _service.ApplyGcuGpuOverclock(on, core, memory);
 
     public Task<bool> SetSlotNameAsync(string name, CancellationToken ct) =>
-        _service.SetCustomProfileName(name);
+        _service.SetCustomProfileName(name, ct);
 
     public Task<bool> SetFanBoostAsync(bool on, CancellationToken ct) =>
         _hw.FanBoost == on ? Task.FromResult(true) : _service.SwitchFanBoost(on);
@@ -165,7 +165,8 @@ internal sealed class PerfModeBackend : IPerfModeBackend
                 return _hw.DriverGpuOverclockFieldMatches(step.WireKey!, step.Number);
 
             case PerfApplyVerify.CpuPackagePower:
-                return VerifyCpuPowerLimit(step.Number);
+                // 单次功耗既可能来自旧样本，也不能证明 PL1/PL2/PL4 的时序行为；持续证据由 PowerWallVerifier 提供。
+                return null;
 
             case PerfApplyVerify.GpuPowerLimit:
             case PerfApplyVerify.FanDuty:
@@ -180,6 +181,8 @@ internal sealed class PerfModeBackend : IPerfModeBackend
 
     async Task<bool?> VerifyModeAsync(PerfApplyStep step, CancellationToken ct)
     {
+        if (step.Kind == PerfApplyStepKind.SwitchTurboSubMode)
+            return TurboSubModeMatches(step.Number == 1, _hw.OperatingMode, MechrevoService.ReadSilentTurboState());
         if (step.Kind == PerfApplyStepKind.SwitchFirmwareSlot)
         {
             bool ok = await _hw.WaitForStateAsync(
@@ -189,28 +192,14 @@ internal sealed class PerfModeBackend : IPerfModeBackend
         }
 
         int expected = PerfModeMapping.ToFirmwareOperatingMode((PerfModeKind)step.Number);
+        if (_hw.UsesLegacyMifs)
+            return await _hw.RefreshLegacyModeAsync(ct).ConfigureAwait(false) && _hw.OperatingMode == expected;
         bool switched = await _hw.WaitForStateAsync(
             () => _hw.OperatingMode == expected,
             TimeSpan.FromMilliseconds(1200), ct).ConfigureAwait(false);
         return switched || _hw.OperatingMode == expected;
     }
 
-    /// <summary>
-    /// 功耗墙的独立判据：CPU 封装功耗（RAPL）。只有当前功耗**明显超过**目标时才算失败，
-    /// 轻载下一律返回 null——轻载时功耗本来就低于墙，判不出墙是否生效。
-    /// </summary>
-    internal static bool? VerifyCpuPowerLimit(int watts) =>
-        EvaluateCpuPowerLimit(watts, HardwareControl.cpuPower);
-
-    /// <summary>纯函数形式，便于单测。</summary>
-    internal static bool? EvaluateCpuPowerLimit(int watts, float? measured)
-    {
-        if (watts <= 0 || measured is not { } power || power <= 0) return null;
-        // 留 15% + 5 W 余量：RAPL 是瞬时值，短时冲高不算越界。
-        double ceiling = watts * 1.15 + 5;
-        if (power > ceiling) return false;
-        // 功耗已经贴近墙 → 墙确实在管着它。
-        if (power >= watts * 0.85) return true;
-        return null;   // 轻载：判不出来
-    }
+    internal static bool? TurboSubModeMatches(bool silent, int operatingMode, bool? actualSilent) =>
+        operatingMode != 2 ? false : actualSilent is { } actual ? actual == silent : null;
 }

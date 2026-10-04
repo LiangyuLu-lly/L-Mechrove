@@ -26,7 +26,11 @@ internal sealed class PerfModeService
 
     readonly MechrevoHw _hw;
     readonly IPerfModeBackend _backend;
+    readonly Func<int> _powerSource;
     readonly SemaphoreSlim _gate = new(1, 1);
+    readonly object _requestLock = new();
+    CancellationTokenSource? _activationCts;
+    CancellationTokenSource? _editCts;
     readonly object _redirectLock = new();
     readonly Queue<long> _recentRedirects = new();
     IReadOnlyList<PerfModeDefinition>? _modes;
@@ -45,10 +49,11 @@ internal sealed class PerfModeService
     /// <summary>一次下发结束（编辑器据此显示逐项结果）。</summary>
     public event Action<PerfApplyOutcome>? Applied;
 
-    PerfModeService(MechrevoHw hw, IPerfModeBackend backend)
+    internal PerfModeService(MechrevoHw hw, IPerfModeBackend backend, Func<int>? powerSource = null)
     {
         _hw = hw;
         _backend = backend;
+        _powerSource = powerSource ?? (() => (int)SystemInformation.PowerStatus.PowerLineStatus);
     }
 
     public static PerfModeService Create(MechrevoService service, MechrevoHw hw)
@@ -127,7 +132,7 @@ internal sealed class PerfModeService
 
     PerfModeCapabilities Capabilities() => PerfModeBackend.CapabilitiesFrom(_hw);
 
-    static int PowerSourceKey() => (int)SystemInformation.PowerStatus.PowerLineStatus;
+    int PowerSourceKey() => _powerSource();
 
     // ---- 激活 ----
 
@@ -136,29 +141,67 @@ internal sealed class PerfModeService
     /// </summary>
     /// <param name="forceParameters">档位命中也重写全部固件字段（路线刚变化、或怀疑档位被外部改过）。</param>
     public async Task<PerfApplyOutcome?> ActivateAsync(string modeId, string reason, bool forceParameters = false)
+        => await ActivateIfCurrentAsync(modeId, reason, forceParameters, null).ConfigureAwait(false);
+
+    async Task<PerfApplyOutcome?> ActivateIfCurrentAsync(string modeId, string reason, bool forceParameters, int? expectedRequest)
     {
-        int request = Interlocked.Increment(ref _requestSeq);
-        Volatile.Write(ref _pendingModeId, modeId);
+        int request;
+        CancellationTokenSource requestCts;
+        CancellationTokenSource? previous;
+        CancellationTokenSource? previousEdit;
+        lock (_requestLock)
+        {
+            if (expectedRequest is { } expected && expected != _requestSeq) return null;
+            request = Interlocked.Increment(ref _requestSeq);
+            requestCts = new CancellationTokenSource();
+            previous = _activationCts;
+            previousEdit = _editCts;
+            _activationCts = requestCts;
+            Volatile.Write(ref _pendingModeId, modeId);
+        }
+        try { previous?.Cancel(); }
+        catch (ObjectDisposedException) { }
+        try { previousEdit?.Cancel(); }
+        catch (ObjectDisposedException) { }
         RaiseActiveChanged();
-        await _gate.WaitAsync().ConfigureAwait(false);
-        Interlocked.Increment(ref _activating);
-        Interlocked.Increment(ref _guardSeq);
+        bool locked = false;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
         {
+            await _gate.WaitAsync(requestCts.Token).ConfigureAwait(false);
+            locked = true;
+            Interlocked.Increment(ref _activating);
+            Interlocked.Increment(ref _guardSeq);
             if (request != Volatile.Read(ref _requestSeq)) return null;
-            return await ActivateLockedAsync(modeId, reason, forceParameters).ConfigureAwait(false);
+            Logger.WriteLine($"PerfModes: {modeId} gate acquired after {elapsed.ElapsedMilliseconds}ms");
+            return await ActivateLockedAsync(modeId, reason, forceParameters, requestCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (requestCts.IsCancellationRequested)
+        {
+            Logger.WriteLine($"PerfModes: {modeId} superseded after {elapsed.ElapsedMilliseconds}ms");
+            return null;
         }
         finally
         {
-            Interlocked.Decrement(ref _activating);
-            if (request == Volatile.Read(ref _requestSeq))
-                Interlocked.CompareExchange(ref _pendingModeId, null, modeId);
-            _gate.Release();
+            if (locked)
+            {
+                Interlocked.Decrement(ref _activating);
+                _gate.Release();
+            }
+            lock (_requestLock)
+            {
+                if (ReferenceEquals(_activationCts, requestCts))
+                {
+                    _activationCts = null;
+                    Volatile.Write(ref _pendingModeId, null);
+                }
+            }
+            requestCts.Dispose();
             RaiseActiveChanged();
         }
     }
 
-    async Task<PerfApplyOutcome?> ActivateLockedAsync(string modeId, string reason, bool forceParameters)
+    async Task<PerfApplyOutcome?> ActivateLockedAsync(string modeId, string reason, bool forceParameters, CancellationToken ct)
     {
         PerfModeDefinition? mode = Find(modeId);
         if (mode is null)
@@ -190,14 +233,24 @@ internal sealed class PerfModeService
         IReadOnlyList<PerfApplyStep> steps = PerfModeApplyPlanner.Build(mode, plan, caps);
         Logger.WriteLine($"PerfModes: activate {mode.Id} ({reason}) route={mode.Route} slot={plan?.SlotIndex.ToString() ?? "-"} " +
             $"write={plan?.NeedsParameterWrite.ToString() ?? "-"} steps={steps.Count}");
-        PerfApplyOutcome outcome = await PerfModeRunner.RunAsync(mode.Id, steps, _backend).ConfigureAwait(false);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        PerfApplyOutcome outcome;
+        try { outcome = await PerfModeRunner.RunAsync(mode.Id, steps, _backend, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException)
+        {
+            if (plan is { NeedsParameterWrite: true })
+                PerfModeStore.SaveSlots(slots.Select(s => s.Index == plan.SlotIndex ? s with { Signature = null } : s).ToArray());
+            throw;
+        }
         Logger.WriteLine($"PerfModes: {mode.Id} -> {outcome.Describe()}");
+        Logger.WriteLine($"PerfModes: {mode.Id} apply elapsed={elapsed.ElapsedMilliseconds}ms");
 
         if (outcome.ModeSwitched)
         {
             if (plan is not null)
             {
-                slots = FirmwareSlotPlanner.Assign(slots, plan.SlotIndex, mode.Id, mode.Settings.FirmwareSignature(), PerfModeStore.NowStamp());
+                slots = FirmwareSlotPlanner.Assign(slots, plan.SlotIndex, mode.Id,
+                    outcome.FirmwareParametersIssued ? mode.Settings.FirmwareSignature() : null, PerfModeStore.NowStamp());
                 PerfModeStore.SaveSlots(slots);
             }
             PerfModeStore.ActiveModeId = mode.Id;
@@ -205,9 +258,9 @@ internal sealed class PerfModeService
             if (mode.IsCustom) PerfModeStore.LastCustomId = mode.Id;
             if (plan is not null)
             {
-                await CaptureSlotAsync(mode, plan.SlotIndex).ConfigureAwait(false);
+                await CaptureSlotAsync(mode, plan.SlotIndex, ct).ConfigureAwait(false);
                 // 档位是轮转复用的：切进来时把这个模式的名字写给厂商屏显，Fn 切档的 OSD 才显示对的名字。
-                await PushSlotNameAsync(mode.Id).ConfigureAwait(false);
+                await PushSlotNameAsync(mode.Id, ct).ConfigureAwait(false);
             }
             StartGuard(mode.Id);
         }
@@ -220,7 +273,7 @@ internal sealed class PerfModeService
     /// 该模式正在自定义档上运行时，把它的显示名（最多 12 字）同步为厂商屏显名。
     /// 名字已一致时不发；不在自定义档上返回 false。
     /// </summary>
-    public async Task<bool> PushSlotNameAsync(string modeId)
+    public async Task<bool> PushSlotNameAsync(string modeId, CancellationToken ct = default)
     {
         PerfModeDefinition? mode = Find(modeId);
         if (mode is null || mode.Route != PerfModeRoute.FirmwareSlot) return false;
@@ -230,7 +283,8 @@ internal sealed class PerfModeService
         if (name.Length > MechrevoService.CustomProfileNameMaxLength)
             name = name[..MechrevoService.CustomProfileNameMaxLength];
         if (string.Equals(_hw.ProfileName, name, StringComparison.Ordinal)) return true;
-        try { return await _backend.SetSlotNameAsync(name, CancellationToken.None).ConfigureAwait(false); }
+        try { return await _backend.SetSlotNameAsync(name, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             Logger.WriteLine("PerfModes: slot name push failed: " + ex.Message);
@@ -247,7 +301,7 @@ internal sealed class PerfModeService
     /// 自定义档里用户没设过的项：把档位现有的值落进模式配置，让模式与档位解耦
     /// （被轮转挤掉后重新装入时仍是这组参数）。只在固件确实停在该档时做。
     /// </summary>
-    async Task CaptureSlotAsync(PerfModeDefinition mode, int slot)
+    async Task CaptureSlotAsync(PerfModeDefinition mode, int slot, CancellationToken ct = default)
     {
         try
         {
@@ -257,19 +311,24 @@ internal sealed class PerfModeService
             // 风扇表只在回读的就是这个档的表（M4T{n}）时才落：Fan/Table 可能乱序晚到。
             string expectedTable = "M4T" + (slot + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
             bool TableIsThisSlot() => string.Equals(_hw.CurveName, expectedTable, StringComparison.OrdinalIgnoreCase);
-            if (!TableIsThisSlot())
-                await _hw.WaitForStateAsync(TableIsThisSlot, TimeSpan.FromMilliseconds(1500)).ConfigureAwait(false);
+            PerfModeSettings current = PerfModeStore.LoadSettings(mode.Id);
+            if (!TableIsThisSlot() && _hw.FanCurveSeen && (current.CpuFanDuty is null || current.GpuFanDuty is null))
+                await _hw.WaitForStateAsync(TableIsThisSlot, TimeSpan.FromMilliseconds(1500), ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
             bool fanTableIsThisSlot = TableIsThisSlot();
 
-            PerfModeSettings current = PerfModeStore.LoadSettings(mode.Id);
             PerfModeSettings filled = SnapshotLive(fanTableIsThisSlot).FillNulls(current);
             if (filled.FirmwareSignature() == current.FirmwareSignature()) return;
             PerfModeStore.SaveSettings(mode.Id, filled);
             IReadOnlyList<FirmwareSlotState> slots = PerfModeStore.LoadSlots(SlotCount);
-            PerfModeStore.SaveSlots(FirmwareSlotPlanner.Assign(slots, slot, mode.Id, filled.FirmwareSignature(), PerfModeStore.NowStamp()));
+            bool synchronized = slots.Any(s => s.Index == slot && s.OwnerModeId == mode.Id
+                && s.Signature == current.FirmwareSignature());
+            PerfModeStore.SaveSlots(FirmwareSlotPlanner.Assign(slots, slot, mode.Id,
+                synchronized ? filled.FirmwareSignature() : null, PerfModeStore.NowStamp()));
             Logger.WriteLine($"PerfModes: captured slot {slot} parameters into {mode.Id}");
             Invalidate();
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             Logger.WriteLine("PerfModes: slot capture failed: " + ex.Message);
@@ -309,19 +368,35 @@ internal sealed class PerfModeService
     /// 内置模式第一次改固件门控项（PL/TGP/DB/风扇曲线）时，用厂商出厂值补齐其余固件项并转到自定义档承载。
     /// 返回 null = 该模式没在运行（已保存，下次切到它时生效）或请求被更新的请求取代。
     /// </summary>
-    public async Task<PerfApplyOutcome?> UpdateAsync(string modeId, Func<PerfModeSettings, PerfModeSettings> edit, string reason)
+    public async Task<PerfApplyOutcome?> UpdateAsync(string modeId, Func<PerfModeSettings, PerfModeSettings> edit, string reason, bool applyHardware = true)
     {
         ArgumentNullException.ThrowIfNull(edit);
-        (PerfApplyOutcome? outcome, bool needsActivation) = await UpdateCoreAsync(modeId, edit, reason).ConfigureAwait(false);
+        int request = Volatile.Read(ref _requestSeq);
+        (PerfApplyOutcome? outcome, bool needsActivation) = await UpdateCoreAsync(modeId, edit, reason, applyHardware, request).ConfigureAwait(false);
         // 路线变了（内置 ↔ 自定义档）或固件不在该模式上：整体切换一次并重写全部参数。
         return needsActivation
-            ? await ActivateAsync(modeId, "route changed by edit", forceParameters: true).ConfigureAwait(false)
+            ? await ActivateIfCurrentAsync(modeId, "route changed by edit", true, request).ConfigureAwait(false)
             : outcome;
     }
 
-    async Task<(PerfApplyOutcome? Outcome, bool NeedsActivation)> UpdateCoreAsync(
-        string modeId, Func<PerfModeSettings, PerfModeSettings> edit, string reason)
+    internal void CancelPendingApply()
     {
+        CancellationTokenSource? activation, edit;
+        lock (_requestLock)
+        {
+            Interlocked.Increment(ref _requestSeq);
+            Interlocked.Increment(ref _guardSeq);
+            activation = _activationCts;
+            edit = _editCts;
+        }
+        try { activation?.Cancel(); } catch (ObjectDisposedException) { }
+        try { edit?.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    async Task<(PerfApplyOutcome? Outcome, bool NeedsActivation)> UpdateCoreAsync(
+        string modeId, Func<PerfModeSettings, PerfModeSettings> edit, string reason, bool applyHardware, int request)
+    {
+        using var editCts = new CancellationTokenSource();
         await _gate.WaitAsync().ConfigureAwait(false);
         Interlocked.Increment(ref _activating);
         Interlocked.Increment(ref _guardSeq);
@@ -349,6 +424,12 @@ internal sealed class PerfModeService
             Invalidate();
             PerfModeDefinition updated = mode.With(after);
 
+            lock (_requestLock)
+            {
+                if (!applyHardware || request != _requestSeq || PendingModeId is not null) return (null, false);
+                _editCts = editCts;
+            }
+
             if (!string.Equals(ActiveModeId, mode.Id, StringComparison.Ordinal) || _hw is not { IsConnected: true })
                 return (null, false);
 
@@ -364,21 +445,31 @@ internal sealed class PerfModeService
             {
                 FirmwareSlotState? slot = slots.FirstOrDefault(s => string.Equals(s.OwnerModeId, mode.Id, StringComparison.Ordinal));
                 if (slot is null) return (null, true);
+                if (slot.Signature != before.FirmwareSignature()) delta = after;
                 plan = new FirmwareSlotPlan(slot.Index, true, "edit");
             }
             IReadOnlyList<PerfApplyStep> steps = PerfModeApplyPlanner.Build(
                 updated with { Settings = delta }, plan, Capabilities(), includeSwitch: false, routeOverride: updated.Route);
-            PerfApplyOutcome outcome = await PerfModeRunner.RunAsync(mode.Id, steps, _backend).ConfigureAwait(false);
+            PerfApplyOutcome outcome;
+            try { outcome = await PerfModeRunner.RunAsync(mode.Id, steps, _backend, editCts.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (editCts.IsCancellationRequested)
+            {
+                if (plan is not null)
+                    PerfModeStore.SaveSlots(slots.Select(s => s.Index == plan.SlotIndex ? s with { Signature = null } : s).ToArray());
+                return (null, false);
+            }
             Logger.WriteLine($"PerfModes: edit {mode.Id} ({reason}) -> {outcome.Describe()}");
             if (plan is not null)
                 PerfModeStore.SaveSlots(FirmwareSlotPlanner.Assign(slots, plan.SlotIndex, mode.Id,
-                    after.FirmwareSignature(), PerfModeStore.NowStamp()));
+                    outcome.FirmwareParametersIssued ? after.FirmwareSignature() : null, PerfModeStore.NowStamp()));
             StartGuard(mode.Id);
             RaiseApplied(outcome);
             return (outcome, false);
         }
         finally
         {
+            lock (_requestLock)
+                if (ReferenceEquals(_editCts, editCts)) _editCts = null;
             Interlocked.Decrement(ref _activating);
             _gate.Release();
         }
@@ -562,30 +653,39 @@ internal sealed class PerfModeService
 
     async Task ReconcileAsync(string reason)
     {
-        if (_hw is not { IsConnected: true }) return;
-        IReadOnlyList<FirmwareSlotState> slots = PerfModeStore.LoadSlots(SlotCount);
-        PerfModeResolution? resolution = PerfModeResolver.Resolve(Modes, slots,
-            _hw.OperatingMode, _hw.CustomProfileIndex, MechrevoService.IsSilentTurboActive, PerfModeStore.LastCustomId);
-        if (resolution is null) return;
-
-        if (resolution.Redirect && AllowRedirect())
+        PerfModeResolution? redirect = null;
+        int expectedRequest = Volatile.Read(ref _requestSeq);
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            Logger.WriteLine($"PerfModes: {reason}: redirect to {resolution.ModeId} ({resolution.Reason})");
-            await ActivateAsync(resolution.ModeId, "redirect: " + resolution.Reason).ConfigureAwait(false);
-            return;
+            if (PendingModeId is not null || expectedRequest != Volatile.Read(ref _requestSeq)) return;
+            if (_hw is not { IsConnected: true }) return;
+            IReadOnlyList<FirmwareSlotState> slots = PerfModeStore.LoadSlots(SlotCount);
+            PerfModeResolution? resolution = PerfModeResolver.Resolve(Modes, slots,
+                _hw.OperatingMode, _hw.CustomProfileIndex, MechrevoService.IsSilentTurboActive, PerfModeStore.LastCustomId);
+            if (resolution is null) return;
+
+            if (resolution.Redirect && AllowRedirect())
+            {
+                Logger.WriteLine($"PerfModes: {reason}: redirect to {resolution.ModeId} ({resolution.Reason})");
+                redirect = resolution;
+            }
+            else
+            {
+                if (string.Equals(resolution.ModeId, ActiveModeId, StringComparison.Ordinal)) return;
+                PerfModeDefinition? mode = Find(resolution.ModeId);
+                if (mode is null) return;
+                Logger.WriteLine($"PerfModes: {reason}: follow {mode.Id} ({resolution.Reason})");
+                PerfModeStore.ActiveModeId = mode.Id;
+                PerfModeStore.SetActiveFor(PowerSourceKey(), mode.Id);
+                if (mode.IsCustom) PerfModeStore.LastCustomId = mode.Id;
+                RaiseActiveChanged();
+                await ApplyAppSideLockedAsync(mode, "follow").ConfigureAwait(false);
+            }
         }
-
-        if (string.Equals(resolution.ModeId, ActiveModeId, StringComparison.Ordinal)) return;
-
-        // 跟随：模式由外部切好了，只补应用侧项与风扇增强（厂商切内置模式时会把它清零）。
-        PerfModeDefinition? mode = Find(resolution.ModeId);
-        if (mode is null) return;
-        Logger.WriteLine($"PerfModes: {reason}: follow {mode.Id} ({resolution.Reason})");
-        PerfModeStore.ActiveModeId = mode.Id;
-        PerfModeStore.SetActiveFor(PowerSourceKey(), mode.Id);
-        if (mode.IsCustom) PerfModeStore.LastCustomId = mode.Id;
-        RaiseActiveChanged();
-        await ApplyAppSideAsync(mode, "follow").ConfigureAwait(false);
+        finally { _gate.Release(); }
+        if (redirect is not null && PendingModeId is null)
+            await ActivateIfCurrentAsync(redirect.ModeId, "redirect: " + redirect.Reason, false, expectedRequest).ConfigureAwait(false);
     }
 
     /// <summary>10 秒内最多拉回 2 次：外部持续改模式时退为跟随，避免和它互相覆盖。</summary>
@@ -607,6 +707,18 @@ internal sealed class PerfModeService
 
     /// <summary>只下发应用侧项与风扇增强（不切模式、不写固件参数）。</summary>
     async Task<PerfApplyOutcome> ApplyAppSideAsync(PerfModeDefinition mode, string reason)
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (PendingModeId is not null || ActiveModeId != mode.Id || Find(mode.Id) is not { } current)
+                return new PerfApplyOutcome(mode.Id, Array.Empty<PerfApplyStepOutcome>());
+            return await ApplyAppSideLockedAsync(current, reason).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+
+    async Task<PerfApplyOutcome> ApplyAppSideLockedAsync(PerfModeDefinition mode, string reason)
     {
         PerfModeSettings s = mode.Settings;
         var appSide = new PerfModeSettings
@@ -639,8 +751,11 @@ internal sealed class PerfModeService
     {
         if (_hw is not { IsConnected: true }) return;
         PerfModeDefinition? target = null;
-        if (powerSourceChanged) target = Find(PerfModeStore.ActiveFor(PowerSourceKey()));
+        int source = PowerSourceKey();
+        if (powerSourceChanged) target = Find(PerfModeStore.ActiveFor(source));
         target ??= PerfModeStore.HasStoredActive ? Active : null;
+        if (source == 0 && (target?.Kind is PerfModeKind.Turbo or PerfModeKind.SilentTurbo || powerSourceChanged && target is null))
+            target = Find(PerfModeDefinition.BuiltInId(PerfModeKind.Silent));
 
         if (target is null)
         {
@@ -649,16 +764,19 @@ internal sealed class PerfModeService
             return;
         }
 
-        if (appSideOnly && string.Equals(target.Id, ActiveModeId, StringComparison.Ordinal))
+        IReadOnlyList<FirmwareSlotState> slots = PerfModeStore.LoadSlots(SlotCount);
+        bool synchronized = target.Route != PerfModeRoute.FirmwareSlot || slots.Any(s =>
+            s.OwnerModeId == target.Id && s.Signature == target.Settings.FirmwareSignature());
+        if (synchronized && appSideOnly && string.Equals(target.Id, ActiveModeId, StringComparison.Ordinal))
         {
             await ApplyAppSideAsync(target, reason).ConfigureAwait(false);
             return;
         }
 
-        bool onIt = PerfModeResolver.IsFirmwareOn(target, PerfModeStore.LoadSlots(SlotCount),
+        bool onIt = PerfModeResolver.IsFirmwareOn(target, slots,
             _hw.OperatingMode, _hw.CustomProfileIndex, MechrevoService.IsSilentTurboActive,
             _hw.Capabilities.SilentTurboAvailability == FeatureAvailability.Supported);
-        if (onIt && string.Equals(target.Id, ActiveModeId, StringComparison.Ordinal))
+        if (synchronized && onIt && string.Equals(target.Id, ActiveModeId, StringComparison.Ordinal))
         {
             await ApplyAppSideAsync(target, reason).ConfigureAwait(false);
             return;
@@ -686,19 +804,24 @@ internal sealed class PerfModeService
                 {
                     await Task.Delay(Math.Max(0, at - elapsed)).ConfigureAwait(false);
                     elapsed = at;
-                    // 新的切换/编辑/跟随都会结束守护：那些路径自己负责最终状态。
-                    if (request != Volatile.Read(ref _guardSeq) || Volatile.Read(ref _activating) > 0) return;
-                    if (!string.Equals(ActiveModeId, modeId, StringComparison.Ordinal)) return;
-                    PerfModeDefinition? current = Find(modeId);
-                    if (current is null) return;
-                    PerfModeSettings drifted = ProbeDrift(current.Settings);
-                    if (!drifted.HasAppSideOverride && drifted.FanBoost is null) continue;
-                    Logger.WriteLine($"PerfModes: {modeId} app-side settings changed externally, re-applying");
-                    IReadOnlyList<PerfApplyStep> steps = PerfModeApplyPlanner.Build(
-                        current with { Settings = drifted }, new FirmwareSlotPlan(0, false, "guard"), Capabilities(),
-                        includeSwitch: false, routeOverride: PerfModeRoute.FirmwareSlot);
-                    PerfApplyOutcome outcome = await PerfModeRunner.RunAsync(modeId, steps, _backend).ConfigureAwait(false);
-                    if (outcome.AnyFailed) return;
+                    await _gate.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        // 新的切换/编辑/跟随都会结束守护：那些路径自己负责最终状态。
+                        if (request != Volatile.Read(ref _guardSeq) || Volatile.Read(ref _activating) > 0 || PendingModeId is not null) return;
+                        if (!string.Equals(ActiveModeId, modeId, StringComparison.Ordinal)) return;
+                        PerfModeDefinition? current = Find(modeId);
+                        if (current is null) return;
+                        PerfModeSettings drifted = ProbeDrift(current.Settings);
+                        if (!drifted.HasAppSideOverride && drifted.FanBoost is null) continue;
+                        Logger.WriteLine($"PerfModes: {modeId} app-side settings changed externally, re-applying");
+                        IReadOnlyList<PerfApplyStep> steps = PerfModeApplyPlanner.Build(
+                            current with { Settings = drifted }, new FirmwareSlotPlan(0, false, "guard"), Capabilities(),
+                            includeSwitch: false, routeOverride: PerfModeRoute.FirmwareSlot);
+                        PerfApplyOutcome outcome = await PerfModeRunner.RunAsync(modeId, steps, _backend).ConfigureAwait(false);
+                        if (outcome.AnyFailed) return;
+                    }
+                    finally { _gate.Release(); }
                 }
             }
             catch (Exception ex) { Logger.WriteLine("PerfModes: guard failed: " + ex.Message); }

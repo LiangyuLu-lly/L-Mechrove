@@ -277,7 +277,7 @@ public static class HardwareControl
         float? watts = cpuPower;
         int limit = Program.hw?.Pl1 ?? -1;
         if (watts is null || limit <= 0) return;
-        powerWall.Observe(watts.Value, limit, DateTime.Now);
+        powerWall.Observe(watts.Value, limit, DateTime.UtcNow);
     }
 
     internal static float? ResolveCpuPower(float? localPower, float? fallbackPower) =>

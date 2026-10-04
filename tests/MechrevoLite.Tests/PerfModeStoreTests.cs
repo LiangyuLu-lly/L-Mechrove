@@ -231,31 +231,25 @@ public class PerfModeMappingTests
             PerfModeMapping.ToServiceMode(PerfModeKind.Custom));
     }
 
-    [Fact]
-    public void ALightLoadCannotProveOrDisproveAPowerLimit()
+    [Theory]
+    [InlineData("PL1", 12f)]
+    [InlineData("PL1", 39f)]
+    [InlineData("PL1", 82.8f)]
+    [InlineData("PL2", 39f)]
+    [InlineData("PL4", 39f)]
+    [InlineData("PL1", null)]
+    public async Task ACurrentPowerSampleCannotConfirmAnyCpuPowerLimit(string key, float? power)
     {
-        // 轻载时功耗本来就远低于墙，既不能报成功也不能报失败。
-        Assert.Null(PerfModeBackend.EvaluateCpuPowerLimit(80, 12f));
-    }
-
-    [Fact]
-    public void PowerSittingAtTheLimitProvesTheLimitIsEnforced()
-    {
-        Assert.True(PerfModeBackend.EvaluateCpuPowerLimit(40, 39f));
-        Assert.True(PerfModeBackend.EvaluateCpuPowerLimit(40, 42f));
-    }
-
-    [Fact]
-    public void PowerWellAboveTheLimitProvesItIsNotEnforced()
-    {
-        // 真机实测就是这个形状：平衡模式设 40 W，满载实测 82.8 W。
-        Assert.False(PerfModeBackend.EvaluateCpuPowerLimit(40, 82.8f));
-    }
-
-    [Fact]
-    public void MissingMeasurementsAreUnverifiableRatherThanFailures()
-    {
-        Assert.Null(PerfModeBackend.EvaluateCpuPowerLimit(40, null));
-        Assert.Null(PerfModeBackend.EvaluateCpuPowerLimit(0, 50f));
+        float? previous = HardwareControl.cpuPower;
+        using var hw = new MechrevoLite.Hardware.MechrevoHw((_, _) => Task.CompletedTask);
+        var backend = new PerfModeBackend(new MechrevoLite.Hardware.MechrevoService(hw), hw);
+        try
+        {
+            HardwareControl.cpuPower = power;
+            var step = new PerfApplyStep(PerfApplyStepKind.WriteFirmwareField, key, "40", 40,
+                Verify: PerfApplyVerify.CpuPackagePower);
+            Assert.Null(await backend.VerifyAsync(step, CancellationToken.None));
+        }
+        finally { HardwareControl.cpuPower = previous; }
     }
 }

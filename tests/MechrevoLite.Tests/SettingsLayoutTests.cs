@@ -9,6 +9,76 @@ namespace MechrevoLite.Tests;
 public class SettingsLayoutTests
 {
     [Fact]
+    public void AuditDetectsTheSwitchWidthLostDuringSimulatedDpiScaling()
+    {
+        int previous = UiDpi.AuditDpi;
+        try
+        {
+            using var check = new RCheckBox { AutoSize = true, Text = "发送匿名统计与脱敏日志" };
+            check.CreateControl();
+            UiDpi.AuditDpi = UiDpi.Layout(check) * 2;
+            check.Scale(new SizeF(2, 2));
+            check.Font = new Font(check.Font.FontFamily, check.Font.Size * 2);
+            Assert.NotNull(UiAuditRunner.GetTextClipping(check));
+            check.Size = check.MeasurePreferredSize(UiDpi.AuditDpi);
+            Assert.Null(UiAuditRunner.GetTextClipping(check));
+        }
+        finally { UiDpi.AuditDpi = previous; }
+    }
+
+    [Fact]
+    public void AuditLanguageAndPrivacyRowsRetainTheirSizeAfterParentLayout()
+    {
+        int previous = UiDpi.AuditDpi;
+        try
+        {
+            using var themePanel = new Panel();
+            using var dialog = new SettingsDialog(themePanel, null, false);
+            dialog.CreateControl();
+            UiDpi.AuditDpi = UiDpi.Layout(dialog) * 2;
+            dialog.Scale(new SizeF(2, 2));
+            var check = dialog.Controls.Find("checkUsageTelemetry", true).OfType<RCheckBox>().Single();
+            check.Font = new Font(check.Font.FontFamily, check.Font.Size * 2);
+            dialog.AuditLayoutScale = UiDpi.AuditDpi / 96F;
+            ResponsiveLayout.PerformLayoutTree(dialog);
+            Assert.Null(UiAuditRunner.GetTextClipping(check));
+            Assert.True(check.Parent!.ClientRectangle.Contains(check.Bounds));
+        }
+        finally { UiDpi.AuditDpi = previous; }
+    }
+
+    [Theory]
+    [InlineData(12)]
+    [InlineData(20)]
+    public void LanguageRowContainsTheNativeComboAfterFontGrowth(int fontSize)
+    {
+        using var themePanel = new Panel();
+        using var dialog = new SettingsDialog(themePanel, null, false);
+        dialog.CreateControl();
+        var combo = dialog.Controls.Find("comboLanguage", true).OfType<RComboBox>().Single();
+        combo.CreateControl();
+        combo.Font = new Font(combo.Font.FontFamily, fontSize, FontStyle.Regular, GraphicsUnit.Point);
+        dialog.PerformLayout();
+        combo.Parent!.PerformLayout();
+        Assert.True(combo.Parent.ClientRectangle.Contains(combo.Bounds),
+            $"Language combo {combo.Bounds} exceeds row {combo.Parent.ClientRectangle}.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OwnerDrawComboKeepsTextVisibleWhenTheFontGrows(bool nativeHeight)
+    {
+        using var combo = new RComboBox { Width = 220, NativeHeight = nativeHeight,
+            DropDownStyle = ComboBoxStyle.DropDownList };
+        combo.Items.Add("默认");
+        combo.SelectedIndex = 0;
+        combo.CreateControl();
+        combo.Font = new Font(combo.Font.FontFamily, 20, FontStyle.Regular, GraphicsUnit.Point);
+        Assert.Null(UiAuditRunner.GetTextClipping(combo));
+    }
+
+    [Fact]
     public void DashboardSections_DockTopAfterConstruct()
     {
         using var form = new SettingsForm();

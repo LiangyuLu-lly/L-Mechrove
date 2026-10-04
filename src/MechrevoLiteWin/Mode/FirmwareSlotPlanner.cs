@@ -84,7 +84,7 @@ public static class FirmwareSlotPlanner
 
     /// <summary>应用决策后的新归属表（调用方落盘用）。</summary>
     public static IReadOnlyList<FirmwareSlotState> Assign(
-        IReadOnlyList<FirmwareSlotState> slots, int slotIndex, string modeId, string signature, long nowTicks)
+        IReadOnlyList<FirmwareSlotState> slots, int slotIndex, string modeId, string? signature, long nowTicks)
     {
         ArgumentNullException.ThrowIfNull(slots);
         ArgumentException.ThrowIfNullOrEmpty(modeId);

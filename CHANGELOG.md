@@ -1,3 +1,43 @@
+## 0.290.6 — 2026-10-05
+
+- 错误日志改为事件触发，约 3 秒合并，最短 15 秒上传间隔；断网退避重试，脱敏待传快照跨重启保留，服务器确认批次、字节数和 SHA-256 后才删除。
+- 独立保存最近错误，避免大量正常状态日志挤掉故障；崩溃处理器同步留下待传证据；隐私开关关闭时取消并清理待传记录。
+- 服务器保留最近 96 KB 故障历史，重复批次不重复追加；修复中文截取可能丢失最新尾部字节的问题，兼容 beta21 及更早客户端。
+- 修复下拉框字号变化后的条目高度、校色框宽度和小分辨率高缩放下的 CPU 窗口最低高度。
+- 本次发布合并此前 0.290.3–0.290.5 的模式切换、驱动修复、旧机型 WMI 后端、充电上限与运行时 CPU 调整改动。CPU 调整仍受型号与固件限制；本机 275HX 固件拒绝降压，不宣称全系超频可用。
+
+
+## 0.290.5 — 2026-10-04
+
+- Use the EC percentage threshold and its existing availability checks for boot charge-limit replay. Missing configuration skips writes; the removed three-mode battery command and auxiliary MQTT connection no longer run at boot.
+- Expand AMD fixed-clock routes to documented AM4/AM5 and Phoenix-family interfaces, and add Vermeer Curve Optimizer. Commands remain gated by the actual SMU code name; unknown routes stay unavailable. Frequency limits are application limits, not per-CPU stability guarantees.
+- Add an explicit missing-driver installation action using official PawnIO 2.2.0, with pinned SHA256 and Windows signature validation before elevation-controlled installation.
+- Correct Intel recovery after a rejected write: independently verify unchanged values before attempting rollback; disable firmware-rejected controls in the current session and retain recovery for possible partial changes.
+- Add a detected MICommonInterface backend for older Bitland machines, with native built-in mode writes and independent WMI readback; custom firmware slots and unsupported features remain unavailable.
+- Fix battery replay falling back to the AC Turbo selection, and restore the main window icon on first display.
+- GitHub issue fixes and CPU-model acceptance remain subject to the documented hardware validation limits.
+
+## 0.290.4 — 2026-10-04
+
+- Custom profile switching requires fresh status for the requested slot and rejects queued frames from the previous slot. A confirmed switch completes without a redundant status wait; retries share one request and respect the OEM merge window.
+- New selections cancel obsolete activation and parameter waits. Pending edits are saved before switching, and partially written slots are marked for a full rewrite. Cached fan curves no longer add a fixed capture delay.
+- Correct Turbo submode verification to inspect Turbo and its silent/performance state.
+- Add manual runtime CPU tuning through signed PawnIO modules: Intel core/cache voltage with independent mailbox readback, non-hybrid Intel OC ratio gated by capabilities, AMD Curve Optimizer and selected older APU fixed-clock routes gated by actual SMU code name. Unknown or unsupported routes remain disabled; AMD acceptance is distinguished from physical verification.
+- Expose driver absence, denied access, rejected commands and restore outcomes. Runtime settings are not saved for automatic startup application; BIOS and undervolt protection are respected. Hardware validation across CPU models remains required.
+
+## 0.290.3 — 2026-10-04
+
+- 修复性能模式编辑器在硬件上报范围扩大时的数值越界；先同步滑条和数值框范围，再更新数值。
+- 固件参数部分下发失败后保留待重试状态，重连、重放及后续编辑会补发失败参数；Windows 应用侧失败独立报告。
+- 档位切换、外部档位跟随、唤醒重放及应用侧守护串行执行，过时任务不再覆盖新选择。
+- 静音狂暴子模式切换失败不再记为成功；单项回读异常按该项失败报告。
+- 启动时尚未读到固件模式，不再把默认平衡值当作目标已确认，避免跳过实际切换命令。
+- 功耗墙不再依据单个瞬时功耗判定 PL1/PL2/PL4 已生效；持续窗口支持采样抖动，休眠或采样中断后重新积累证据。
+- 电源计划下拉框只显示系统实际枚举到的计划；旧配置中的不可用计划明确标记。
+- GCU 持续断线逐步退避至 30 秒，重复故障日志按状态去重，恢复连接后重新记录；蓝牙探测失败降低重试频率。
+- 配置写入在取得磁盘锁后生成最新快照，防止并发写入旧状态；静默更新在更新记录无法落盘时停止启动安装器。
+- 覆盖安装检查 ACPI 驱动是否可打开，必要时重新扫描并绑定已校验的驱动；驱动在仓库中存在不再被视为设备已恢复，需重启时保留提示。
+
 ## 0.289.0-beta21 — 2026-09-30
 
 ### 新增功能

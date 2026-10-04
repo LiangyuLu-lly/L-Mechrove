@@ -321,15 +321,19 @@ namespace MechrevoLite.Mode
 
         public void SetUV(int cpuUV)
         {
-            if (!CpuInfo.IsSupportedUV()) return;
-
-            if (cpuUV >= CpuInfo.MinCPUUV && cpuUV <= CpuInfo.MaxCPUUV)
+            lock (RuntimeCpuTuning.SyncRoot)
             {
-                var smu = GetSmu();
-                if (smu == null) return;
-                SmuStatus status = smu.SetCoAll(cpuUV);
-                Logger.WriteLine($"UV: {cpuUV} {status}");
-                if (status == SmuStatus.OK) _cpuUV = cpuUV;
+                if (RuntimeCpuTuning.OwnsCurve) return;
+                if (!CpuInfo.IsSupportedUV()) return;
+
+                if (cpuUV >= CpuInfo.MinCPUUV && cpuUV <= CpuInfo.MaxCPUUV)
+                {
+                    var smu = GetSmu();
+                    if (smu == null) return;
+                    SmuStatus status = smu.SetCoAll(cpuUV);
+                    Logger.WriteLine($"UV: {cpuUV} {status}");
+                    if (status == SmuStatus.OK) _cpuUV = cpuUV;
+                }
             }
         }
 
@@ -365,12 +369,15 @@ namespace MechrevoLite.Mode
                 int igpuUV  = AppConfig.GetMode("igpu_uv",  0);
                 int cpuTemp = AppConfig.GetMode("cpu_temp");
 
-                if (CpuInfo.IsSupportedUV() && cpuUV >= CpuInfo.MinCPUUV && cpuUV <= CpuInfo.MaxCPUUV)
+                lock (RuntimeCpuTuning.SyncRoot)
                 {
-                    SmuStatus s = smu.SetCoAll(cpuUV);
-                    Logger.WriteLine($"UV: {cpuUV} {s}");
-                    if (s == SmuStatus.OK) _cpuUV = cpuUV;
-                    lines.AppendLine($"CPU UV {cpuUV}: {s}");
+                    if (!RuntimeCpuTuning.OwnsCurve && CpuInfo.IsSupportedUV() && cpuUV >= CpuInfo.MinCPUUV && cpuUV <= CpuInfo.MaxCPUUV)
+                    {
+                        SmuStatus s = smu.SetCoAll(cpuUV);
+                        Logger.WriteLine($"UV: {cpuUV} {s}");
+                        if (s == SmuStatus.OK) _cpuUV = cpuUV;
+                        lines.AppendLine($"CPU UV {cpuUV}: {s}");
+                    }
                 }
 
                 if (CpuInfo.IsSupportedUViGPU() && igpuUV >= CpuInfo.MinIGPUUV && igpuUV <= CpuInfo.MaxIGPUUV)

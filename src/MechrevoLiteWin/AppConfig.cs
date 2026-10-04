@@ -198,26 +198,34 @@ public static class AppConfig
         Persist();
     }
 
-    private static void Persist()
+    private static bool Persist()
     {
-        string jsonString;
-        lock (configLock) jsonString = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
         lock (writeLock)
         {
             try
             {
+                string jsonString;
+                lock (configLock) jsonString = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
                 WriteAtomic(configFile, jsonString);
                 SyncFallbackConfig();
+                return true;
             }
-            catch (Exception ex) { Logger.WriteLine("Config write failed: " + ex.Message); }
+            catch (Exception ex)
+            {
+                Logger.WriteLine("Config write failed: " + ex.Message);
+                return false;
+            }
         }
     }
 
     public static void Flush()
+        => TryFlush();
+
+    internal static bool TryFlush()
     {
         FlushCount++;
         timer.Stop();
-        Persist();
+        return Persist();
     }
 
     public static void Shutdown()

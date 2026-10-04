@@ -9,7 +9,7 @@ namespace MechrevoLite.Tests;
 /// </summary>
 public class PerfModeRunnerTests
 {
-    sealed class FakeBackend : IPerfModeBackend
+    internal sealed class FakeBackend : IPerfModeBackend
     {
         public List<string> Calls { get; } = new();
         public List<int> Delays { get; } = new();
@@ -18,6 +18,7 @@ public class PerfModeRunnerTests
         public bool? DefaultVerdict { get; set; } = true;
         public Exception? ThrowOn { get; set; }
         public string? ThrowForKey { get; set; }
+        public string? ThrowVerifyForKey { get; set; }
 
         static string Key(PerfApplyStep s) => s.ToString();
 
@@ -85,12 +86,37 @@ public class PerfModeRunnerTests
             return Task.CompletedTask;
         }
 
-        public Task<bool?> VerifyAsync(PerfApplyStep step, CancellationToken ct) =>
-            Task.FromResult(Verdicts.TryGetValue(Key(step), out bool? v) ? v : DefaultVerdict);
+        public Task<bool?> VerifyAsync(PerfApplyStep step, CancellationToken ct)
+        {
+            if (ThrowVerifyForKey == Key(step)) throw new InvalidOperationException("readback unavailable");
+            return Task.FromResult(Verdicts.TryGetValue(Key(step), out bool? v) ? v : DefaultVerdict);
+        }
     }
 
     static PerfApplyStep Switch(int slot = 0) =>
         new(PerfApplyStepKind.SwitchFirmwareSlot, Number: slot, Verify: PerfApplyVerify.ModeReadback);
+
+    [Fact]
+    public async Task FailedTurboSubModeDoesNotApplyParametersOrClaimTheModeSwitched()
+    {
+        var backend = new FakeBackend();
+        backend.FailIssue.Add("SwitchTurboSubMode:1");
+        var steps = new[] { Switch(), new PerfApplyStep(PerfApplyStepKind.SwitchTurboSubMode, Number: 1), Field("PL1", "45") };
+        PerfApplyOutcome result = await PerfModeRunner.RunAsync("silentturbo", steps, backend);
+        Assert.False(result.ModeSwitched);
+        Assert.Equal(2, result.Steps.Count);
+    }
+
+    [Fact]
+    public async Task FieldReadbackExceptionIsReportedAndLeavesFirmwareUnsynchronized()
+    {
+        var backend = new FakeBackend { ThrowVerifyForKey = "WriteFirmwareField:PL1=45" };
+        PerfApplyOutcome result = await PerfModeRunner.RunAsync("custom1", new[] { Switch(), Field("PL1", "45"), Field("PL2", "90") }, backend);
+        Assert.True(result.ModeSwitched);
+        Assert.False(result.FirmwareParametersIssued);
+        Assert.Single(result.Failed);
+        Assert.Equal(3, result.Steps.Count);
+    }
 
     static PerfApplyStep Field(string key, string value, PerfApplyVerify v = PerfApplyVerify.ServiceEcho) =>
         new(PerfApplyStepKind.WriteFirmwareField, key, value, Verify: v);
@@ -234,9 +260,7 @@ public class PerfModeRunnerTests
 
         Assert.Empty(outcome.Steps);
         Assert.False(outcome.AnyFailed);
-        // 没有切换步骤时不该谎称「已切换」的反面：ModeSwitched 对空集合为真（All 语义），
-        // 调用方用 AnyFailed 判成败。
-        Assert.True(outcome.ModeSwitched);
+        Assert.False(outcome.ModeSwitched);
         Assert.Equal("(no steps)", outcome.Describe());
     }
 }

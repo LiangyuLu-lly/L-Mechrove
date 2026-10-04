@@ -51,8 +51,10 @@ internal static class GcuInstallerHarness
         return Run(psi);
     }
 
-    static ProcessStartInfo BaseStartInfo() => new()
+    static ProcessStartInfo BaseStartInfo()
     {
+        var info = new ProcessStartInfo
+        {
         FileName = "powershell.exe",
         UseShellExecute = false,
         RedirectStandardOutput = true,
@@ -60,20 +62,25 @@ internal static class GcuInstallerHarness
         CreateNoWindow = true,
         StandardOutputEncoding = Encoding.UTF8,
         StandardErrorEncoding = Encoding.UTF8,
-    };
+        };
+        // PowerShell 7 的模块路径会遮蔽 Windows PowerShell 自带的 Get-FileHash 等命令。
+        info.Environment["PSModulePath"] = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\Modules");
+        return info;
+    }
 
     static PsResult Run(ProcessStartInfo psi)
     {
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("failed to start powershell.exe");
-        string stdout = process.StandardOutput.ReadToEnd();
-        string stderr = process.StandardError.ReadToEnd();
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
         if (!process.WaitForExit(120_000))
         {
             try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
             throw new TimeoutException("installer script did not exit within 120s: " + psi.FileName);
         }
-        return new PsResult(process.ExitCode, stdout, stderr);
+        return new PsResult(process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
     }
 
     /// <summary>Dot-sources an installer script and evaluates <paramref name="expression"/> in that scope.</summary>

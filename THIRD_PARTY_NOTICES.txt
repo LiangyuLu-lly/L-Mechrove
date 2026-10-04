@@ -62,3 +62,18 @@ the distributor has permission from the applicable rights holders.
 NuGet dependencies retain their own licenses. Their package metadata and
 license files are available in the NuGet packages referenced by
 src/MechrevoLiteWin/MechrevoLite.csproj.
+
+Runtime CPU tuning embeds unmodified signed IntelMSR.bin and RyzenSMU.bin
+from PawnIO.Modules 0.2.11, Copyright (C) 2025 namazso, LGPL-2.1-or-later.
+License: COPYING.PawnIO.txt. Corresponding module source and release:
+https://github.com/namazso/PawnIO.Modules/tree/0.2.11
+https://github.com/namazso/PawnIO.Modules/releases/tag/0.2.11
+Release ZIP SHA256: 43608cb89bc84247fef1368a139013f7d043e17db6d6c8dfc9b46bf0905a81f4
+The PawnIO kernel driver is separately installed by the user and is not bundled.
+Intel OC Mailbox protocol reference: https://github.com/kitsunyan/intel-undervolt
+AMD SMU command reference: https://github.com/FlyGoat/RyzenAdj
+Additional SMU route reference: https://github.com/JamesCJ60/Universal-x86-Tuning-Utility
+PawnIO 2.2.0 is downloaded on explicit request from the official release, not bundled.
+Installer SHA256: 1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032
+Legacy MICommonInterface protocol reference: Linux bitland-mifs-wmi driver and documentation.
+https://github.com/torvalds/linux/blob/master/drivers/platform/x86/bitland-mifs-wmi.c

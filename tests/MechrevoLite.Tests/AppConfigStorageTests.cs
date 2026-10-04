@@ -215,6 +215,61 @@ public class AppConfigStorageTests
     // ---------- 原子写与 .bak ----------
 
     [Fact]
+    public void AWriterWaitingForTheDiskLockSerializesTheLatestConfiguration()
+    {
+        ConfigScopeTests.WithConfigSnapshot(() =>
+        {
+            string key = "write-order-" + Guid.NewGuid().ToString("N");
+            object gate = typeof(AppConfig).GetField("writeLock",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!.GetValue(null)!;
+            using var started = new ManualResetEventSlim();
+            Exception? error = null;
+            AppConfig.Set(key, 1);
+            var writer = new Thread(() =>
+            {
+                started.Set();
+                try { AppConfig.Flush(); }
+                catch (Exception ex) { error = ex; }
+            }) { IsBackground = true };
+            Monitor.Enter(gate);
+            try
+            {
+                writer.Start();
+                Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
+                Assert.True(SpinWait.SpinUntil(() => (writer.ThreadState & ThreadState.WaitSleepJoin) != 0, 2000));
+                AppConfig.Set(key, 2);
+            }
+            finally { Monitor.Exit(gate); }
+            Assert.True(writer.Join(2000));
+            Assert.Null(error);
+            using var saved = System.Text.Json.JsonDocument.Parse(File.ReadAllText(
+                Environment.GetEnvironmentVariable("LMECHREVO_CONFIG_FILE")!));
+            Assert.Equal(2, saved.RootElement.GetProperty(key).GetInt32());
+        });
+    }
+
+    [Fact]
+    public void ARealDiskWriteFailureIsReportedInsteadOfReturningSuccess()
+    {
+        var field = typeof(AppConfig).GetField("configFile",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        string original = (string)field.GetValue(null)!;
+        using var dir = new TempDirectory();
+        string blocker = Path.Combine(dir.Path, "file-as-directory");
+        File.WriteAllText(blocker, "occupied");
+        try
+        {
+            field.SetValue(null, Path.Combine(blocker, "config.json"));
+            Assert.False(AppConfig.TryFlush());
+        }
+        finally
+        {
+            field.SetValue(null, original);
+            Assert.True(AppConfig.TryFlush());
+        }
+    }
+
+    [Fact]
     public void WriteAtomic_CreatesFileAndLeavesNoTempBehind()
     {
         using var dir = new TempDirectory();

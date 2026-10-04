@@ -704,6 +704,9 @@ Continue?</value>
   <data name="BoostUnconfirmed" xml:space="preserve">
     <value>Boost mode was not confirmed; nothing was saved</value>
   </data>
+  <data name="PowerPlanUnavailable" xml:space="preserve">
+    <value>Saved plan unavailable</value>
+  </data>
   <data name="PowerPlan" xml:space="preserve">
     <value>Power plan</value>
   </data>
@@ -1547,4 +1550,34 @@ End them with administrator rights? (A UAC prompt appears.)</value>
   <data name="FirstRunTelemetryStepTitle" xml:space="preserve">
     <value>What is sent and what is not</value>
   </data>
+  <data name="CpuTuneTitle" xml:space="preserve"><value>CPU tuning</value></data>
+  <data name="CpuTuneScope" xml:space="preserve"><value>Applies to the CPU across all modes for this boot. Changes are manual and are not reapplied at startup. Intel restore uses the captured baseline; AMD restore requests CO 0 and exits fixed-clock mode.</value></data>
+  <data name="CpuTuneRisk" xml:space="preserve"><value>Start with small steps. Excessive undervolting or overclocking can freeze or restart the PC. Command acceptance does not prove stability; restore defaults if errors occur. BIOS protection is respected.</value></data>
+  <data name="CpuTuneProbe" xml:space="preserve"><value>Detect capability</value></data>
+  <data name="CpuTuneApply" xml:space="preserve"><value>Apply</value></data>
+  <data name="CpuTuneRestore" xml:space="preserve"><value>Restore</value></data>
+  <data name="CpuTuneDriverLink" xml:space="preserve"><value>Official PawnIO driver download</value></data>
+  <data name="CpuTuneProbePrompt" xml:space="preserve"><value>Detect capability before applying any changes.</value></data>
+  <data name="CpuTuneDriverMissing" xml:space="preserve"><value>PawnIO driver is not installed. Install the official driver manually, then detect again.</value></data>
+  <data name="CpuTuneAdminRequired" xml:space="preserve"><value>Driver access denied. Restart the app as administrator, then detect again.</value></data>
+  <data name="CpuTuneProbeFailed" xml:space="preserve"><value>Driver or firmware detection failed. Changes are disabled.</value></data>
+  <data name="CpuTuneUnsupported" xml:space="preserve"><value>No supported writable interface detected. Hybrid Intel CPU ratio control requires further validation.</value></data>
+  <data name="CpuTuneIntelReady" xml:space="preserve"><value>Intel capability detected. Writes still require matching CPU readback; firmware may reject undervolting.</value></data>
+  <data name="CpuTuneSmuReady" xml:space="preserve"><value>AMD command route detected. Firmware may reject changes. CO and fixed clock have no independent setting readback; success only means SMU acceptance.</value></data>
+  <data name="CpuTuneCore" xml:space="preserve"><value>Core voltage offset</value></data>
+  <data name="CpuTuneCache" xml:space="preserve"><value>Cache voltage offset</value></data>
+  <data name="CpuTuneRatio" xml:space="preserve"><value>Core maximum OC ratio</value></data>
+  <data name="CpuTuneCurve" xml:space="preserve"><value>All-core Curve Optimizer (experimental)</value></data>
+  <data name="CpuTuneClock" xml:space="preserve"><value>Fixed all-core clock (experimental)</value></data>
+  <data name="CpuTuneCurrent" xml:space="preserve"><value>Readback</value></data>
+  <data name="CpuTuneNoReadback" xml:space="preserve"><value>Unavailable</value></data>
+  <data name="CpuTuneVerified" xml:space="preserve"><value>Applied; CPU setting readback matches. Stability still requires testing.</value></data>
+  <data name="CpuTuneAccepted" xml:space="preserve"><value>SMU accepted the command. Effective setting and stability are not independently verified.</value></data>
+  <data name="CpuTuneRestored" xml:space="preserve"><value>Restore request completed. AMD restoration is confirmed only by SMU acceptance.</value></data>
+  <data name="CpuTuneFailed" xml:space="preserve"><value>Change failed; inspect the details. Restore if a partial change remains.</value></data>
+  <data name="CpuTuneInstallDriver" xml:space="preserve"><value>Install missing driver</value></data>
+  <data name="CpuTuneDriverRestart" xml:space="preserve"><value>Driver installed. Restart Windows, then detect CPU capabilities again.</value></data>
+  <data name="LegacyMifsConnected" xml:space="preserve"><value>● Legacy hardware connected</value></data>
+  <data name="LegacyMifsDisconnected" xml:space="preserve"><value>● Legacy hardware disconnected</value></data>
+  <data name="LegacyMifsTip" xml:space="preserve"><value>The legacy interface supports built-in performance modes. Custom firmware slots and curves are unavailable.</value></data>
 </root>

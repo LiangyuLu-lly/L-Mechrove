@@ -952,6 +952,32 @@ function Write-GcuInstallStatus {
     return $path
 }
 
+function Test-AcpiDriverAvailable {
+    if (-not ('LMechrevoInstaller.AcpiDeviceProbe' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+namespace LMechrevoInstaller {
+    public static class AcpiDeviceProbe {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern SafeFileHandle CreateFile(string name, uint access, uint share,
+            IntPtr security, uint disposition, uint flags, IntPtr template);
+        public static int OpenError() {
+            using (SafeFileHandle handle = CreateFile(@"\\.\ACPIDriver", 0xC0000000u, 3u,
+                IntPtr.Zero, 3u, 0u, IntPtr.Zero)) {
+                return handle.IsInvalid ? Marshal.GetLastWin32Error() : 0;
+            }
+        }
+    }
+}
+'@
+    }
+    $errorCode = [LMechrevoInstaller.AcpiDeviceProbe]::OpenError()
+    if ($errorCode -ne 0) { Write-Log ('  ACPI device cannot be opened: Win32 error {0}' -f $errorCode) }
+    return ($errorCode -eq 0)
+}
+
 function Install-AcpiDriver {
     # Installs the payload's own EC/ACPI driver: UWACPIDriver.inf (newest payload) or ACPIDriver.inf
     # (GamingCenterU legacy payload). Both bind ACPI\INOU0000 and expose \\.\ACPIDriver.
@@ -974,21 +1000,12 @@ function Install-AcpiDriver {
         Write-Log '  driver installed; Windows needs a reboot to finish binding it'
         return $true
     }
-    if ($code -ne 0) {
-        # Idempotency: an already-present driver can make pnputil return non-zero (259 = up to date).
-        # File names are not localized, so this check works on any display language.
-        $enum = Invoke-Native -FilePath 'pnputil.exe' -Arguments @('/enum-drivers')
-        $present = @($enum.Output | Where-Object { $_ -match [regex]::Escape($InfName) }).Count -gt 0
-        if ($present) {
-            Write-Log ("  driver already present in the driver store (pnputil exit {0}); continuing" -f $code)
-        }
-        else {
-            throw ("pnputil /add-driver failed with exit code {0}" -f $code)
-        }
+    if ($code -ne 0 -and $code -ne 259) { throw ("pnputil /add-driver failed with exit code {0}" -f $code) }
+    # 259 can mean no matching device; a staged INF is not proof that the app can open the driver.
+    if (-not (Test-AcpiDriverAvailable)) {
+        throw ("ACPI device unavailable after pnputil exit {0}; see %SystemRoot%\INF\setupapi.dev.log" -f $code)
     }
-    else {
-        Write-Log '  driver installed/updated OK'
-    }
+    Write-Log '  ACPI driver device verified (open only; no EC commands sent)'
     return $false
 }
 
@@ -1322,6 +1339,14 @@ try {
             Assert-SignedFile -Path $serviceExe -Label 'GCUBridge'
             Assert-SignedFile -Path $gcuServiceExe -Label 'GCUService'
             Assert-SignedFile -Path $driverSys -Label $driverDirName
+            # A matching payload on disk does not prove that Windows still binds the ACPI device.
+            if (-not (Test-AcpiDriverAvailable)) {
+                Write-Log 'repairing the missing/unavailable ACPI driver binding'
+                Invoke-DeviceRescan
+                if (Install-AcpiDriver -DriverDir $driverTarget -InfName $driverInfName) {
+                    Set-RebootRequiredMarker -Reason ('{0} asked for a reboot to finish binding' -f $driverInfName)
+                }
+            }
             Ensure-FirewallRule
             Set-InstallMarker -Selection $selection -ServiceExe $serviceExe -PayloadSha256 $payloadIdentity.Sha256 -InstallerVersion $InstallerVersion -DriverInf $driverInfName
             Write-Log 'privileges: autostart task, scheduled tasks, directory ACLs, device access'

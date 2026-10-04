@@ -35,15 +35,21 @@ namespace MechrevoLite.UI
             CalibrateItemHeight();
         }
 
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e);
+            CalibrateItemHeight();
+        }
+
         public bool NativeHeight { get; set; }
 
         private void CalibrateItemHeight()
         {
-            if (DrawMode != DrawMode.OwnerDrawFixed || NativeHeight) return;
+            if (DrawMode != DrawMode.OwnerDrawFixed) return;
             int chrome = PreferredHeight - ItemHeight;
-            // ItemHeight 参与 PreferredHeight，属于布局：读真实 DPI。
-            int target = (int)Math.Round(44 * (UiDpi.Layout(this) / 192f));
-            ItemHeight = Math.Max(1, target - chrome);
+            int textHeight = (int)Math.Ceiling(Font.GetHeight(UiDpi.Layout(this))) + 2;
+            int target = NativeHeight ? textHeight + chrome : (int)Math.Round(44 * (UiDpi.Layout(this) / 192f));
+            ItemHeight = Math.Max(textHeight, target - chrome);
         }
 
         protected override void OnDrawItem(DrawItemEventArgs e)

@@ -107,7 +107,6 @@ public class MechrevoService
     // 滑条防抖的 SetCustomDetail 不得取消在飞的 SwitchCustomProfile。
     CancellationTokenSource? _modeSwitchCts;
     CancellationTokenSource? _customProfileSwitchCts;
-    int _customProfileSwitchSequence;   // 每次 SwitchCustomProfile 开始 +1：重发前判断是否已被更新的切换取代
     CancellationTokenSource? _customDetailCts;
     CancellationTokenSource? _gpuSwitchCts;
 
@@ -228,11 +227,12 @@ public class MechrevoService
     public int CurrentGpuMode => _hw.GpuMode;   // 0=核显 1=标准 2=独显直连 3=自动
 
     /// <summary>切换运行模式：发布 → 等待切换完成 → 回读确认 → 事件通知。</summary>
-    public async Task<bool> SwitchMode(int mode)
+    public async Task<bool> SwitchMode(int mode, CancellationToken cancellationToken = default)
     {
-        var requestCts = new CancellationTokenSource();
+        var requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         CancellationTokenSource? previous = Interlocked.Exchange(ref _modeSwitchCts, requestCts);
-        previous?.Cancel();
+        try { previous?.Cancel(); }
+        catch (ObjectDisposedException) { }
         bool lockTaken = false;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -242,7 +242,17 @@ public class MechrevoService
             requestCts.Token.ThrowIfCancellationRequested();
             if (_hw is not { IsConnected: true }) return false;
 
-            if (CurrentMode == mode)
+            if (_hw.UsesLegacyMifs)
+            {
+                if (mode == ModeCustom) return false;
+                int target = (int)PowerModeMapping.FromVisualMode(mode);
+                bool confirmed = await _hw.SwitchLegacyModeAsync(target, requestCts.Token).ConfigureAwait(false);
+                Logger.WriteLine($"Legacy MIFS SwitchMode confirmed={confirmed} expect={target} actual={_hw.OperatingMode}");
+                if (confirmed) ModeControl.SyncExternalModeStatic(mode);
+                return confirmed;
+            }
+
+            if (_hw.OperatingMode is >= 0 and <= 3 && CurrentMode == mode)
             {
                 MechrevoLite.Mode.ModeControl.SyncExternalModeStatic(mode);
                 ModeChanged?.Invoke(mode);
@@ -266,7 +276,8 @@ public class MechrevoService
             int expectedOperatingMode = mode is >= 0 and <= 3
                 ? (int)PowerModeMapping.FromVisualMode(mode)
                 : (int)ConsoleOperatingMode.Gaming;
-            _hw.MarkModeSwitchPending(expectedOperatingMode);
+            _hw.MarkModeSwitchPending(expectedOperatingMode,
+                mode == ModeCustom ? Math.Clamp(_hw.CustomProfileIndex, 0, Mode.FirmwareSlotPlanner.MaxSlotCount - 1) : null);
             // 载荷与 MechrevoHw.SetMode 共用一份构造：ProfileIndex 是 JSON 数字（不是 "0"），
             // 而且切模式必须紧跟一条 LCHWOC/Control 的运行标记
             // （官方 ModeSwitchCommand，CCUWinUI L55090-55146）。
@@ -319,6 +330,7 @@ public class MechrevoService
             }
 
             Logger.WriteLine($"SwitchMode confirmed={ok} expect={mode} actual={CurrentMode} elapsed={elapsed.ElapsedMilliseconds}ms");
+            requestCts.Token.ThrowIfCancellationRequested();
             if (!ok) return false;
 
             if (mode == ModeCustom)
@@ -357,30 +369,20 @@ public class MechrevoService
     }
 
     /// <summary>
-    /// 用户发起的自定义档切换：<see cref="SwitchCustomProfile"/> 未确认时重发一次（同一条命令，幂等）。
-    /// GCU 刚处理完另一次模式切换时会丢掉这条命令（真机 2026-09-28：平衡 → 自定义，1.15 s 内模式
-    /// 没变，之后也没再变，用户再点一次才切过去；另一次是已进自定义但仍停在旧档）。这次请求已被
-    /// 更新的切换取代、或 GCU 已断开时不重发。
+    /// 厂商切换线程有 1.5 秒合并窗口；同一次请求持锁确认并至多补发一次，避免旧重试覆盖新目标。
     /// </summary>
-    public async Task<bool> SwitchCustomProfileWithResend(int index)
-    {
-        int before = Volatile.Read(ref _customProfileSwitchSequence);
-        bool confirmed = await SwitchCustomProfile(index).ConfigureAwait(false);
-        if (confirmed) return true;
-        // 本次调用只会 +1；更多说明期间有更新的切换开始了，那次负责最终结果。
-        if (Volatile.Read(ref _customProfileSwitchSequence) != before + 1) return false;
-        if (_hw is not { IsConnected: true }) return false;
-        Logger.WriteLine($"SwitchCustomProfile({index}) resend: GCU reports mode={_hw.OperatingMode} profile={_hw.CustomProfileIndex}");
-        return await SwitchCustomProfile(index).ConfigureAwait(false);
-    }
+    public Task<bool> SwitchCustomProfileWithResend(int index, CancellationToken cancellationToken = default) =>
+        SwitchCustomProfileCoreAsync(index, 2, cancellationToken);
 
     /// <summary>切换自定义性能档（原版序列：OPERATING_CUSTOM_MODE + LCHWOC IsCustomRun + 刷新曲线设置 + 回读）。</summary>
-    public async Task<bool> SwitchCustomProfile(int index)
+    public Task<bool> SwitchCustomProfile(int index) => SwitchCustomProfileCoreAsync(index, 1, default);
+
+    async Task<bool> SwitchCustomProfileCoreAsync(int index, int attempts, CancellationToken cancellationToken)
     {
-        Interlocked.Increment(ref _customProfileSwitchSequence);
-        var requestCts = new CancellationTokenSource();
+        var requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         CancellationTokenSource? previous = Interlocked.Exchange(ref _customProfileSwitchCts, requestCts);
-        previous?.Cancel();
+        try { previous?.Cancel(); }
+        catch (ObjectDisposedException) { }
         bool lockTaken = false;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -395,46 +397,54 @@ public class MechrevoService
                 Logger.WriteLine("SwitchCustomProfile: GCU 未连接");
                 return false;
             }
+            if (_hw.OperatingMode == 3 && _hw.CustomProfileIndex == index &&
+                !_hw.HasConflictingModeSwitchPending(3, index)) return true;
             _hw.SuspendDirectGpuOverclock();
-            _hw.MarkModeSwitchPending(3);
-            // 先订再发：回读若在 Publish 返回后、WaitForStateAsync 订阅前到达会丢。
-            Task<bool> modeWait = _hw.WaitForStateAsync(
-                () => _hw.OperatingMode == 3 && _hw.CustomProfileIndex == index,
-                TimeSpan.FromMilliseconds(250),
-                requestCts.Token);
-            // 与 SwitchMode 同理：发布失败要解除过期包过滤窗口。
-            try
+            _hw.MarkModeSwitchPending(3, index);
+            long before = _hw.CustomProfileStatusVersion;
+            bool TargetReported() => _hw.OperatingMode == 3 && _hw.CustomProfileIndex == index &&
+                _hw.CustomProfileStatusVersion > before;
+            bool confirmed = false;
+            for (int attempt = 0; attempt < attempts && !confirmed; attempt++)
             {
-                // ProfileIndex 是 JSON 数字，与官方 ModeSwitchCommand 一致。
-                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "OPERATING_CUSTOM_MODE", ["ProfileIndex"] = index });
-                await _hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["IsCustomRun"] = true });
-                await _hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });   // 请求超频通道状态（原版页面激活时的序列）
-                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" });
+                requestCts.Token.ThrowIfCancellationRequested();
+                if (!_hw.IsConnected) return false;
+                if (attempt > 0)
+                    Logger.WriteLine($"SwitchCustomProfile({index}) resend after {elapsed.ElapsedMilliseconds}ms");
+                Task<bool> modeWait = _hw.WaitForStateAsync(TargetReported,
+                    TimeSpan.FromMilliseconds(180), requestCts.Token);
+                try
+                {
+                    await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
+                        { ["Action"] = "OPERATING_CUSTOM_MODE", ["ProfileIndex"] = index }).ConfigureAwait(false);
+                    await _hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object>
+                        { ["IsCustomRun"] = true }).ConfigureAwait(false);
+                }
+                catch
+                {
+                    _hw.ClearModeSwitchPending();
+                    throw;
+                }
+                confirmed = await modeWait.ConfigureAwait(false);
+                foreach (int waitMs in new[] { 700, 900 })
+                {
+                    requestCts.Token.ThrowIfCancellationRequested();
+                    if (confirmed) break;
+                    await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
+                        { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+                    confirmed = await _hw.WaitForStateAsync(TargetReported,
+                        TimeSpan.FromMilliseconds(waitMs), requestCts.Token).ConfigureAwait(false);
+                }
             }
-            catch
-            {
-                _hw.ClearModeSwitchPending();
-                throw;
-            }
-            bool confirmed = await modeWait;
             requestCts.Token.ThrowIfCancellationRequested();
-            if (!confirmed)
-            {
-                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                confirmed = await _hw.WaitForStateAsync(
-                    () => _hw.OperatingMode == 3 && _hw.CustomProfileIndex == index,
-                    TimeSpan.FromMilliseconds(900),
-                    requestCts.Token);
-            }
-            Logger.WriteLine($"SwitchCustomProfile({index}) confirmed={confirmed} actualMode={_hw.OperatingMode} actualProfile={_hw.CustomProfileIndex}");
+            Logger.WriteLine($"SwitchCustomProfile({index}) confirmed={confirmed} actualMode={_hw.OperatingMode} actualProfile={_hw.CustomProfileIndex} elapsed={elapsed.ElapsedMilliseconds}ms");
             if (confirmed)
             {
-                long initialFanStatus = _hw.FanStatusVersion;
-                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                await _hw.WaitForStateAsync(
-                    () => _hw.CustomProfileIndex == index && _hw.FanStatusVersion > initialFanStatus,
-                    TimeSpan.FromMilliseconds(900),
-                    requestCts.Token);
+                await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object>
+                    { ["Action"] = "GET_FAN_SPEED_CURVE_SETTING" }).ConfigureAwait(false);
+                await _hw.Publish(MqttTopics.LchwocControl, new Dictionary<string, object>
+                    { ["Action"] = "GETSTATUS" }).ConfigureAwait(false);
+                requestCts.Token.ThrowIfCancellationRequested();
                 _hw.NotifyCustomModeChanged();
                 _hw.RestoreDirectGpuOverclockProfile(index);
                 AppConfig.Set("custom_last_profile", index);
@@ -460,11 +470,12 @@ public class MechrevoService
 
     /// <summary>设置当前自定义档参数（SET_OPERATING_MODE_DETAIL，服务端保存到当前档）。
     /// 实测：同包多字段时服务端只应用部分字段——必须逐字段单独发包（与原版 UI 每命令单字段一致）。</summary>
-    public async Task<bool> SetCustomDetail(Dictionary<string, string> fields)
+    public async Task<bool> SetCustomDetail(Dictionary<string, string> fields, CancellationToken cancellationToken = default)
     {
-        var requestCts = new CancellationTokenSource();
+        var requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         CancellationTokenSource? previous = Interlocked.Exchange(ref _customDetailCts, requestCts);
-        previous?.Cancel();
+        try { previous?.Cancel(); }
+        catch (ObjectDisposedException) { }
         bool lockTaken = false;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -535,6 +546,7 @@ public class MechrevoService
                 .ToArray();
             for (int i = 0; i < gcuEntries.Length; i++)
             {
+                requestCts.Token.ThrowIfCancellationRequested();
                 KeyValuePair<string, string> kv = gcuEntries[i];
 
                 string wireKey = kv.Key;
@@ -556,7 +568,7 @@ public class MechrevoService
                 else if (kv.Key == "FanSwitchSpeed" && int.TryParse(kv.Value, out int switchSpeedMs))
                     wireValue = _hw.QuantiseFanSwitchSpeed(switchSpeedMs).ToString();
                 await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "SET_OPERATING_MODE_DETAIL", [wireKey] = wireValue });
-                if (i + 1 < gcuEntries.Length) await Task.Delay(120);
+                if (i + 1 < gcuEntries.Length) await Task.Delay(120, requestCts.Token);
             }
 
             bool confirmed = gcuConfirmationEntries.Length == 0 ||
@@ -1120,7 +1132,7 @@ public class MechrevoService
     /// <summary>设置当前自定义档名称（服务端 OSD 显示名，原版 SET_CUSTOM_PROFILE_OSD_STRING）。</summary>
     internal const int CustomProfileNameMaxLength = 12;
 
-    public async Task<bool> SetCustomProfileName(string name)
+    public async Task<bool> SetCustomProfileName(string name, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -1129,17 +1141,21 @@ public class MechrevoService
             if (name.Length == 0 || name.Length > CustomProfileNameMaxLength) return false;
             // 名字作用于「当前运行的自定义档」：不在自定义模式时服务端没有目标档可改。
             if (CurrentMode != ModeCustom) return false;
+            cancellationToken.ThrowIfCancellationRequested();
             await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "SET_CUSTOM_PROFILE_OSD_STRING", ["ProfileName"] = name });
             // 回读：Fan/Status 的 ProfileName。
-            bool confirmed = await _hw.WaitForStateAsync(() => _hw.ProfileName == name, TimeSpan.FromMilliseconds(300));
+            bool confirmed = await _hw.WaitForStateAsync(() => _hw.ProfileName == name, TimeSpan.FromMilliseconds(300), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (!confirmed)
             {
                 await _hw.Publish(MqttTopics.FanControl, new Dictionary<string, object> { ["Action"] = "GETSTATUS" });
-                confirmed = await _hw.WaitForStateAsync(() => _hw.ProfileName == name, TimeSpan.FromMilliseconds(1500));
+                confirmed = await _hw.WaitForStateAsync(() => _hw.ProfileName == name, TimeSpan.FromMilliseconds(1500), cancellationToken);
             }
+            cancellationToken.ThrowIfCancellationRequested();
             Logger.WriteLine($"SetCustomProfileName({name}) confirmed={confirmed}");
             return confirmed;
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.WriteLine("SetCustomProfileName fail: " + ex.Message); return false; }
     }
 
@@ -2586,12 +2602,13 @@ public class MechrevoService
 
     /// <summary>狂暴（Turbo）子模式切换：silent=静音狂暴(SILENT=1)，否则超频狂暴(EXTREME=1)。
     /// 原版协议：Fan/Control SET_CPU_CORE_OFFSET_SILENT/EXTREME；当前子模式存注册表 SilentPerformanceModeSwitch（1=超频 0=静音）。</summary>
-    public async Task<bool> SwitchTurboSubMode(bool silent)
+    public async Task<bool> SwitchTurboSubMode(bool silent, CancellationToken cancellationToken = default)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (_hw is not { IsConnected: true } || _hw.Capabilities.SilentTurboAvailability != FeatureAvailability.Supported) return false;
-            if (IsSilentTurboActive == silent)
+            if (ReadSilentTurboState() == silent)
             {
                 if (MechrevoLite.Mode.PerfModeService.TurboAutoOcEnabled() && ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
                     await ApplyTurboGpuOverclockDefaults().ConfigureAwait(false);
@@ -2605,8 +2622,8 @@ public class MechrevoService
             });
             for (int attempt = 0; attempt < 25; attempt++)
             {
-                await Task.Delay(100);
-                if (IsSilentTurboActive == silent)
+                await Task.Delay(100, cancellationToken);
+                if (ReadSilentTurboState() == silent)
                 {
                     Logger.WriteLine($"SwitchTurboSubMode(silent={silent}) confirmed");
                     if (MechrevoLite.Mode.PerfModeService.TurboAutoOcEnabled() && ShouldApplyTurboGpuOverclockDefaultsOnSubMode(silent))
@@ -2617,22 +2634,30 @@ public class MechrevoService
             Logger.WriteLine($"SwitchTurboSubMode(silent={silent}) not confirmed");
             return false;
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Logger.WriteLine("SwitchTurboSubMode fail: " + ex.Message); return false; }
     }
 
     /// <summary>当前是否静音狂暴（注册表 SilentPerformanceModeSwitch：0=静音狂暴 1=超频狂暴）。</summary>
-    public static bool IsSilentTurboActive
+    public static bool IsSilentTurboActive => ReadSilentTurboState() == true;
+
+    internal static bool? ReadSilentTurboState()
     {
-        get
+        try
         {
-            try
+            using var key = Microsoft.Win32.Registry.LocalMachine
+                .OpenSubKey(@"SOFTWARE\OEM\GamingCenter2\ItemSupport");
+            return key?.GetValue("SilentPerformanceModeSwitch")?.ToString() switch
             {
-                using var key = Microsoft.Win32.Registry.LocalMachine
-                    .OpenSubKey(@"SOFTWARE\OEM\GamingCenter2\ItemSupport");
-                var v = key?.GetValue("SilentPerformanceModeSwitch");
-                return v?.ToString() == "0";
-            }
-            catch { return false; }
+                "0" => true,
+                "1" => false,
+                _ => null,
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.WriteLineIfChanged("turbo-state-read", "Turbo sub-mode read failed: " + ex.Message);
+            return null;
         }
     }
 

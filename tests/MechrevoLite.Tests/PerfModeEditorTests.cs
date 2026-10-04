@@ -50,6 +50,38 @@ public class PerfModeEditorTests
     static T Named<T>(Control root, string name) where T : Control =>
         root.Controls.Find(name, true).OfType<T>().Single();
 
+    [Theory]
+    [InlineData("_pl1", "_pl1Val", 0, 300, 150, false)]
+    [InlineData("_pl4", "_pl4Val", 0, 400, 290, false)]
+    [InlineData("_coreOc", "_coreOcVal", -500, 250, -300, true)]
+    public void ExpandingAndShrinkingLiveRangesKeepsLinkedControlsAndConfigurationConsistent(
+        string sliderField, string numericField, int minimum, int maximum, int value, bool allowNegative)
+    {
+        ConfigScopeTests.WithConfigSnapshot(() =>
+        {
+            using var _ = UseAuditMode();
+            using var form = new CustomModeForm();
+            var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(CustomModeForm).GetField("_syncing", flags)!.SetValue(form, true);
+            var slider = (RSlider)typeof(CustomModeForm).GetField(sliderField, flags)!.GetValue(form)!;
+            var numeric = (RNumericUpDown)typeof(CustomModeForm).GetField(numericField, flags)!.GetValue(form)!;
+            string before = System.Text.Json.JsonSerializer.Serialize(AppConfig.Snapshot());
+
+            CustomModeForm.ApplyRange(slider, numeric, minimum, maximum, value, allowNegative);
+            Assert.Equal(value, slider.Value);
+            Assert.Equal(value, numeric.Value);
+            Assert.Equal(minimum, slider.Minimum);
+            Assert.Equal(maximum, numeric.Maximum);
+
+            CustomModeForm.ApplyRange(slider, numeric, 10, 30, value, allowNegative);
+            Assert.Equal(Math.Clamp(value, 10, 30), slider.Value);
+            Assert.Equal(slider.Value, numeric.Value);
+            Assert.Equal(10, numeric.Minimum);
+            Assert.Equal(30, slider.Maximum);
+            Assert.Equal(before, System.Text.Json.JsonSerializer.Serialize(AppConfig.Snapshot()));
+        });
+    }
+
     [Fact]
     public void TheDropDownListsEveryBuiltInModeAndTheCustomMode()
     {
@@ -178,6 +210,23 @@ public class PerfModeEditorTests
         Assert.Equal(100, s.GpuCoreOffset);
         Assert.Equal(400, s.GpuMemoryOffset);
         Assert.Null(s.WindowsPowerMode);
+    }
+
+    [Fact]
+    public void MissingSavedPowerPlanIsShownExplicitlyWithoutChangingTheConfiguration()
+    {
+        ConfigScopeTests.WithConfigSnapshot(() =>
+        {
+            using var _ = UseAuditMode();
+            string absent = Guid.NewGuid().ToString();
+            PerfModeStore.SaveSettings("balanced", new PerfModeSettings { PowerPlanGuid = absent });
+            using var form = new CustomModeForm();
+            form.BindMode("balanced");
+            var selected = Assert.IsType<KeyValuePair<string, string>>(Named<RComboBox>(form, "planCombo").SelectedItem);
+            Assert.Equal(absent, selected.Value);
+            Assert.Equal(Properties.Strings.PowerPlanUnavailable, selected.Key);
+            Assert.Equal(absent, PerfModeStore.LoadSettings("balanced").PowerPlanGuid);
+        });
     }
 
     [Fact]

@@ -96,7 +96,11 @@ internal static class SilentUpdate
             string powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
 
             AppConfig.Set(PendingKey, Format(pending));
-            AppConfig.Flush();
+            if (!AppConfig.TryFlush())
+            {
+                AppConfig.Remove(PendingKey);
+                return false;
+            }
             using Process? watcher = Process.Start(new ProcessStartInfo
             {
                 FileName = powershell,

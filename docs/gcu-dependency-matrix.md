@@ -12,7 +12,7 @@
 |---|---|---|
 | 传输方式 | MQTT，broker 即 GCUBridge Windows 服务 | `src\MechrevoLiteWin\Hardware\MechrevoHw.cs:33-34`（Host=127.0.0.1, Port=13688） |
 | 常驻实例 client id | `UWPClient_4`（官方 UI 占 slot 5） | `MechrevoHw.cs:45` |
-| 短命辅助实例 client id | `UWPClient_3`（开机限充任务，必须与常驻不同，否则互踢） | `MechrevoHw.cs:57` |
+| 开机限充 | 复用 EC 百分比阈值与可用性检查，不建立 MQTT 会话 | `Program.ApplyBatteryLimitAtBootAsync` |
 | 连接判据 | `IsConnected` = MQTT socket 状态 | `MechrevoHw.cs:868` |
 | KeepAlive | 3 秒 | `MechrevoHw.cs:2993` |
 | 发布超时 | 5 秒（未连接时抛 `MqttPublishFailedException`） | `MechrevoHw.cs:2434`、`:2455` |

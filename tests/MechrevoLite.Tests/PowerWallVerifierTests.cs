@@ -17,6 +17,32 @@ public class PowerWallVerifierTests
 {
     static readonly DateTime Origin = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+    [Theory]
+    [InlineData(2001)]
+    [InlineData(2100)]
+    public void TimerJitterDoesNotPreventAFullWindowFromMaturing(int intervalMilliseconds)
+    {
+        var verifier = new PowerWallVerifier();
+        for (int i = 0; i < 120; i++)
+        {
+            DateTime now = Origin.AddMilliseconds((long)i * intervalMilliseconds);
+            verifier.Observe(80, 45, now);
+            if (now - Origin >= PowerWallVerifier.Window)
+                Assert.Equal(PowerWallVerdict.NotEnforced, verifier.Evaluate(now));
+        }
+    }
+
+    [Fact]
+    public void StaleMeasurementsAndSamplingGapsRequireAnotherFullWindow()
+    {
+        var verifier = new PowerWallVerifier();
+        DateTime now = FillWindow(verifier, 80, 45);
+        DateTime later = now + PowerWallVerifier.MaximumSampleGap + TimeSpan.FromSeconds(1);
+        Assert.Equal(PowerWallVerdict.Unknown, verifier.Evaluate(later));
+        verifier.Observe(80, 45, later);
+        Assert.Equal(PowerWallVerdict.Unknown, verifier.Evaluate(later));
+    }
+
     /// <summary>按固定间隔灌满一个完整窗口。</summary>
     static DateTime FillWindow(PowerWallVerifier verifier, double watts, int limit, int samples = 40)
     {

@@ -974,7 +974,7 @@ namespace MechrevoLite
                 DisplayMember = "Key",
                 // 宽度收窄（默认/sRGB 都很短）：给同行的「屏幕」标题留足宽度，
                 // 下拉展开宽度单独放宽（DropDownWidth），不挤标题列。
-                Width = DHead(52),
+                Width = DHead(64),
                 DropDownWidth = DHead(110),
                 NativeHeight = true,   // 不做 44 逻辑高的条目校准：行头只有 26 逻辑高，装不下会溢出
                 Font = UiVisualStyle.Font(UiVisualStyle.TypeScale.Caption),
@@ -2042,6 +2042,8 @@ namespace MechrevoLite
             BackColor = UiVisualStyle.Window;
 
             InitializeComponent();
+            Icon = new Icon(Path.Combine(AppContext.BaseDirectory, "favicon.ico"));
+            ShowIcon = true;
             labelVersion.Text = Program.ReleaseLabel;
             InitTheme(true);
             // 自绘滚动的滚轮转发（AutoScroll 关闭后系统不再路由滚轮）。
@@ -2665,6 +2667,11 @@ namespace MechrevoLite
                 hw is not null, hw?.IsConnected == true, hw?.IsReconnecting == true,
                 hw is { ConnectionGeneration: > 0 }, hw?.ReconnectAgeMs ?? 0);
             (Color fore, string text, string tooltip) = UI.GcuConnectionStatus.Describe(state);
+            if (hw?.UsesLegacyMifs == true)
+            {
+                text = Properties.Strings.ResourceManager.GetString(hw.IsConnected ? "LegacyMifsConnected" : "LegacyMifsDisconnected", Properties.Strings.Culture)!;
+                tooltip = Properties.Strings.ResourceManager.GetString("LegacyMifsTip", Properties.Strings.Culture)!;
+            }
             if (_labelGcuStatus.Text != text) _labelGcuStatus.Text = text;
             if (_labelGcuStatus.ForeColor != fore) _labelGcuStatus.ForeColor = fore;
             toolTip.SetToolTip(_labelGcuStatus, tooltip);

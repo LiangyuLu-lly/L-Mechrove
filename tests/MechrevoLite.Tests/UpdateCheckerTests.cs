@@ -35,6 +35,9 @@ public class UpdateVersionTests
     [InlineData("beta14", "beta13", true)]
     [InlineData("beta13", "beta13", false)]
     [InlineData("beta9", "beta10", false)]
+    [InlineData("0.290.3", "0.290.2", true)]
+    [InlineData("0.290.3", "0.289.0-beta21", true)]
+    [InlineData("0.290.3", "0.289.0-beta20", true)]
     public void IsNewerOnlyForActuallyNewerVersions(string candidate, string current, bool expected) =>
         Assert.Equal(expected, UpdateVersion.IsNewer(candidate, current));
 
@@ -179,10 +182,12 @@ public class UpdateCheckerTests
             Assert.NotNull(requested);
             string sent = QueryValue(requested!, "version");
             Assert.Equal(InformationalVersionOfMechrevoAssembly(), sent);
-            Assert.Contains(".", sent);                        // 点分 semver
-            Assert.Contains("-", sent);                        // 带 beta 后缀
-            Assert.NotEqual(Program.ReleaseLabel, sent);       // 不是裸标签
-            Assert.DoesNotContain("version=" + Program.ReleaseLabel + "&", requested!);
+            Assert.Matches(@"^\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?$", sent);
+            if (sent.Contains('-'))
+            {
+                Assert.NotEqual(Program.ReleaseLabel, sent);
+                Assert.DoesNotContain("version=" + Program.ReleaseLabel + "&", requested!);
+            }
         }
         finally
         {

@@ -1711,6 +1711,12 @@ namespace MechrevoLite.Properties {
         /// <summary>
         ///   Looks up a localized string similar to Power plan.
         /// </summary>
+        internal static string PowerPlanUnavailable {
+            get {
+                return ResourceManager.GetString("PowerPlanUnavailable", resourceCulture);
+            }
+        }
+
         internal static string PowerPlan {
             get {
                 return ResourceManager.GetString("PowerPlan", resourceCulture);

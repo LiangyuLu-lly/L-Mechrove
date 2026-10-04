@@ -161,6 +161,17 @@ internal static class UiAuditRunner
                 CpuPerformanceTuning = true,
                 OverclockSettings = true,
             }),
+            ("CpuTune-Intel", () => new CpuTuningForm(new CpuTuningProbe("Intel CPU", "CpuTuneIntelReady", "domain 0: capabilities=0x540, ratio=40/64", new[]
+            {
+                new CpuTuningOption("intel-core", "CpuTuneCore", -150, 0, "mV", 0, true),
+                new CpuTuningOption("intel-cache", "CpuTuneCache", -150, 0, "mV", 0, true),
+                new CpuTuningOption("intel-ratio", "CpuTuneRatio", 8, 64, "x", 40, true),
+            })), null),
+            ("CpuTune-AMD", () => new CpuTuningForm(new CpuTuningProbe("AMD CPU", "CpuTuneSmuReady", "DragonRange; SMU 0x545601", new[]
+            {
+                new CpuTuningOption("amd-co", "CpuTuneCurve", -30, 0, "CO", null, true),
+            })), null),
+            ("CpuTune-NoDriver", () => new CpuTuningForm(new CpuTuningProbe("CPU", "CpuTuneDriverMissing", "NotInstalled", Array.Empty<CpuTuningOption>())), null),
             ("FanCurve", () => new FanCurveForm(), new MechrevoDeviceCapabilities
             {
                 ProfileAvailable = true,
@@ -717,6 +728,13 @@ internal static class UiAuditRunner
 
     internal static string? GetTextClipping(Control control)
     {
+        if (control is RCheckBox check && check.Appearance == Appearance.Normal)
+        {
+            Size needed = check.MeasurePreferredSize(UiDpi.AuditDpi > 0 ? UiDpi.AuditDpi : UiDpi.Layout(check));
+            return check.Width < needed.Width || check.Height < needed.Height
+                ? $"Switch text '{check.Text}' needs {needed}, available {check.Size}."
+                : null;
+        }
         if (control is ComboBox combo)
         {
             int dropReserve = SystemInformation.HorizontalScrollBarArrowWidth + 8;

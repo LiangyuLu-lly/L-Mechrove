@@ -154,7 +154,7 @@ public class RuntimeRegressionTests
             MechrevoService.ResolveColorCalibrationSwitch(registryState, runtimeState));
 
     [Fact]
-    public async Task CustomProfileSwitch_RequestsFreshFanStatusBeforeNotifyingUi()
+    public async Task CustomProfileSwitch_UsesFreshTargetStatusBeforeNotifyingUi()
     {
         MechrevoHw? hardware = null;
         int statusRequests = 0;
@@ -181,7 +181,8 @@ public class RuntimeRegressionTests
             hardware.CustomModeChanged += () => notifications++;
 
             Assert.True(await service.SwitchCustomProfile(2));
-            Assert.True(statusRequests >= 1);
+            Assert.Equal(0, statusRequests);
+            Assert.True(hardware.CustomProfileStatusVersion > 0);
             Assert.True(notifications >= 1);
             Assert.Equal(2, hardware.CustomProfileIndex);
             Assert.Equal(55, hardware.Pl1);
@@ -203,7 +204,7 @@ public class RuntimeRegressionTests
             {
                 _ = Task.Run(async () =>
                 {
-                    await Task.Delay(1_350);
+                    await Task.Delay(2_100);
                     hardware!.HandleMessage("Fan/Status",
                         "{\"OperatingMode\":3,\"CustomProfileIndex\":0,\"CPU_PL1\":55,\"CPU_PL2\":80}");
                 });

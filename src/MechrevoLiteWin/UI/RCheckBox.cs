@@ -83,7 +83,7 @@ namespace MechrevoLite.UI
             }
         }
 
-        public override Size GetPreferredSize(Size proposedSize) => MeasurePreferredSize();
+        public override Size GetPreferredSize(Size proposedSize) => MeasurePreferredSize(ResponsiveLayout.LogicalToDevice(this, 96));
 
         protected override void OnPaint(PaintEventArgs pevent)
         {
@@ -153,9 +153,9 @@ namespace MechrevoLite.UI
             base.Dispose(disposing);
         }
 
-        private Size MeasurePreferredSize()
+        internal Size MeasurePreferredSize(int dpi)
         {
-            float scale = UiDpi.Layout(this) / 96F;
+            float scale = dpi / 96F;
             Size track = TrackSize(scale);
             Size label = MeasureText(Text, Font);
             Size state = ShowStateText ? MeasureText("OFF", StateFont) : Size.Empty;
@@ -227,7 +227,7 @@ namespace MechrevoLite.UI
 
         private void ResizeForAutoSize()
         {
-            if (AutoSize) Size = MeasurePreferredSize();
+            if (AutoSize) Size = GetPreferredSize(Size.Empty);
         }
 
         private void StartSlide()

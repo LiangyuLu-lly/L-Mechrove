@@ -42,14 +42,17 @@
     <OutputPath>bin\x64\$(Configuration)\</OutputPath>
     <IntermediateOutputPath>obj\x64\$(Configuration)\</IntermediateOutputPath>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-    <AssemblyVersion>0.289.0.0</AssemblyVersion>
-    <FileVersion>0.289.0.0</FileVersion>
-    <Version>0.289.0-beta21</Version>
+    <AssemblyVersion>0.290.6.0</AssemblyVersion>
+    <FileVersion>0.290.6.0</FileVersion>
+    <Version>0.290.6</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
     <!-- English lives in the main Strings.resx; only ship the zh-CN satellite. Also filters TaskScheduler package satellites. -->
     <SatelliteResourceLanguages>zh-CN</SatelliteResourceLanguages>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="../../installer/Install-PawnIO.ps1" Link="Install-PawnIO.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Remove="logs\**" />
@@ -145,14 +148,14 @@
 
   <ItemGroup>
     <!--
-      PawnIO 内核模块字节码。只有 AMD 的 RyzenSMU.bin 会被加载
-      （Pawn/RyzenSmu.cs -> PawnIOWrapper.LoadModuleFromResource）。
-      同目录下曾有 IntelMSR.bin，但代码里没有任何加载点，是纯死负载，已删除。
+      PawnIO 签名模块字节码：AMD RyzenSMU 与 Intel MSR 分别由对应后端加载。
       加入新 .bin 前请先确认存在对应的 Load 调用，否则只会撑大单文件产物。
     -->
     <EmbeddedResource Include="Pawn\RyzenSMU.bin">
       <LogicalName>LMechrevo.RyzenSMU.bin</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Pawn\IntelMSR.bin" LogicalName="LMechrevo.IntelMSR.bin" />
+    <Content Include="Pawn\COPYING.LGPL.txt" Link="COPYING.PawnIO.txt" CopyToPublishDirectory="Always" />
     <!-- T2 机型身份注册表（只含身份，见 Resources\model-registry.json 的 _comment）。 -->
     <EmbeddedResource Include="Resources\model-registry.json">
       <LogicalName>LMechrevo.model-registry.json</LogicalName>

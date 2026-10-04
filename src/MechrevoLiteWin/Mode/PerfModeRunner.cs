@@ -22,9 +22,16 @@ public sealed record PerfApplyStepOutcome(PerfApplyStep Step, PerfApplyResult Re
 /// <summary>整次应用的结果。</summary>
 public sealed record PerfApplyOutcome(string ModeId, IReadOnlyList<PerfApplyStepOutcome> Steps)
 {
-    public bool ModeSwitched => Steps
-        .Where(s => s.Step.Kind is PerfApplyStepKind.SwitchBuiltIn or PerfApplyStepKind.SwitchFirmwareSlot)
-        .All(s => s.Result == PerfApplyResult.Confirmed);
+    public bool ModeSwitched => Steps.Any(s => IsSwitch(s.Step)) && Steps
+        .Where(s => IsSwitch(s.Step)).All(s => s.Result == PerfApplyResult.Confirmed);
+
+    public bool FirmwareParametersIssued => Steps
+        .Where(s => s.Step.Kind is PerfApplyStepKind.WriteFirmwareField
+            or PerfApplyStepKind.WriteFanCurve or PerfApplyStepKind.ApplyGpuOverclock)
+        .All(s => s.Result != PerfApplyResult.Failed);
+
+    internal static bool IsSwitch(PerfApplyStep step) => step.Kind is PerfApplyStepKind.SwitchBuiltIn
+        or PerfApplyStepKind.SwitchFirmwareSlot or PerfApplyStepKind.SwitchTurboSubMode;
 
     public bool AnyFailed => Steps.Any(s => s.Result == PerfApplyResult.Failed);
 
@@ -106,6 +113,7 @@ public static class PerfModeRunner
             try
             {
                 issued = await IssueAsync(step, backend, ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -123,7 +131,15 @@ public static class PerfModeRunner
                 continue;
             }
 
-            bool? verdict = await backend.VerifyAsync(step, ct).ConfigureAwait(false);
+            bool? verdict;
+            try { verdict = await backend.VerifyAsync(step, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                outcomes.Add(new PerfApplyStepOutcome(step, PerfApplyResult.Failed, ex.Message));
+                if (IsSwitch(step)) break;
+                continue;
+            }
             outcomes.Add(verdict switch
             {
                 true => new PerfApplyStepOutcome(step, PerfApplyResult.Confirmed),
@@ -139,7 +155,7 @@ public static class PerfModeRunner
     }
 
     static bool IsSwitch(PerfApplyStep step) =>
-        step.Kind is PerfApplyStepKind.SwitchBuiltIn or PerfApplyStepKind.SwitchFirmwareSlot;
+        PerfApplyOutcome.IsSwitch(step);
 
     static Task<bool> IssueAsync(PerfApplyStep step, IPerfModeBackend backend, CancellationToken ct) => step.Kind switch
     {

@@ -223,9 +223,10 @@ public sealed class SettingsDialog : UI.RForm
             Name = "comboLanguage",
             DropDownStyle = ComboBoxStyle.DropDownList,
             Width = D(140),
-            Anchor = AnchorStyles.Left,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left,
             Margin = new Padding(0, D(2), 0, D(2)),
         };
+        combo.SizeChanged += (_, _) => row.MinimumSize = new Size(0, combo.Height + combo.Margin.Vertical);
         combo.Items.Add("中文");
         combo.Items.Add("English");
         string current = UiLanguage.Normalize(

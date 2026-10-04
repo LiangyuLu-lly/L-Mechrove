@@ -12,7 +12,7 @@ internal static class TestConfigIsolation
     [ModuleInitializer]
     internal static void Init()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "L-Mechrevo-tests", "config");
+        string directory = Path.Combine(Path.GetTempPath(), "L-Mechrevo-tests", "config", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         Environment.SetEnvironmentVariable("LMECHREVO_CONFIG_FILE", Path.Combine(directory, "config.json"));
 
@@ -51,8 +51,17 @@ internal static class TestConfigIsolation
         // 统计上报与问题反馈同理：测试进程绝不能把合成数据发到生产统计站。默认出口换成空实现
         // （反馈固定回失败），个别用例换成自己的替身后还原成这里的值，而不是还原成 null。
         MechrevoLite.Usage.UsageTelemetry.HttpPostOverride = static (_, _, _) => Task.CompletedTask;
+        MechrevoLite.Usage.UsageTelemetry.LogClientOverride = static () => OfflineTelemetryClient;
         MechrevoLite.Usage.FeedbackUpload.HttpPostOverride =
             static (_, _, _) => Task.FromResult("{\"ok\":false,\"error\":\"offline in tests\"}");
+    }
+
+    static readonly HttpClient OfflineTelemetryClient = new(new OfflineTelemetryHandler());
+    sealed class OfflineTelemetryHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable)
+            { Content = new StringContent("{\"ok\":false}") });
     }
 }
 

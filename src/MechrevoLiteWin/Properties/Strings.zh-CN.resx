@@ -704,6 +704,9 @@
   <data name="BoostUnconfirmed" xml:space="preserve">
     <value>睿频模式未确认，未保存</value>
   </data>
+  <data name="PowerPlanUnavailable" xml:space="preserve">
+    <value>已保存计划不可用</value>
+  </data>
   <data name="PowerPlan" xml:space="preserve">
     <value>电源计划</value>
   </data>
@@ -1547,4 +1550,34 @@
   <data name="FirstRunTelemetryStepTitle" xml:space="preserve">
     <value>发送什么、不发送什么</value>
   </data>
+  <data name="CpuTuneTitle" xml:space="preserve"><value>CPU 调节</value></data>
+  <data name="CpuTuneScope" xml:space="preserve"><value>本次开机全局生效，切换性能模式时保留。仅手动应用，不在开机时自动重放。Intel 恢复检测时的原值；AMD 恢复 CO 0 并退出固定频率模式。</value></data>
+  <data name="CpuTuneRisk" xml:space="preserve"><value>从小幅调整开始。过度降压或超频可能导致死机、重启。命令接受不代表稳定，出现错误时恢复默认。尊重 BIOS 保护设置。</value></data>
+  <data name="CpuTuneProbe" xml:space="preserve"><value>检测能力</value></data>
+  <data name="CpuTuneApply" xml:space="preserve"><value>应用</value></data>
+  <data name="CpuTuneRestore" xml:space="preserve"><value>恢复</value></data>
+  <data name="CpuTuneDriverLink" xml:space="preserve"><value>下载官方 PawnIO 驱动</value></data>
+  <data name="CpuTuneProbePrompt" xml:space="preserve"><value>先检测驱动与 CPU 能力，再应用设置。</value></data>
+  <data name="CpuTuneDriverMissing" xml:space="preserve"><value>未安装 PawnIO 驱动。手动安装官方驱动后，重新检测。</value></data>
+  <data name="CpuTuneAdminRequired" xml:space="preserve"><value>驱动拒绝访问。以管理员身份重启软件后，重新检测。</value></data>
+  <data name="CpuTuneProbeFailed" xml:space="preserve"><value>驱动或固件检测失败，已禁用调节。</value></data>
+  <data name="CpuTuneUnsupported" xml:space="preserve"><value>没有检测到支持的可写接口。Intel 混合架构的倍频调节仍需验证。</value></data>
+  <data name="CpuTuneIntelReady" xml:space="preserve"><value>已检测到 Intel 调节能力。应用后必须匹配 CPU 回读；固件仍可能拒绝降压。</value></data>
+  <data name="CpuTuneSmuReady" xml:space="preserve"><value>已识别 AMD 命令路径，固件仍可能拒绝。CO 和固定频率缺少独立设置回读，成功仅表示 SMU 接受命令。</value></data>
+  <data name="CpuTuneCore" xml:space="preserve"><value>核心电压偏移</value></data>
+  <data name="CpuTuneCache" xml:space="preserve"><value>缓存电压偏移</value></data>
+  <data name="CpuTuneRatio" xml:space="preserve"><value>核心最大超频倍频</value></data>
+  <data name="CpuTuneCurve" xml:space="preserve"><value>全核 Curve Optimizer（实验）</value></data>
+  <data name="CpuTuneClock" xml:space="preserve"><value>固定全核频率（实验）</value></data>
+  <data name="CpuTuneCurrent" xml:space="preserve"><value>回读</value></data>
+  <data name="CpuTuneNoReadback" xml:space="preserve"><value>不可回读</value></data>
+  <data name="CpuTuneVerified" xml:space="preserve"><value>已应用，CPU 设置回读一致；仍需验证稳定性。</value></data>
+  <data name="CpuTuneAccepted" xml:space="preserve"><value>SMU 已接受命令，尚未独立验证实际设置与稳定性。</value></data>
+  <data name="CpuTuneRestored" xml:space="preserve"><value>恢复请求已完成。AMD 恢复只能确认 SMU 接受。</value></data>
+  <data name="CpuTuneFailed" xml:space="preserve"><value>调节失败，请查看详情。若存在部分变更，请点击恢复。</value></data>
+  <data name="CpuTuneInstallDriver" xml:space="preserve"><value>安装缺失驱动</value></data>
+  <data name="CpuTuneDriverRestart" xml:space="preserve"><value>驱动已安装，请重启 Windows 后重新检测 CPU 能力。</value></data>
+  <data name="LegacyMifsConnected" xml:space="preserve"><value>● 旧版硬件接口已连接</value></data>
+  <data name="LegacyMifsDisconnected" xml:space="preserve"><value>● 旧版硬件接口未连接</value></data>
+  <data name="LegacyMifsTip" xml:space="preserve"><value>旧版接口支持内置性能模式，不提供自定义固件槽位和风扇曲线。</value></data>
 </root>

@@ -13,6 +13,34 @@ public class SwitchConcurrencyTests
     static MechrevoHw NewHardware(Func<string, object, Task>? publish = null) =>
         new(publish ?? ((_, _) => Task.CompletedTask), new MechrevoDeviceCapabilities());
 
+    [Theory]
+    [InlineData(-1, 1)]
+    [InlineData(1, 0)]
+    public void UnknownFirmwareStateCannotBeTreatedAsAnAlreadyConfirmedBalancedMode(int initialMode, int expectedCommands)
+    {
+        ConfigScopeTests.WithConfigSnapshot(() =>
+        {
+            int switchCommands = 0;
+            MechrevoHw? hardware = null;
+            using var hw = NewHardware((topic, payload) =>
+            {
+                string? action = Newtonsoft.Json.Linq.JObject.FromObject(payload)["Action"]?.ToString();
+                if (topic == "Fan/Control" && action == "OPERATING_GAMING_MODE")
+                {
+                    switchCommands++;
+                    hardware!.HandleMessage("Fan/Status", "{\"OperatingMode\":1}");
+                }
+                return Task.CompletedTask;
+            });
+            hardware = hw;
+            if (initialMode >= 0) hw.HandleMessage("Fan/Status", "{\"OperatingMode\":1}");
+            var service = new MechrevoService(hw, () => false, () => 0, () => false);
+            Assert.True(service.SwitchMode(MechrevoService.ModeGaming).GetAwaiter().GetResult());
+            Assert.Equal(expectedCommands, switchCommands);
+            Assert.Equal(1, hw.OperatingMode);
+        });
+    }
+
     // ---- M2：模式切换的过期包过滤窗口 ----
 
     /// <summary>

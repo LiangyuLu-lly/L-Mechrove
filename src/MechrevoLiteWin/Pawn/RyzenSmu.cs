@@ -106,10 +106,21 @@ namespace PawnIO
         private const int MAILBOX_TIMEOUT_MS = 200;
 
         private readonly PawnIOWrapper _io = new();
+        private readonly Func<string, ulong[]?, ulong[]?, bool> _execute;
         private bool _init, _disposed;
         private CpuCodeName _cpu;
         private uint _smuVer;
-        private readonly Mutex _smuMutex = new Mutex();
+        private readonly Mutex _smuMutex = new(false, @"Global\Access_PCI");
+
+        public RyzenSmuService() => _execute = _io.Execute;
+
+        internal RyzenSmuService(CpuCodeName cpu, Func<string, ulong[]?, ulong[]?, bool> execute)
+        {
+            _execute = execute;
+            _cpu = cpu;
+            _smuVer = 1;
+            _init = GetFamily(cpu) != CpuFamily.Unknown;
+        }
 
         public bool         IsInitialized => _init;
         public CpuCodeName  CpuCodeName   => _cpu;
@@ -121,10 +132,9 @@ namespace PawnIO
             if (_init) return true;
             if (_io.Connect() != PawnIOWrapper.ConnectResult.OK || !_io.LoadModule(moduleData)) return false;
 
-            GetCodeName(out _cpu);
-            GetSmuVersion(out _smuVer);
-            _init = true;
-            return true;
+            _init = GetCodeName(out _cpu) && Family != CpuFamily.Unknown &&
+                GetSmuVersion(out _smuVer) && _smuVer != 0;
+            return _init;
         }
 
         // Probes whether the PawnIO driver is installed without loading the module.
@@ -161,18 +171,65 @@ namespace PawnIO
         public SmuStatus SetCoAll(int value)
         {
             uint v = EncodeCurve(value);
-            return Family switch
+            var route = CurveCommand(_cpu);
+            return route is null ? SmuStatus.UnknownCmd :
+                route.Value.Psmu ? SendPsmu(route.Value.Command, v) : SendMp1(route.Value.Command, v);
+        }
+
+        internal static (bool Psmu, uint Command)? CurveCommand(CpuCodeName cpu) => cpu switch
+        {
+            CpuCodeName.Renoir or CpuCodeName.Lucienne or CpuCodeName.Cezanne => (false, 0x55),
+            CpuCodeName.Rembrandt or CpuCodeName.Vangogh or CpuCodeName.Phoenix or CpuCodeName.Phoenix2 or
+            CpuCodeName.HawkPoint or CpuCodeName.StrixPoint or CpuCodeName.StrixHalo or
+            CpuCodeName.KrackanPoint => (false, 0x4C),
+            CpuCodeName.DragonRange or CpuCodeName.Raphael or
+            CpuCodeName.GraniteRidge => (true, 0x07),
+            CpuCodeName.Vermeer => (true, 0x0B),
+            _ => null,
+        };
+
+        internal static (bool Psmu, uint Enable, uint Clock, uint Disable)? ClockCommand(CpuCodeName cpu) => cpu switch
+        {
+            CpuCodeName.SummitRidge or CpuCodeName.PinnacleRidge => (false, 0x23, 0x39, 0x24),
+            CpuCodeName.Matisse or CpuCodeName.Vermeer => (false, 0x24, 0x26, 0x25),
+            CpuCodeName.Raphael or CpuCodeName.GraniteRidge or CpuCodeName.DragonRange => (true, 0x5D, 0x5F, 0x5E),
+            CpuCodeName.Renoir or CpuCodeName.Lucienne or CpuCodeName.Cezanne => (false, 0x2F, 0x31, 0x30),
+            CpuCodeName.Rembrandt or CpuCodeName.Phoenix or CpuCodeName.Phoenix2 or CpuCodeName.HawkPoint => (true, 0x17, 0x19, 0x18),
+            _ => null,
+        };
+
+        internal static bool SupportsClock(CpuCodeName cpu) => ClockCommand(cpu) is not null;
+        internal static int MaximumClock(CpuCodeName cpu) => GetFamily(cpu) is CpuFamily.Matisse or CpuFamily.Raphael ? 6500 : 4500;
+
+        public SmuStatus SetOcClock(int mhz)
+        {
+            if (mhz < 1000 || mhz > MaximumClock(_cpu)) throw new ArgumentOutOfRangeException(nameof(mhz));
+            var route = ClockCommand(_cpu);
+            if (route is null) return SmuStatus.UnknownCmd;
+            if (!_init || !AcquirePci()) return SmuStatus.Failed;
+            try
             {
-                // RyzenAdj: _do_adjust(0x55) — MP1 only
-                CpuFamily.Renoir                         => SendMp1(0x55, v),
-                // RyzenAdj: _do_adjust(0x4C) — MP1 only
-                CpuFamily.Mobile or CpuFamily.StrixPoint => SendMp1(0x4C, v),
-                // StrixHalo (Ryzen AI MAX): MP1 0x4C preferred; PSMU 0x5D as fallback
-                CpuFamily.StrixHalo                      => SendMp1(0x4C, v) is var s && s == SmuStatus.OK ? s : SendPsmu(0x5D, v),
-                // RyzenAdj: _do_adjust_psmu(0x07) — PSMU only
-                CpuFamily.Raphael                        => SendPsmu(0x07, v),
-                _                                        => SmuStatus.Failed,
-            };
+                var enabled = route.Value.Psmu ? SendPsmu(route.Value.Enable, 0) : SendMp1(route.Value.Enable, 0);
+                if (enabled != SmuStatus.OK) return enabled;
+                var status = route.Value.Psmu ? SendPsmu(route.Value.Clock, (uint)mhz) : SendMp1(route.Value.Clock, (uint)mhz);
+                if (status == SmuStatus.UnknownCmd && Family == CpuFamily.Renoir) status = SendPsmu(0x19, (uint)mhz);
+                if (status != SmuStatus.OK)
+                {
+                    SmuStatus recovery = DisableOc();
+                    if (recovery != SmuStatus.OK)
+                        throw new InvalidOperationException($"SMU clock rejected: {status}; disable OC failed: {recovery}");
+                }
+                return status;
+            }
+            finally { _smuMutex.ReleaseMutex(); }
+        }
+
+        public SmuStatus DisableOc()
+        {
+            var route = ClockCommand(_cpu);
+            if (route is null) return SmuStatus.UnknownCmd;
+            var status = route.Value.Psmu ? SendPsmu(route.Value.Disable, 0) : SendMp1(route.Value.Disable, 0);
+            return status == SmuStatus.UnknownCmd && Family == CpuFamily.Renoir ? SendPsmu(0x1D, 0) : status;
         }
 
         public SmuStatus SetCoGfx(int value)
@@ -223,13 +280,18 @@ namespace PawnIO
         public bool GetSmuVersion(out uint version)
         {
             version = 0;
-            ulong[] result = new ulong[1];
-            if (_io.Execute("ioctl_get_smu_version", null, result))
+            if (!AcquirePci()) return false;
+            try
             {
-                version = (uint)result[0];
-                return true;
+                ulong[] result = new ulong[1];
+                if (_io.Execute("ioctl_get_smu_version", null, result))
+                {
+                    version = (uint)result[0];
+                    return true;
+                }
+                return false;
             }
-            return false;
+            finally { _smuMutex.ReleaseMutex(); }
         }
 
         // Reads current power limits from the SMU PM table.
@@ -238,43 +300,48 @@ namespace PawnIO
         // a brief retry is enough.
         public PowerLimits? GetPowerLimits()
         {
-            ulong[] resolveOut = new ulong[2];
-            if (!_io.Execute("ioctl_resolve_pm_table", null, resolveOut))
-                return null;
-            uint tableVersion = (uint)resolveOut[0];
+            if (!AcquirePci()) return null;
+            try
+            {
+                ulong[] resolveOut = new ulong[2];
+                if (!_io.Execute("ioctl_resolve_pm_table", null, resolveOut))
+                    return null;
+                uint tableVersion = (uint)resolveOut[0];
 
-            _io.Execute("ioctl_update_pm_table", null, null);
-            Thread.Sleep(100);
-            if (!_io.Execute("ioctl_update_pm_table", null, null))
-                return null;
-            Thread.Sleep(200);
+                _io.Execute("ioctl_update_pm_table", null, null);
+                Thread.Sleep(100);
+                if (!_io.Execute("ioctl_update_pm_table", null, null))
+                    return null;
+                Thread.Sleep(200);
 
-            ulong[] words = new ulong[64];
-            if (!_io.Execute("ioctl_read_pm_table", null, words))
-                return null;
+                ulong[] words = new ulong[64];
+                if (!_io.Execute("ioctl_read_pm_table", null, words))
+                    return null;
 
-            ReadOnlySpan<float> floats = MemoryMarshal.Cast<ulong, float>(words);
+                ReadOnlySpan<float> floats = MemoryMarshal.Cast<ulong, float>(words);
 
-            var sb = new System.Text.StringBuilder();
-            sb.Append($"PMTable ver=0x{tableVersion:X6} floats:");
-            for (int i = 0; i < floats.Length; i++)
-                sb.Append($" [{i}]={floats[i]:G6}");
-            Logger.WriteLine(sb.ToString());
+                var sb = new System.Text.StringBuilder();
+                sb.Append($"PMTable ver=0x{tableVersion:X6} floats:");
+                for (int i = 0; i < floats.Length; i++)
+                    sb.Append($" [{i}]={floats[i]:G6}");
+                Logger.WriteLine(sb.ToString());
 
-            if (floats[0] == 0f)
-                return null;
+                if (floats[0] == 0f)
+                    return null;
 
-            int thmIdx = GetTctlIndex(tableVersion);
-            if (thmIdx < 0 || floats.Length <= thmIdx)
-                return null;
+                int thmIdx = GetTctlIndex(tableVersion);
+                if (thmIdx < 0 || floats.Length <= thmIdx)
+                    return null;
 
-            return new PowerLimits(
-                Stapm:    floats[0],
-                Fast:     floats[2],
-                Slow:     floats[4],
-                TctlTemp: floats[thmIdx],
-                ApuSlow:  HasApuSlowField(tableVersion) ? floats[6] : null
-            );
+                return new PowerLimits(
+                    Stapm:    floats[0],
+                    Fast:     floats[2],
+                    Slow:     floats[4],
+                    TctlTemp: floats[thmIdx],
+                    ApuSlow:  HasApuSlowField(tableVersion) ? floats[6] : null
+                );
+            }
+            finally { _smuMutex.ReleaseMutex(); }
         }
 
         // Returns the float index of tctl_temp for a given PM table version,
@@ -302,7 +369,7 @@ namespace PawnIO
                 // Not in RyzenAdj; empirically confirmed at float index 10.
                 0x54 or 0x62 => 10,
 
-                _ => 16,   // safe fallback for any future unknown version
+                _ => -1,
             };
         }
 
@@ -313,7 +380,7 @@ namespace PawnIO
         private static bool HasApuSlowField(uint tableVersion)
         {
             uint hi = tableVersion >> 16;
-            return hi != 0x1E && hi != 0x54;
+            return hi is 0x37 or 0x3F or 0x40 or 0x45 or 0x4C or 0x5D or 0x64 or 0x65;
         }
 
         public static CpuFamily GetFamily(CpuCodeName cpu) => cpu switch
@@ -360,7 +427,11 @@ namespace PawnIO
             _                            => CpuFamily.Unknown,
         };
 
-        private static uint EncodeCurve(int steps) => (uint)(0x100000 - (uint)(-steps));
+        internal static uint EncodeCurve(int steps)
+        {
+            if (steps is < -40 or > 0) throw new ArgumentOutOfRangeException(nameof(steps));
+            return unchecked((uint)steps) & 0xFFFFF;
+        }
 
         private SmuStatus SetStapm(int watts)
         {
@@ -421,7 +492,7 @@ namespace PawnIO
         {
             value = 0;
             ulong[] result = new ulong[1];
-            if (_io.Execute("ioctl_read_smu_register", new ulong[] { addr }, result))
+            if (_execute("ioctl_read_smu_register", new ulong[] { addr }, result))
             {
                 value = (uint)result[0];
                 return true;
@@ -430,7 +501,7 @@ namespace PawnIO
         }
 
         private bool WriteReg(uint addr, uint value)
-            => _io.Execute("ioctl_write_smu_register", new ulong[] { addr, value }, null);
+            => _execute("ioctl_write_smu_register", new ulong[] { addr, value }, null);
 
         private bool WaitForMailboxIdle(uint rspAddr)
         {
@@ -467,8 +538,7 @@ namespace PawnIO
         {
             response = new uint[6];
 
-            if (_disposed) return SmuStatus.Failed;
-            if (!_smuMutex.WaitOne(5000)) return SmuStatus.Failed;
+            if (!_init || !AcquirePci()) return SmuStatus.Failed;
 
             try
             {
@@ -519,6 +589,13 @@ namespace PawnIO
             {
                 _smuMutex.ReleaseMutex();
             }
+        }
+
+        private bool AcquirePci()
+        {
+            if (_disposed) return false;
+            try { return _smuMutex.WaitOne(1500); }
+            catch (AbandonedMutexException) { return true; }
         }
 
         private void GetMp1Addrs(out uint cmd, out uint rsp, out uint arg)

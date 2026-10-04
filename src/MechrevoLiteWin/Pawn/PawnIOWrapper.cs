@@ -6,30 +6,7 @@ using Microsoft.Win32.SafeHandles;
 namespace PawnIO
 {
     /// <summary>
-    /// PawnIO 内核驱动的 DeviceIoControl 封装（\\?\GLOBALROOT\Device\PawnIO）。
-    ///
-    /// ===== 这条路径的现状，读代码前务必先看 =====
-    ///
-    /// 用途：仅供 <see cref="MechrevoLite.Pawn.RyzenSmu"/> 使用，即 AMD 平台的 SMU 直写——
-    /// 功耗墙（STAPM/Fast/Slow）、温度墙、全核与 iGPU 降压。
-    ///
-    /// 当前是**默认休眠**状态，三重条件同时满足才会真正加载驱动：
-    ///   1. 配置里 auto_uv 为真。ModeControl 的构造函数只在
-    ///      AppConfig.IsApplyUV() 为真时才继续判断是否需要 SMU，而该键默认关闭，
-    ///      且**没有任何 UI 入口可以打开它**（只存在于 Modes.cs 的模式键列表与 AppConfig）。
-    ///   2. CPU 是被识别的 AMD 型号（CpuInfo 解析出非 Undefined 的 CpuCodeName）。
-    ///      本项目的目标机型是 Intel（实测 Core Ultra 9 275HX），因此恒不满足。
-    ///   3. 机器上装了 PawnIO 驱动。未安装时 Connect() 返回 NotInstalled。
-    ///      本项目不随包分发该驱动，也不代为安装。
-    ///
-    /// 也就是说：在目标硬件上这段代码永远不会执行，随包携带的只有
-    /// Pawn/RyzenSMU.bin（38KB 嵌入资源）。保留它是为了将来支持 AMD 机型时不必重做，
-    /// 而不是当前有功能依赖它。同目录下曾有一个 IntelMSR.bin，因为代码里根本没有加载点，
-    /// 已经作为死负载删除。
-    ///
-    /// 如果要启用这条路径，必须补齐三件事：可见的 UI 开关与风险提示、
-    /// 驱动缺失/拒绝访问时的用户可见反馈、以及针对具体 CPU 型号的取值范围校验。
-    /// 在那之前不要给它加新的调用方。
+    /// Loads signed PawnIO modules for explicit runtime CPU tuning; driver installation is external.
     /// </summary>
     public sealed class PawnIOWrapper : IDisposable
     {
@@ -69,7 +46,8 @@ namespace PawnIO
 
         public ConnectResult Connect()
         {
-            if (IsConnected) return ConnectResult.OK;
+            if (_disposed) throw new ObjectDisposedException(nameof(PawnIOWrapper));
+            if (IsConnected || IsModuleLoaded) return ConnectResult.OK;
 
             const string path = @"\\?\GLOBALROOT\Device\PawnIO";
             _raw = CreateFile(path, 0xC0000000u, 0x3, IntPtr.Zero, 3, 0, IntPtr.Zero);
@@ -89,6 +67,7 @@ namespace PawnIO
 
         public bool LoadModule(byte[] data)
         {
+            if (_disposed || _loaded) return false;
             if (!IsConnected || data == null || data.Length == 0) return false;
 
             bool ok = DeviceIoControl(_raw, Ctl.Load, data, (uint)data.Length, null!, 0, out _, IntPtr.Zero);
@@ -103,6 +82,9 @@ namespace PawnIO
         public bool Execute(string functionName, ulong[]? input, ulong[]? output)
         {
             if (!IsModuleLoaded) return false;
+            if (string.IsNullOrEmpty(functionName) || functionName.Length >= FN_LEN ||
+                functionName.Any(c => c > 127 || c == '\0'))
+                throw new ArgumentException("Invalid PawnIO function name.", nameof(functionName));
 
             byte[] nameBytes = Encoding.ASCII.GetBytes(functionName);
             int inputCount = input?.Length ?? 0;
@@ -121,11 +103,14 @@ namespace PawnIO
             bool ok = DeviceIoControl(_safe!, Ctl.Execute, buffer, (uint)buffer.Length,
                                       outputBuffer!, (uint)(outputBuffer?.Length ?? 0), out uint bytesReturned, IntPtr.Zero);
 
-            if (ok && output != null && outputBuffer != null && bytesReturned > 0)
-                Buffer.BlockCopy(outputBuffer, 0, output, 0, (int)Math.Min(bytesReturned, (uint)(outputCount * 8)));
-
-            return ok;
+            if (!ok || !HasCompleteOutput(bytesReturned, outputCount)) return false;
+            if (outputCount > 0)
+                Buffer.BlockCopy(outputBuffer!, 0, output!, 0, outputCount * 8);
+            return true;
         }
+
+        internal static bool HasCompleteOutput(uint bytesReturned, int outputCount)
+            => bytesReturned == (long)outputCount * sizeof(ulong);
 
         public void Dispose()
         {

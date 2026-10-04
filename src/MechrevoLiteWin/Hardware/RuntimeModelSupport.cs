@@ -31,6 +31,8 @@ public static class RuntimeModelSupport
             return ModelOverrideStateMachine.ValidateManual(injected);
 
         if (Program.UiAuditMode) return SupportDecision.Supported("audit");
+        if (Program.hw?.UsesLegacyMifs == true)
+            return Program.hw.IsConnected ? SupportDecision.Supported("MICommonInterface") : SupportDecision.Unparsable();
 
         try
         {
@@ -42,6 +44,7 @@ public static class RuntimeModelSupport
                     ? SupportDecision.Supported("GCU")
                     : SupportDecision.Unparsable();
             }
+            Logger.WriteLineIfChanged("model-identity", "Model identity read: " + identity.ProjectId);
             // N8: the vendor's criterion, not the 24-code list. A machine the vendor service
             // serves is usable; only a machine it does NOT serve degrades to read-only.
             SupportDecision auto = ModelSupport.Determine(identity, IsServiceServed());

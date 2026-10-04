@@ -8,6 +8,27 @@ public class PowerModeIntegrationTests
     const string BalancedPlan = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
     [Fact]
+    public void PowerPlanChoicesMatchWindowsInventoryWithoutCreatingTemplates()
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = System.IO.Path.Combine(Environment.SystemDirectory, "powercfg.exe"),
+            Arguments = "/list",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+        })!;
+        string inventory = process.StandardOutput.ReadToEnd();
+        Assert.True(process.WaitForExit(10_000));
+        Assert.Equal(0, process.ExitCode);
+        string[] installed = System.Text.RegularExpressions.Regex.Matches(inventory,
+            @"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}")
+            .Select(m => m.Value.ToLowerInvariant()).Order().ToArray();
+        Assert.NotEmpty(installed);
+        Assert.Equal(installed, WinPowerPlan.GetPlans().Select(p => p.Guid.ToLowerInvariant()).Order().ToArray());
+    }
+
+    [Fact]
     public void SetActivePlan_Ultimate_DoesNotReportSuccessIfOverlayBalanced()
     {
         string ultimate = WinPowerPlan.UltimatePerformancePlanId;

@@ -54,7 +54,7 @@ public static class WinPowerPlan
     internal const string BalancedOverlayId = "00000000-0000-0000-0000-000000000000";
     static readonly Guid UltimatePerformanceGuid = new(UltimatePerformancePlanId);
 
-    // 内置常用计划（Win11 上 PowerEnumerate 可能只返回当前可见计划——合并补充，去重）
+    // 名称映射不代表该计划已经安装或受到当前系统支持。
     static readonly (string Guid, string Name)[] WellKnownPlans =
     {
         ("381b4222-f694-41f0-9685-ff5bb260df2e", "平衡"),
@@ -63,7 +63,7 @@ public static class WinPowerPlan
         (UltimatePerformancePlanId, "卓越性能"),
     };
 
-    /// <summary>枚举系统全部电源计划（GUID, 名称），合并内置常用计划；名称只用中文（绝不显示 GUID/系统原始名）。</summary>
+    /// <summary>枚举系统实际存在的电源计划（GUID, 名称）。</summary>
     public static List<(string Guid, string Name)> GetPlans()
     {
         var plans = new List<(string Guid, string Name)>();
@@ -84,9 +84,6 @@ public static class WinPowerPlan
             }
         }
         catch (Exception ex) { Logger.WriteLine("WinPowerPlan enum fail: " + ex.Message); }
-        foreach (var wk in WellKnownPlans)
-            if (!plans.Any(p => p.Guid.Equals(wk.Guid, StringComparison.OrdinalIgnoreCase)))
-                plans.Add(wk);
         return plans;
     }
 

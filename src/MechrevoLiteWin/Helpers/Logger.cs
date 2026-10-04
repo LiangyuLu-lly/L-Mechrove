@@ -152,6 +152,8 @@ public static class Logger
     private static readonly ConcurrentDictionary<string, long> ThrottleTicks = new();
     private static readonly ConcurrentDictionary<string, string> LastMessages = new();
     private static readonly CrashRingBuffer Ring = new(CrashRingBufferBytes);
+    private static readonly CrashRingBuffer Errors = new(16 * 1024);
+    internal static event Action? ErrorRecorded;
     private static readonly Thread WriterThread;
     private static int _closed;
 
@@ -216,9 +218,15 @@ public static class Logger
     /// </summary>
     internal static bool TryMarkChanged(string key, string logMessage)
     {
-        if (LastMessages.TryGetValue(key, out string? previous) && previous == logMessage) return false;
-        LastMessages[key] = logMessage;
-        return true;
+        while (true)
+        {
+            if (LastMessages.TryGetValue(key, out string? previous))
+            {
+                if (previous == logMessage) return false;
+                if (LastMessages.TryUpdate(key, logMessage, previous)) return true;
+            }
+            else if (LastMessages.TryAdd(key, logMessage)) return true;
+        }
     }
 
     /// <summary>清除变化检测的记忆，让下一次写入无条件生效（重连后需要重新记录基线状态）。</summary>
@@ -237,10 +245,16 @@ public static class Logger
         string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}: {logMessage}";
         Debug.WriteLine(line);
         if (Volatile.Read(ref _closed) != 0) return;
-        if (severity == LogSeverity.Error) Interlocked.Increment(ref _errorCount);
 
         // 环形缓冲永远记录：级别只决定是否落盘，不决定是否留证。
         Ring.Append(line);
+        if (severity == LogSeverity.Error)
+        {
+            Errors.Append(line);
+            Interlocked.Increment(ref _errorCount);
+            try { ErrorRecorded?.Invoke(); }
+            catch (Exception ex) { Debug.WriteLine("Log notification failed: " + ex.Message); }
+        }
         if (!ShouldWrite(CurrentLevel, severity)) return;
 
         Queue.Enqueue(line);
@@ -416,6 +430,7 @@ public static class Logger
 
     /// <summary>当前环形缓冲的文本快照（诊断包导出用，OFF 级别下也非空）。</summary>
     internal static string SnapshotRingBuffer() => Ring.Snapshot();
+    internal static string SnapshotErrorBuffer() => Errors.Snapshot();
 
     public static void Cleanup()
     {

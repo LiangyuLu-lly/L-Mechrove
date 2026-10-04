@@ -37,6 +37,7 @@ public class CustomModeForm : RForm
     bool _syncing;
     bool _syncingModes;   // 程序化刷新模式下拉 / 应用侧下拉时不触发切换与写入
     bool _refreshingHardwareState;
+    int _modeSelectionSequence;
     Panel _scrollHost = null!;
     int _laidOutContentHeight;
 
@@ -685,6 +686,15 @@ public class CustomModeForm : RForm
         };
         _fanCurveButton.Click += async (_, _) => await OpenFanCurveAsync();
         bottomFlow.Controls.Add(_fanCurveButton);
+        var cpuTuningButton = new RButton
+        {
+            Name = "buttonCpuTuning", Text = CpuTuningForm.Localized("CpuTuneTitle"),
+            Width = D(110), Height = D(28), Margin = new Padding(0, 0, D(12), 0),
+            BackColor = UiVisualStyle.SurfaceRaised, ForeColor = UiVisualStyle.Text,
+            BorderColor = UiVisualStyle.Border, Cursor = Cursors.Hand,
+        };
+        cpuTuningButton.Click += (_, _) => { using var form = new CpuTuningForm(); form.ShowDialog(this); };
+        bottomFlow.Controls.Add(cpuTuningButton);
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.Controls.Add(bottomFlow, 0, rootRow++);
         root.RowCount = rootRow;
@@ -706,7 +716,8 @@ public class CustomModeForm : RForm
         int paramNeeds = labelCol + sliderCol + valueCol;
         // 底行 / 模式行用控件自身的 PreferredSize（= AutoSize 实际渲染宽）：裸 MeasureText 少算 AutoSize 内边距。
         int bottomNeeds = _restoreButton.Width + _restoreButton.Margin.Horizontal
-            + _fanCurveButton.Width + _fanCurveButton.Margin.Horizontal + D(8);
+            + _fanCurveButton.Width + _fanCurveButton.Margin.Horizontal
+            + cpuTuningButton.Width + cpuTuningButton.Margin.Horizontal + D(8);
         int modeNeeds = modeFlow.GetPreferredSize(Size.Empty).Width + D(8);
         _minContentWidth = Math.Max(paramNeeds, Math.Max(bottomNeeds, modeNeeds))
             + root.Padding.Horizontal + table.Padding.Horizontal + D(8);
@@ -914,6 +925,8 @@ public class CustomModeForm : RForm
                         break;
                     }
                 }
+                if (index == 0)
+                    index = _planCombo.Items.Add(new KeyValuePair<string, string>(Strings.PowerPlanUnavailable, wanted.ToString()));
             }
             _planCombo.SelectedIndex = index;
         }
@@ -967,8 +980,11 @@ public class CustomModeForm : RForm
     /// </summary>
     internal async Task<bool> SelectModeAsync(string id)
     {
+        int sequence = ++_modeSelectionSequence;
+        PerfModeService.Instance?.CancelPendingApply();
         _debounce.Stop();
-        await FlushPendingAsync();
+        await FlushPendingAsync(applyHardware: false);
+        if (sequence != _modeSelectionSequence || IsDisposed) return false;
         BindMode(id);
         return await ActivateModeAsync(id);
     }
@@ -1271,11 +1287,11 @@ public class CustomModeForm : RForm
     {
         if (Program.UiAuditMode) return;
         HardwareControl.SampleLocalPower();
-        PowerWallVerdict verdict = HardwareControl.powerWall.Evaluate(DateTime.Now);
+        PowerWallVerdict verdict = HardwareControl.powerWall.Evaluate(DateTime.UtcNow);
         string text = verdict switch
         {
             PowerWallVerdict.Enforced or PowerWallVerdict.NotEnforced =>
-                HardwareControl.powerWall.Describe(DateTime.Now),
+                HardwareControl.powerWall.Describe(DateTime.UtcNow),
             _ => "",
         };
         if (_powerWallStatus.Text != text)
@@ -1305,12 +1321,13 @@ public class CustomModeForm : RForm
     /// 把防抖合并的固件级改动交给编排层：落盘到当前模式，正在运行时只下发变化项并逐项判定。
     /// 没有编排层的宿主（单元测试）直接写当前运行的档——与编排层对「正在运行的模式」的写法一致。
     /// </summary>
-    async Task FlushPendingAsync()
+    async Task FlushPendingAsync(bool applyHardware = true)
     {
+        string modeId = _modeId;
         await _saveLock.WaitAsync();
         try
         {
-            while (_pending.Count > 0)
+            while (_pending.Count > 0 && string.Equals(modeId, _modeId, StringComparison.Ordinal))
             {
                 var fields = new Dictionary<string, string>(_pending);
                 _pending.Clear();
@@ -1330,7 +1347,7 @@ public class CustomModeForm : RForm
                             continue;
                         }
                     }
-                    PerfApplyOutcome? outcome = await perf.UpdateAsync(_modeId, s => ApplyFields(s, fields), "editor");
+                    PerfApplyOutcome? outcome = await perf.UpdateAsync(modeId, s => ApplyFields(s, fields), "editor", applyHardware);
                     if (IsDisposed) return;
                     if (outcome is null)
                     {
@@ -1343,7 +1360,7 @@ public class CustomModeForm : RForm
                     }
                     ShowOutcome(outcome);
                 }
-                else if (Program.service is { } service)
+                else if (applyHardware && Program.service is { } service)
                 {
                     bool ok = await service.SetCustomDetail(fields);
                     _status.Text = ok ? Strings.ParamsConfirmed : Strings.ParamsReverted;
@@ -1459,19 +1476,19 @@ public class CustomModeForm : RForm
         if (value is not null) value.Visible = visible;
     }
 
-    static bool ApplyRange(RSlider bar, RNumericUpDown valueInput, int minimum, int maximum, int current,
+    internal static bool ApplyRange(RSlider bar, RNumericUpDown valueInput, int minimum, int maximum, int current,
         bool allowNegative = false)
     {
         var range = DeviceRange(minimum, maximum, current, allowNegative);
+        // 两个控件先同时容纳新旧范围，ValueChanged 联动才不会写入仍受旧范围限制的控件。
         bar.Minimum = Math.Min(bar.Minimum, range.Min);
         bar.Maximum = Math.Max(bar.Maximum, range.Max);
-        bar.Value = Math.Clamp(range.Value, bar.Minimum, bar.Maximum);
-        bar.Minimum = range.Min;
-        bar.Maximum = range.Max;
-        bar.Value = range.Value;
         valueInput.Minimum = Math.Min(valueInput.Minimum, range.Min);
         valueInput.Maximum = Math.Max(valueInput.Maximum, range.Max);
+        bar.Value = range.Value;
         valueInput.Value = range.Value;
+        bar.Minimum = range.Min;
+        bar.Maximum = range.Max;
         valueInput.Minimum = range.Min;
         valueInput.Maximum = range.Max;
         bar.Enabled = range.Adjustable;

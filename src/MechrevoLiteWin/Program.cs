@@ -146,11 +146,14 @@ namespace MechrevoLite
                 TryRestoreScreenAfterFailure();
                 Logger.WriteLine("Unhandled: " + e.ExceptionObject);
                 Logger.FlushCrashBuffer("AppDomain.UnhandledException");
+                UsageTelemetry.PersistCrashForUpload();
+                if (e.IsTerminating) UsageTelemetry.FlushFatalLog();
             };
             TaskScheduler.UnobservedTaskException += (s, e) =>
             {
                 Logger.WriteLine("Unobserved: " + e.Exception);
                 Logger.FlushCrashBuffer("TaskScheduler.UnobservedTaskException");
+                UsageTelemetry.PersistCrashForUpload();
                 e.SetObserved();
             };
             Application.ThreadException += (_, e) =>
@@ -158,10 +161,22 @@ namespace MechrevoLite
                 TryRestoreScreenAfterFailure();
                 Logger.WriteLine("UI thread exception: " + e.Exception);
                 Logger.FlushCrashBuffer("Application.ThreadException");
+                UsageTelemetry.PersistCrashForUpload();
             };
 
             string action = "";
             if (args.Length > 0) action = args[0];
+
+            if (action == "--cpu-tuning-probe")
+            {
+                using var tuning = new RuntimeCpuTuning();
+                var probe = tuning.Probe();
+                string json = System.Text.Json.JsonSerializer.Serialize(probe, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                if (args.Length > 1) File.WriteAllText(Path.GetFullPath(args[1]), json);
+                else Console.WriteLine(json);
+                Logger.Close();
+                return;
+            }
 
             if (action == "--gpu-oc-helper")
             {
@@ -613,7 +628,7 @@ namespace MechrevoLite
                 long refreshStarted = Environment.TickCount64;
                 await service.RefreshAll().ConfigureAwait(false);
                 await Task.Delay(800).ConfigureAwait(false);
-                if (!hw.HasTelemetrySince(refreshStarted))
+                if (!hw.UsesLegacyMifs && !hw.HasTelemetrySince(refreshStarted))
                 {
                     // MQTT 已连接不代表 GCU 的硬件采集模块已经完成启动；补发一次 System_ON。
                     Logger.WriteLine("硬件连接已建立但尚无温度遥测，补发全量状态请求");
@@ -1724,6 +1739,7 @@ namespace MechrevoLite
             if (hw is not null) hw.StateChanged -= OnHardwareStateChanged;
             hw?.Dispose();
             modeControl?.Dispose();
+            RuntimeCpuTuning.Instance.Dispose();
 
             if (trayIcon is not null)
             {
@@ -1753,6 +1769,7 @@ namespace MechrevoLite
         static void StopTelemetryBeforeExit()
         {
             if (hw is not { IsConnected: true } connected) return;
+            if (connected.UsesLegacyMifs) return;
             try
             {
                 // QoS0：这一条要在 700ms 内落地，而 QoS2 要走四步握手，超时之后
@@ -1776,43 +1793,36 @@ namespace MechrevoLite
             catch (Exception ex) { Logger.WriteLine("System_OFF on exit failed: " + ex.Message); }
         }
 
-        static async Task<bool> ApplyBatteryLimitAtBootAsync()
+        internal static Task<bool> ApplyBatteryLimitAtBootAsync() => Task.Run(() =>
         {
             try
             {
-                int limit = AppConfig.Get("charge_limit", 100);
-                int mode = limit >= 95 ? 0 : limit >= 80 ? 1 : 2;   // 95+→性能(满充) 80-94→平衡 <80→健康
-                // 必须用辅助 client id：这个进程由计划任务在开机时拉起，会和常驻托盘进程
-                // 重叠。共用同一个 id 时 broker 按协议要踢掉已有会话，于是两个进程互踢，
-                // 限充失败而托盘那边每次重连都触发一整轮状态重放。
-                using var chargeHw = new MechrevoLite.Hardware.MechrevoHw(
-                    MechrevoLite.Hardware.MechrevoHw.HelperClientId);
-                if (!await chargeHw.ConnectAsync())
+                int limit = AppConfig.Get("charge_limit");
+                if (!EcChargeLimit.IsSupportedLimit(limit))
                 {
-                    Logger.WriteLine("BatteryLimit failed: MQTT broker unavailable");
+                    Logger.WriteLine($"BatteryLimit skipped: no valid stored percentage ({limit})");
                     return false;
                 }
-
-                await chargeHw.SetBatteryProtection(mode);
-                for (int i = 0; i < 10; i++)
+                if (AppConfig.GetString("ec_charge_limit") == "0" || !EcChargeLimit.IsAvailableOnThisMachine())
                 {
-                    await chargeHw.Publish(MqttTopics.BatteryProtectionControl, new Dictionary<string, object> { ["Report"] = "GET" });
-                    await Task.Delay(300);
-                    if (chargeHw.BatteryProtection == mode)
-                    {
-                        Logger.WriteLine($"BatteryLimit confirmed: limit={limit} mode={mode}");
-                        return true;
-                    }
+                    Logger.WriteLine("BatteryLimit skipped: EC percentage control is disabled or unavailable");
+                    return false;
                 }
-                Logger.WriteLine($"BatteryLimit not confirmed: limit={limit} expected={mode} actual={chargeHw.BatteryProtection}");
-                return false;
+                if (EcChargeLimit.ReadPercent() == limit)
+                {
+                    Logger.WriteLine($"BatteryLimit register already matches {limit}%; charging effect requires observation");
+                    return true;
+                }
+                bool confirmed = EcChargeLimit.TrySet(limit, out int echoed) && echoed == limit;
+                Logger.WriteLine($"BatteryLimit register confirmed={confirmed}: requested={limit}% echoed={echoed}%; charging effect requires observation");
+                return confirmed;
             }
             catch (Exception ex)
             {
                 Logger.WriteLine("BatteryLimit fail: " + ex.Message);
                 return false;
             }
-        }
+        });
 
         static void CleanupLegacyFiles()
         {

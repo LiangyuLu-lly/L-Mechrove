@@ -122,6 +122,36 @@ public class RuntimeDefectRegressionTests
     }
 
     [Fact]
+    public void ConcurrentIdenticalFailuresProduceOneDiagnosticUntilRecovery()
+    {
+        string key = "parallel-" + Guid.NewGuid().ToString("N");
+        int logged = 0;
+        Parallel.For(0, 1000, _ =>
+        {
+            if (Logger.TryMarkChanged(key, "connection failed")) Interlocked.Increment(ref logged);
+        });
+        Assert.Equal(1, logged);
+        Logger.ResetChangeTracking(key);
+        Assert.True(Logger.TryMarkChanged(key, "connection failed"));
+        Logger.ResetChangeTracking(key);
+    }
+
+    [Fact]
+    public void PersistentOutageBackoffGrowsToThirtySecondsAndPreservesFlapBackoff()
+    {
+        int delay = MechrevoLite.Hardware.MechrevoHw.ReconnectInitialDelayMs(0);
+        var waits = new List<int>();
+        for (int i = 0; i < 10; i++)
+        {
+            waits.Add(delay);
+            delay = MechrevoLite.Hardware.MechrevoHw.NextReconnectDelayMs(delay);
+        }
+        Assert.Equal(new[] { 250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000 }, waits);
+        Assert.Equal(30000, MechrevoLite.Hardware.MechrevoHw.NextReconnectDelayMs(
+            MechrevoLite.Hardware.MechrevoHw.ReconnectInitialDelayMs(16)));
+    }
+
+    [Fact]
     public void StatusLogKeys_CoverEveryDeduplicatedStatusLine()
     {
         // 连接就绪时按这张表重置。漏掉一个键 = 那条状态在重连后不再记录基线。

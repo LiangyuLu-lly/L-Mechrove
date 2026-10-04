@@ -149,13 +149,13 @@ public class UsageTelemetryBeta21Tests
     }
 
     [Theory]
-    [InlineData(5, 5, 99_999_999, false, false)]     // 没有新失败行
-    [InlineData(6, 5, 60_000, false, false)]         // 有新失败行，但离上次上传不到 30 分钟
-    [InlineData(6, 5, 1_800_000, false, true)]
-    [InlineData(6, 5, 1_000, true, true)]            // 退出时不看间隔
-    [InlineData(5, 5, 1_000, true, false)]
-    public void ErrorLogsAreThrottled(int now, int atUpload, long sinceUpload, bool ignoreInterval, bool expected) =>
-        Assert.Equal(expected, UsageTelemetry.ShouldUploadErrorLog(now, atUpload, sinceUpload, ignoreInterval));
+    [InlineData(1, 15)]
+    [InlineData(2, 30)]
+    [InlineData(3, 60)]
+    [InlineData(5, 240)]
+    [InlineData(50, 300)]
+    public void LogRetriesBackOff(int failures, int seconds) =>
+        Assert.Equal(TimeSpan.FromSeconds(seconds), UsageTelemetry.LogRetryDelay(failures));
 
     [Fact]
     public void OnlyRealFailuresCountAsErrors()

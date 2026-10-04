@@ -51,6 +51,7 @@ public class WaterCoolerBle : IDisposable
     int _disposed;
     int _lastAutomaticPump = -1, _lastAutomaticFan = -1;
     DateTime _lastSystemConnectionProbeUtc = DateTime.MinValue;
+    TimeSpan _systemConnectionProbeInterval = TimeSpan.FromSeconds(3);
     SystemBluetoothConnectionObservation _lastSystemConnectionObservation;
     DateTime _connectedAtUtc;
     int _consecutiveFlowFaults;
@@ -96,7 +97,7 @@ public class WaterCoolerBle : IDisposable
     public async Task<SystemBluetoothConnectionObservation> ProbeSystemConnectionAsync(
         IEnumerable<string>? knownAddresses = null, bool force = false)
     {
-        if (!force && DateTime.UtcNow - _lastSystemConnectionProbeUtc < TimeSpan.FromSeconds(3))
+        if (!force && DateTime.UtcNow - _lastSystemConnectionProbeUtc < _systemConnectionProbeInterval)
             return _lastSystemConnectionObservation;
 
         try
@@ -108,6 +109,8 @@ public class WaterCoolerBle : IDisposable
             string selector = BluetoothLEDevice.GetDeviceSelectorFromConnectionStatus(BluetoothConnectionStatus.Connected);
             var devices = await DeviceInformation.FindAllAsync(selector,
                 new[] { "System.Devices.Aep.DeviceAddress" });
+            _systemConnectionProbeInterval = TimeSpan.FromSeconds(3);
+            Logger.ResetChangeTracking("lc-system-bluetooth");
             foreach (DeviceInformation device in devices)
             {
                 string name = device.Name ?? "";
@@ -126,7 +129,8 @@ public class WaterCoolerBle : IDisposable
         }
         catch (Exception ex)
         {
-            Logger.WriteLineThrottled("lc-system-bluetooth", "BLE connected-device probe failed: " + ex.Message, 10000);
+            _systemConnectionProbeInterval = TimeSpan.FromSeconds(30);
+            Logger.WriteLineIfChanged("lc-system-bluetooth", "BLE connected-device probe failed: " + ex.Message);
         }
 
         _lastSystemConnectionObservation = default;

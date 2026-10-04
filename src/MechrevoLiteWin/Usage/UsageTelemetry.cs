@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 using MechrevoLite.Gpu;
 using MechrevoLite.Hardware;
 using MechrevoLite.Helpers;
@@ -12,8 +13,7 @@ namespace MechrevoLite.Usage;
 
 /// <summary>
 /// 匿名心跳：启动 / 周期 / 退出各一次。默认开，<c>usage_telemetry=0</c> 可关（设置 → 隐私与反馈）。
-/// 上报到统计站 <c>/api/heartbeat.php</c>；脱敏日志（内存环形缓冲 + 新的崩溃现场）在启动后传一次，
-/// 运行中出现新的失败行时最多每 30 分钟补传一次。失败只记日志。
+/// 心跳每五分钟上报；错误触发独立日志任务，脱敏后落盘，服务器确认后删除待传批次。
 /// </summary>
 internal static class UsageTelemetry
 {
@@ -33,7 +33,9 @@ internal static class UsageTelemetry
     internal const int MaxCrashBytes = 16 * 1024;
 
     /// <summary>出现新的失败行后补传日志的最短间隔。</summary>
-    internal static readonly TimeSpan ErrorLogInterval = TimeSpan.FromMinutes(30);
+    internal static readonly TimeSpan ErrorLogInterval = TimeSpan.FromSeconds(15);
+    internal static TimeSpan LogDebounce { get; set; } = TimeSpan.FromSeconds(3);
+    internal static Func<HttpClient>? LogClientOverride { get; set; }
 
     /// <summary>已上传过的崩溃文件时间戳（UTC ticks）：同一份崩溃现场只传一次。</summary>
     internal const string CrashUploadedKey = "usage_crash_uploaded";
@@ -53,9 +55,16 @@ internal static class UsageTelemetry
     static readonly object Gate = new();
     static CancellationTokenSource? _cts;
     static Task? _loop;
+    static Task? _logLoop;
+    static readonly SemaphoreSlim LogSignal = new(0, 1);
+    static readonly SemaphoreSlim UploadSignal = new(0, 1);
+    static readonly SemaphoreSlim LogUploadGate = new(1, 1);
+    static readonly object LogCaptureGate = new();
+    static readonly TelemetryLogOutbox Outbox = new(Path.Combine(Logger.appPath, "telemetry-outbox"));
+    static int _errorsQueued;
+    static long _crashQueuedStamp;
+    static int _forceLog;
     static int _stopped;
-    static int _errorsAtLastLogUpload;
-    static long _lastLogUploadTick;
 
     internal static bool Enabled => AppConfig.Get(EnabledKey, DefaultEnabled) != 0;
 
@@ -90,7 +99,20 @@ internal static class UsageTelemetry
         AppConfig.Set(EnabledKey, enabled ? 1 : 0);
         Logger.WriteLine("Usage telemetry " + (enabled ? "enabled" : "disabled") + " by the user.");
         if (enabled) Start();
-        else CancelLoop();
+        else
+        {
+            CancelLoop();
+            lock (LogCaptureGate)
+            {
+                try
+                {
+                    Outbox.Clear();
+                    _crashQueuedStamp = 0;
+                    _errorsQueued = Logger.ErrorCount;
+                }
+                catch (Exception ex) { Logger.WriteInfo("usage log backlog cleanup failed: " + ex.Message); }
+            }
+        }
     }
 
     static void CancelLoop()
@@ -101,6 +123,8 @@ internal static class UsageTelemetry
             cts = _cts;
             _cts = null;
             _loop = null;
+            _logLoop = null;
+            Logger.ErrorRecorded -= SignalLog;
         }
         try { cts?.Cancel(); } catch { /* 已释放 */ }
         try { cts?.Dispose(); } catch { /* ignore */ }
@@ -215,7 +239,11 @@ internal static class UsageTelemetry
             stamp = info.LastWriteTimeUtc.Ticks;
             long uploaded = long.TryParse(AppConfig.GetString(CrashUploadedKey), System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out long value) ? value : 0;
-            if (info.Length <= 0 || stamp <= uploaded) return null;
+            if (info.Length <= 0 || stamp <= uploaded)
+            {
+                stamp = 0;
+                return null;
+            }
             int take = (int)Math.Min(info.Length, MaxCrashBytes * 2L);
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             if (info.Length > take) stream.Seek(-take, SeekOrigin.End);
@@ -223,7 +251,7 @@ internal static class UsageTelemetry
             string text = reader.ReadToEnd().Trim();
             return text.Length > 0 ? text : null;
         }
-        catch { return null; }   // 读日志失败不影响心跳
+        catch { stamp = 0; return null; }   // 读日志失败不影响心跳
     }
 
     internal static UsageSnapshot Capture(string eventName)
@@ -254,7 +282,7 @@ internal static class UsageTelemetry
         try { cpu = PawnIO.CpuInfo.Name ?? ""; } catch { }
 
         bool gcu = false;
-        try { gcu = hw is { IsConnected: true }; } catch { }
+        try { gcu = hw is { IsGcuConnected: true }; } catch { }
 
         bool elevated = false;
         try { elevated = ProcessHelper.IsUserAdministrator(); } catch { }
@@ -328,6 +356,10 @@ internal static class UsageTelemetry
             _cts = new CancellationTokenSource();
             CancellationToken token = _cts.Token;
             _loop = Task.Run(() => RunAsync(token), token);
+            Logger.ErrorRecorded -= SignalLog;
+            Logger.ErrorRecorded += SignalLog;
+            Interlocked.Exchange(ref _forceLog, 1);
+            _logLoop = Task.Run(() => Task.WhenAll(CaptureLogsAsync(token), RunLogsAsync(token)), token);
         }
     }
 
@@ -342,16 +374,20 @@ internal static class UsageTelemetry
             loop = _loop;
             _cts = null;
             _loop = null;
+            _logLoop = null;
+            Logger.ErrorRecorded -= SignalLog;
         }
         try { cts?.Cancel(); } catch { /* 退出路径 */ }
         try
         {
-            if (Enabled && !Program.UiAuditMode && Volatile.Read(ref _startSent) != 0)
+            if (Enabled && NoticeShown && !Program.UiAuditMode)
             {
                 // 退出心跳与（有新失败行时的）日志补传并行，合计最多等 2.5 s，不拖慢退出。
-                var pending = new List<Task> { Post(Capture(UsageSnapshot.EventStop), CancellationToken.None) };
-                if (ShouldUploadErrorLog(Environment.TickCount64, ignoreInterval: true))
-                    pending.Add(PostLog(CancellationToken.None));
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(2500));
+                PersistLog(force: false);
+                var pending = new List<Task> { DrainLogsAsync(deadline.Token) };
+                if (Volatile.Read(ref _startSent) != 0)
+                    pending.Add(Post(Capture(UsageSnapshot.EventStop), deadline.Token));
                 Task.WhenAll(pending).Wait(TimeSpan.FromMilliseconds(2500));
             }
         }
@@ -359,18 +395,6 @@ internal static class UsageTelemetry
         try { cts?.Dispose(); } catch { /* ignore */ }
         _ = loop;
     }
-
-    /// <summary>
-    /// 运行中出现了上次上传之后的新失败行，且距上次上传超过 <see cref="ErrorLogInterval"/>（退出时不看间隔）。
-    /// </summary>
-    internal static bool ShouldUploadErrorLog(long nowTick, bool ignoreInterval = false) =>
-        ShouldUploadErrorLog(Logger.ErrorCount, Volatile.Read(ref _errorsAtLastLogUpload),
-            nowTick - Interlocked.Read(ref _lastLogUploadTick), ignoreInterval);
-
-    /// <summary>纯函数形式（便于测试）。</summary>
-    internal static bool ShouldUploadErrorLog(int errorsNow, int errorsAtLastUpload, long millisecondsSinceUpload, bool ignoreInterval) =>
-        errorsNow > errorsAtLastUpload &&
-        (ignoreInterval || millisecondsSinceUpload >= (long)ErrorLogInterval.TotalMilliseconds);
 
     static async Task RunAsync(CancellationToken token)
     {
@@ -381,13 +405,10 @@ internal static class UsageTelemetry
             if (!Enabled) return;   // 用户在告知里关掉了
             Interlocked.Exchange(ref _startSent, 1);
             await Post(Capture(UsageSnapshot.EventStart), token).ConfigureAwait(false);
-            await PostLog(token).ConfigureAwait(false);
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(Interval, token).ConfigureAwait(false);
                 await Post(Capture(UsageSnapshot.EventBeat), token).ConfigureAwait(false);
-                if (ShouldUploadErrorLog(Environment.TickCount64))
-                    await PostLog(token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { /* 正常退出 */ }
@@ -415,44 +436,161 @@ internal static class UsageTelemetry
         catch (Exception ex) { Logger.WriteInfo("usage heartbeat failed: " + ex.Message); }
     }
 
-    static async Task PostLog(CancellationToken token)
+    static void SignalLog()
     {
-        string id = InstallId();
-        if (id.Length < 8) return;
-        // 先记下「传到哪儿了」：上传失败不重试同一批（下一批新失败行出现时再传），避免失败时每拍重发。
-        Volatile.Write(ref _errorsAtLastLogUpload, Logger.ErrorCount);
-        Interlocked.Exchange(ref _lastLogUploadTick, Environment.TickCount64);
-        string? crash = ReadNewCrashTail(out long crashStamp);
-        string log = BuildLogPayload(crash, Logger.SnapshotRingBuffer());
-        if (log.Length < 8) return;
-        string url = BuildLogUrl(BaseUrl);
-        string body = JsonSerializer.Serialize(new Dictionary<string, string>
-        {
-            ["id"] = id,
-            ["ver"] = Program.ReleaseVersion ?? "",
-            ["log"] = log,
-        }, WireJson);
+        Signal(LogSignal);
+    }
+
+    static void Signal(SemaphoreSlim signal)
+    {
+        if (signal.CurrentCount == 0)
+            try { signal.Release(); } catch (SemaphoreFullException) { }
+    }
+
+    internal static void PersistCrashForUpload()
+    {
         try
         {
-            if (HttpPostOverride is not null)
-            {
-                await HttpPostOverride(url, body, token).ConfigureAwait(false);
-            }
-            else
-            {
-                using var content = new StringContent(body, Encoding.UTF8, "application/json");
-                using HttpResponseMessage response = await UpdateHttp.Check.PostAsync(url, content, token).ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
-                {
-                    Logger.WriteInfo($"usage log HTTP {(int)response.StatusCode}");
-                    return;
-                }
-            }
-            if (crash is not null)
-                AppConfig.Set(CrashUploadedKey, crashStamp.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            PersistLog(force: true);
+            Signal(UploadSignal);
         }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { Logger.WriteInfo("usage log upload failed: " + ex.Message); }
+        catch (Exception ex) { Logger.WriteInfo("usage crash persistence failed: " + ex.Message); }
+    }
+
+    internal static void FlushFatalLog()
+    {
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+            Task.Run(() => DrainLogsAsync(deadline.Token)).Wait(TimeSpan.FromMilliseconds(1500));
+        }
+        catch (Exception ex) { Logger.WriteInfo("usage fatal log remains pending: " + ex.Message); }
+    }
+
+    internal static void PersistLog(bool force)
+    {
+        lock (LogCaptureGate)
+        {
+            if (!Enabled || !NoticeShown || Program.UiAuditMode) return;
+            try
+            {
+                int errors = Logger.ErrorCount;
+                string? crash = ReadNewCrashTail(out long stamp);
+                if (!force && errors <= _errorsQueued && stamp <= _crashQueuedStamp) return;
+                string ring = "--- errors ---\n" + Logger.SnapshotErrorBuffer() + "\n--- recent ---\n" +
+                    TailUtf8(Logger.SnapshotRingBuffer(), 32 * 1024);
+                bool includeCrash = crash is not null && stamp > _crashQueuedStamp;
+                string log = BuildLogPayload(includeCrash ? crash : null, ring);
+                // Bound the encoded request too: control characters can expand sixfold in JSON.
+                while (Encoding.UTF8.GetByteCount(log) > 0 && Encoding.UTF8.GetByteCount(
+                    JsonSerializer.Serialize(log, WireJson)) > 128 * 1024)
+                    log = TailUtf8(log, Encoding.UTF8.GetByteCount(log) / 2);
+                Outbox.Enqueue(new(InstallId(), Program.ReleaseVersion, Guid.NewGuid().ToString("N"), log, includeCrash ? stamp : 0, errors));
+                _errorsQueued = errors;
+                if (includeCrash) _crashQueuedStamp = stamp;
+            }
+            catch (Exception ex) { Logger.WriteInfo("usage log backlog write failed: " + ex.Message); }
+        }
+    }
+
+    internal static TimeSpan LogRetryDelay(int failures) => TimeSpan.FromSeconds(
+        Math.Min(300, 15 * Math.Pow(2, Math.Clamp(failures - 1, 0, 5))));
+
+    static async Task CaptureLogsAsync(CancellationToken token)
+    {
+        try
+        {
+            if (!NoticeShown) await Volatile.Read(ref _noticeGate).Task.WaitAsync(token).ConfigureAwait(false);
+            while (!token.IsCancellationRequested && Enabled)
+            {
+                PersistLog(Interlocked.Exchange(ref _forceLog, 0) != 0);
+                Signal(UploadSignal);
+                await LogSignal.WaitAsync(Interval, token).ConfigureAwait(false);
+                await Task.Delay(LogDebounce, token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) { Logger.WriteInfo("usage log capture loop failed: " + ex.Message); }
+    }
+
+    static async Task RunLogsAsync(CancellationToken token)
+    {
+        try
+        {
+            if (!NoticeShown) await Volatile.Read(ref _noticeGate).Task.WaitAsync(token).ConfigureAwait(false);
+            int failures = 0;
+            long nextUpload = 0;
+            while (!token.IsCancellationRequested && Enabled)
+            {
+                long remaining = nextUpload - Environment.TickCount64;
+                TimeSpan wait;
+                if (remaining > 0)
+                    wait = TimeSpan.FromMilliseconds(remaining);
+                else
+                {
+                    bool sent = await DrainLogsAsync(token).ConfigureAwait(false);
+                    failures = sent ? 0 : failures + 1;
+                    TimeSpan spacing = sent ? ErrorLogInterval : LogRetryDelay(failures);
+                    nextUpload = Environment.TickCount64 + (long)spacing.TotalMilliseconds;
+                    wait = sent ? Interval : spacing;
+                }
+                await UploadSignal.WaitAsync(wait, token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) { Logger.WriteInfo("usage log loop failed: " + ex.Message); }
+    }
+
+    internal static bool AcceptLogReceipt(string reply, TelemetryLogBatch batch)
+    {
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(reply);
+            JsonElement root = doc.RootElement;
+            string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(batch.Log)));
+            return root.GetProperty("ok").ValueKind == JsonValueKind.True &&
+                root.GetProperty("batch").GetString() == batch.Batch &&
+                root.GetProperty("bytes").GetInt32() == Encoding.UTF8.GetByteCount(batch.Log) &&
+                string.Equals(root.GetProperty("sha256").GetString(), hash, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
+        { return false; }
+    }
+
+    internal static async Task<bool> SendLogAsync(TelemetryLogBatch batch, string url, HttpClient client, CancellationToken token)
+    {
+        string body = JsonSerializer.Serialize(new { id = batch.Id, ver = batch.Ver, batch = batch.Batch, log = batch.Log }, WireJson);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await client.PostAsync(url, content, deadline.Token).ConfigureAwait(false);
+        string reply = await response.Content.ReadAsStringAsync(deadline.Token).ConfigureAwait(false);
+        bool accepted = response.IsSuccessStatusCode && AcceptLogReceipt(reply, batch);
+        if (!accepted) Logger.WriteInfo($"usage log not acknowledged: HTTP {(int)response.StatusCode}");
+        return accepted;
+    }
+
+    internal static async Task<bool> DrainLogsAsync(CancellationToken token)
+    {
+        await LogUploadGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            while (Enabled && NoticeShown && !Program.UiAuditMode)
+            {
+                token.ThrowIfCancellationRequested();
+                var entry = Outbox.Peek();
+                if (entry is null) return true;
+                HttpClient client = LogClientOverride?.Invoke() ?? UpdateHttp.Download;
+                if (!await SendLogAsync(entry.Value.Batch, BuildLogUrl(BaseUrl), client, token).ConfigureAwait(false)) return false;
+                Outbox.Acknowledge(entry.Value.Path);
+                if (entry.Value.Batch.CrashStamp > 0)
+                    AppConfig.Set(CrashUploadedKey, entry.Value.Batch.CrashStamp.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            return true;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception ex) { Logger.WriteInfo("usage log upload deferred: " + ex.Message); return false; }
+        finally { LogUploadGate.Release(); }
     }
 
     static MechrevoDeviceCapabilities SafeCaps()

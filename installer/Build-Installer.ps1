@@ -139,6 +139,11 @@ $AppSourceDir = (Resolve-Path -LiteralPath $AppSourceDir).Path
 $appExe = Join-Path $AppSourceDir 'L-Mechrevo.exe'
 if (-not (Test-Path -LiteralPath $appExe)) { throw ("published executable not found: {0}" -f $appExe) }
 $appExeItem = Get-Item -LiteralPath $appExe
+$publishedVersion = ($appExeItem.VersionInfo.ProductVersion -split '\+')[0]
+if ($publishedVersion -ne $versions.Version -or $appExeItem.VersionInfo.FileVersion -ne $versions.Numeric) {
+    throw ("published app version {0} / {1} differs from csproj {2} / {3}; publish the current source before packaging." -f `
+        $publishedVersion, $appExeItem.VersionInfo.FileVersion, $versions.Version, $versions.Numeric)
+}
 
 # R2: the shipped app is framework-dependent on purpose - no .NET runtime DLLs are bundled,
 # the installer detects/downloads the .NET Desktop Runtime 10 (x64) instead. Assert that here

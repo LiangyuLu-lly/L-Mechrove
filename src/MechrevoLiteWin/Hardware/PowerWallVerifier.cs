@@ -37,6 +37,7 @@ internal sealed class PowerWallVerifier
 
     /// <summary>窗口内最少样本数。太少的话一次采样毛刺就能定结论。</summary>
     internal const int MinimumSamples = 20;
+    internal static readonly TimeSpan MaximumSampleGap = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// 超过上限多少才算"没生效"。15% 的余量用来吸收计量误差
@@ -52,6 +53,7 @@ internal sealed class PowerWallVerifier
 
     readonly object _sync = new();
     readonly Queue<(DateTime At, double Watts)> _samples = new();
+    DateTime? _lastSampleAt;
     int _limitWatts = -1;
 
     /// <summary>当前判定所针对的功耗上限。上限一变，历史样本立即作废。</summary>
@@ -71,12 +73,16 @@ internal sealed class PowerWallVerifier
             if (limitWatts != _limitWatts)
             {
                 _samples.Clear();
+                _lastSampleAt = null;
                 _limitWatts = limitWatts;
             }
             if (limitWatts <= 0 || !double.IsFinite(watts) || watts < 0) return;
-
+            if (_lastSampleAt is { } last && (now < last || now - last > MaximumSampleGap))
+                _samples.Clear();
+            _lastSampleAt = now;
             _samples.Enqueue((now, watts));
-            while (_samples.Count > 0 && now - _samples.Peek().At > Window) _samples.Dequeue();
+            // 留一个跨越窗口起点的样本，定时器抖动时仍能证明已经连续采满一整窗。
+            while (_samples.Count > 1 && now - _samples.ElementAt(1).At >= Window) _samples.Dequeue();
         }
     }
 
@@ -86,6 +92,7 @@ internal sealed class PowerWallVerifier
         lock (_sync)
         {
             _samples.Clear();
+            _lastSampleAt = null;
             _limitWatts = -1;
         }
     }
@@ -101,6 +108,8 @@ internal sealed class PowerWallVerifier
     PowerWallVerdict EvaluateCore(DateTime now)
     {
         if (_limitWatts <= 0 || _samples.Count < MinimumSamples) return PowerWallVerdict.Unknown;
+        if (_lastSampleAt is not { } last || now < last || now - last > MaximumSampleGap)
+            return PowerWallVerdict.Unknown;
 
         (DateTime At, double Watts) oldest = _samples.Peek();
         // 窗口必须真的铺满：刚开始采样时哪怕样本数够了也不能下结论。

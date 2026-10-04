@@ -93,7 +93,7 @@ public class GpuOverclockApplyRegressionTests
 
     static Task Flush(CustomModeForm form) =>
         (Task)typeof(CustomModeForm).GetMethod("FlushPendingAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(form, null)!;
+            .Invoke(form, new object[] { true })!;
 
     [Fact]
     public async Task EnablingThenDialing_AppliesToTheHardwareAndConfirmsTheStatus()
